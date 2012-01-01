@@ -1,4 +1,4 @@
-// Radix -- Asynchronous Redis client for Go.
+// Package redis implements an asynchronous Redis client.
 //
 // Simple client for accessing the Redis database. After establishing a connection
 // with NewRedisDatabase() commands can be executed with Command(). So every command
