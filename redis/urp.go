@@ -279,7 +279,6 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 
 	if err := urp.writeRequest(command, cis); err != nil {
 		es.countChan <- 0
-
 		return
 	}
 
@@ -290,7 +289,6 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 
 	for i := 0; i < channelLen; i++ {
 		rs.resultSets[i] = newResultSet(command)
-
 		urp.receiveReply(rs.resultSets[i], false)
 	}
 

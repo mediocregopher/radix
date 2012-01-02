@@ -321,7 +321,7 @@ func (s *S) TestTransactions(c *C) {
 
 // Test subscribe.
 func (s *S) TestSubscribe(c *C) {
-	sub, err := rd.AsyncSubscribe("subscribe:one", "subscribe:two")
+	sub, err := rd.Subscribe("subscribe:one", "subscribe:two")
 	if err != nil {
 		c.Errorf("Can't subscribe: '%v'!", err)
 		return
@@ -343,8 +343,8 @@ func (s *S) TestSubscribe(c *C) {
 	rd.Publish("subscribe:one", "1 Gamma")
 	rd.Publish("subscribe:two", "2 Alpha")
 	rd.Publish("subscribe:two", "2 Beta")
-	c.Check(sub.Unsubscribe("subscribe:two"), Equals, 1)
-	c.Check(sub.Unsubscribe("subscribe:one"), Equals, 0)
+	c.Log(sub.Unsubscribe("subscribe:two"))
+	c.Log(sub.Unsubscribe("subscribe:one"))
 	c.Check(rd.Publish("subscribe:two", "2 Gamma"), Equals, 0)
 
 	sub.Subscribe("subscribe:*")

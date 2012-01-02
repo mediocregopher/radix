@@ -38,8 +38,8 @@ func newSubscriptionValue(data [][]byte) *SubscriptionValue {
 type Subscription struct {
 	urp                   *unifiedRequestProtocol
 	error                 error
-	channelCount          int
 	SubscriptionValueChan chan *SubscriptionValue
+	closerChan            chan bool
 }
 
 // Create a new subscription.
@@ -47,37 +47,30 @@ func newSubscription(urp *unifiedRequestProtocol, channels ...string) *Subscript
 	sub := &Subscription{
 		urp: urp,
 		SubscriptionValueChan: make(chan *SubscriptionValue, 10),
-	}
+		closerChan:            make(chan bool, 1)}
 
 	runtime.SetFinalizer(sub, (*Subscription).Stop)
 	// Subscribe to the channels.
-	sub.channelCount = sub.urp.subscribe(channels...)
+	chanCount := sub.urp.subscribe(channels...)
 	go sub.backend()
-	return sub
+	return sub, chanCount
 }
 
 // Subscribe to channels and return the count of subscribed channels.
 func (s *Subscription) Subscribe(channels ...string) int {
-	s.channelCount = s.urp.subscribe(channels...)
-	return s.channelCount
+	return s.urp.subscribe(channels...)
 }
 
 // Unsubscribe from channels and return the count of remaining subscribed channels.
 func (s *Subscription) Unsubscribe(channels ...string) int {
-	s.channelCount = s.urp.unsubscribe(channels...)
-	return s.channelCount
-}
-
-// Get the number of subscribed channels.
-func (s *Subscription) ChannelCount() int {
-	return s.channelCount
+	return s.urp.unsubscribe(channels...)
 }
 
 // Close the subscription.
 func (s *Subscription) Stop() {
 	runtime.SetFinalizer(s, nil)
 	s.urp.stop()
-	close(s.SubscriptionValueChan)
+	s.closerChan <- true
 }
 
 // Backend of the subscription.
@@ -89,6 +82,10 @@ func (s *Subscription) backend() {
 
 		// Send the subscription value.
 		select {
+		case <-s.closerChan:
+			// Close the backend.
+			close(s.SubscriptionValueChan)
+			return
 		case s.SubscriptionValueChan <- sv:
 			// OK.
 		default:

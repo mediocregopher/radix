@@ -179,8 +179,8 @@ func (mc *MultiCommand) Discard() {
 //* PubSub
 
 // Subscribe to one or more channels.
-// If successful, return a Subscription and an error, if any.
-func (rd *RedisDatabase) Subscribe(channel ...string) (*Subscription, error) {
+// If successful, return a Subscription, number of channels that were succesfully subscribed and an error, if any.
+func (rd *RedisDatabase) Subscribe(channel ...string) (*Subscription, int, error) {
 	// URP handling.
 	urp, err := newUnifiedRequestProtocol(rd.configuration)
 
