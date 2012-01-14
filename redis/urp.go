@@ -285,7 +285,6 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 	// Receive the replies.
 	channelLen := len(es.channels)
 	rs.resultSets = make([]*ResultSet, channelLen)
-	rs.error = nil
 
 	for i := 0; i < channelLen; i++ {
 		rs.resultSets[i] = newResultSet(command)
@@ -297,7 +296,6 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 	lastResultValue := lastResultSet.At(lastResultSet.Len() - 1)
 
 	es.countChan <- int(lastResultValue.Int64())
-
 }
 
 // Handle published data.
@@ -370,9 +368,7 @@ func (urp *unifiedRequestProtocol) writeRequest(cmd string, args []interface{}) 
 // Write the number of arguments.
 func (urp *unifiedRequestProtocol) writeDataNumber(dataLen int) error {
 	b := []byte(fmt.Sprintf("*%d\r\n", dataLen))
-
 	urp.writer.Write(b)
-
 	return urp.writer.Flush()
 }
 
@@ -498,8 +494,8 @@ func (urp *unifiedRequestProtocol) prepareChannels(channels []string) ([]interfa
 	pattern := false
 	cis := make([]interface{}, len(channels))
 
-	for idx, channel := range channels {
-		cis[idx] = channel
+	for i, channel := range channels {
+		cis[i] = channel
 
 		if strings.IndexAny(channel, "*?[") != -1 {
 			pattern = true

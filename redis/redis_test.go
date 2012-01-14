@@ -321,11 +321,12 @@ func (s *S) TestTransactions(c *C) {
 
 // Test subscribe.
 func (s *S) TestSubscribe(c *C) {
-	sub, err := rd.Subscribe("subscribe:one", "subscribe:two")
+	sub, numSubs, err := rd.Subscribe("subscribe:one", "subscribe:two")
 	if err != nil {
 		c.Errorf("Can't subscribe: '%v'!", err)
 		return
 	}
+	c.Check(numSubs, Equals, 2)
 
 	go func() {
 		for sv := range sub.SubscriptionValueChan {

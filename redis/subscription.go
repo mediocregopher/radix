@@ -42,8 +42,9 @@ type Subscription struct {
 	closerChan            chan bool
 }
 
-// Create a new subscription.
-func newSubscription(urp *unifiedRequestProtocol, channels ...string) *Subscription {
+// Create a new subscription, subscribe to given channels and return the count of succesfully subscribed
+// channels.
+func newSubscription(urp *unifiedRequestProtocol, channels ...string) (*Subscription, int) {
 	sub := &Subscription{
 		urp: urp,
 		SubscriptionValueChan: make(chan *SubscriptionValue, 10),
@@ -56,12 +57,12 @@ func newSubscription(urp *unifiedRequestProtocol, channels ...string) *Subscript
 	return sub, chanCount
 }
 
-// Subscribe to channels and return the count of subscribed channels.
+// Subscribe to given channels and return the count of succesfully subscribed channels.
 func (s *Subscription) Subscribe(channels ...string) int {
 	return s.urp.subscribe(channels...)
 }
 
-// Unsubscribe from channels and return the count of remaining subscribed channels.
+// Unsubscribe from given channels and return the count of remaining subscribed channels.
 func (s *Subscription) Unsubscribe(channels ...string) int {
 	return s.urp.unsubscribe(channels...)
 }
