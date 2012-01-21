@@ -229,7 +229,7 @@ func (s *S) TestList(c *C) {
 }
 
 // Test set commands.
-func (s *S) TestSet(c *C) {
+func (s *S) TestSets(c *C) {
 	rd.Command("sadd", "set:a", 1)
 	rd.Command("sadd", "set:a", 2)
 	rd.Command("sadd", "set:a", 3)
@@ -415,4 +415,10 @@ func (s *S) TestGet(c *C) {
 	c.Check(rd.Get("non:existing:key").OK(), Equals, false)
 	rd.Command("set", "foo", "bar")
 	c.Check(rd.Get("foo").String(), Equals, "bar")
+}
+
+// Test Redis set method.
+func (s *S) TestSet(c *C) {
+	c.Check(rd.Set("foo", "bar").OK(), Equals, true)
+	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
 }

@@ -205,6 +205,10 @@ func (rd *Redis) Get(key string) *ResultSet {
 	return rd.Command("get", key)
 }
 
+// Set
+func (rd *Redis) Set(key string, value interface{}) *ResultSet {
+	return rd.Command("set", key, value)
+}
 
 //* Helpers
 
