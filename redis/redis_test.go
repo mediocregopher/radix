@@ -431,6 +431,12 @@ func (s *S) TestDecr(c *C) {
 	c.Check(rd.Decr("foo2").OK(), Equals, false)
 }
 
+// Test Redis DecrBy method.
+func (s *S) TestDecrby(c *C) {
+	rd.Command("set", "foo", 10)
+	c.Check(rd.Decrby("foo", 5).Int(), Equals, 5)
+}
+
 // Test Redis Get method.
 func (s *S) TestGet(c *C) {
 	c.Check(rd.Get("non:existing:key").OK(), Equals, false)

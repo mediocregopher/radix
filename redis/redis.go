@@ -212,6 +212,11 @@ func (rd *Redis) Decr(key string) *ResultSet {
 	return rd.Command("decr", key)
 }
 
+// DecrBy
+func (rd *Redis) Decrby(key string, decrement int) *ResultSet {
+	return rd.Command("decrby", key, decrement)
+}
+
 // Get
 func (rd *Redis) Get(key string) *ResultSet {
 	return rd.Command("get", key)
