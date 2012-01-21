@@ -8,21 +8,21 @@ type Configuration struct {
 	PoolSize int
 }
 
-//* Redis database
+//* Redis
 
-// RedisDatabase manages the access to one database.
-type RedisDatabase struct {
+// Redis manages the access to one database.
+type Redis struct {
 	configuration *Configuration
 	pool          chan *unifiedRequestProtocol
 	poolUsage     int
 }
 
-// NewRedisDatabase create a new accessor.
-func NewRedisDatabase(c Configuration) *RedisDatabase {
+// NewRedis create a new accessor.
+func NewRedis(c Configuration) *Redis {
 	checkConfiguration(&c)
 
 	// Create the database client instance.
-	rd := &RedisDatabase{
+	rd := &Redis{
 		configuration: &c,
 		pool:          make(chan *unifiedRequestProtocol, c.PoolSize),
 	}
@@ -36,7 +36,7 @@ func NewRedisDatabase(c Configuration) *RedisDatabase {
 }
 
 // Command performs a command.
-func (rd *RedisDatabase) Command(cmd string, args ...interface{}) *ResultSet {
+func (rd *Redis) Command(cmd string, args ...interface{}) *ResultSet {
 	// Create result set.
 	rs := newResultSet(cmd)
 
@@ -60,7 +60,7 @@ func (rd *RedisDatabase) Command(cmd string, args ...interface{}) *ResultSet {
 }
 
 // AsyncCommand perform a command asynchronously.
-func (rd *RedisDatabase) AsyncCommand(cmd string, args ...interface{}) *Future {
+func (rd *Redis) AsyncCommand(cmd string, args ...interface{}) *Future {
 	fut := newFuture()
 
 	go func() {
@@ -71,7 +71,7 @@ func (rd *RedisDatabase) AsyncCommand(cmd string, args ...interface{}) *Future {
 }
 
 // Perform a multi command.
-func (rd *RedisDatabase) MultiCommand(f func(*MultiCommand)) *ResultSet {
+func (rd *Redis) MultiCommand(f func(*MultiCommand)) *ResultSet {
 	// Create result set.
 	rs := newResultSet("multi")
 
@@ -96,7 +96,7 @@ func (rd *RedisDatabase) MultiCommand(f func(*MultiCommand)) *ResultSet {
 }
 
 // Perform an asynchronous multi command.
-func (rd *RedisDatabase) AsyncMultiCommand(f func(*MultiCommand)) *Future {
+func (rd *Redis) AsyncMultiCommand(f func(*MultiCommand)) *Future {
 	fut := newFuture()
 
 	go func() {
@@ -107,7 +107,7 @@ func (rd *RedisDatabase) AsyncMultiCommand(f func(*MultiCommand)) *Future {
 }
 
 // Pull an URP from the pool, with lazy init.
-func (rd *RedisDatabase) pullURP() (urp *unifiedRequestProtocol, err error) {
+func (rd *Redis) pullURP() (urp *unifiedRequestProtocol, err error) {
 	urp = <-rd.pool
 
 	// Lazy init of an URP.
@@ -125,7 +125,7 @@ func (rd *RedisDatabase) pullURP() (urp *unifiedRequestProtocol, err error) {
 }
 
 // Push an URP to the pool.
-func (rd *RedisDatabase) pushURP(urp *unifiedRequestProtocol) {
+func (rd *Redis) pushURP(urp *unifiedRequestProtocol) {
 	if urp != nil {
 		rd.poolUsage--
 	}
@@ -180,7 +180,7 @@ func (mc *MultiCommand) Discard() {
 
 // Subscribe to given channels. If successful, return a Subscription, number of channels that were
 // succesfully subscribed or an error.
-func (rd *RedisDatabase) Subscribe(channels ...string) (*Subscription, int, error) {
+func (rd *Redis) Subscribe(channels ...string) (*Subscription, int, error) {
 	// URP handling.
 	urp, err := newUnifiedRequestProtocol(rd.configuration)
 
@@ -193,10 +193,18 @@ func (rd *RedisDatabase) Subscribe(channels ...string) (*Subscription, int, erro
 }
 
 // Publish a message to a channel.
-func (rd *RedisDatabase) Publish(channel string, message interface{}) int {
+func (rd *Redis) Publish(channel string, message interface{}) int {
 	rs := rd.Command("publish", channel, message)
 	return int(rs.Value().Int64())
 }
+
+//* Convenience methods
+
+// Get
+func (rd *Redis) Get(key string) *ResultSet {
+	return rd.Command("get", key)
+}
+
 
 //* Helpers
 

@@ -13,7 +13,7 @@ func Test(t *testing.T) {
 }
 
 //* Helpers
-var rd *RedisDatabase
+var rd *Redis
 
 // hashableTestType is a simple type implementing the
 // Hashable interface.
@@ -45,7 +45,7 @@ func (htt *hashableTestType) SetHash(h Hash) {
 }
 
 func setUpTest(c *C) {
-	rd = NewRedisDatabase(Configuration{
+	rd = NewRedis(Configuration{
 		Database: 8,
 		Address:  "127.0.0.1:6379"})
 
@@ -358,13 +358,13 @@ func (s *S) TestSubscribe(c *C) {
 
 // Test pop.
 func (s *Long) TestPop(c *C) {
-	fooPush := func(rd *RedisDatabase) {
+	fooPush := func(rd *Redis) {
 		time.Sleep(time.Second)
 		rd.Command("lpush", "pop:first", "foo")
 	}
 
 	// Set A: no database timeout.
-	rdA := NewRedisDatabase(Configuration{})
+	rdA := NewRedis(Configuration{})
 
 	go fooPush(rdA)
 
@@ -376,7 +376,7 @@ func (s *Long) TestPop(c *C) {
 	c.Check(rsAB.Error(), NotNil)
 
 	// Set B: database with timeout.
-	rdB := NewRedisDatabase(Configuration{})
+	rdB := NewRedis(Configuration{})
 
 	rsBA := rdB.Command("blpop", "pop:first", 1)
 	c.Check(rsBA.Error(), NotNil)
@@ -385,19 +385,19 @@ func (s *Long) TestPop(c *C) {
 // Test illegal databases.
 func (s *Long) TestIllegalDatabases(c *C) {
 	c.Log("Test selecting an illegal database...")
-	rdA := NewRedisDatabase(Configuration{Database: 4711})
+	rdA := NewRedis(Configuration{Database: 4711})
 	rsA := rdA.Command("ping")
 	c.Check(rsA.Error(), NotNil)
 
 	c.Log("Test connecting to an illegal address...")
-	rdB := NewRedisDatabase(Configuration{Address: "192.168.100.100:12345"})
+	rdB := NewRedis(Configuration{Address: "192.168.100.100:12345"})
 	rsB := rdB.Command("ping")
 	c.Check(rsB.Error(), NotNil)
 }
 
 // Test database killing with a long run.
 func (s *Long) TestDatabaseKill(c *C) {
-    rdA := NewRedisDatabase(Configuration{PoolSize: 5})
+    rdA := NewRedis(Configuration{PoolSize: 5})
 	
     for i := 1; i < 120; i++ {
         if !rdA.Command("set", "long:run", i).OK() {
@@ -408,3 +408,11 @@ func (s *Long) TestDatabaseKill(c *C) {
     }
 }
 
+//* Convenience methods
+
+// Test Redis get method.
+func (s *S) TestGet(c *C) {
+	c.Check(rd.Get("non:existing:key").OK(), Equals, false)
+	rd.Command("set", "foo", "bar")
+	c.Check(rd.Get("foo").String(), Equals, "bar")
+}
