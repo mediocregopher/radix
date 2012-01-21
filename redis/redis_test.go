@@ -408,16 +408,37 @@ func (s *Long) TestDatabaseKill(c *C) {
     }
 }
 
-//* Convenience methods
+//** Convenience methods
 
-// Test Redis get method.
+//* Strings
+
+// Test Redis Append method.
+func (s *S) TestAppend(c *C) {
+	c.Check(rd.Append("foo", "bar").Int(), Equals, 3)
+	c.Check(rd.Append("foo", "zot").Int(), Equals, 6)
+	c.Check(rd.Command("get", "foo").String(), Equals, "barzot")
+
+	c.Check(rd.Append("foo2", 123).Int(), Equals, 3)
+	c.Check(rd.Append("foo2", 456).Int(), Equals, 6)
+	c.Check(rd.Command("get", "foo2").Int(), Equals, 123456)
+}
+
+// Test Redis Decr method.
+func (s *S) TestDecr(c *C) {
+	rd.Command("set", "foo", 10)
+	c.Check(rd.Decr("foo").Int(), Equals, 9)
+	rd.Command("set", "foo2", "bar")
+	c.Check(rd.Decr("foo2").OK(), Equals, false)
+}
+
+// Test Redis Get method.
 func (s *S) TestGet(c *C) {
 	c.Check(rd.Get("non:existing:key").OK(), Equals, false)
 	rd.Command("set", "foo", "bar")
 	c.Check(rd.Get("foo").String(), Equals, "bar")
 }
 
-// Test Redis set method.
+// Test Redis Set method.
 func (s *S) TestSet(c *C) {
 	c.Check(rd.Set("foo", "bar").OK(), Equals, true)
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")

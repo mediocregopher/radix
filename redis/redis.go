@@ -198,7 +198,19 @@ func (rd *Redis) Publish(channel string, message interface{}) int {
 	return int(rs.Value().Int64())
 }
 
-//* Convenience methods
+//** Convenience methods
+
+//* Strings
+
+// Append
+func (rd *Redis) Append(key string, value interface{}) *ResultSet {
+	return rd.Command("append", key, value)
+}
+
+// Decr
+func (rd *Redis) Decr(key string) *ResultSet {
+	return rd.Command("decr", key)
+}
 
 // Get
 func (rd *Redis) Get(key string) *ResultSet {
