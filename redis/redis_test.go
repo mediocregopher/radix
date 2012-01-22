@@ -508,3 +508,10 @@ func (s *S) TestSetex(c *C) {
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
 }
 
+func (s *S) TestSetnx(c *C) {
+	c.Check(rd.Setnx("foo", "bar").Bool(), Equals, true)
+	c.Check(rd.Setnx("foo", "bar").Bool(), Equals, false)
+	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
+}
+
+

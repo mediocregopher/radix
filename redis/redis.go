@@ -281,6 +281,11 @@ func (rd *Redis) Setex(key string, seconds int, value interface{}) *ResultSet {
 	return rd.Command("setex", key, seconds, value)
 }
 
+// Setnx
+func (rd *Redis) Setnx(key string, value interface{}) *ResultSet {
+	return rd.Command("setnx", key, value)
+}
+
 //* Helpers
 
 // Check the configuration.
