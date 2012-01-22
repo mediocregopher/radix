@@ -408,11 +408,10 @@ func (s *Long) TestDatabaseKill(c *C) {
     }
 }
 
-//** Convenience methods
+//** Convenience method tests
 
 //* Strings
 
-// Test Redis Append method.
 func (s *S) TestAppend(c *C) {
 	c.Check(rd.Append("foo", "bar").Int(), Equals, 3)
 	c.Check(rd.Append("foo", "zot").Int(), Equals, 6)
@@ -423,7 +422,6 @@ func (s *S) TestAppend(c *C) {
 	c.Check(rd.Command("get", "foo2").Int(), Equals, 123456)
 }
 
-// Test Redis Decr method.
 func (s *S) TestDecr(c *C) {
 	rd.Command("set", "foo", 10)
 	c.Check(rd.Decr("foo").Int(), Equals, 9)
@@ -431,20 +429,33 @@ func (s *S) TestDecr(c *C) {
 	c.Check(rd.Decr("foo2").OK(), Equals, false)
 }
 
-// Test Redis DecrBy method.
 func (s *S) TestDecrby(c *C) {
 	rd.Command("set", "foo", 10)
 	c.Check(rd.Decrby("foo", 5).Int(), Equals, 5)
 }
 
-// Test Redis Get method.
 func (s *S) TestGet(c *C) {
 	c.Check(rd.Get("non:existing:key").OK(), Equals, false)
 	rd.Command("set", "foo", "bar")
 	c.Check(rd.Get("foo").String(), Equals, "bar")
 }
 
-// Test Redis Set method.
+func (s *S) TestGetbit(c *C) {
+	rd.Command("setbit", "foo", 2, 1)
+	c.Check(rd.Getbit("foo", 2).Bool(), Equals, true)
+}
+
+func (s *S) TestGetrange(c *C) {
+	rd.Command("set", "foo", "this is a string")
+	c.Check(rd.Getrange("foo", 0, 3).String(), Equals, "this")
+}
+
+func (s *S) TestGetset(c *C) {
+	rd.Command("set", "foo", "hello")
+	c.Check(rd.Getset("foo", "world").String(), Equals, "hello")
+	c.Check(rd.Command("get", "foo").String(), Equals, "world")
+}
+
 func (s *S) TestSet(c *C) {
 	c.Check(rd.Set("foo", "bar").OK(), Equals, true)
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")

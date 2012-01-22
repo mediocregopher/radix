@@ -222,6 +222,21 @@ func (rd *Redis) Get(key string) *ResultSet {
 	return rd.Command("get", key)
 }
 
+// Getbit
+func (rd *Redis) Getbit(key string, offset int) *ResultSet {
+	return rd.Command("getbit", key, offset)
+}
+
+// Getrange
+func (rd *Redis) Getrange(key string, start int, end int) *ResultSet {
+	return rd.Command("getrange", key, start, end)
+}
+
+// Getset
+func (rd *Redis) Getset(key string, value interface{}) *ResultSet {
+	return rd.Command("getset", key, value)
+}
+
 // Set
 func (rd *Redis) Set(key string, value interface{}) *ResultSet {
 	return rd.Command("set", key, value)
