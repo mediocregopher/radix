@@ -475,7 +475,6 @@ func (s *S) TestMget(c *C) {
 		rd.Mget("foo", "bar", "nonexisting:key").Strings(),
 		Equals,
 		[]string{"hello", "world", ""})
-
 }
 
 func (s *S) TestMset(c *C) {
@@ -496,3 +495,16 @@ func (s *S) TestSet(c *C) {
 	c.Check(rd.Set("foo", "bar").OK(), Equals, true)
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
 }
+
+func (s *S) TestSetbit(c *C) {
+	c.Check(rd.Setbit("foo", 7, true).Bool(), Equals, false)
+	c.Check(rd.Setbit("foo", 7, false).Bool(), Equals, true)
+	c.Check(rd.Command("get", "foo").String(), Equals, "\x00")
+}
+
+func (s *S) TestSetex(c *C) {
+	c.Check(rd.Setex("foo", 100, "bar").OK(), Equals, true)
+	c.Check(rd.Command("ttl", "foo").Int(), Not(Equals), 0)
+	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
+}
+

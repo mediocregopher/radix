@@ -266,14 +266,19 @@ func (rd *Redis) Msetnx(args ...interface{}) *ResultSet {
 	return rd.Command("msetnx", args...)
 }
 
+// Set
+func (rd *Redis) Set(key string, value interface{}) *ResultSet {
+	return rd.Command("set", key, value)
+}
+
 // Setbit
 func (rd *Redis) Setbit(key string, offset int, value bool) *ResultSet {
 	return rd.Command("setbit", key, offset, value)
 }
 
-// Set
-func (rd *Redis) Set(key string, value interface{}) *ResultSet {
-	return rd.Command("set", key, value)
+// Setex
+func (rd *Redis) Setex(key string, seconds int, value interface{}) *ResultSet {
+	return rd.Command("setex", key, seconds, value)
 }
 
 //* Helpers
