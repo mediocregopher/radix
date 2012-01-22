@@ -291,6 +291,11 @@ func (rd *Redis) Setrange(key string, offset int, value interface{}) *ResultSet 
 	return rd.Command("setrange", key, offset, value)
 }
 
+// Strlen
+func (rd *Redis) Strlen(key string) *ResultSet {
+	return rd.Command("strlen", key)
+}
+
 //* Helpers
 
 // Check the configuration.

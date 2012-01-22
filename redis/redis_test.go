@@ -520,4 +520,8 @@ func (s *S) TestSetrange(c *C) {
 	c.Check(rd.Command("get", "foo").String(), Equals, "hello redis")
 }
 
-
+func (s *S) TestStrlen(c *C) {
+	rd.Command("set", "foo", "bar")
+	c.Check(rd.Strlen("foo").Int(), Equals, 3)
+	c.Check(rd.Strlen("zot").Int(), Equals, 0)
+}
