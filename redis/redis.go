@@ -242,6 +242,11 @@ func (rd *Redis) Incr(key string) *ResultSet {
 	return rd.Command("incr", key)
 }
 
+// Incrby
+func (rd *Redis) Incrby(key string, increment int) *ResultSet {
+	return rd.Command("incrby", key, increment)
+}
+
 // Set
 func (rd *Redis) Set(key string, value interface{}) *ResultSet {
 	return rd.Command("set", key, value)

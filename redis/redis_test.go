@@ -462,6 +462,12 @@ func (s *S) TestIncr(c *C) {
 	c.Check(rd.Command("get", "foo").Int(), Equals, 11)
 }
 
+func (s *S) TestIncrby(c *C) {
+	rd.Command("set", "foo", 10)
+	c.Check(rd.Incrby("foo", 5).Int(), Equals, 15)
+	c.Check(rd.Command("get", "foo").Int(), Equals, 15)
+}
+
 func (s *S) TestSet(c *C) {
 	c.Check(rd.Set("foo", "bar").OK(), Equals, true)
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
