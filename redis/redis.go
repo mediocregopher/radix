@@ -237,6 +237,11 @@ func (rd *Redis) Getset(key string, value interface{}) *ResultSet {
 	return rd.Command("getset", key, value)
 }
 
+// Incr
+func (rd *Redis) Incr(key string) *ResultSet {
+	return rd.Command("incr", key)
+}
+
 // Set
 func (rd *Redis) Set(key string, value interface{}) *ResultSet {
 	return rd.Command("set", key, value)

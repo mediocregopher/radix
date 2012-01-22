@@ -456,6 +456,12 @@ func (s *S) TestGetset(c *C) {
 	c.Check(rd.Command("get", "foo").String(), Equals, "world")
 }
 
+func (s *S) TestIncr(c *C) {
+	rd.Command("set", "foo", 10)
+	c.Check(rd.Incr("foo").Int(), Equals, 11)
+	c.Check(rd.Command("get", "foo").Int(), Equals, 11)
+}
+
 func (s *S) TestSet(c *C) {
 	c.Check(rd.Set("foo", "bar").OK(), Equals, true)
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
