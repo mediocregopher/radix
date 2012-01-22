@@ -484,6 +484,14 @@ func (s *S) TestMset(c *C) {
 	c.Check(rd.Command("get", "key2").String(), Equals, "val2")
 }
 
+func (s *S) TestMsetnx(c *C) {
+	c.Check(rd.Msetnx("key1", "val1", "key2", "val2").Bool(), Equals, true)
+	c.Check(rd.Msetnx("key2", "val2", "key3", "val3").Bool(), Equals, false)
+	c.Check(rd.Command("get", "key1").String(), Equals, "val1")
+	c.Check(rd.Command("get", "key2").String(), Equals, "val2")
+	c.Check(rd.Command("get", "key3").String(), Equals, "")
+}
+
 func (s *S) TestSet(c *C) {
 	c.Check(rd.Set("foo", "bar").OK(), Equals, true)
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
