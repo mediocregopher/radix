@@ -514,4 +514,10 @@ func (s *S) TestSetnx(c *C) {
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
 }
 
+func (s *S) TestSetrange(c *C) {
+	rd.Command("set", "foo", "hello world")
+	c.Check(rd.Setrange("foo", 6, "redis").Int(), Equals, 11)
+	c.Check(rd.Command("get", "foo").String(), Equals, "hello redis")
+}
+
 

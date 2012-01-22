@@ -286,6 +286,11 @@ func (rd *Redis) Setnx(key string, value interface{}) *ResultSet {
 	return rd.Command("setnx", key, value)
 }
 
+// Setrange
+func (rd *Redis) Setrange(key string, offset int, value interface{}) *ResultSet {
+	return rd.Command("setrange", key, offset, value)
+}
+
 //* Helpers
 
 // Check the configuration.
