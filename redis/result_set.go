@@ -225,10 +225,7 @@ type ResultSet struct {
 
 // newResultSet creates a result set.
 func newResultSet(cmd string) *ResultSet {
-	return &ResultSet{
-		cmd:   cmd,
-		error: errors.New("illegal terminated command"),
-	}
+	return &ResultSet{cmd: cmd}
 }
 
 // OK returns true if the result set has nil error, otherwise false.
@@ -473,8 +470,6 @@ func (f *Future) setResultSet(rs *ResultSet) {
 // ResultSet returns the result set in the moment it is available.
 func (f *Future) ResultSet() (rs *ResultSet) {
 	rs = <-f.rsChan
-
 	f.rsChan <- rs
-
 	return
 }

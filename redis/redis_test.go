@@ -468,6 +468,18 @@ func (s *S) TestIncrby(c *C) {
 	c.Check(rd.Command("get", "foo").Int(), Equals, 15)
 }
 
+func (s *S) TestMget(c *C) {
+	rd.Command("set", "foo", "hello")
+	rd.Command("set", "bar", "world")
+	rs := rd.Mget("foo", "bar", "nonexisting:key")
+	//c.Check(rs.Error(), E)
+	c.Check(
+		rs.Strings(),
+		Equals,
+		[]string{"hello", "world", ""})
+
+}
+
 func (s *S) TestSet(c *C) {
 	c.Check(rd.Set("foo", "bar").OK(), Equals, true)
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")

@@ -86,7 +86,6 @@ func (rd *Redis) MultiCommand(f func(*MultiCommand)) *ResultSet {
 
 	if err != nil {
 		rs.error = err
-
 		return rs
 	}
 
@@ -245,6 +244,17 @@ func (rd *Redis) Incr(key string) *ResultSet {
 // Incrby
 func (rd *Redis) Incrby(key string, increment int) *ResultSet {
 	return rd.Command("incrby", key, increment)
+}
+
+// Mget
+func (rd *Redis) Mget(keys ...string) *ResultSet {
+	var args []interface{}
+
+	for _, v := range keys {
+		args = append(args, interface{}(v))
+	}
+
+	return rd.Command("mget", args...)
 }
 
 // Set

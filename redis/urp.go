@@ -275,8 +275,6 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 	}
 
 	// Send the subscription request.
-	rs := newResultSet(command)
-
 	if err := urp.writeRequest(command, cis); err != nil {
 		es.countChan <- 0
 		return
@@ -284,6 +282,7 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 
 	// Receive the replies.
 	channelLen := len(es.channels)
+	rs := newResultSet(command)
 	rs.resultSets = make([]*ResultSet, channelLen)
 
 	for i := 0; i < channelLen; i++ {
@@ -451,14 +450,12 @@ func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet, multi bool) {
 	case ed.error != nil:
 		// Error.
 		rs.error = ed.error
+		fallthrough
 	case ed.data != nil:
 		// Single result.
 		rs.values = []Value{Value(ed.data)}
-		rs.error = nil
 	case ed.length > 0:
 		// Multiple result sets or results.
-		rs.error = nil
-
 		if multi {
 			for i := 0; i < ed.length; i++ {
 				urp.receiveReply(rs.resultSets[i], false)
@@ -471,10 +468,7 @@ func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet, multi bool) {
 				ied := <-urp.dataChan
 
 				if ied.error != nil {
-					rs.values = nil
 					rs.error = ied.error
-
-					return
 				}
 
 				rs.values[i] = Value(ied.data)
