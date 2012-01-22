@@ -471,13 +471,17 @@ func (s *S) TestIncrby(c *C) {
 func (s *S) TestMget(c *C) {
 	rd.Command("set", "foo", "hello")
 	rd.Command("set", "bar", "world")
-	rs := rd.Mget("foo", "bar", "nonexisting:key")
-	//c.Check(rs.Error(), E)
 	c.Check(
-		rs.Strings(),
+		rd.Mget("foo", "bar", "nonexisting:key").Strings(),
 		Equals,
 		[]string{"hello", "world", ""})
 
+}
+
+func (s *S) TestMset(c *C) {
+	c.Check(rd.Mset("key1", "val1", "key2", "val2").OK(), Equals, true)
+	c.Check(rd.Command("get", "key1").String(), Equals, "val1")
+	c.Check(rd.Command("get", "key2").String(), Equals, "val2")
 }
 
 func (s *S) TestSet(c *C) {

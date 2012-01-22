@@ -49,7 +49,6 @@ func (rd *Redis) Command(cmd string, args ...interface{}) *ResultSet {
 
 	if err != nil {
 		rs.error = err
-
 		return rs
 	}
 
@@ -255,6 +254,11 @@ func (rd *Redis) Mget(keys ...string) *ResultSet {
 	}
 
 	return rd.Command("mget", args...)
+}
+
+// Mset
+func (rd *Redis) Mset(args ...interface{}) *ResultSet {
+	return rd.Command("mset", args...)
 }
 
 // Set
