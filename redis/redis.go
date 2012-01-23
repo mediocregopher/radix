@@ -198,54 +198,77 @@ func (rd *Redis) Publish(channel string, message interface{}) int {
 
 //** Convenience methods
 
+//* Keys
+
+// Call Redis del command.
+func (rd *Redis) Del(keys ...string) *ResultSet {
+	var args []interface{}
+
+	for _, v := range keys {
+		args = append(args, interface{}(v))
+	}
+
+	return rd.Command("del", args...)
+}
+
+// Call Redis exists command.
+func (rd *Redis) Exists(key string) *ResultSet {
+	return rd.Command("exists", key)
+}
+
+// Call Redis expire command.
+func (rd *Redis) Expire(key string, seconds int) *ResultSet {
+	return rd.Command("expire", key, seconds)
+}
+
 //* Strings
 
-// Append
+// Call Redis append command.
 func (rd *Redis) Append(key string, value interface{}) *ResultSet {
 	return rd.Command("append", key, value)
 }
 
-// Decr
+// Call Redis decr command.
 func (rd *Redis) Decr(key string) *ResultSet {
 	return rd.Command("decr", key)
 }
 
-// DecrBy
+// Call Redis decrby command.
 func (rd *Redis) Decrby(key string, decrement int) *ResultSet {
 	return rd.Command("decrby", key, decrement)
 }
 
-// Get
+// Call Redis get command.
 func (rd *Redis) Get(key string) *ResultSet {
 	return rd.Command("get", key)
 }
 
-// Getbit
+// Call Redis getbit command.
 func (rd *Redis) Getbit(key string, offset int) *ResultSet {
 	return rd.Command("getbit", key, offset)
 }
 
-// Getrange
+// Call Redis getrange command.
 func (rd *Redis) Getrange(key string, start int, end int) *ResultSet {
 	return rd.Command("getrange", key, start, end)
 }
 
-// Getset
+// Call Redis getset command.
 func (rd *Redis) Getset(key string, value interface{}) *ResultSet {
 	return rd.Command("getset", key, value)
 }
 
-// Incr
+// Call Redis incr command.
 func (rd *Redis) Incr(key string) *ResultSet {
 	return rd.Command("incr", key)
 }
 
-// Incrby
+// Call Redis incrby command.
 func (rd *Redis) Incrby(key string, increment int) *ResultSet {
 	return rd.Command("incrby", key, increment)
 }
 
-// Mget
+// Call Redis mget command.
 func (rd *Redis) Mget(keys ...string) *ResultSet {
 	var args []interface{}
 
@@ -256,42 +279,42 @@ func (rd *Redis) Mget(keys ...string) *ResultSet {
 	return rd.Command("mget", args...)
 }
 
-// Mset
+// Call Redis mset command.
 func (rd *Redis) Mset(args ...interface{}) *ResultSet {
 	return rd.Command("mset", args...)
 }
 
-// Msetnx
+// Call Redis msetnx command.
 func (rd *Redis) Msetnx(args ...interface{}) *ResultSet {
 	return rd.Command("msetnx", args...)
 }
 
-// Set
+// Call Redis set command.
 func (rd *Redis) Set(key string, value interface{}) *ResultSet {
 	return rd.Command("set", key, value)
 }
 
-// Setbit
+// Call Redis setbit command.
 func (rd *Redis) Setbit(key string, offset int, value bool) *ResultSet {
 	return rd.Command("setbit", key, offset, value)
 }
 
-// Setex
+// Call Redis setex command.
 func (rd *Redis) Setex(key string, seconds int, value interface{}) *ResultSet {
 	return rd.Command("setex", key, seconds, value)
 }
 
-// Setnx
+// Call Redis setnx command.
 func (rd *Redis) Setnx(key string, value interface{}) *ResultSet {
 	return rd.Command("setnx", key, value)
 }
 
-// Setrange
+// Call Redis setrange command.
 func (rd *Redis) Setrange(key string, offset int, value interface{}) *ResultSet {
 	return rd.Command("setrange", key, offset, value)
 }
 
-// Strlen
+// Call Redis strlen command.
 func (rd *Redis) Strlen(key string) *ResultSet {
 	return rd.Command("strlen", key)
 }
@@ -315,4 +338,3 @@ func checkConfiguration(c *Configuration) {
 		c.PoolSize = 10
 	}
 }
-

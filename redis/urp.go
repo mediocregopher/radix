@@ -90,30 +90,30 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 	go urp.receiver()
 	go urp.backend()
 
-    // Select database.
-    rs := newResultSet("select")
-	
-    urp.command(rs, false, "select", c.Database)
-	
-    if !rs.OK() {
-        // Connection or database is not ok, so reset.
-        urp.stop()
-        return nil, rs.Error()
-    }
-	
-    // Authenticate if needed.
-    if c.Auth != "" {
-        rs = newResultSet("auth")
-		
-                urp.command(rs, false, "auth", c.Auth)
-		
-        if !rs.OK() {
-            // Authentication is not ok, so reset.
-            urp.stop()		
-            return nil, rs.Error()
-        }
-    }
-	
+	// Select database.
+	rs := newResultSet("select")
+
+	urp.command(rs, false, "select", c.Database)
+
+	if !rs.OK() {
+		// Connection or database is not ok, so reset.
+		urp.stop()
+		return nil, rs.Error()
+	}
+
+	// Authenticate if needed.
+	if c.Auth != "" {
+		rs = newResultSet("auth")
+
+		urp.command(rs, false, "auth", c.Auth)
+
+		if !rs.OK() {
+			// Authentication is not ok, so reset.
+			urp.stop()
+			return nil, rs.Error()
+		}
+	}
+
 	return urp, nil
 }
 

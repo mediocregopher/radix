@@ -287,6 +287,20 @@ func (rs *ResultSet) Values() []Value {
 	return vs
 }
 
+// Ints returns all values as a slice of integers.
+func (rs *ResultSet) Ints() []int {
+	if rs.values == nil {
+		return nil
+	}
+
+	ints := make([]int, len(rs.values))
+	for i, v := range rs.values {
+		ints[i] = int(v)
+	}
+
+	return ints
+}
+
 // Strings returns all values as a slice of strings.
 func (rs *ResultSet) Strings() []string {
 	if rs.values == nil {

@@ -1,10 +1,10 @@
 package redis
 
 import (
+	"flag"
 	. "launchpad.net/gocheck"
 	"testing"
 	"time"
-	"flag"
 )
 
 // Hook up gocheck into the gotest runner.
@@ -89,9 +89,9 @@ func init() {
 
 func (s *Long) SetUpSuite(c *C) {
 	if !*long {
-		c.Skip("-long not provided") 
-	} 
-} 
+		c.Skip("-long not provided")
+	}
+}
 
 func (s *S) SetUpTest(c *C) {
 	setUpTest(c)
@@ -145,7 +145,7 @@ func (s *S) TestMultiple(c *C) {
 	rd.Command("set", "multiple:a", "a")
 	rd.Command("set", "multiple:b", "b")
 	rd.Command("set", "multiple:c", "c")
-	
+
 	c.Check(
 		rd.Command("mget", "multiple:a", "multiple:b", "multiple:c").Strings(),
 		Equals,
@@ -244,7 +244,7 @@ func (s *S) TestSets(c *C) {
 // Test asynchronous commands.
 func (s *S) TestAsync(c *C) {
 	fut := rd.AsyncCommand("PING")
-    rs := fut.ResultSet()
+	rs := fut.ResultSet()
 	c.Check(rs.String(), Equals, "PONG")
 }
 
@@ -292,9 +292,8 @@ func (s *S) TestMulti(c *C) {
 	c.Check(rd.Command("smembers", "multi:set").Len(), Equals, 3)
 }
 
-
 // Test transactions.
-func (s *S) TestTransactions(c *C) { 
+func (s *S) TestTransactions(c *C) {
 	rsA := rd.MultiCommand(func(mc *MultiCommand) {
 		mc.Command("set", "tx:a:string", "Hello, World!")
 		mc.Command("get", "tx:a:string")
@@ -373,13 +372,13 @@ func (s *Long) TestPop(c *C) {
 	c.Check(kv.Value.String(), Equals, "foo")
 
 	rsAB := rdA.Command("blpop", "pop:first", 1)
-	c.Check(rsAB.Error(), NotNil)
+	c.Check(rsAB.OK(), Equals, true)
 
 	// Set B: database with timeout.
 	rdB := NewRedis(Configuration{})
 
 	rsBA := rdB.Command("blpop", "pop:first", 1)
-	c.Check(rsBA.Error(), NotNil)
+	c.Check(rsBA.OK(), Equals, true)
 }
 
 // Test illegal databases.
@@ -387,28 +386,142 @@ func (s *Long) TestIllegalDatabases(c *C) {
 	c.Log("Test selecting an illegal database...")
 	rdA := NewRedis(Configuration{Database: 4711})
 	rsA := rdA.Command("ping")
-	c.Check(rsA.Error(), NotNil)
+	c.Check(rsA.OK(), Equals, true)
 
 	c.Log("Test connecting to an illegal address...")
 	rdB := NewRedis(Configuration{Address: "192.168.100.100:12345"})
 	rsB := rdB.Command("ping")
-	c.Check(rsB.Error(), NotNil)
+	c.Check(rsB.OK(), Equals, true)
 }
 
 // Test database killing with a long run.
 func (s *Long) TestDatabaseKill(c *C) {
-    rdA := NewRedis(Configuration{PoolSize: 5})
-	
-    for i := 1; i < 120; i++ {
-        if !rdA.Command("set", "long:run", i).OK() {
-            c.Errorf("Long run failed!")
-            return
-        }
+	rdA := NewRedis(Configuration{PoolSize: 5})
+
+	for i := 1; i < 120; i++ {
+		if !rdA.Command("set", "long:run", i).OK() {
+			c.Errorf("Long run failed!")
+			return
+		}
 		time.Sleep(time.Second)
-    }
+	}
 }
 
 //** Convenience method tests
+
+//* Keys
+
+func (s *S) TestDel(c *C) {
+	rd.Command("set", "k1", "v1")
+	rd.Command("set", "k2", "v2")
+	c.Check(rd.Del("k1", "k2", "k3").Int(), Equals, 2)
+}
+
+func (s *S) TestExists(c *C) {
+	rd.Command("set", "foo", "bar")
+	c.Check(rd.Exists("foo").Bool(), Equals, true)
+	c.Check(rd.Exists("bar").Bool(), Equals, false)
+}
+
+func (s *Long) TestExpire(c *C) {
+	c.Check(rd.Expire("non-existent-key", 10).Bool(), Equals, false)
+
+	rd.Command("set", "foo", "bar")
+	c.Check(rd.Expire("foo", 5).Bool(), Equals, true)
+	c.Check(rd.Command("ttl", "foo").Int(), Not(Equals), -1)
+	time.Sleep(10*time.Second)
+	c.Check(rd.Command("exists", "foo").Bool(), Equals, false)
+}
+
+func (s *Long) TestExpireat(c *C) {
+	rd.Command("set", "foo", "bar")
+	rd.Expireat("foo", time.Now().Unix()+5)
+	c.Check(rd.Command("ttl", "foo").Int(), Not(Equals), -1)
+	time.Sleep(10*time.Second)
+	c.Check(rd.Command("exists", "foo").Bool(), Equals, false)
+}
+
+func (s *S) TestKeys(c *C) {
+	expected := []string{"one", "two", "four"}
+
+	rd.Command("set", "one", "1")
+	rd.Command("set", "two", "2")
+	rd.Command("set", "three", "3")
+	rd.Command("set", "four", "4")
+	rs := rd.Keys("*o*").Strings()
+	c.Check(rd.OK(), Equals, true)
+
+	for _, v1 := range rs.Strings() {
+		missing := true
+		for _, v2 := range expected {
+			if v1 == v2 {
+				missing = false
+			}
+		}
+
+		if missing {
+			c.Errorf("%s is missing from the expected keys!", v1)
+		}
+	}
+}
+
+func (s *S) TestMove(c *C) {
+	rd.Command("set", "foo", "bar")
+	rd.Move("foo", 9)
+	c.Check(rd.Command("exists", "foo").Bool(), Equals, false)
+	rd.Command("select", 9)
+	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
+}
+
+func (s *S) TestObject(c *C) {
+	rd.Command("lpush", "foo", "hello world")
+	c.Check(rd.Object("refcount", "foo").Int(), Equals, 1)
+}
+
+func (s *S) TestPersist(c *C) {
+	rd.Command("set", "foo", "bar")
+	rd.Command("expire", "foo", 100)
+	c.Check(rd.Persist("foo").Bool(), Equals, true)
+	c.Check(rd.Command("ttl", "foo").Int(), Equals, -1)
+}
+
+func (s *S) TestRandomkey(c *C) {
+	rd.Command("set", "foo", "bar")
+	c.Check(rd.Randomkey().String(), Equals, "foo")
+}
+
+func (s *S) TestRename(c *C) {
+	rd.Command("set", "foo", "bar")
+	c.Check(rd.Rename("foo", "zot").OK(), Equals, true)
+	c.Check(rd.Command("get", "zot").String(), Equals, "bar")
+}
+
+func (s *S) TestRenamenx(c *C) {
+	rd.Command("set", "k1", "v1")
+	rd.Command("set", "k2", "v2")
+	c.Check(rd.Renamenx("k1", "k2").Bool(), Equals, false)
+	c.Check(rd.Command("get", "k2").String(), Equals, "v2")
+}
+
+func (s *S) TestSort(c *C) {
+	rd.Command("lpush", "foo", 4)
+	rd.Command("lpush", "foo", 2)
+	rd.Command("lpush", "foo", 6)
+	rd.Command("lpush", "foo", 0)
+	rd.Command("lpush", "foo", 9)
+	c.Check(rd.Sort("foo").Ints(), Equals, []int{0,2,4,6,9})
+}
+
+func (s *S) TestTTL(c *C) {
+	rd.Command("set", "foo", "bar")
+	rd.Command("expire", "foo", 100)
+	c.Check(rd.TTL("foo").Int(), Not(Equals), -1)
+}
+
+func (s *S) TestType(c *C) {
+	rd.Command("set", "foo", "bar")
+	c.Check(rd.Type("foo").String(), Equals, "string")
+}
 
 //* Strings
 
