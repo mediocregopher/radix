@@ -295,7 +295,7 @@ func (rs *ResultSet) Ints() []int {
 
 	ints := make([]int, len(rs.values))
 	for i, v := range rs.values {
-		ints[i] = int(v)
+		ints[i] = v.Int()
 	}
 
 	return ints
