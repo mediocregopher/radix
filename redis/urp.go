@@ -57,6 +57,7 @@ type unifiedRequestProtocol struct {
 	dataChan          chan *envData
 	publishedDataChan chan *envPublishedData
 	stopChan          chan bool
+	database          int
 }
 
 // Create a new protocol.
@@ -84,6 +85,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 		dataChan:          make(chan *envData, 20),
 		publishedDataChan: make(chan *envPublishedData, 5),
 		stopChan:          make(chan bool),
+	    database:          c.Database,
 	}
 
 	// Start goroutines.

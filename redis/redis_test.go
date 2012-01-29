@@ -13,7 +13,7 @@ func Test(t *testing.T) {
 }
 
 //* Helpers
-var rd *Redis
+var rd *Client
 
 // hashableTestType is a simple type implementing the
 // Hashable interface.
@@ -45,7 +45,7 @@ func (htt *hashableTestType) SetHash(h Hash) {
 }
 
 func setUpTest(c *C) {
-	rd = NewRedis(Configuration{
+	rd = NewClient(Configuration{
 		Database: 8,
 		Address:  "127.0.0.1:6379"})
 
@@ -107,6 +107,16 @@ func (s *Long) SetUpTest(c *C) {
 
 func (s *Long) TearDownTest(c *C) {
 	tearDownTest(c)
+}
+
+// Test Select.
+func (s *S) TestSelect(c *C) {
+	rd.Select(9)
+	c.Check(rd.configuration.Database, Equals, 9)
+	rd.Command("set", "foo", "bar")
+
+	rdA := NewClient(Configuration{Database: 9})
+	c.Check(rdA.Command("get", "foo").String(), Equals, "bar")
 }
 
 // Test connection commands.
@@ -357,13 +367,13 @@ func (s *S) TestSubscribe(c *C) {
 
 // Test pop.
 func (s *Long) TestPop(c *C) {
-	fooPush := func(rd *Redis) {
+	fooPush := func(rd *Client) {
 		time.Sleep(time.Second)
 		rd.Command("lpush", "pop:first", "foo")
 	}
 
 	// Set A: no database timeout.
-	rdA := NewRedis(Configuration{})
+	rdA := NewClient(Configuration{})
 
 	go fooPush(rdA)
 
@@ -375,7 +385,7 @@ func (s *Long) TestPop(c *C) {
 	c.Check(rsAB.OK(), Equals, true)
 
 	// Set B: database with timeout.
-	rdB := NewRedis(Configuration{})
+	rdB := NewClient(Configuration{})
 
 	rsBA := rdB.Command("blpop", "pop:first", 1)
 	c.Check(rsBA.OK(), Equals, true)
@@ -384,19 +394,19 @@ func (s *Long) TestPop(c *C) {
 // Test illegal databases.
 func (s *Long) TestIllegalDatabases(c *C) {
 	c.Log("Test selecting an illegal database...")
-	rdA := NewRedis(Configuration{Database: 4711})
+	rdA := NewClient(Configuration{Database: 4711})
 	rsA := rdA.Command("ping")
 	c.Check(rsA.OK(), Equals, true)
 
 	c.Log("Test connecting to an illegal address...")
-	rdB := NewRedis(Configuration{Address: "192.168.100.100:12345"})
+	rdB := NewClient(Configuration{Address: "192.168.100.100:12345"})
 	rsB := rdB.Command("ping")
 	c.Check(rsB.OK(), Equals, true)
 }
 
 // Test database killing with a long run.
 func (s *Long) TestDatabaseKill(c *C) {
-	rdA := NewRedis(Configuration{PoolSize: 5})
+	rdA := NewClient(Configuration{PoolSize: 5})
 
 	for i := 1; i < 120; i++ {
 		if !rdA.Command("set", "long:run", i).OK() {
