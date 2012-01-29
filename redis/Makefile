@@ -5,7 +5,8 @@ GOFMT=gofmt -w -tabs -tabwidth=4
 
 GOFILES=\
 	doc.go\
-	redis.go\
+	client.go\
+	multi_command.go\
 	urp.go\
 	subscription.go\
 	result_set.go\

@@ -34,7 +34,7 @@ func newSubscriptionValue(data [][]byte) *SubscriptionValue {
 
 //* Subscription
 
-// Subscription is a structure for holding multiple Redis subscriptions for multiple channels.
+// Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
 	urp                   *unifiedRequestProtocol
 	error                 error
