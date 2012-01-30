@@ -475,15 +475,13 @@ func (s *S) TestKeys(c *C) {
 	}
 }
 
-/*
 func (s *S) TestMove(c *C) {
 	rd.Command("set", "foo", "bar")
 	rd.Move("foo", 9)
 	c.Check(rd.Command("exists", "foo").Bool(), Equals, false)
-	rd.Command("select", 9)
+	rd.Select(9)
 	c.Check(rd.Command("get", "foo").String(), Equals, "bar")
 }
-*/
 
 func (s *S) TestObject(c *C) {
 	// Not sure what to actually test here...
