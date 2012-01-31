@@ -439,7 +439,7 @@ func (s *Long) TestExpire(c *C) {
 	rd.Command("set", "foo", "bar")
 	c.Check(rd.Expire("foo", 5).Bool(), Equals, true)
 	c.Check(rd.Command("ttl", "foo").Int(), Not(Equals), -1)
-	time.Sleep(10*time.Second)
+	time.Sleep(10 * time.Second)
 	c.Check(rd.Command("exists", "foo").Bool(), Equals, false)
 }
 
@@ -447,7 +447,7 @@ func (s *Long) TestExpireat(c *C) {
 	rd.Command("set", "foo", "bar")
 	rd.Expireat("foo", time.Now().Unix()+5)
 	c.Check(rd.Command("ttl", "foo").Int(), Not(Equals), -1)
-	time.Sleep(10*time.Second)
+	time.Sleep(10 * time.Second)
 	c.Check(rd.Command("exists", "foo").Bool(), Equals, false)
 }
 
@@ -486,7 +486,7 @@ func (s *S) TestMove(c *C) {
 func (s *S) TestObject(c *C) {
 	// Not sure what to actually test here...
 	rd.Command("set", "foo", "bar")
-	c.Check(rd.Object("idletime", "foo").Int(), FitsTypeOf, 0) 
+	c.Check(rd.Object("idletime", "foo").Int(), FitsTypeOf, 0)
 }
 
 func (s *S) TestPersist(c *C) {
@@ -520,7 +520,7 @@ func (s *S) TestSort(c *C) {
 	rd.Command("lpush", "foo", 6)
 	rd.Command("lpush", "foo", 0)
 	rd.Command("lpush", "foo", 9)
-	c.Check(rd.Sort("foo").Ints(), Equals, []int{0,2,4,6,9})
+	c.Check(rd.Sort("foo").Ints(), Equals, []int{0, 2, 4, 6, 9})
 }
 
 func (s *S) TestTTL(c *C) {

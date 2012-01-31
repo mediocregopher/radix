@@ -85,7 +85,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 		dataChan:          make(chan *envData, 20),
 		publishedDataChan: make(chan *envPublishedData, 5),
 		stopChan:          make(chan bool),
-	    database:          c.Database,
+		database:          c.Database,
 	}
 
 	// Start goroutines.

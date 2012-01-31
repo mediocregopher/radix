@@ -12,8 +12,9 @@ type MultiCommand struct {
 // Create a new multi command helper.
 func newMultiCommand(rs *ResultSet, urp *unifiedRequestProtocol) *MultiCommand {
 	return &MultiCommand{
-		urp: urp,
-		rs:  rs,
+		urp:       urp,
+		rs:        rs,
+		discarded: false,
 	}
 }
 

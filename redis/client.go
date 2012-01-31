@@ -38,7 +38,7 @@ func NewClient(conf Configuration) *Client {
 // Pull an URP from the pool, with lazy init.
 func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
 	urp = <-c.pool
-	
+
 	// Lazy init of an URP.
 	if urp == nil {
 		// Create a new URP.
@@ -51,7 +51,7 @@ func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
 		// Database changed, issue SELECT command
 		rs := newResultSet("select")
 		urp.command(rs, false, "select", c.configuration.Database)
-		
+
 		if !rs.OK() {
 			err = rs.Error()
 			return
