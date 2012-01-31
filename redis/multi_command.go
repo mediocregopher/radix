@@ -33,7 +33,7 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) {
 
 // Execute a command inside the transaction. It will be queued.
 func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
-	rs := newResultSet(cmd)
+	rs := newResultSet()
 	mc.rs.resultSets = append(mc.rs.resultSets, rs)
 	mc.urp.command(rs, false, cmd, args...)
 }

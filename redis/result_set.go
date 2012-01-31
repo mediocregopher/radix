@@ -2,7 +2,6 @@ package redis
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -217,15 +216,14 @@ func (h Hash) StringMap(k string) map[string]string {
 
 // ResultSet is the returned struct of commands.
 type ResultSet struct {
-	cmd        string
 	values     []Value
 	resultSets []*ResultSet
 	error      error
 }
 
 // newResultSet creates a result set.
-func newResultSet(cmd string) *ResultSet {
-	return &ResultSet{cmd: cmd}
+func newResultSet() *ResultSet {
+	return &ResultSet{}
 }
 
 // OK returns true if the result set has nil error, otherwise false.
@@ -241,11 +239,6 @@ func (rs *ResultSet) OK() bool {
 // multiple result sets.
 func (rs *ResultSet) IsMulti() bool {
 	return rs.resultSets != nil
-}
-
-// Command returns the executed command.
-func (rs *ResultSet) Command() string {
-	return rs.cmd
 }
 
 // Len returns the number of returned values.
@@ -413,7 +406,7 @@ func (rs *ResultSet) ResultSetLen() int {
 // ResultSetAt returns a result set by its index.
 func (rs *ResultSet) ResultSetAt(i int) *ResultSet {
 	if i < 0 || i >= len(rs.resultSets) {
-		rs := newResultSet("none")
+		rs := newResultSet()
 
 		rs.error = errors.New("illegal result set index")
 
@@ -448,19 +441,6 @@ func (rs *ResultSet) MultiApplySlice(f func(*ResultSet) interface{}) []interface
 // the result set failed or nil.
 func (rs *ResultSet) Error() error {
 	return rs.error
-}
-
-// String returns the result set as a string.
-func (rs *ResultSet) MultiString() string {
-	r := fmt.Sprintf("C(%v) V(%v) E(%v)", rs.cmd, rs.values, rs.error)
-
-	if rs.IsMulti() {
-		rs.MultiApply(func(each *ResultSet) {
-			r += "\n- " + each.String()
-		})
-	}
-
-	return r
 }
 
 //* Future

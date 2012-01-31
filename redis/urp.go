@@ -93,7 +93,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 	go urp.backend()
 
 	// Select database.
-	rs := newResultSet("select")
+	rs := newResultSet()
 
 	urp.command(rs, false, "select", c.Database)
 
@@ -105,7 +105,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 
 	// Authenticate if needed.
 	if c.Auth != "" {
-		rs = newResultSet("auth")
+		rs = newResultSet()
 
 		urp.command(rs, false, "auth", c.Auth)
 
@@ -284,11 +284,11 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 
 	// Receive the replies.
 	channelLen := len(es.channels)
-	rs := newResultSet(command)
+	rs := newResultSet()
 	rs.resultSets = make([]*ResultSet, channelLen)
 
 	for i := 0; i < channelLen; i++ {
-		rs.resultSets[i] = newResultSet(command)
+		rs.resultSets[i] = newResultSet()
 		urp.receiveReply(rs.resultSets[i], false)
 	}
 

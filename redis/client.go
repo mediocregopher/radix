@@ -49,7 +49,7 @@ func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
 		}
 	} else if urp.database != c.configuration.Database {
 		// Database changed, issue SELECT command
-		rs := newResultSet("select")
+		rs := newResultSet()
 		urp.command(rs, false, "select", c.configuration.Database)
 
 		if !rs.OK() {
@@ -73,7 +73,7 @@ func (c *Client) pushURP(urp *unifiedRequestProtocol) {
 
 // Command performs a command.
 func (c *Client) Command(cmd string, args ...interface{}) *ResultSet {
-	rs := newResultSet(cmd)
+	rs := newResultSet()
 
 	// URP handling.
 	urp, err := c.pullURP()
@@ -107,7 +107,7 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) *Future {
 // Perform a multi command.
 func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
 	// Create result set.
-	rs := newResultSet("multi")
+	rs := newResultSet()
 
 	rs.resultSets = []*ResultSet{}
 
