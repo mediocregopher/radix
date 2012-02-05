@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+type command struct {
+	cmd  string
+	args []interface{}
+}
+
 //* Interfaces
 
 // Hashable represents types for Redis hashes.

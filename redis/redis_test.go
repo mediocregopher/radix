@@ -49,30 +49,16 @@ func setUpTest(c *C) {
 		Database: 8,
 		Address:  "127.0.0.1:6379"})
 
-	// We use databases 8 and 9 for testing.
-	rs := rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("flushdb") // flush db 8
-		mc.Command("select", "9")
-		mc.Command("flushdb")
-		mc.Command("select", "8")
-	})
-
+	rs := rd.Flushall()
 	if !rs.OK() {
-		c.Fatal("Setting up test databases failed.")
+		c.Fatalf("setUp FLUSHALL failed: %s", rs.Error())
 	}
 }
 
 func tearDownTest(c *C) {
-	// Clean up our changes.
-	rs := rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("select", "8")
-		mc.Command("flushdb")
-		mc.Command("select", "9")
-		mc.Command("flushdb")
-	})
-
+	rs := rd.Flushall()
 	if !rs.OK() {
-		c.Fatal("Cleaning up test databases failed.")
+		c.Fatalf("tearDown FLUSHALL failed: %s", rs.Error())
 	}
 }
 
@@ -302,30 +288,26 @@ func (s *S) TestMulti(c *C) {
 	c.Check(rd.Command("smembers", "multi:set").Len(), Equals, 3)
 }
 
-// Test transactions.
-func (s *S) TestTransactions(c *C) {
-	rsA := rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "tx:a:string", "Hello, World!")
-		mc.Command("get", "tx:a:string")
+// Test multi commands.
+func (s *S) TestMultiCommand(c *C) {
+	rs := rd.MultiCommand(func(mc MultiCommand) {
+		mc.Command("set", "foo", "bar")
+		mc.Command("get", "foo")
 	})
-	c.Check(rsA.ResultSetAt(1).String(), Equals, "Hello, World!")
+	c.Check(rs.ResultSetAt(0).OK(), Equals, true)
+	c.Check(rs.ResultSetAt(1).String(), Equals, "bar")
 
-	rsB := rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "tx:b:string", "Hello, World!")
-		mc.Command("get", "tx:b:string")
-		mc.Discard()
-		mc.Command("set", "tx:c:string", "Hello, Redis!")
-		mc.Command("get", "tx:c:string")
+	rs = rd.MultiCommand(func(mc MultiCommand) {
+		mc.Command("set", "foo2", "baz")
+		mc.Command("get", "foo2")
+		rsmc := mc.Flush()
+		c.Check(rsmc.ResultSetAt(0).OK(), Equals, true)
+		c.Check(rsmc.ResultSetAt(1).String(), Equals, "baz")
+		mc.Command("set", "foo2", "qux")
+		mc.Command("get", "foo2")
 	})
-	c.Check(rsB.ResultSetAt(1).String(), Equals, "Hello, Redis!")
-
-	// Failing transaction
-	rsC := rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("get", "tx:c:string")
-		mc.Command("set", "tx:c:string", "Hello, World!")
-		mc.Command("get", "tx:c:string")
-	})
-	c.Check(rsC.ResultSetAt(2).String(), Not(Equals), "Hello, Redis!")
+	c.Check(rs.ResultSetAt(0).OK(), Equals, true)
+	c.Check(rs.ResultSetAt(1).String(), Equals, "qux")
 }
 
 // Test subscribe.

@@ -1,48 +1,52 @@
 package redis
 
+//* Interfaces
+
+type MultiCommand interface {
+	process(f func(MultiCommand))
+	Command(cmd string, args ...interface{})
+	Flush() *ResultSet
+}
+
 //* Multi commands
 
-// MultiCommand holds data for a Redis multi command.
-type MultiCommand struct {
-	urp       *unifiedRequestProtocol
-	rs        *ResultSet
-	discarded bool
+// multiCommand holds data for a Redis multi command.
+type multiCommand struct {
+	urp         *unifiedRequestProtocol
+	rs          *ResultSet
+	cmds        []command
+	transaction bool
 }
 
 // Create a new multi command helper.
-func newMultiCommand(rs *ResultSet, urp *unifiedRequestProtocol) *MultiCommand {
-	return &MultiCommand{
-		urp:       urp,
-		rs:        rs,
-		discarded: false,
+func newMultiCommand(rs *ResultSet, urp *unifiedRequestProtocol) MultiCommand {
+	return &multiCommand{
+		urp:         urp,
+		rs:          rs,
+		transaction: false,
 	}
 }
 
-// Process the transaction block.
-func (mc *MultiCommand) process(f func(*MultiCommand)) {
-	// Send the multi command.
-	mc.urp.command(mc.rs, false, "multi")
-
-	if mc.rs.OK() {
-		// Execute multi command function.
-		f(mc)
-
-		mc.urp.command(mc.rs, true, "exec")
-	}
+// Call the given multi command function and finally flush the commands.
+func (mc *multiCommand) process(f func(MultiCommand)) {
+	f(mc)
+	mc.Flush()
 }
 
-// Execute a command inside the transaction. It will be queued.
-func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
+// Queue a command for later execution.
+func (mc *multiCommand) Command(cmd string, args ...interface{}) {
 	rs := newResultSet()
 	mc.rs.resultSets = append(mc.rs.resultSets, rs)
-	mc.urp.command(rs, false, cmd, args...)
+	mc.cmds = append(mc.cmds, command{cmd, args})
 }
 
-// Discard the queued commands.
-func (mc *MultiCommand) Discard() {
-	// Send the discard command and empty result sets.
-	mc.urp.command(mc.rs, false, "discard")
-	mc.rs.resultSets = []*ResultSet{}
-	// Now send the new multi command.
-	mc.urp.command(mc.rs, false, "multi")
+// Send queued commands to the Redis server for execution.
+func (mc *multiCommand) Flush() *ResultSet {
+	mc.urp.multiCommand(mc.rs, mc.cmds)
+	mc.cmds = nil
+	return mc.rs
 }
+
+//** Convenience methods
+
+//* Transactions

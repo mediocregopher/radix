@@ -50,7 +50,7 @@ func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
 	} else if urp.database != c.configuration.Database {
 		// Database changed, issue SELECT command
 		rs := newResultSet()
-		urp.command(rs, false, "select", c.configuration.Database)
+		urp.command(rs, "select", c.configuration.Database)
 
 		if !rs.OK() {
 			err = rs.Error()
@@ -88,7 +88,7 @@ func (c *Client) Command(cmd string, args ...interface{}) *ResultSet {
 	}
 
 	// Now do it.
-	urp.command(rs, false, cmd, args...)
+	urp.command(rs, cmd, args...)
 
 	return rs
 }
@@ -105,7 +105,7 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) *Future {
 }
 
 // Perform a multi command.
-func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
+func (c *Client) MultiCommand(f func(MultiCommand)) *ResultSet {
 	// Create result set.
 	rs := newResultSet()
 
@@ -123,13 +123,12 @@ func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
 		return rs
 	}
 
-	mc := newMultiCommand(rs, urp)
-	mc.process(f)
+	newMultiCommand(rs, urp).process(f)
 	return rs
 }
 
 // Perform an asynchronous multi command.
-func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) *Future {
+func (c *Client) AsyncMultiCommand(f func(MultiCommand)) *Future {
 	fut := newFuture()
 
 	go func() {
@@ -171,7 +170,7 @@ func (c *Client) Publish(channel string, message interface{}) int {
 
 //** Convenience methods
 
-//* Keys
+//* Key commands
 
 // Call Redis DEL command.
 func (c *Client) Del(keys ...string) *ResultSet {
@@ -257,7 +256,7 @@ func (c *Client) Type(key string) *ResultSet {
 
 // TODO: EVAL when Redis 2.6.x is released.
 
-//* Strings
+//* String commands
 
 // Call Redis APPEND command.
 func (c *Client) Append(key string, value interface{}) *ResultSet {
@@ -353,6 +352,15 @@ func (c *Client) Setrange(key string, offset int, value interface{}) *ResultSet 
 // Call Redis STRLEN command.
 func (c *Client) Strlen(key string) *ResultSet {
 	return c.Command("strlen", key)
+}
+
+//* Connection commands
+
+//* Server commands
+
+// Call Redis FLUSHALL command.
+func (c *Client) Flushall() *ResultSet {
+	return c.Command("flushall")
 }
 
 //* Helpers

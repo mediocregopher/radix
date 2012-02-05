@@ -11,16 +11,14 @@ import (
 
 //* Misc
 
-// Envelope type for commands.
+// Envelope type for a command or a multi command.
 type envCommand struct {
 	rs       *ResultSet
-	multi    bool
-	command  string
-	args     []interface{}
+	cmds     []command
 	doneChan chan bool
 }
 
-// Envelope type for subscriptions.
+// Envelope type for a subscription.
 type envSubscription struct {
 	in        bool
 	channels  []string
@@ -32,11 +30,6 @@ type envData struct {
 	length int
 	data   []byte
 	error  error
-}
-
-// Helper for debugging.
-func (ed *envData) String() string {
-	return fmt.Sprintf("ED(%v / %s / %v)", ed.length, ed.data, ed.error)
 }
 
 // Envelope type for published data.
@@ -95,7 +88,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 	// Select database.
 	rs := newResultSet()
 
-	urp.command(rs, false, "select", c.Database)
+	urp.command(rs, "select", c.Database)
 
 	if !rs.OK() {
 		// Connection or database is not ok, so reset.
@@ -107,7 +100,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 	if c.Auth != "" {
 		rs = newResultSet()
 
-		urp.command(rs, false, "auth", c.Auth)
+		urp.command(rs, "auth", c.Auth)
 
 		if !rs.OK() {
 			// Authentication is not ok, so reset.
@@ -120,9 +113,20 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 }
 
 // Execute a command.
-func (urp *unifiedRequestProtocol) command(rs *ResultSet, multi bool, command string, args ...interface{}) {
+func (urp *unifiedRequestProtocol) command(rs *ResultSet, cmd string, args ...interface{}) {
 	doneChan := make(chan bool)
-	urp.commandChan <- &envCommand{rs, multi, command, args, doneChan}
+	urp.commandChan <- &envCommand{
+		rs,
+		[]command{command{cmd, args}},
+		doneChan,
+	}
+	<-doneChan
+}
+
+// Execute a multi command.
+func (urp *unifiedRequestProtocol) multiCommand(rs *ResultSet, cmds []command) {
+	doneChan := make(chan bool)
+	urp.commandChan <- &envCommand{rs, cmds, doneChan}
 	<-doneChan
 }
 
@@ -154,7 +158,6 @@ func (urp *unifiedRequestProtocol) receiver() {
 
 		if err != nil {
 			urp.dataChan <- &envData{0, nil, err}
-
 			return
 		}
 
@@ -163,7 +166,6 @@ func (urp *unifiedRequestProtocol) receiver() {
 		case '+':
 			// Status reply.
 			r := b[1 : len(b)-2]
-
 			ed = &envData{len(r), r, nil}
 		case '-':
 			// Error reply.
@@ -171,7 +173,6 @@ func (urp *unifiedRequestProtocol) receiver() {
 		case ':':
 			// Integer reply.
 			r := b[1 : len(b)-2]
-
 			ed = &envData{len(r), r, nil}
 		case '$':
 			// Bulk reply, or key not found.
@@ -191,13 +192,11 @@ func (urp *unifiedRequestProtocol) receiver() {
 
 					if err != nil {
 						urp.dataChan <- &envData{0, nil, err}
-
 						return
 					}
 
 					r += n
 				}
-
 				ed = &envData{i, br[0:i], nil}
 			}
 		case '*':
@@ -205,7 +204,6 @@ func (urp *unifiedRequestProtocol) receiver() {
 			// of the replies. The caller has to do the
 			// individual calls.
 			i, _ := strconv.Atoi(string(b[1 : len(b)-2]))
-
 			ed = &envData{i, nil, nil}
 		default:
 			// Oops!
@@ -213,7 +211,6 @@ func (urp *unifiedRequestProtocol) receiver() {
 		}
 
 		// Send result.
-
 		urp.dataChan <- ed
 	}
 }
@@ -248,9 +245,16 @@ func (urp *unifiedRequestProtocol) backend() {
 
 // Handle a sent command.
 func (urp *unifiedRequestProtocol) handleCommand(ec *envCommand) {
-	if err := urp.writeRequest(ec.command, ec.args); err == nil {
+	if err := urp.writeRequest(ec.cmds); err == nil {
 		// Receive and return reply.
-		urp.receiveReply(ec.rs, ec.multi)
+			if len(ec.cmds) == 1 {
+			urp.receiveReply(ec.rs)
+		} else {
+			for i := 0; i < len(ec.cmds); i++ {
+				ec.rs.resultSets = append(ec.rs.resultSets, newResultSet())
+				urp.receiveReply(ec.rs.resultSets[i])
+			}
+		}
 	} else {
 		// Return error.
 		ec.rs.error = err
@@ -262,22 +266,22 @@ func (urp *unifiedRequestProtocol) handleCommand(ec *envCommand) {
 // Handle a subscription.
 func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 	// Prepare command.
-	var command string
+	var cmd string
 
 	if es.in {
-		command = "subscribe"
+		cmd = "subscribe"
 	} else {
-		command = "unsubscribe"
+		cmd = "unsubscribe"
 	}
 
 	cis, pattern := urp.prepareChannels(es.channels)
 
 	if pattern {
-		command = "p" + command
+		cmd = "p" + cmd
 	}
 
 	// Send the subscription request.
-	if err := urp.writeRequest(command, cis); err != nil {
+	if err := urp.writeRequest([]command{command{cmd, cis}}); err != nil {
 		es.countChan <- 0
 		return
 	}
@@ -289,7 +293,7 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 
 	for i := 0; i < channelLen; i++ {
 		rs.resultSets[i] = newResultSet()
-		urp.receiveReply(rs.resultSets[i], false)
+		urp.receiveReply(rs.resultSets[i])
 	}
 
 	// Get the number of subscribed channels.
@@ -331,46 +335,46 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 }
 
 // Write a request.
-func (urp *unifiedRequestProtocol) writeRequest(cmd string, args []interface{}) error {
-	// Calculate number of data.
-	dataNum := 1
-
-	for _, arg := range args {
-		switch typedArg := arg.(type) {
-		case Hash:
-			dataNum += len(typedArg) * 2
-		case Hashable:
-			dataNum += len(typedArg.GetHash()) * 2
-		default:
-			dataNum++
+func (urp *unifiedRequestProtocol) writeRequest(cmds []command) error {
+	for _, cmd := range cmds {
+		dataNum := 1
+		for _, arg := range cmd.args {
+			switch typedArg := arg.(type) {
+			case Hash:
+				dataNum += len(typedArg) * 2
+			case Hashable:
+				dataNum += len(typedArg.GetHash()) * 2
+			default:
+				dataNum++
+			}
 		}
-	}
 
-	// Write number of following data.
-	if err := urp.writeDataNumber(dataNum); err != nil {
-		return err
-	}
-
-	// Write command.
-	if err := urp.writeData([]byte(cmd)); err != nil {
-		return err
-	}
-
-	// Write arguments.
-	for _, arg := range args {
-		if err := urp.writeArgument(arg); err != nil {
+		// Write number of following data.
+		if err := urp.writeDataNumber(dataNum); err != nil {
 			return err
 		}
+
+		// Write command.
+		if err := urp.writeData([]byte(cmd.cmd)); err != nil {
+			return err
+		}
+
+		// Write arguments.
+		for _, arg := range cmd.args {
+			if err := urp.writeArgument(arg); err != nil {
+				return err
+			}
+		}
 	}
 
-	return nil
+	return urp.writer.Flush()
 }
 
 // Write the number of arguments.
 func (urp *unifiedRequestProtocol) writeDataNumber(dataLen int) error {
 	b := []byte(fmt.Sprintf("*%d\r\n", dataLen))
-	urp.writer.Write(b)
-	return urp.writer.Flush()
+	_, err := urp.writer.Write(b)
+	return err
 }
 
 // Write data.
@@ -386,10 +390,8 @@ func (urp *unifiedRequestProtocol) writeData(data []byte) error {
 	if _, err := urp.writer.Write(data); err != nil {
 		return err
 	}
-
-	urp.writer.Write([]byte{'\r', '\n'})
-
-	return urp.writer.Flush()
+	_, err := urp.writer.Write([]byte{'\r', '\n'})
+	return err
 }
 
 // Write a request argument.
@@ -443,7 +445,7 @@ func (urp *unifiedRequestProtocol) writeArgument(arg interface{}) error {
 }
 
 // Receive a reply.
-func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet, multi bool) {
+func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet) {
 	// Read initial data.
 	ed := <-urp.dataChan
 
@@ -458,15 +460,15 @@ func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet, multi bool) {
 		rs.values = []Value{Value(ed.data)}
 	case ed.length > 0:
 		// Multiple result sets or results.
-		if multi {
-			for i := 0; i < ed.length; i++ {
-				urp.receiveReply(rs.resultSets[i], false)
-			}
-		} else {
+		//if ed.data == nil {
+		//	for i := 0; i < ed.length; i++ {
+		//		rs.resultSets = append(rs.resultSets, newResultSet())
+		//		urp.receiveReply(rs.resultSets[i])
+		//	}
+		//} else {
 			rs.values = make([]Value, ed.length)
 
 			for i := 0; i < ed.length; i++ {
-
 				ied := <-urp.dataChan
 
 				if ied.error != nil {
@@ -475,7 +477,7 @@ func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet, multi bool) {
 
 				rs.values[i] = Value(ied.data)
 			}
-		}
+		//}
 	case ed.length == -1:
 		// Timeout.
 		rs.error = errors.New("redis: timeout")
