@@ -71,7 +71,7 @@ func (c *Client) pushURP(urp *unifiedRequestProtocol) {
 	c.pool <- urp
 }
 
-// Command performs a command.
+// Command performs a Redis command.
 func (c *Client) Command(cmd string, args ...interface{}) *ResultSet {
 	rs := newResultSet()
 
@@ -93,7 +93,7 @@ func (c *Client) Command(cmd string, args ...interface{}) *ResultSet {
 	return rs
 }
 
-// AsyncCommand perform a command asynchronously.
+// AsyncCommand performs a Redis command asynchronously.
 func (c *Client) AsyncCommand(cmd string, args ...interface{}) *Future {
 	fut := newFuture()
 
@@ -166,201 +166,6 @@ func (c *Client) Subscribe(channels ...string) (*Subscription, int, error) {
 func (c *Client) Publish(channel string, message interface{}) int {
 	rs := c.Command("publish", channel, message)
 	return int(rs.Value().Int64())
-}
-
-//** Convenience methods
-
-//* Key commands
-
-// Call Redis DEL command.
-func (c *Client) Del(keys ...string) *ResultSet {
-	var args []interface{}
-
-	for _, v := range keys {
-		args = append(args, interface{}(v))
-	}
-
-	return c.Command("del", args...)
-}
-
-// Call Redis EXISTS command.
-func (c *Client) Exists(key string) *ResultSet {
-	return c.Command("exists", key)
-}
-
-// Call Redis EXPIRE command.
-func (c *Client) Expire(key string, seconds int) *ResultSet {
-	return c.Command("expire", key, seconds)
-}
-
-// Call Redis EXPIREAT command.
-func (c *Client) Expireat(key string, timestamp int64) *ResultSet {
-	return c.Command("expireat", key, timestamp)
-}
-
-// Call Redis KEYS command.
-func (c *Client) Keys(pattern string) *ResultSet {
-	return c.Command("keys", pattern)
-}
-
-// Call Redis MOVE command.
-func (c *Client) Move(key string, db int) *ResultSet {
-	return c.Command("move", key, db)
-}
-
-// Call Redis OBJECT command.
-func (c *Client) Object(subcommand string, args ...interface{}) *ResultSet {
-	var cargs []interface{}
-	cargs = append(cargs, subcommand)
-	cargs = append(cargs, args...)
-	return c.Command("keys", cargs...)
-}
-
-// Call Redis PERSIST command.
-func (c *Client) Persist(key string) *ResultSet {
-	return c.Command("persist", key)
-}
-
-// Call Redis RANDOMKEY command.
-func (c *Client) Randomkey() *ResultSet {
-	return c.Command("randomkey")
-}
-
-// Call Redis RENAME command.
-func (c *Client) Rename(key string, newkey string) *ResultSet {
-	return c.Command("rename", key, newkey)
-}
-
-// Call Redis RENAMENX command.
-func (c *Client) Renamenx(key string, newkey string) *ResultSet {
-	return c.Command("renamenx", key, newkey)
-}
-
-// Call Redis SORT command.
-func (c *Client) Sort(key string, args ...interface{}) *ResultSet {
-	var cargs []interface{}
-	cargs = append(cargs, key)
-	cargs = append(cargs, args...)
-	return c.Command("sort", cargs...)
-}
-
-// Call Redis TTL command.
-func (c *Client) TTL(key string) *ResultSet {
-	return c.Command("ttl", key)
-}
-
-// Call Redis TYPE command.
-func (c *Client) Type(key string) *ResultSet {
-	return c.Command("type", key)
-}
-
-// TODO: EVAL when Redis 2.6.x is released.
-
-//* String commands
-
-// Call Redis APPEND command.
-func (c *Client) Append(key string, value interface{}) *ResultSet {
-	return c.Command("append", key, value)
-}
-
-// Call Redis DECR command.
-func (c *Client) Decr(key string) *ResultSet {
-	return c.Command("decr", key)
-}
-
-// Call Redis DECRBY command.
-func (c *Client) Decrby(key string, decrement int) *ResultSet {
-	return c.Command("decrby", key, decrement)
-}
-
-// Call Redis GET command.
-func (c *Client) Get(key string) *ResultSet {
-	return c.Command("get", key)
-}
-
-// Call Redis GETBIT command.
-func (c *Client) Getbit(key string, offset int) *ResultSet {
-	return c.Command("getbit", key, offset)
-}
-
-// Call Redis GETRANGE command.
-func (c *Client) Getrange(key string, start int, end int) *ResultSet {
-	return c.Command("getrange", key, start, end)
-}
-
-// Call Redis GETSET command.
-func (c *Client) Getset(key string, value interface{}) *ResultSet {
-	return c.Command("getset", key, value)
-}
-
-// Call Redis INCR command.
-func (c *Client) Incr(key string) *ResultSet {
-	return c.Command("incr", key)
-}
-
-// Call Redis INCRBY command.
-func (c *Client) Incrby(key string, increment int) *ResultSet {
-	return c.Command("incrby", key, increment)
-}
-
-// Call Redis MGET command.
-func (c *Client) Mget(keys ...string) *ResultSet {
-	var args []interface{}
-
-	for _, v := range keys {
-		args = append(args, interface{}(v))
-	}
-
-	return c.Command("mget", args...)
-}
-
-// call Redis MSET command.
-func (c *Client) Mset(args ...interface{}) *ResultSet {
-	return c.Command("mset", args...)
-}
-
-// Call Redis MSETNX command.
-func (c *Client) Msetnx(args ...interface{}) *ResultSet {
-	return c.Command("msetnx", args...)
-}
-
-// Call Redis SET command.
-func (c *Client) Set(key string, value interface{}) *ResultSet {
-	return c.Command("set", key, value)
-}
-
-// Call Redis SETBIT command.
-func (c *Client) Setbit(key string, offset int, value bool) *ResultSet {
-	return c.Command("setbit", key, offset, value)
-}
-
-// Call Redis SETEX command.
-func (c *Client) Setex(key string, seconds int, value interface{}) *ResultSet {
-	return c.Command("setex", key, seconds, value)
-}
-
-// Call Redis SETNX command.
-func (c *Client) Setnx(key string, value interface{}) *ResultSet {
-	return c.Command("setnx", key, value)
-}
-
-// Call Redis SETRANGE command.
-func (c *Client) Setrange(key string, offset int, value interface{}) *ResultSet {
-	return c.Command("setrange", key, offset, value)
-}
-
-// Call Redis STRLEN command.
-func (c *Client) Strlen(key string) *ResultSet {
-	return c.Command("strlen", key)
-}
-
-//* Connection commands
-
-//* Server commands
-
-// Call Redis FLUSHALL command.
-func (c *Client) Flushall() *ResultSet {
-	return c.Command("flushall")
 }
 
 //* Helpers
