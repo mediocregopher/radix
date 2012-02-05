@@ -290,14 +290,14 @@ func (s *S) TestMulti(c *C) {
 
 // Test multi commands.
 func (s *S) TestMultiCommand(c *C) {
-	rs := rd.MultiCommand(func(mc MultiCommand) {
+	rs := rd.MultiCommand(func(mc *MultiCommand) {
 		mc.Command("set", "foo", "bar")
 		mc.Command("get", "foo")
 	})
 	c.Check(rs.ResultSetAt(0).OK(), Equals, true)
 	c.Check(rs.ResultSetAt(1).String(), Equals, "bar")
 
-	rs = rd.MultiCommand(func(mc MultiCommand) {
+	rs = rd.MultiCommand(func(mc *MultiCommand) {
 		mc.Command("set", "foo2", "baz")
 		mc.Command("get", "foo2")
 		rsmc := mc.Flush()

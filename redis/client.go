@@ -105,7 +105,7 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) *Future {
 }
 
 // Perform a multi command.
-func (c *Client) MultiCommand(f func(MultiCommand)) *ResultSet {
+func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
 	// Create result set.
 	rs := newResultSet()
 
@@ -128,7 +128,7 @@ func (c *Client) MultiCommand(f func(MultiCommand)) *ResultSet {
 }
 
 // Perform an asynchronous multi command.
-func (c *Client) AsyncMultiCommand(f func(MultiCommand)) *Future {
+func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) *Future {
 	fut := newFuture()
 
 	go func() {
