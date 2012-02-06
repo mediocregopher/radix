@@ -86,7 +86,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 	go urp.backend()
 
 	// Select database.
-	rs := newResultSet()
+	rs := &ResultSet{}
 
 	urp.command(rs, "select", c.Database)
 
@@ -98,7 +98,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 
 	// Authenticate if needed.
 	if c.Auth != "" {
-		rs = newResultSet()
+		rs = &ResultSet{}
 
 		urp.command(rs, "auth", c.Auth)
 
@@ -251,7 +251,7 @@ func (urp *unifiedRequestProtocol) handleCommand(ec *envCommand) {
 			urp.receiveReply(ec.rs)
 		} else {
 			for i := 0; i < len(ec.cmds); i++ {
-				ec.rs.resultSets = append(ec.rs.resultSets, newResultSet())
+				ec.rs.resultSets = append(ec.rs.resultSets, &ResultSet{})
 				urp.receiveReply(ec.rs.resultSets[i])
 			}
 		}
@@ -288,11 +288,11 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 
 	// Receive the replies.
 	channelLen := len(es.channels)
-	rs := newResultSet()
+	rs := &ResultSet{}
 	rs.resultSets = make([]*ResultSet, channelLen)
 
 	for i := 0; i < channelLen; i++ {
-		rs.resultSets[i] = newResultSet()
+		rs.resultSets[i] = &ResultSet{}
 		urp.receiveReply(rs.resultSets[i])
 	}
 
@@ -459,13 +459,7 @@ func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet) {
 		// Single result.
 		rs.values = []Value{Value(ed.data)}
 	case ed.length > 0:
-		// Multiple result sets or results.
-		//if ed.data == nil {
-		//	for i := 0; i < ed.length; i++ {
-		//		rs.resultSets = append(rs.resultSets, newResultSet())
-		//		urp.receiveReply(rs.resultSets[i])
-		//	}
-		//} else {
+		// Multiple results.
 			rs.values = make([]Value, ed.length)
 
 			for i := 0; i < ed.length; i++ {

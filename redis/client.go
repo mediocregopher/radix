@@ -49,7 +49,7 @@ func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
 		}
 	} else if urp.database != c.configuration.Database {
 		// Database changed, issue SELECT command
-		rs := newResultSet()
+		rs := &ResultSet{}
 		urp.command(rs, "select", c.configuration.Database)
 
 		if !rs.OK() {
@@ -73,7 +73,7 @@ func (c *Client) pushURP(urp *unifiedRequestProtocol) {
 
 // Command performs a Redis command.
 func (c *Client) Command(cmd string, args ...interface{}) *ResultSet {
-	rs := newResultSet()
+	rs := &ResultSet{}
 
 	// URP handling.
 	urp, err := c.pullURP()
@@ -107,9 +107,7 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) *Future {
 // Perform a multi command.
 func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
 	// Create result set.
-	rs := newResultSet()
-
-	rs.resultSets = []*ResultSet{}
+	rs := &ResultSet{}
 
 	// URP handling.
 	urp, err := c.pullURP()
@@ -126,7 +124,31 @@ func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
 	newMultiCommand(rs, urp).process(f)
 	return rs
 }
+/*
+// Perform a simple transaction.
+// Simple transaction is a multi command that is wrapped in a MULTI-EXEC block.
+// For complex transactions with WATCH, UNWATCH or DISCARD commands use MultiCommand.
+func (c *Client) Transaction(f func(*MultiCommand)) *TransactionSet {
+	// Create result set.
+		ts := &TransactionSet{}
 
+
+	// URP handling.
+	urp, err := c.pullURP()
+
+	defer func() {
+		c.pushURP(urp)
+	}()
+
+	if err != nil {
+		ts.error = err
+		return ts
+	}
+
+	newTransaction(ts, urp).process(f)
+	return ts
+}
+*/
 // Perform an asynchronous multi command.
 func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) *Future {
 	fut := newFuture()

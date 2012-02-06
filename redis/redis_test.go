@@ -169,7 +169,7 @@ func (s *S) TestHash(c *C) {
 	c.Check(rd.Command("hget", "hash:bool", "false:3").Bool(), Equals, false)
 
 	ha := rd.Command("hgetall", "hash:bool").Hash()
-	c.Assert(ha.Len(), Equals, 6)
+	c.Assert(len(ha), Equals, 6)
 	c.Check(ha.Bool("true:1"), Equals, true)
 	c.Check(ha.Bool("true:2"), Equals, true)
 	c.Check(ha.Bool("true:3"), Equals, true)

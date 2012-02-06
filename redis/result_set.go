@@ -121,11 +121,6 @@ func NewHash() Hash {
 	return make(Hash)
 }
 
-// Len returns the number of elements in the hash.
-func (h Hash) Len() int {
-	return len(h)
-}
-
 // Set sets a key to the given value.
 func (h Hash) Set(k string, v interface{}) {
 	h[k] = Value(valueToBytes(v))
@@ -219,11 +214,6 @@ type ResultSet struct {
 	values     []Value
 	resultSets []*ResultSet
 	error      error
-}
-
-// newResultSet creates a result set.
-func newResultSet() *ResultSet {
-	return &ResultSet{}
 }
 
 // OK returns true if the result set has nil error, otherwise false.
@@ -406,10 +396,8 @@ func (rs *ResultSet) ResultSetLen() int {
 // ResultSetAt returns a result set by its index.
 func (rs *ResultSet) ResultSetAt(i int) *ResultSet {
 	if i < 0 || i >= len(rs.resultSets) {
-		rs := newResultSet()
-
+		rs := &ResultSet{}
 		rs.error = errors.New("illegal result set index")
-
 		return rs
 	}
 
