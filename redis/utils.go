@@ -54,22 +54,3 @@ func valueToBytes(v interface{}) []byte {
 
 	return bs
 }
-
-// argsToInterfaces converts different argument values into a slice of interfaces.
-func argsToInterfaces(args ...interface{}) []interface{} {
-	is := make([]interface{}, 0)
-
-	for _, a := range args {
-		// Switch based on the argument types.
-		switch ta := a.(type) {
-		case []string:
-			for _, s := range ta {
-				is = append(is, s)
-			}
-		default:
-			is = append(is, ta)
-		}
-	}
-
-	return is
-}
