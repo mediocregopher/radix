@@ -12,37 +12,7 @@ func Test(t *testing.T) {
 	TestingT(t)
 }
 
-//* Helpers
 var rd *Client
-
-// hashableTestType is a simple type implementing the
-// Hashable interface.
-type hashableTestType struct {
-	a string
-	b int64
-	c bool
-	d float64
-}
-
-// GetHash returns the fields as hash.
-func (htt *hashableTestType) GetHash() Hash {
-	h := NewHash()
-
-	h.Set("hashable:field:a", htt.a)
-	h.Set("hashable:field:b", htt.b)
-	h.Set("hashable:field:c", htt.c)
-	h.Set("hashable:field:d", htt.d)
-
-	return h
-}
-
-// SetHash sets the fields from a hash.
-func (htt *hashableTestType) SetHash(h Hash) {
-	htt.a = h.String("hashable:field:a")
-	htt.b = h.Int64("hashable:field:b")
-	htt.c = h.Bool("hashable:field:c")
-	htt.d = h.Float64("hashable:field:d")
-}
 
 func setUpTest(c *C) {
 	rd = NewClient(Configuration{
@@ -146,10 +116,6 @@ func (s *S) TestMultiple(c *C) {
 		rd.Command("mget", "multiple:a", "multiple:b", "multiple:c").Strings(),
 		Equals,
 		[]string{"a", "b", "c"})
-
-	rd.Command("mset", hashableTestType{"multi", 4711, true, 3.141})
-	if v := rd.Command("mget", "hashable:field:a", "hashable:field:c").Values(); len(v) != 2 {
-	}
 }
 
 // Test hash accessing.
@@ -176,16 +142,6 @@ func (s *S) TestHash(c *C) {
 	c.Check(ha.Bool("false:1"), Equals, false)
 	c.Check(ha.Bool("false:2"), Equals, false)
 	c.Check(ha.Bool("false:3"), Equals, false)
-
-	hb := hashableTestType{`foo "bar" yadda`, 4711, true, 8.15}
-	rd.Command("hmset", "hashable", hb.GetHash())
-	rd.Command("hincrby", "hashable", "hashable:field:b", 289)
-	hb = hashableTestType{}
-	hb.SetHash(rd.Command("hgetall", "hashable").Hash())
-	c.Check(hb.a, Equals, `foo "bar" yadda`)
-	c.Check(hb.b, Equals, int64(5000))
-	c.Check(hb.c, Equals, true)
-	c.Check(hb.d, Equals, 8.15)
 }
 
 // Test list commands.
@@ -199,7 +155,10 @@ func (s *S) TestList(c *C) {
 	rd.Command("rpush", "list:a", "seven")
 	rd.Command("rpush", "list:a", "eight")
 	rd.Command("rpush", "list:a", "nine")
-	c.Check(rd.Command("llen", "list:a").Int(), Equals, 9)
+	c.Check(
+		rd.Command("lrange", "list:a", 0, -1).Strings(),
+		Equals,
+		[]string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"})
 	c.Check(rd.Command("lpop", "list:a").String(), Equals, "one")
 
 	vs := rd.Command("lrange", "list:a", 3, 6).Values()
@@ -237,46 +196,42 @@ func (s *S) TestSets(c *C) {
 	c.Check(rd.Command("sismember", "set:a", "4").Bool(), Equals, true)
 }
 
+// Test Value to byte slice conversion.
+func (s *S) TestValueToBytes(c *C) {
+	// string
+	rd.Command("set", "foo", "bar")
+	c.Check(
+		rd.Command("get", "foo").String(),
+		Equals,
+		"bar")
+
+	// []byte
+	rd.Command("set", "foo2", []byte{'b', 'a', 'r'})
+	c.Check(
+		rd.Command("get", "foo2").Bytes(),
+		Equals,
+		[]byte{'b', 'a', 'r'})
+
+	// bool
+	rd.Command("set", "foo3", true)
+	c.Check(
+		rd.Command("get", "foo3").Bytes(),
+		Equals,
+		[]byte{'1'})
+
+	// integers
+	rd.Command("set", "foo4", 2)
+	c.Check(
+		rd.Command("get", "foo4").String(),
+		Equals,
+		"2")
+}
+
 // Test asynchronous commands.
 func (s *S) TestAsync(c *C) {
 	fut := rd.AsyncCommand("PING")
 	rs := fut.ResultSet()
 	c.Check(rs.String(), Equals, "PONG")
-}
-
-// Test complex commands.
-func (s *S) TestComplex(c *C) {
-	rsA := rd.Command("info")
-	c.Check(rsA.Value().StringMap()["arch_bits"], NotNil)
-
-	sliceIn := []string{"A", "B", "C", "D", "E"}
-	rd.Command("set", "complex:slice", sliceIn)
-	rsB := rd.Command("get", "complex:slice")
-	sliceOut := rsB.Value().StringSlice()
-
-	for i, s := range sliceOut {
-		if sliceIn[i] != s {
-			c.Errorf("Got '%v', expected '%v'!", s, sliceIn[i])
-		}
-	}
-
-	mapIn := map[string]string{
-		"A": "1",
-		"B": "2",
-		"C": "3",
-		"D": "4",
-		"E": "5",
-	}
-
-	rd.Command("set", "complex:map", mapIn)
-	rsC := rd.Command("get", "complex:map")
-	mapOut := rsC.Value().StringMap()
-
-	for k, v := range mapOut {
-		if mapIn[k] != v {
-			c.Errorf("Got '%v', expected '%v'!", v, mapIn[k])
-		}
-	}
 }
 
 // Test multi-value commands.

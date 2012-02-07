@@ -2,7 +2,7 @@ package redis
 
 import (
 	"fmt"
-	"strings"
+	"reflect"
 )
 
 type command struct {
@@ -10,46 +10,42 @@ type command struct {
 	args []interface{}
 }
 
-//* Interfaces
-
-// Hashable represents types for Redis hashes.
-type Hashable interface {
-	GetHash() Hash
-	SetHash(h Hash)
-}
-
 //* Useful helpers
 
-// valueToBytes converts a value into a byte slice.
-func valueToBytes(v interface{}) []byte {
+// argToRedis formats an argument value into a Redis styled byte slice argument.
+func argToRedis(v interface{}) []byte {
 	var bs []byte
 
 	switch vt := v.(type) {
 	case string:
-		bs = []byte(vt)
+		bs = []byte(fmt.Sprintf("$%d\r\n%s\r\n", len([]byte(vt)), []byte(vt)))
 	case []byte:
-		bs = vt
-	case []string:
-		bs = []byte(strings.Join(vt, "\r\n"))
-	case map[string]string:
-		tmp := make([]string, len(vt))
-		i := 0
-
-		for vtk, vtv := range vt {
-			tmp[i] = fmt.Sprintf("%v:%v", vtk, vtv)
-
-			i++
-		}
-
-		bs = []byte(strings.Join(tmp, "\r\n"))
+		bs = []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(vt), vt))
 	case bool:
 		if vt {
-			bs = []byte("1")
+			bs = []byte("$1\r\n1\r\n")
 		} else {
-			bs = []byte("0")
+			bs = []byte("$1\r\n0\r\n")
 		}
 	default:
-		bs = []byte(fmt.Sprintf("%v", vt))
+		// Fallback to reflect-based.
+		switch reflect.TypeOf(vt).Kind() {
+		case reflect.Slice:
+			rv := reflect.ValueOf(vt)
+			for i := 0; i < rv.Len(); i++ {
+				bs = append(bs, argToRedis(rv.Index(i))...)
+			}
+		case reflect.Map:
+			rv := reflect.ValueOf(vt)
+			keys := rv.MapKeys()
+			for _, k := range keys {
+				bs = append(bs, argToRedis(k)...)
+				bs = append(bs, argToRedis(rv.MapIndex(k))...)
+			}
+		default:
+			vs := fmt.Sprintf("%v", vt)
+			bs = []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(vs), vs))
+		}
 	}
 
 	return bs

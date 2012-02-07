@@ -2,25 +2,26 @@ package redis
 
 // MultiCommand holds data for a Redis multi command.
 type MultiCommand struct {
-	ts *TransactionSet
-	rs          *ResultSet
-	urp         *unifiedRequestProtocol
-	cmds        []command
+	ts   *TransactionSet
+	rs   *ResultSet
+	urp  *unifiedRequestProtocol
+	cmds []command
 }
 
 // TransactionSet holds the return value of Client.Transaction.
 type TransactionSet struct {
-	rs *ResultSet
+	rs    *ResultSet
 	error error
 }
 
 // Create a new MultiCommand.
 func newMultiCommand(rs *ResultSet, urp *unifiedRequestProtocol) *MultiCommand {
 	return &MultiCommand{
-		rs:          rs,
-		urp:         urp,
+		rs:  rs,
+		urp: urp,
 	}
 }
+
 /*
 // Create a new simple transaction MultiCommand.
 func newTransaction(ts *TransactionSet, urp *unifiedRequestProtocol) *MultiCommand {
@@ -33,7 +34,7 @@ func newTransaction(ts *TransactionSet, urp *unifiedRequestProtocol) *MultiComma
 */
 // Call the given multi command function and finally flush the commands.
 func (mc *MultiCommand) process(f func(*MultiCommand)) {
-/*	if mc.ts != nil {
+	/*	if mc.ts != nil {
 		mc.Command("multi")
 	}*/
 	f(mc)
@@ -45,7 +46,7 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) {
 		if len(mc.rs.resultSets) > 0 && 
 			(!mc.rs.ResultSetAt(0).OK() || 
 			!mc.rs.ResultSetAt(len(mc.rs.resultSets).OK()) {
-			
+
 	}*/
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -247,7 +248,7 @@ func (urp *unifiedRequestProtocol) backend() {
 func (urp *unifiedRequestProtocol) handleCommand(ec *envCommand) {
 	if err := urp.writeRequest(ec.cmds); err == nil {
 		// Receive and return reply.
-			if len(ec.cmds) == 1 {
+		if len(ec.cmds) == 1 {
 			urp.receiveReply(ec.rs)
 		} else {
 			for i := 0; i < len(ec.cmds); i++ {
@@ -337,111 +338,48 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 // Write a request.
 func (urp *unifiedRequestProtocol) writeRequest(cmds []command) error {
 	for _, cmd := range cmds {
-		dataNum := 1
+		dataLen := 1
 		for _, arg := range cmd.args {
-			switch typedArg := arg.(type) {
-			case Hash:
-				dataNum += len(typedArg) * 2
-			case Hashable:
-				dataNum += len(typedArg.GetHash()) * 2
+			switch arg.(type) {
+			case string:
+				dataLen++
+			case []byte:
+				dataLen++
+			case bool:
+				dataLen++
 			default:
-				dataNum++
+				// Fallback to reflect-based.
+				kind := reflect.TypeOf(arg).Kind()
+				switch kind {
+				case reflect.Slice:
+					dataLen += reflect.ValueOf(arg).Len()
+				case reflect.Map:
+					dataLen += reflect.ValueOf(arg).Len() * 2
+				default:
+					dataLen++
+				}
 			}
 		}
 
-		// Write number of following data.
-		if err := urp.writeDataNumber(dataNum); err != nil {
+		// Write number of arguments.
+		if _, err := urp.writer.Write([]byte(fmt.Sprintf("*%d\r\n", dataLen))); err != nil {
 			return err
 		}
 
-		// Write command.
-		if err := urp.writeData([]byte(cmd.cmd)); err != nil {
+		// Write the command.
+		b := []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(cmd.cmd), cmd.cmd))
+		if _, err := urp.writer.Write(b); err != nil {
 			return err
 		}
-
 		// Write arguments.
 		for _, arg := range cmd.args {
-			if err := urp.writeArgument(arg); err != nil {
+			if _, err := urp.writer.Write(argToRedis(arg)); err != nil {
 				return err
 			}
 		}
 	}
 
 	return urp.writer.Flush()
-}
-
-// Write the number of arguments.
-func (urp *unifiedRequestProtocol) writeDataNumber(dataLen int) error {
-	b := []byte(fmt.Sprintf("*%d\r\n", dataLen))
-	_, err := urp.writer.Write(b)
-	return err
-}
-
-// Write data.
-func (urp *unifiedRequestProtocol) writeData(data []byte) error {
-	// Write the len of the data.
-	b := []byte(fmt.Sprintf("$%d\r\n", len(data)))
-
-	if _, err := urp.writer.Write(b); err != nil {
-		return err
-	}
-
-	// Write the data.
-	if _, err := urp.writer.Write(data); err != nil {
-		return err
-	}
-	_, err := urp.writer.Write([]byte{'\r', '\n'})
-	return err
-}
-
-// Write a request argument.
-func (urp *unifiedRequestProtocol) writeArgument(arg interface{}) error {
-	// Little helper for converting and writing.
-	convertAndWrite := func(a interface{}) error {
-		// Convert data.
-		data := valueToBytes(a)
-
-		// Now write data.
-		if err := urp.writeData(data); err != nil {
-			return err
-		}
-
-		return nil
-	}
-
-	// Another helper for writing a hash.
-	writeHash := func(h Hash) error {
-		for k, v := range h {
-			if err := convertAndWrite(k); err != nil {
-				return err
-			}
-
-			if err := convertAndWrite(v); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	// Switch types.
-	switch typedArg := arg.(type) {
-	case Hash:
-		if err := writeHash(typedArg); err != nil {
-			return err
-		}
-	case Hashable:
-		if err := writeHash(typedArg.GetHash()); err != nil {
-			return err
-		}
-
-	default:
-		if err := convertAndWrite(typedArg); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // Receive a reply.
@@ -460,17 +398,17 @@ func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet) {
 		rs.values = []Value{Value(ed.data)}
 	case ed.length > 0:
 		// Multiple results.
-			rs.values = make([]Value, ed.length)
+		rs.values = make([]Value, ed.length)
 
-			for i := 0; i < ed.length; i++ {
-				ied := <-urp.dataChan
+		for i := 0; i < ed.length; i++ {
+			ied := <-urp.dataChan
 
-				if ied.error != nil {
-					rs.error = ied.error
-				}
-
-				rs.values[i] = Value(ied.data)
+			if ied.error != nil {
+				rs.error = ied.error
 			}
+
+			rs.values[i] = Value(ied.data)
+		}
 		//}
 	case ed.length == -1:
 		// Timeout.

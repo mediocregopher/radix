@@ -124,6 +124,7 @@ func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
 	newMultiCommand(rs, urp).process(f)
 	return rs
 }
+
 /*
 // Perform a simple transaction.
 // Simple transaction is a multi command that is wrapped in a MULTI-EXEC block.
