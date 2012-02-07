@@ -338,31 +338,28 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 // Write a request.
 func (urp *unifiedRequestProtocol) writeRequest(cmds []command) error {
 	for _, cmd := range cmds {
-		dataLen := 1
+		// Calculate number of arguments.
+		argsLen := 1
 		for _, arg := range cmd.args {
 			switch arg.(type) {
-			case string:
-				dataLen++
 			case []byte:
-				dataLen++
-			case bool:
-				dataLen++
+				argsLen++
 			default:
 				// Fallback to reflect-based.
 				kind := reflect.TypeOf(arg).Kind()
 				switch kind {
 				case reflect.Slice:
-					dataLen += reflect.ValueOf(arg).Len()
+					argsLen += reflect.ValueOf(arg).Len()
 				case reflect.Map:
-					dataLen += reflect.ValueOf(arg).Len() * 2
+					argsLen += reflect.ValueOf(arg).Len() * 2
 				default:
-					dataLen++
+					argsLen++
 				}
 			}
 		}
 
 		// Write number of arguments.
-		if _, err := urp.writer.Write([]byte(fmt.Sprintf("*%d\r\n", dataLen))); err != nil {
+		if _, err := urp.writer.Write([]byte(fmt.Sprintf("*%d\r\n", argsLen))); err != nil {
 			return err
 		}
 
