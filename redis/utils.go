@@ -33,14 +33,14 @@ func argToRedis(v interface{}) []byte {
 		case reflect.Slice:
 			rv := reflect.ValueOf(vt)
 			for i := 0; i < rv.Len(); i++ {
-				bs = append(bs, argToRedis(rv.Index(i))...)
+				bs = append(bs, argToRedis(rv.Index(i).Interface())...)
 			}
 		case reflect.Map:
 			rv := reflect.ValueOf(vt)
 			keys := rv.MapKeys()
 			for _, k := range keys {
 				bs = append(bs, argToRedis(k)...)
-				bs = append(bs, argToRedis(rv.MapIndex(k))...)
+				bs = append(bs, argToRedis(rv.MapIndex(k).Interface())...)
 			}
 		default:
 			vs := fmt.Sprintf("%v", vt)

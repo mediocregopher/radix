@@ -196,8 +196,8 @@ func (s *S) TestSets(c *C) {
 	c.Check(rd.Command("sismember", "set:a", "4").Bool(), Equals, true)
 }
 
-// Test Value to byte slice conversion.
-func (s *S) TestValueToBytes(c *C) {
+// Test argument formatting.
+func (s *S) TestArgToRedis(c *C) {
 	// string
 	rd.Command("set", "foo", "bar")
 	c.Check(
@@ -222,9 +222,16 @@ func (s *S) TestValueToBytes(c *C) {
 	// integers
 	rd.Command("set", "foo4", 2)
 	c.Check(
-		rd.Command("get", "foo4").String(),
+		rd.Command("get", "foo4").Int(),
 		Equals,
-		"2")
+		2)
+
+	// slice
+	rd.Command("rpush", "foo5", []int{1, 2, 3})
+	c.Check(
+		rd.Command("lrange", "foo5", 0, -1).Ints(),
+		Equals,
+		[]int{1, 2, 3})
 }
 
 // Test asynchronous commands.
