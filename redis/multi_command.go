@@ -35,8 +35,8 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) {
 		mc.rs = mc.Flush()
 
 		multi_rs := mc.rs.ResultSetAt(0)
-		exec_rs := mc.rs.ResultSetAt(len(mc.rs.resultSets)-1)
-		if	multi_rs.OK() && exec_rs.OK() {
+		exec_rs := mc.rs.ResultSetAt(len(mc.rs.resultSets) - 1)
+		if multi_rs.OK() && exec_rs.OK() {
 			// Return EXEC's result sets only if both MULTI and EXEC succeeded.
 			mc.rs.resultSets = exec_rs.resultSets
 		} else {

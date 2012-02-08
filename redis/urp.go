@@ -2,13 +2,13 @@ package redis
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
 	"reflect"
 	"strconv"
 	"strings"
-	"bytes"
 )
 
 //* Misc
@@ -169,7 +169,7 @@ func (urp *unifiedRequestProtocol) receiver() {
 
 		// Analyze the first byte.
 		fb := b[0]
-		b = b[1:len(b)-2]
+		b = b[1 : len(b)-2]
 		switch fb {
 		case '-':
 			// Error reply.
