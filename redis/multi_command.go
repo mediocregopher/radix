@@ -1,60 +1,60 @@
 package redis
 
+import (
+	"errors"
+)
+
 // MultiCommand holds data for a Redis multi command.
 type MultiCommand struct {
-	ts   *TransactionSet
-	rs   *ResultSet
-	urp  *unifiedRequestProtocol
-	cmds []command
-}
-
-// TransactionSet holds the return value of Client.Transaction.
-type TransactionSet struct {
-	rs    *ResultSet
-	error error
+	transaction bool
+	rs          *ResultSet
+	urp         *unifiedRequestProtocol
+	cmds        []command
+	cmdCounter  int
 }
 
 // Create a new MultiCommand.
-func newMultiCommand(rs *ResultSet, urp *unifiedRequestProtocol) *MultiCommand {
+func newMultiCommand(transaction bool, rs *ResultSet, urp *unifiedRequestProtocol) *MultiCommand {
 	return &MultiCommand{
-		rs:  rs,
-		urp: urp,
-	}
-}
-
-/*
-// Create a new simple transaction MultiCommand.
-func newTransaction(ts *TransactionSet, urp *unifiedRequestProtocol) *MultiCommand {
-	return &MultiCommand{
-		ts: ts,
-	rs:          &ResultSet{},
+		transaction: transaction,
+		rs:          rs,
 		urp:         urp,
 	}
 }
-*/
+
 // Call the given multi command function and finally flush the commands.
 func (mc *MultiCommand) process(f func(*MultiCommand)) {
-	/*	if mc.ts != nil {
+	if mc.transaction {
 		mc.Command("multi")
-	}*/
+	}
 	f(mc)
-	if mc.ts == nil {
+	if !mc.transaction {
 		mc.Flush()
-	} /*else {
+	} else {
 		mc.Command("exec")
-		mc.ts.rs = mc.Flush()
-		if len(mc.rs.resultSets) > 0 && 
-			(!mc.rs.ResultSetAt(0).OK() || 
-			!mc.rs.ResultSetAt(len(mc.rs.resultSets).OK()) {
+		mc.rs = mc.Flush()
 
-	}*/
+		multi_rs := mc.rs.ResultSetAt(0)
+		exec_rs := mc.rs.ResultSetAt(len(mc.rs.resultSets)-1)
+		if	multi_rs.OK() && exec_rs.OK() {
+			// Return EXEC's result sets only if both MULTI and EXEC succeeded.
+			mc.rs.resultSets = exec_rs.resultSets
+		} else {
+			if err := exec_rs.Error(); err != nil {
+				mc.rs.error = err
+			} else if err := multi_rs.Error(); err != nil {
+				mc.rs.error = err
+			} else {
+				mc.rs.error = errors.New("redis: unknown transaction error")
+			}
+		}
+	}
 }
 
 // Queue a command for later execution.
 func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
-	rs := &ResultSet{}
-	mc.rs.resultSets = append(mc.rs.resultSets, rs)
 	mc.cmds = append(mc.cmds, command{cmd, args})
+	mc.cmdCounter++
 }
 
 // Send queued commands to the Redis server for execution.

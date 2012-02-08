@@ -8,9 +8,12 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"bytes"
 )
 
 //* Misc
+
+type redisReply int
 
 // Envelope type for a command or a multi command.
 type envCommand struct {
@@ -52,6 +55,7 @@ type unifiedRequestProtocol struct {
 	publishedDataChan chan *envPublishedData
 	stopChan          chan bool
 	database          int
+	multiCounter      int
 }
 
 // Create a new protocol.
@@ -80,6 +84,7 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 		publishedDataChan: make(chan *envPublishedData, 5),
 		stopChan:          make(chan bool),
 		database:          c.Database,
+		multiCounter:      -1,
 	}
 
 	// Start goroutines.
@@ -162,26 +167,31 @@ func (urp *unifiedRequestProtocol) receiver() {
 			return
 		}
 
-		// Analyze first bytes.
-		switch b[0] {
-		case '+':
-			// Status reply.
-			r := b[1 : len(b)-2]
-			ed = &envData{len(r), r, nil}
+		// Analyze the first byte.
+		fb := b[0]
+		b = b[1:len(b)-2]
+		switch fb {
 		case '-':
 			// Error reply.
-			ed = &envData{0, nil, errors.New("redis: " + string(b[5:len(b)-2]))}
+			if bytes.HasPrefix(b, []byte("ERR")) {
+				ed = &envData{0, nil, errors.New("redis: " + string(b[4:]))}
+			} else {
+				ed = &envData{0, nil, errors.New("redis: " + string(b))}
+			}
+		case '+':
+			// Status reply.
+			r := b
+			ed = &envData{len(r), r, nil}
 		case ':':
 			// Integer reply.
-			r := b[1 : len(b)-2]
+			r := b
 			ed = &envData{len(r), r, nil}
 		case '$':
 			// Bulk reply, or key not found.
-			i, _ := strconv.Atoi(string(b[1 : len(b)-2]))
+			i, _ := strconv.Atoi(string(b))
 
 			if i == -1 {
-				// Key not found.
-				ed = &envData{0, nil, errors.New("redis: key not found")}
+				ed = &envData{-1, nil, nil}
 			} else {
 				// Reading the data.
 				ir := i + 2
@@ -204,7 +214,7 @@ func (urp *unifiedRequestProtocol) receiver() {
 			// Multi-bulk reply. Just return the count
 			// of the replies. The caller has to do the
 			// individual calls.
-			i, _ := strconv.Atoi(string(b[1 : len(b)-2]))
+			i, _ := strconv.Atoi(string(b))
 			ed = &envData{i, nil, nil}
 		default:
 			// Oops!
@@ -247,13 +257,13 @@ func (urp *unifiedRequestProtocol) backend() {
 // Handle a sent command.
 func (urp *unifiedRequestProtocol) handleCommand(ec *envCommand) {
 	if err := urp.writeRequest(ec.cmds); err == nil {
-		// Receive and return reply.
+		// Receive reply.
 		if len(ec.cmds) == 1 {
-			urp.receiveReply(ec.rs)
+			urp.receiveReply(ec.cmds[0].cmd, ec.rs)
 		} else {
 			for i := 0; i < len(ec.cmds); i++ {
 				ec.rs.resultSets = append(ec.rs.resultSets, &ResultSet{})
-				urp.receiveReply(ec.rs.resultSets[i])
+				urp.receiveReply(ec.cmds[i].cmd, ec.rs.resultSets[i])
 			}
 		}
 	} else {
@@ -294,7 +304,7 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 
 	for i := 0; i < channelLen; i++ {
 		rs.resultSets[i] = &ResultSet{}
-		urp.receiveReply(rs.resultSets[i])
+		urp.receiveReply("", rs.resultSets[i])
 	}
 
 	// Get the number of subscribed channels.
@@ -380,7 +390,7 @@ func (urp *unifiedRequestProtocol) writeRequest(cmds []command) error {
 }
 
 // Receive a reply.
-func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet) {
+func (urp *unifiedRequestProtocol) receiveReply(cmd string, rs *ResultSet) {
 	// Read initial data.
 	ed := <-urp.dataChan
 
@@ -389,7 +399,19 @@ func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet) {
 	case ed.error != nil:
 		// Error.
 		rs.error = ed.error
-		fallthrough
+		return
+	case cmd == "exec":
+		if urp.multiCounter == -1 {
+			panic("redis: EXEC without MULTI")
+		}
+		multiCounter := urp.multiCounter
+		// Exit transaction mode.
+		urp.multiCounter = -1
+		// Store the results in multiple result sets.
+		for i := 0; i < multiCounter; i++ {
+			rs.resultSets = append(rs.resultSets, &ResultSet{})
+			urp.receiveReply("", rs.resultSets[i])
+		}
 	case ed.data != nil:
 		// Single result.
 		rs.values = []Value{Value(ed.data)}
@@ -406,13 +428,25 @@ func (urp *unifiedRequestProtocol) receiveReply(rs *ResultSet) {
 
 			rs.values[i] = Value(ied.data)
 		}
-		//}
 	case ed.length == -1:
-		// Timeout.
-		rs.error = errors.New("redis: timeout")
+		// nil.
+		rs.values = []Value{nil}
 	default:
 		// Invalid reply.
 		rs.error = errors.New("redis: invalid reply")
+		return
+	}
+
+	switch {
+	case cmd == "multi":
+		// Enter transaction mode.
+		if urp.multiCounter != -1 {
+			panic("redis: MULTI calls cannot be nested")
+		}
+		urp.multiCounter = 0
+	case urp.multiCounter != -1:
+		// Increase command counter if  we are in transaction mode.
+		urp.multiCounter++
 	}
 }
 

@@ -99,7 +99,7 @@ func (s *S) TestSimpleValue(c *C) {
 	c.Check(rd.Command("getbit", "simple:bit", 0).Bool(), Equals, true)
 	c.Check(rd.Command("getbit", "simple:bit", 1).Bool(), Equals, true)
 
-	c.Check(rd.Command("get", "non:existing:key").OK(), Equals, false)
+	c.Check(rd.Command("get", "non:existing:key").Value(), IsNil)
 	c.Check(rd.Command("exists", "non:existing:key").Bool(), Equals, false)
 	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, true)
 	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, false)
@@ -172,7 +172,7 @@ func (s *S) TestList(c *C) {
 	c.Check(rd.Command("llen", "list:a").Int(), Equals, 4)
 
 	rd.Command("rpoplpush", "list:a", "list:b")
-	c.Check(rd.Command("lindex", "list:b", 4711).OK(), Equals, false)
+	c.Check(rd.Command("lindex", "list:b", 4711).Value(), IsNil)
 	c.Check(rd.Command("lindex", "list:b", 0).String(), Equals, "five")
 
 	rd.Command("rpush", "list:c", 1)
@@ -270,6 +270,24 @@ func (s *S) TestMultiCommand(c *C) {
 	})
 	c.Check(rs.ResultSetAt(0).OK(), Equals, true)
 	c.Check(rs.ResultSetAt(1).String(), Equals, "qux")
+}
+
+// Test simple transaction.
+func (s *S) TestTransaction(c *C) {
+	rs := rd.Transaction(func(mc *MultiCommand) {
+		mc.Command("set", "foo", "bar")
+		mc.Command("get", "foo")
+	})
+	c.Check(rs.ResultSetAt(0).String(), Equals, "OK")
+	c.Check(rs.ResultSetAt(1).String(), Equals, "bar")
+
+	// Failing transaction
+	rs = rd.Transaction(func(mc *MultiCommand) {
+		mc.Command("set", "foo2", "baz")
+		mc.Command("get", "non-existent-key")
+		mc.Command("get", "foo2")
+	})
+	c.Check(rs.Value(), IsNil)
 }
 
 // Test subscribe.

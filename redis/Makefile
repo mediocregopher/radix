@@ -11,8 +11,7 @@ GOFILES=\
 	subscription.go\
 	result_set.go\
 	utils.go\
-	hash.go\
-
+	hash.go
 
 include $(GOROOT)/src/Make.pkg
 

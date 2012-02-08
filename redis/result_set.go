@@ -8,7 +8,6 @@ import (
 
 //* Value
 
-// Value is simply a byte slice.
 type Value []byte
 
 // String returns the value as string (alternative to type conversion).
@@ -98,12 +97,6 @@ func (v Value) Unpack() Value {
 
 //* Special values
 
-// ScoredValue contains a value with its score from a sorted set.
-type ScoredValue struct {
-	Value Value
-	Score int
-}
-
 // KeyValue combines a key and a value for blocked lists.
 type KeyValue struct {
 	Key   string
@@ -128,9 +121,9 @@ func (rs *ResultSet) OK() bool {
 	return true
 }
 
-// IsMulti returns true if the result set contains
+// Multi returns true if the result set contains
 // multiple result sets.
-func (rs *ResultSet) IsMulti() bool {
+func (rs *ResultSet) Multi() bool {
 	return rs.resultSets != nil
 }
 
@@ -146,7 +139,7 @@ func (rs *ResultSet) Len() int {
 // At returns a wanted value by its index.
 func (rs *ResultSet) At(i int) Value {
 	if i < 0 || i >= len(rs.values) {
-		return Value([]byte{})
+		return nil
 	}
 
 	return rs.values[i]
@@ -214,17 +207,17 @@ func (rs *ResultSet) UnpackedValues() []Value {
 
 // Bool returns the first value as bool.
 func (rs *ResultSet) Bool() bool {
-	return rs.Value().Bool()
+	return rs.At(0).Bool()
 }
 
 // Int returns the first value as int.
 func (rs *ResultSet) Int() int {
-	return rs.Value().Int()
+	return rs.At(0).Int()
 }
 
 // String returns the first value as string.
 func (rs *ResultSet) String() string {
-	return rs.Value().String()
+	return rs.At(0).String()
 }
 
 // Bytes returns the first value as byte slice.
