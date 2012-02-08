@@ -358,23 +358,10 @@ func (s *Long) TestIllegalDatabases(c *C) {
 	c.Log("Test selecting an illegal database...")
 	rdA := NewClient(Configuration{Database: 4711})
 	rsA := rdA.Command("ping")
-	c.Check(rsA.OK(), Equals, true)
+	c.Check(rsA.OK(), Equals, false)
 
 	c.Log("Test connecting to an illegal address...")
 	rdB := NewClient(Configuration{Address: "192.168.100.100:12345"})
 	rsB := rdB.Command("ping")
-	c.Check(rsB.OK(), Equals, true)
-}
-
-// Test database killing with a long run.
-func (s *Long) TestDatabaseKill(c *C) {
-	rdA := NewClient(Configuration{PoolSize: 5})
-
-	for i := 1; i < 120; i++ {
-		if !rdA.Command("set", "long:run", i).OK() {
-			c.Errorf("Long run failed!")
-			return
-		}
-		time.Sleep(time.Second)
-	}
+	c.Check(rsB.OK(), Equals, false)
 }
