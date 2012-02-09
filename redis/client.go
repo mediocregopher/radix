@@ -94,7 +94,7 @@ func (c *Client) Command(cmd string, args ...interface{}) *ResultSet {
 }
 
 // AsyncCommand performs a Redis command asynchronously.
-func (c *Client) AsyncCommand(cmd string, args ...interface{}) *Future {
+func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 	fut := newFuture()
 
 	go func() {
@@ -149,11 +149,23 @@ func (c *Client) Transaction(f func(*MultiCommand)) *ResultSet {
 }
 
 // Perform an asynchronous multi command.
-func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) *Future {
+func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) Future {
 	fut := newFuture()
 
 	go func() {
 		fut.setResultSet(c.MultiCommand(f))
+	}()
+
+	return fut
+}
+
+
+// Perform an asynchronous simple transaction.
+func (c *Client) AsyncTransaction(f func(*MultiCommand)) Future {
+	fut := newFuture()
+
+	go func() {
+		fut.setResultSet(c.Transaction(f))
 	}()
 
 	return fut
