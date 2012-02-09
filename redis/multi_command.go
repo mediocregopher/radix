@@ -17,7 +17,7 @@ type MultiCommand struct {
 func newMultiCommand(transaction bool, urp *unifiedRequestProtocol) *MultiCommand {
 	return &MultiCommand{
 		transaction: transaction,
-     	rs:          &ResultSet{},
+		rs:          &ResultSet{},
 		urp:         urp,
 	}
 }

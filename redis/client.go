@@ -143,7 +143,6 @@ func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) Future {
 	return fut
 }
 
-
 // Perform a simple asynchronous transaction.
 func (c *Client) AsyncTransaction(f func(*MultiCommand)) Future {
 	fut := newFuture()
