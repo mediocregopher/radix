@@ -263,11 +263,15 @@ func (s *S) TestMultiCommand(c *C) {
 		mc.Command("set", "foo2", "baz")
 		mc.Command("get", "foo2")
 		rsmc := mc.Flush()
+		c.Log(rsmc.resultSets, mc.rs.resultSets)
 		c.Check(rsmc.ResultSetAt(0).OK(), Equals, true)
 		c.Check(rsmc.ResultSetAt(1).String(), Equals, "baz")
+		c.Log(rsmc.resultSets, mc.rs.resultSets)
 		mc.Command("set", "foo2", "qux")
 		mc.Command("get", "foo2")
 	})
+	c.Log(rs.resultSets)
+	c.Check(rs.Error(), IsNil)
 	c.Check(rs.ResultSetAt(0).OK(), Equals, true)
 	c.Check(rs.ResultSetAt(1).String(), Equals, "qux")
 }
@@ -281,12 +285,35 @@ func (s *S) TestTransaction(c *C) {
 	c.Check(rs.ResultSetAt(0).String(), Equals, "OK")
 	c.Check(rs.ResultSetAt(1).String(), Equals, "bar")
 
+	// Flushing transaction
+	rs = rd.Transaction(func(mc *MultiCommand) {
+		mc.Command("set", "foo", "bar")
+		mc.Flush()
+		mc.Command("get", "foo")
+	})
+	c.Check(rs.Error(), IsNil)
+	c.Log(rs.resultSets)
+	c.Check(rs.ResultSetLen(), Equals, 2)
+	c.Check(rs.ResultSetAt(0).String(), Equals, "OK")
+	c.Check(rs.ResultSetAt(1).String(), Equals, "bar")
+
 	// Failing transaction
 	rs = rd.Transaction(func(mc *MultiCommand) {
 		mc.Command("set", "foo2", "baz")
 		mc.Command("get", "non-existent-key")
 		mc.Command("get", "foo2")
 	})
+	c.Check(rs.Error(), IsNil)
+	c.Check(rs.Value(), IsNil)
+
+	// Failing flushing transaction
+	rs = rd.Transaction(func(mc *MultiCommand) {
+		mc.Command("set", "foo2", "baz")
+		mc.Command("get", "non-existent-key")
+		mc.Flush()
+		mc.Command("get", "foo2")
+	})
+	c.Check(rs.Error(), IsNil)
 	c.Check(rs.Value(), IsNil)
 }
 
@@ -298,36 +325,17 @@ func (s *S) TestAsyncMultiCommand(c *C) {
 	}).ResultSet()
 	c.Check(rs.ResultSetAt(0).OK(), Equals, true)
 	c.Check(rs.ResultSetAt(1).String(), Equals, "bar")
-
-	rs = rd.AsyncMultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "foo2", "baz")
-		mc.Command("get", "foo2")
-		rsmc := mc.Flush()
-		c.Check(rsmc.ResultSetAt(0).OK(), Equals, true)
-		c.Check(rsmc.ResultSetAt(1).String(), Equals, "baz")
-		mc.Command("set", "foo2", "qux")
-		mc.Command("get", "foo2")
-	}).ResultSet()
-	c.Check(rs.ResultSetAt(0).OK(), Equals, true)
-	c.Check(rs.ResultSetAt(1).String(), Equals, "qux")
 }
 
-// Test asynchronous simple transactions.
+// Test simple asynchronous transactions.
 func (s *S) TestAsyncTransaction(c *C) {
 	rs := rd.AsyncTransaction(func(mc *MultiCommand) {
 		mc.Command("set", "foo", "bar")
 		mc.Command("get", "foo")
 	}).ResultSet()
+	c.Check(rs.Error(), IsNil)
 	c.Check(rs.ResultSetAt(0).String(), Equals, "OK")
 	c.Check(rs.ResultSetAt(1).String(), Equals, "bar")
-
-	// Failing transaction
-	rs = rd.AsyncTransaction(func(mc *MultiCommand) {
-		mc.Command("set", "foo2", "baz")
-		mc.Command("get", "non-existent-key")
-		mc.Command("get", "foo2")
-	}).ResultSet()
-	c.Check(rs.Value(), IsNil)
 }
 
 // Test subscribe.

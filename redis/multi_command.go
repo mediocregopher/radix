@@ -14,41 +14,39 @@ type MultiCommand struct {
 }
 
 // Create a new MultiCommand.
-func newMultiCommand(transaction bool, rs *ResultSet, urp *unifiedRequestProtocol) *MultiCommand {
+func newMultiCommand(transaction bool, urp *unifiedRequestProtocol) *MultiCommand {
 	return &MultiCommand{
 		transaction: transaction,
-		rs:          rs,
+     	rs:          &ResultSet{},
 		urp:         urp,
 	}
 }
 
-// Call the given multi command function and finally flush the commands.
-func (mc *MultiCommand) process(f func(*MultiCommand)) {
+// Call the given multi command function, flush the commands and return the returned ResultSet.
+func (mc *MultiCommand) process(f func(*MultiCommand)) *ResultSet {
 	if mc.transaction {
 		mc.Command("multi")
 	}
 	f(mc)
 	if !mc.transaction {
-		mc.Flush()
+		mc.urp.multiCommand(mc.rs, mc.cmds)
 	} else {
 		mc.Command("exec")
-		mc.rs = mc.Flush()
+		mc.urp.multiCommand(mc.rs, mc.cmds)
 
-		multi_rs := mc.rs.ResultSetAt(0)
 		exec_rs := mc.rs.ResultSetAt(len(mc.rs.resultSets) - 1)
-		if multi_rs.OK() && exec_rs.OK() {
-			// Return EXEC's result sets only if both MULTI and EXEC succeeded.
+		if exec_rs.OK() {
 			mc.rs.resultSets = exec_rs.resultSets
 		} else {
 			if err := exec_rs.Error(); err != nil {
-				mc.rs.error = err
-			} else if err := multi_rs.Error(); err != nil {
 				mc.rs.error = err
 			} else {
 				mc.rs.error = errors.New("redis: unknown transaction error")
 			}
 		}
 	}
+
+	return mc.rs
 }
 
 // Queue a command for later execution.
@@ -57,9 +55,12 @@ func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
 	mc.cmdCounter++
 }
 
-// Send queued commands to the Redis server for execution.
+// Send queued commands to the Redis server for execution and return the returned ResultSet.
+// The ResultSet associated with the MultiCommand will be reseted.
 func (mc *MultiCommand) Flush() *ResultSet {
 	mc.urp.multiCommand(mc.rs, mc.cmds)
+	tmprs := mc.rs
+	mc.rs = &ResultSet{}
 	mc.cmds = nil
-	return mc.rs
+	return tmprs
 }

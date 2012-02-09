@@ -104,11 +104,8 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 	return fut
 }
 
-// Perform a multi command.
-func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
-	// Create result set.
-	rs := &ResultSet{}
-
+// Helper method for MultiCommand and Transaction.
+func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *ResultSet {
 	// URP handling.
 	urp, err := c.pullURP()
 
@@ -117,35 +114,22 @@ func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
 	}()
 
 	if err != nil {
-		rs.error = err
-		return rs
+		return &ResultSet{error: err}
 	}
 
-	newMultiCommand(false, rs, urp).process(f)
-	return rs
+	return newMultiCommand(transaction, urp).process(f)
+}
+
+// Perform a multi command.
+func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
+	return c.multiCommand(false, f)
 }
 
 // Perform a simple transaction.
 // Simple transaction is a multi command that is wrapped in a MULTI-EXEC block.
 // For complex transactions with WATCH, UNWATCH or DISCARD commands use MultiCommand.
 func (c *Client) Transaction(f func(*MultiCommand)) *ResultSet {
-	// Create result set.
-	rs := &ResultSet{}
-
-	// URP handling.
-	urp, err := c.pullURP()
-
-	defer func() {
-		c.pushURP(urp)
-	}()
-
-	if err != nil {
-		rs.error = err
-		return rs
-	}
-
-	newMultiCommand(true, rs, urp).process(f)
-	return rs
+	return c.multiCommand(true, f)
 }
 
 // Perform an asynchronous multi command.
@@ -160,7 +144,7 @@ func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) Future {
 }
 
 
-// Perform an asynchronous simple transaction.
+// Perform a simple asynchronous transaction.
 func (c *Client) AsyncTransaction(f func(*MultiCommand)) Future {
 	fut := newFuture()
 

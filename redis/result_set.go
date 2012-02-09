@@ -1,9 +1,5 @@
 package redis
 
-import (
-	"errors"
-)
-
 //* ResultSet
 
 // ResultSet is the returned struct of commands.
@@ -40,7 +36,7 @@ func (rs *ResultSet) Len() int {
 // At returns a wanted value by its index.
 func (rs *ResultSet) At(i int) Value {
 	if i < 0 || i >= len(rs.values) {
-		return nil
+		panic("redis: value index out of range")
 	}
 
 	return rs.values[i]
@@ -48,12 +44,16 @@ func (rs *ResultSet) At(i int) Value {
 
 // Value returns the first value.
 func (rs *ResultSet) Value() Value {
+	if len(rs.values) == 0 {
+		return nil
+	}
+
 	return rs.At(0)
 }
 
 //UnpackedValue returns the first value unpacked.
 func (rs *ResultSet) UnpackedValue() Value {
-	return rs.At(0).Unpack()
+	return rs.Value().Unpack()
 }
 
 // Values returns all values as slice.
@@ -108,17 +108,17 @@ func (rs *ResultSet) UnpackedValues() []Value {
 
 // Bool returns the first value as bool.
 func (rs *ResultSet) Bool() bool {
-	return rs.At(0).Bool()
+	return rs.Value().Bool()
 }
 
 // Int returns the first value as int.
 func (rs *ResultSet) Int() int {
-	return rs.At(0).Int()
+	return rs.Value().Int()
 }
 
 // String returns the first value as string.
 func (rs *ResultSet) String() string {
-	return rs.At(0).String()
+	return rs.Value().String()
 }
 
 // Bytes returns the first value as byte slice.
@@ -127,7 +127,12 @@ func (rs *ResultSet) Bytes() []byte {
 }
 
 // KeyValue return the first value as key and the second as value.
+// Will panic if there are less that two values in the result set.
 func (rs *ResultSet) KeyValue() *KeyValue {
+	if rs.Len() < 2 {
+		panic("redis: ResultSet does not have enough values for KeyValue")
+	}
+
 	return &KeyValue{
 		Key:   rs.At(0).String(),
 		Value: rs.At(1),
@@ -190,9 +195,7 @@ func (rs *ResultSet) ResultSetLen() int {
 // ResultSetAt returns a result set by its index.
 func (rs *ResultSet) ResultSetAt(i int) *ResultSet {
 	if i < 0 || i >= len(rs.resultSets) {
-		rs := &ResultSet{}
-		rs.error = errors.New("illegal result set index")
-		return rs
+		panic("redis: result set index out of range")
 	}
 
 	return rs.resultSets[i]
