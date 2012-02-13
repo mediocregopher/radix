@@ -49,11 +49,11 @@ func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
 		}
 	} else if urp.database != c.configuration.Database {
 		// Database changed, issue SELECT command
-		rs := &ResultSet{}
-		urp.command(rs, "select", c.configuration.Database)
+		r := &Reply{}
+		urp.command(r, "select", c.configuration.Database)
 
-		if !rs.OK() {
-			err = rs.Error()
+		if !r.OK() {
+			err = r.Error()
 			return
 		}
 	}
@@ -72,8 +72,8 @@ func (c *Client) pushURP(urp *unifiedRequestProtocol) {
 }
 
 // Command performs a Redis command.
-func (c *Client) Command(cmd string, args ...interface{}) *ResultSet {
-	rs := &ResultSet{}
+func (c *Client) Command(cmd string, args ...interface{}) *Reply {
+	r := &Reply{}
 
 	// URP handling.
 	urp, err := c.pullURP()
@@ -83,14 +83,14 @@ func (c *Client) Command(cmd string, args ...interface{}) *ResultSet {
 	}()
 
 	if err != nil {
-		rs.error = err
-		return rs
+		r.err = err
+		return r
 	}
 
 	// Now do it.
-	urp.command(rs, cmd, args...)
+	urp.command(r, cmd, args...)
 
-	return rs
+	return r
 }
 
 // AsyncCommand performs a Redis command asynchronously.
@@ -98,14 +98,14 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 	fut := newFuture()
 
 	go func() {
-		fut.setResultSet(c.Command(cmd, args...))
+		fut.setReply(c.Command(cmd, args...))
 	}()
 
 	return fut
 }
 
 // Helper method for MultiCommand and Transaction.
-func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *ResultSet {
+func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
 	// URP handling.
 	urp, err := c.pullURP()
 
@@ -114,21 +114,21 @@ func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *ResultSe
 	}()
 
 	if err != nil {
-		return &ResultSet{error: err}
+		return &Reply{err: err}
 	}
 
 	return newMultiCommand(transaction, urp).process(f)
 }
 
 // Perform a multi command.
-func (c *Client) MultiCommand(f func(*MultiCommand)) *ResultSet {
+func (c *Client) MultiCommand(f func(*MultiCommand)) *Reply {
 	return c.multiCommand(false, f)
 }
 
 // Perform a simple transaction.
 // Simple transaction is a multi command that is wrapped in a MULTI-EXEC block.
 // For complex transactions with WATCH, UNWATCH or DISCARD commands use MultiCommand.
-func (c *Client) Transaction(f func(*MultiCommand)) *ResultSet {
+func (c *Client) Transaction(f func(*MultiCommand)) *Reply {
 	return c.multiCommand(true, f)
 }
 
@@ -137,7 +137,7 @@ func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) Future {
 	fut := newFuture()
 
 	go func() {
-		fut.setResultSet(c.MultiCommand(f))
+		fut.setReply(c.MultiCommand(f))
 	}()
 
 	return fut
@@ -148,7 +148,7 @@ func (c *Client) AsyncTransaction(f func(*MultiCommand)) Future {
 	fut := newFuture()
 
 	go func() {
-		fut.setResultSet(c.Transaction(f))
+		fut.setReply(c.Transaction(f))
 	}()
 
 	return fut
@@ -163,7 +163,7 @@ func (c *Client) Select(database int) {
 }
 
 //* PubSub
-
+/*
 // Subscribe to given channels. If successful, return a Subscription, number of channels that were
 // succesfully subscribed or an error.
 func (c *Client) Subscribe(channels ...string) (*Subscription, int, error) {
@@ -180,10 +180,10 @@ func (c *Client) Subscribe(channels ...string) (*Subscription, int, error) {
 
 // Publish a message to a channel.
 func (c *Client) Publish(channel string, message interface{}) int {
-	rs := c.Command("publish", channel, message)
-	return int(rs.Value().Int64())
+	r := c.Command("publish", channel, message)
+	return int(r.Value().Int64())
 }
-
+*/
 //* Helpers
 
 // Check the configuration.

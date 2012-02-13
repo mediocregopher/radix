@@ -7,7 +7,7 @@ import (
 // MultiCommand holds data for a Redis multi command.
 type MultiCommand struct {
 	transaction bool
-	rs          *ResultSet
+	r           *Reply
 	urp         *unifiedRequestProtocol
 	cmds        []command
 	cmdCounter  int
@@ -17,36 +17,36 @@ type MultiCommand struct {
 func newMultiCommand(transaction bool, urp *unifiedRequestProtocol) *MultiCommand {
 	return &MultiCommand{
 		transaction: transaction,
-		rs:          &ResultSet{},
+		r:           &Reply{},
 		urp:         urp,
 	}
 }
 
-// Call the given multi command function, flush the commands and return the returned ResultSet.
-func (mc *MultiCommand) process(f func(*MultiCommand)) *ResultSet {
+// Call the given multi command function, flush the commands and return the returned Reply.
+func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 	if mc.transaction {
 		mc.Command("multi")
 	}
 	f(mc)
 	if !mc.transaction {
-		mc.urp.multiCommand(mc.rs, mc.cmds)
+		mc.urp.multiCommand(mc.r, mc.cmds)
 	} else {
 		mc.Command("exec")
-		mc.urp.multiCommand(mc.rs, mc.cmds)
+		mc.urp.multiCommand(mc.r, mc.cmds)
 
-		exec_rs := mc.rs.ResultSetAt(len(mc.rs.resultSets) - 1)
+		exec_rs := mc.r.At(len(mc.r.elems) - 1)
 		if exec_rs.OK() {
-			mc.rs.resultSets = exec_rs.resultSets
+			mc.r.elems = exec_rs.elems
 		} else {
 			if err := exec_rs.Error(); err != nil {
-				mc.rs.error = err
+				mc.r.err = err
 			} else {
-				mc.rs.error = errors.New("redis: unknown transaction error")
+				mc.r.err = errors.New("redis: unknown transaction error")
 			}
 		}
 	}
 
-	return mc.rs
+	return mc.r
 }
 
 // Queue a command for later execution.
@@ -55,12 +55,12 @@ func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
 	mc.cmdCounter++
 }
 
-// Send queued commands to the Redis server for execution and return the returned ResultSet.
-// The ResultSet associated with the MultiCommand will be reseted.
-func (mc *MultiCommand) Flush() *ResultSet {
-	mc.urp.multiCommand(mc.rs, mc.cmds)
-	tmprs := mc.rs
-	mc.rs = &ResultSet{}
+// Send queued commands to the Redis server for execution and return the returned Reply.
+// The Reply associated with the MultiCommand will be reseted.
+func (mc *MultiCommand) Flush() *Reply {
+	mc.urp.multiCommand(mc.r, mc.cmds)
+	tmprs := mc.r
+	mc.r = &Reply{}
 	mc.cmds = nil
 	return tmprs
 }

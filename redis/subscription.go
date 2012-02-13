@@ -7,7 +7,7 @@ import "runtime"
 // The subscription value is a result value
 // plus channel pattern and channel.
 type SubscriptionValue struct {
-	Value
+	Reply
 	ChannelPattern string
 	Channel        string
 }
@@ -16,14 +16,16 @@ type SubscriptionValue struct {
 func newSubscriptionValue(data [][]byte) *SubscriptionValue {
 	switch len(data) {
 	case 3:
+		s:= string(data[2])
 		return &SubscriptionValue{
-			Value:          Value(data[2]),
+		Value:          Value{stre&s, nil},
 			ChannelPattern: "*",
 			Channel:        string(data[1]),
 		}
 	case 4:
+		s:= string(data[3])
 		return &SubscriptionValue{
-			Value:          Value(data[3]),
+		Value:          Value{&s, nil},
 			ChannelPattern: string(data[1]),
 			Channel:        string(data[2]),
 		}

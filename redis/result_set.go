@@ -1,17 +1,34 @@
 package redis
 
-//* ResultSet
+//* Reply
 
-// ResultSet is the returned struct of commands.
-type ResultSet struct {
-	values     []Value
-	resultSets []*ResultSet
-	error      error
+type ReplyType uint
+
+const (
+	ReplyStatus ReplyType = iota
+	ReplyError
+	ReplyInteger
+	ReplyNil
+	ReplyString
+	ReplyMulti
+)
+
+// Reply is the returned struct of commands.
+type Reply struct {
+	t ReplyType
+	val Value
+	elems []Reply
+	err error
 }
 
-// OK returns true if the result set has nil error, otherwise false.
-func (rs *ResultSet) OK() bool {
-	if rs.error != nil {
+// Type returns the type of the reply.
+func (r *Reply) Type() ReplyType {
+	return r.t
+}
+
+// OK returns true if the reply had no error, otherwise false.
+func (r *Reply) OK() bool {
+	if r.err != nil {
 		return false
 	}
 
@@ -20,61 +37,58 @@ func (rs *ResultSet) OK() bool {
 
 // Multi returns true if the result set contains
 // multiple result sets.
-func (rs *ResultSet) Multi() bool {
-	return rs.resultSets != nil
+func (r *Reply) Multi() bool {
+	return r.resultSets != nil
 }
 
 // Len returns the number of returned values.
-func (rs *ResultSet) Len() int {
-	if rs.values == nil {
-		return 0
-	}
-
-	return len(rs.values)
+func (r *Reply) Len() int {
+	return len(r.values)
 }
 
 // At returns a wanted value by its index.
-func (rs *ResultSet) At(i int) Value {
-	if i < 0 || i >= len(rs.values) {
+func (r *Reply) At(i int) Value {
+	if i < 0 || i >= len(r.values) {
 		panic("redis: value index out of range")
 	}
 
-	return rs.values[i]
+	return r.values[i]
 }
 
-// Value returns the first value.
-func (rs *ResultSet) Value() Value {
-	if len(rs.values) == 0 {
-		return nil
+// Value returns the first value of the reply.
+// It panics, if there are no values in the reply.
+func (r *Reply) Value() Value {
+	if len(r.values) == 0 {
+		panic("redis: no values in the reply")
 	}
 
-	return rs.At(0)
+	return r.values[0]
 }
 
 //UnpackedValue returns the first value unpacked.
-func (rs *ResultSet) UnpackedValue() Value {
-	return rs.Value().Unpack()
+func (r *Reply) UnpackedValue() Value {
+	return r.Value().Unpack()
 }
 
 // Values returns all values as slice.
-func (rs *ResultSet) Values() []Value {
-	if rs.values == nil {
+func (r *Reply) Values() []Value {
+	if r.values == nil {
 		return nil
 	}
 
-	vs := make([]Value, len(rs.values))
-	copy(vs, rs.values)
+	vs := make([]Value, len(r.values))
+	copy(vs, r.values)
 	return vs
 }
 
-// Ints returns all values as a slice of integers.
-func (rs *ResultSet) Ints() []int {
-	if rs.values == nil {
+// Ints returns all values as a slice of integer.
+func (r *Reply) Ints() []int {
+	if r.values == nil {
 		return nil
 	}
 
-	ints := make([]int, len(rs.values))
-	for i, v := range rs.values {
+	ints := make([]int, len(r.values))
+	for i, v := range r.values {
 		ints[i] = v.Int()
 	}
 
@@ -82,22 +96,22 @@ func (rs *ResultSet) Ints() []int {
 }
 
 // Strings returns all values as a slice of strings.
-func (rs *ResultSet) Strings() []string {
-	if rs.values == nil {
+func (r *Reply) Strings() []string {
+	if r.values == nil {
 		return nil
 	}
 
-	strings := make([]string, len(rs.values))
-	for i, v := range rs.values {
-		strings[i] = string(v)
+	strings := make([]string, len(r.values))
+	for i, v := range r.values {
+		strings[i] = *v.string
 	}
 
 	return strings
 }
 
 // UnpackedValues returns all values unpacked as slice.
-func (rs *ResultSet) UnpackedValues() []Value {
-	vs := rs.Values()
+func (r *Reply) UnpackedValues() []Value {
+	vs := r.Values()
 
 	for i, v := range vs {
 		vs[i] = v.Unpack()
@@ -107,42 +121,42 @@ func (rs *ResultSet) UnpackedValues() []Value {
 }
 
 // Bool returns the first value as bool.
-func (rs *ResultSet) Bool() bool {
-	return rs.Value().Bool()
+func (r *Reply) Bool() bool {
+	return r.Value().Bool()
 }
 
 // Int returns the first value as int.
-func (rs *ResultSet) Int() int {
-	return rs.Value().Int()
+func (r *Reply) Int() int {
+	return r.Value().Int()
 }
 
 // String returns the first value as string.
-func (rs *ResultSet) String() string {
-	return rs.Value().String()
+func (r *Reply) String() string {
+	return r.Value().String()
 }
 
 // Bytes returns the first value as byte slice.
-func (rs *ResultSet) Bytes() []byte {
-	return rs.Value().Bytes()
+func (r *Reply) Bytes() []byte {
+	return r.Value().Bytes()
 }
 
 // KeyValue return the first value as key and the second as value.
 // Will panic if there are less that two values in the result set.
-func (rs *ResultSet) KeyValue() *KeyValue {
-	if rs.Len() < 2 {
-		panic("redis: ResultSet does not have enough values for KeyValue")
+func (r *Reply) KeyValue() *KeyValue {
+	if r.Len() < 2 {
+		panic("redis: Reply does not have enough values for KeyValue")
 	}
 
 	return &KeyValue{
-		Key:   rs.At(0).String(),
-		Value: rs.At(1),
+		Key:   r.At(0).String(),
+		Value: r.At(1),
 	}
 }
 
 // Apply iterates over the result values and
 // applies the passed function for each one.
-func (rs *ResultSet) Apply(f func(int, Value)) {
-	for idx, v := range rs.values {
+func (r *Reply) Apply(f func(int, Value)) {
+	for idx, v := range r.values {
 		f(idx, v)
 	}
 }
@@ -150,10 +164,10 @@ func (rs *ResultSet) Apply(f func(int, Value)) {
 // Values iterates over the result values and
 // applies the passed function for each one. The result
 // is a slice of values returned by the functions.
-func (rs *ResultSet) ApplySlice(f func(Value) interface{}) []interface{} {
-	result := make([]interface{}, len(rs.values))
+func (r *Reply) ApplySlice(f func(Value) interface{}) []interface{} {
+	result := make([]interface{}, len(r.values))
 
-	for i, v := range rs.values {
+	for i, v := range r.values {
 		result[i] = f(v)
 	}
 
@@ -161,13 +175,13 @@ func (rs *ResultSet) ApplySlice(f func(Value) interface{}) []interface{} {
 }
 
 // Hash returns the values of the result set as hash.
-func (rs *ResultSet) Hash() Hash {
+func (r *Reply) Hash() Hash {
 	var key string
 
 	result := make(Hash)
 	isVal := false
 
-	for _, v := range rs.values {
+	for _, v := range r.values {
 		if isVal {
 			// Write every second value.
 			result[key] = v
@@ -182,29 +196,29 @@ func (rs *ResultSet) Hash() Hash {
 	return result
 }
 
-// ResultSetLen returns the number of result sets
+// ReplyLen returns the number of result sets
 // inside the result set.
-func (rs *ResultSet) ResultSetLen() int {
-	if rs.resultSets == nil {
+func (r *Reply) ReplyLen() int {
+	if r.resultSets == nil {
 		return 0
 	}
 
-	return len(rs.resultSets)
+	return len(r.resultSets)
 }
 
-// ResultSetAt returns a result set by its index.
-func (rs *ResultSet) ResultSetAt(i int) *ResultSet {
-	if i < 0 || i >= len(rs.resultSets) {
+// ReplyAt returns a result set by its index.
+func (r *Reply) ReplyAt(i int) *Reply {
+	if i < 0 || i >= len(r.resultSets) {
 		panic("redis: result set index out of range")
 	}
 
-	return rs.resultSets[i]
+	return r.resultSets[i]
 }
 
 // MultiApply iterates over the result sets and
 // applies the passed function for each one.
-func (rs *ResultSet) MultiApply(f func(*ResultSet)) {
-	for _, rs := range rs.resultSets {
+func (r *Reply) MultiApply(f func(*Reply)) {
+	for _, rs := range r.resultSets {
 		f(rs)
 	}
 }
@@ -212,10 +226,10 @@ func (rs *ResultSet) MultiApply(f func(*ResultSet)) {
 // MultiApplySlice iterates over the result sets and
 // performs the passed function for each one. The result
 // is a slice of values returned by the functions.
-func (rs *ResultSet) MultiApplySlice(f func(*ResultSet) interface{}) []interface{} {
-	result := make([]interface{}, len(rs.resultSets))
+func (r *Reply) MultiApplySlice(f func(*Reply) interface{}) []interface{} {
+	result := make([]interface{}, len(r.resultSets))
 
-	for idx, rs := range rs.resultSets {
+	for idx, rs := range r.resultSets {
 		result[idx] = f(rs)
 	}
 
@@ -224,28 +238,28 @@ func (rs *ResultSet) MultiApplySlice(f func(*ResultSet) interface{}) []interface
 
 // Error returns the error if the operation creating
 // the result set failed or nil.
-func (rs *ResultSet) Error() error {
-	return rs.error
+func (r *Reply) Error() error {
+	return r.err
 }
 
 //* Future
 
 // Future just waits for a result set
 // returned somewhere in the future.
-type Future chan *ResultSet
+type Future chan *Reply
 
 // newFuture creates the new future.
 func newFuture() Future {
-	return make(chan *ResultSet, 1)
+	return make(chan *Reply, 1)
 }
 
-// setResultSet sets the result set.
-func (f Future) setResultSet(rs *ResultSet) {
+// setReply sets the result set.
+func (f Future) setReply(r *Reply) {
 	f <- rs
 }
 
-// ResultSet blocks until the associated result set can be returned.
-func (f Future) ResultSet() (rs *ResultSet) {
+// Reply blocks until the associated result set can be returned.
+func (f Future) Reply() (r *Reply) {
 	rs = <-f
 	f <- rs
 	return

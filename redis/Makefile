@@ -8,12 +8,8 @@ GOFILES=\
 	client.go\
 	multi_command.go\
 	urp.go\
-	subscription.go\
-	result_set.go\
+	reply.go\
 	utils.go\
-	hash.go\
-	value.go\
-
 
 include $(GOROOT)/src/Make.pkg
 

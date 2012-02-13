@@ -7,11 +7,27 @@ import (
 
 //* Value
 
-type Value []byte
+type Value struct {
+	string *string
+	int    *int64
+}
 
-// String returns the value as string (alternative to type conversion).
+// String returns the reply value as string.
+// It panics if, if there was no string reply.
 func (v Value) String() string {
-	return string([]byte(v))
+	return *v.string
+}
+
+// Bytes returns the reply value as byte slice.
+// It panics, if there was no string reply.
+func (v Value) Bytes() []byte {
+	return []byte(*v.string)
+}
+
+// Int64 returns the reply value as int64.
+// It panics,  if there was no integer reply.
+func (v Value) Int64() int64 {
+	return *v.int
 }
 
 // Bool return the value as bool.
@@ -32,14 +48,6 @@ func (v Value) Int() int {
 	return 0
 }
 
-// Int64 returns the value as int64.
-func (v Value) Int64() int64 {
-	if i, err := strconv.ParseInt(v.String(), 10, 64); err == nil {
-		return i
-	}
-
-	return 0
-}
 
 // Uint64 returns the value as uint64.
 func (v Value) Uint64() uint64 {
@@ -59,10 +67,7 @@ func (v Value) Float64() float64 {
 	return 0.0
 }
 
-// Bytes returns the value as byte slice.
-func (v Value) Bytes() []byte {
-	return []byte(v)
-}
+
 
 // StringSlice returns the value as slice of strings when seperated by CRLF.
 func (v Value) StringSlice() []string {

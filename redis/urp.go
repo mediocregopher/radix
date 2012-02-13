@@ -17,7 +17,7 @@ type redisReply int
 
 // Envelope type for a command or a multi command.
 type envCommand struct {
-	rs       *ResultSet
+	r        *Reply
 	cmds     []command
 	doneChan chan bool
 }
@@ -32,7 +32,8 @@ type envSubscription struct {
 // Envelope type for read data.
 type envData struct {
 	length int
-	data   []byte
+	string *string
+	int    *int64
 	error  error
 }
 
@@ -92,26 +93,26 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 	go urp.backend()
 
 	// Select database.
-	rs := &ResultSet{}
+	r := &Reply{}
 
-	urp.command(rs, "select", c.Database)
+	urp.command(r, "select", c.Database)
 
-	if !rs.OK() {
+	if !r.OK() {
 		// Connection or database is not ok, so reset.
 		urp.stop()
-		return nil, rs.Error()
+		return nil, r.Error()
 	}
 
 	// Authenticate if needed.
 	if c.Auth != "" {
-		rs = &ResultSet{}
+		r = &Reply{}
 
-		urp.command(rs, "auth", c.Auth)
+		urp.command(r, "auth", c.Auth)
 
-		if !rs.OK() {
+		if !r.OK() {
 			// Authentication is not ok, so reset.
 			urp.stop()
-			return nil, rs.Error()
+			return nil, r.Error()
 		}
 	}
 
@@ -119,10 +120,10 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 }
 
 // Execute a command.
-func (urp *unifiedRequestProtocol) command(rs *ResultSet, cmd string, args ...interface{}) {
+func (urp *unifiedRequestProtocol) command(r *Reply, cmd string, args ...interface{}) {
 	doneChan := make(chan bool)
 	urp.commandChan <- &envCommand{
-		rs,
+		r,
 		[]command{command{cmd, args}},
 		doneChan,
 	}
@@ -130,9 +131,9 @@ func (urp *unifiedRequestProtocol) command(rs *ResultSet, cmd string, args ...in
 }
 
 // Execute a multi command.
-func (urp *unifiedRequestProtocol) multiCommand(rs *ResultSet, cmds []command) {
+func (urp *unifiedRequestProtocol) multiCommand(r *Reply, cmds []command) {
 	doneChan := make(chan bool)
-	urp.commandChan <- &envCommand{rs, cmds, doneChan}
+	urp.commandChan <- &envCommand{r, cmds, doneChan}
 	<-doneChan
 }
 
@@ -158,12 +159,14 @@ func (urp *unifiedRequestProtocol) stop() {
 // Goroutine for receiving data from the TCP connection.
 func (urp *unifiedRequestProtocol) receiver() {
 	var ed *envData
+	var err error
+	var b []byte
 
 	for {
-		b, err := urp.reader.ReadBytes('\n')
+		b, err = urp.reader.ReadBytes('\n')
 
 		if err != nil {
-			urp.dataChan <- &envData{0, nil, err}
+			urp.dataChan <- &envData{0, nil, nil, err}
 			return
 		}
 
@@ -174,24 +177,32 @@ func (urp *unifiedRequestProtocol) receiver() {
 		case '-':
 			// Error reply.
 			if bytes.HasPrefix(b, []byte("ERR")) {
-				ed = &envData{0, nil, errors.New("redis: " + string(b[4:]))}
+				ed = &envData{0, nil, nil, errors.New("redis: " + string(b[4:]))}
 			} else {
-				ed = &envData{0, nil, errors.New("redis: " + string(b))}
+				ed = &envData{0, nil, nil, errors.New("redis: " + string(b))}
 			}
 		case '+':
 			// Status reply.
-			r := b
-			ed = &envData{len(r), r, nil}
+			s := string(b)
+			ed = &envData{0, &s, nil, nil}
 		case ':':
 			// Integer reply.
-			r := b
-			ed = &envData{len(r), r, nil}
+			var i int64
+			i, err = strconv.ParseInt(string(b), 10, 64)
+			if err != nil {
+				panic("redis: integer reply parse error")
+			}
+			ed = &envData{0, nil, &i, nil}
 		case '$':
 			// Bulk reply, or key not found.
-			i, _ := strconv.Atoi(string(b))
+			var i int
+			i, err = strconv.Atoi(string(b))
+			if err != nil {
+				panic("redis: bulk reply parse error")
+			}
 
 			if i == -1 {
-				ed = &envData{-1, nil, nil}
+				ed = &envData{-1, nil, nil, nil}
 			} else {
 				// Reading the data.
 				ir := i + 2
@@ -202,23 +213,28 @@ func (urp *unifiedRequestProtocol) receiver() {
 					n, err := urp.reader.Read(br[r:])
 
 					if err != nil {
-						urp.dataChan <- &envData{0, nil, err}
+						urp.dataChan <- &envData{0, nil, nil, err}
 						return
 					}
 
 					r += n
 				}
-				ed = &envData{i, br[0:i], nil}
+				s := string(br[0:i])
+				ed = &envData{0, &s, nil, nil}
 			}
 		case '*':
 			// Multi-bulk reply. Just return the count
 			// of the replies. The caller has to do the
 			// individual calls.
-			i, _ := strconv.Atoi(string(b))
-			ed = &envData{i, nil, nil}
+			var i int
+			i, err = strconv.Atoi(string(b))
+			if err != nil {
+				panic("redis: multi-bulk reply parse error")
+			}
+			ed = &envData{i, nil, nil, nil}
 		default:
 			// Oops!
-			ed = &envData{0, nil, errors.New("redis: invalid received data type")}
+			ed = &envData{0, nil, nil, errors.New("redis: invalid received data type")}
 		}
 
 		// Send result.
@@ -259,16 +275,18 @@ func (urp *unifiedRequestProtocol) handleCommand(ec *envCommand) {
 	if err := urp.writeRequest(ec.cmds); err == nil {
 		// Receive reply.
 		if len(ec.cmds) == 1 {
-			urp.receiveReply(ec.cmds[0].cmd, ec.rs)
+			urp.receiveReply(ec.cmds[0].cmd, ec.r)
 		} else {
+			// Multi-command
+			ec.r.t = ReplyMulti
 			for i := 0; i < len(ec.cmds); i++ {
-				ec.rs.resultSets = append(ec.rs.resultSets, &ResultSet{})
-				urp.receiveReply(ec.cmds[i].cmd, ec.rs.resultSets[i])
+				ec.r.elems = append(ec.r.elems, &Reply{})
+				urp.receiveReply(ec.cmds[i].cmd, ec.r.elems[i])
 			}
 		}
 	} else {
 		// Return error.
-		ec.rs.error = err
+		ec.r.err = err
 	}
 
 	ec.doneChan <- true
@@ -299,19 +317,19 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 
 	// Receive the replies.
 	channelLen := len(es.channels)
-	rs := &ResultSet{}
-	rs.resultSets = make([]*ResultSet, channelLen)
+	r := &Reply{}
+	r.elems = make([]*Reply, channelLen)
 
 	for i := 0; i < channelLen; i++ {
-		rs.resultSets[i] = &ResultSet{}
-		urp.receiveReply("", rs.resultSets[i])
+		r.elems[i] = &Reply{}
+		urp.receiveReply("", r.elems[i])
 	}
 
 	// Get the number of subscribed channels.
-	lastResultSet := rs.ResultSetAt(channelLen - 1)
-	lastResultValue := lastResultSet.At(lastResultSet.Len() - 1)
+	lastReply := r.At(channelLen - 1)
+	lastReplyValue := lastReply.At(2)
 
-	es.countChan <- int(lastResultValue.Int64())
+	es.countChan <- int(lastReplyValue.Int64())
 }
 
 // Handle published data.
@@ -322,7 +340,7 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 		// Error.
 		urp.publishedDataChan <- &envPublishedData{nil, ed.error}
 	case ed.length > 0:
-		// Multiple results as part of the one reply.
+		// Multi-bulk reply
 		values := make([][]byte, ed.length)
 
 		for i := 0; i < ed.length; i++ {
@@ -332,7 +350,7 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 				urp.publishedDataChan <- &envPublishedData{nil, ed.error}
 			}
 
-			values[i] = ed.data
+			values[i] = []byte(*ed.string)
 		}
 
 		urp.publishedDataChan <- &envPublishedData{values, nil}
@@ -390,7 +408,7 @@ func (urp *unifiedRequestProtocol) writeRequest(cmds []command) error {
 }
 
 // Receive a reply.
-func (urp *unifiedRequestProtocol) receiveReply(cmd string, rs *ResultSet) {
+func (urp *unifiedRequestProtocol) receiveReply(cmd string, r *Reply) {
 	// Read initial data.
 	ed := <-urp.dataChan
 
@@ -398,42 +416,50 @@ func (urp *unifiedRequestProtocol) receiveReply(cmd string, rs *ResultSet) {
 	switch {
 	case ed.error != nil:
 		// Error.
-		rs.error = ed.error
+		r.t = ReplyError
+		r.err = ed.error
 		return
 	case cmd == "exec":
 		if urp.multiCounter == -1 {
 			panic("redis: EXEC without MULTI")
 		}
 		multiCounter := urp.multiCounter
+
 		// Exit transaction mode.
 		urp.multiCounter = -1
-		// Store the results in multiple result sets.
-		for i := 0; i < multiCounter; i++ {
-			rs.resultSets = append(rs.resultSets, &ResultSet{})
-			urp.receiveReply("", rs.resultSets[i])
+		if ed.length == -1 {
+			// Aborted transaction
+			r.t = ReplyNil
+			return
 		}
-	case ed.data != nil:
-		// Single result.
-		rs.values = []Value{Value(ed.data)}
+
+		// Multi-bulk reply
+		r.t = ReplyMulti
+		for i := 0; i < multiCounter; i++ {
+			r.elems = append(r.elems, &Reply{})
+			urp.receiveReply("", r.elems[i])
+		}
+		return
+	case ed.string != nil:
+		r.t = ReplyString
+		r.string = ed.string
+	case ed.int != nil:
+		r.t = ReplyInteger
+		r.int = ed.int
 	case ed.length > 0:
-		// Multiple results.
-		rs.values = make([]Value, ed.length)
-
+		// Multi-bulk reply
+		r.t = ReplyMulti
 		for i := 0; i < ed.length; i++ {
-			ied := <-urp.dataChan
-
-			if ied.error != nil {
-				rs.error = ied.error
-			}
-
-			rs.values[i] = Value(ied.data)
+			r.elems = append(r.elems, &Reply{})
+			urp.receiveReply("", r.elems[i])
 		}
 	case ed.length == -1:
-		// nil.
-		rs.values = []Value{nil}
+		// nil value.
+		r.t = ReplyNil
 	default:
 		// Invalid reply.
-		rs.error = errors.New("redis: invalid reply")
+		r.t = ReplyError
+		r.err = errors.New("redis: invalid reply")
 		return
 	}
 
