@@ -32,7 +32,7 @@ type envSubscription struct {
 // Envelope type for read data.
 type envData struct {
 	length int
-	string *string
+	str    *string
 	int    *int64
 	error  error
 }
@@ -350,7 +350,7 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 				urp.publishedDataChan <- &envPublishedData{nil, ed.error}
 			}
 
-			values[i] = []byte(*ed.string)
+			values[i] = []byte(*ed.str)
 		}
 
 		urp.publishedDataChan <- &envPublishedData{values, nil}
@@ -440,9 +440,9 @@ func (urp *unifiedRequestProtocol) receiveReply(cmd string, r *Reply) {
 			urp.receiveReply("", r.elems[i])
 		}
 		return
-	case ed.string != nil:
+	case ed.str != nil:
 		r.t = ReplyString
-		r.string = ed.string
+		r.str = ed.str
 	case ed.int != nil:
 		r.t = ReplyInteger
 		r.int = ed.int
