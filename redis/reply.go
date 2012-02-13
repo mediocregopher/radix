@@ -19,11 +19,11 @@ const (
 
 // Reply holds a Redis reply.
 type Reply struct {
-	t      ReplyType
-	string *string
-	int    *int64
-	elems  []*Reply
-	err    error
+	t     ReplyType
+	str   *string
+	int   *int64
+	elems []*Reply
+	err   error
 }
 
 /* 
@@ -49,7 +49,7 @@ func (r *Reply) Str() string {
 		panic("redis: string value is not available for this reply type")
 	}
 
-	return *r.string
+	return *r.str
 }
 
 // Bytes is a convenience method for []byte(Reply.String()).
@@ -142,7 +142,7 @@ func (r *Reply) Strings() []string {
 
 	strings := make([]string, len(r.values))
 	for i, v := range r.values {
-		strings[i] = *v.string
+		strings[i] = *v.str
 	}
 
 	return strings
