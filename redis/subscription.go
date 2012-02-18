@@ -6,18 +6,18 @@ import "runtime"
 
 // Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
-	client                *Client
-	urp                   *unifiedRequestProtocol
-	error                 error
-	MessageChan           chan *Message
+	client      *Client
+	urp         *unifiedRequestProtocol
+	error       error
+	MessageChan chan *Message
 }
 
 // Create a new Subscription or return an error.
 func newSubscription(urp *unifiedRequestProtocol, channels ...string) (*Subscription, error) {
 	sub := &Subscription{
-		urp: urp,
+		urp:         urp,
 		MessageChan: urp.pubChan,
-}
+	}
 
 	runtime.SetFinalizer(sub, (*Subscription).Close)
 	err := sub.urp.subscribe(channels...)

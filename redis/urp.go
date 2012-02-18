@@ -29,7 +29,7 @@ type redisReply int
 // Envelope type for a command
 type envCommand struct {
 	r        *Reply
-	cmd command
+	cmd      command
 	doneChan chan bool
 }
 
@@ -51,35 +51,35 @@ type envData struct {
 // Envelope type for a subscription
 type envSubscription struct {
 	subscription bool
-	channels []string
-	errChan chan error
+	channels     []string
+	errChan      chan error
 }
 
 // Pub/sub message
 type Message struct {
-	Type  MessageType
-	Channel string
-	Pattern string
+	Type          MessageType
+	Channel       string
+	Pattern       string
 	Subscriptions int
-	Payload string
-	Error error
+	Payload       string
+	Error         error
 }
 
 //* Unified request protocol
 
 // Redis unified request protocol type.
 type unifiedRequestProtocol struct {
-	conn              *net.TCPConn
-	writer            *bufio.Writer
-	reader            *bufio.Reader
-	commandChan       chan *envCommand
-	multiCommandChan  chan *envMultiCommand
-	dataChan          chan *envData
-	subscriptionChan  chan *envSubscription
-	pubChan           chan *Message
-	closerChan          chan bool
-	database          int
-	multiCounter      int
+	conn             *net.TCPConn
+	writer           *bufio.Writer
+	reader           *bufio.Reader
+	commandChan      chan *envCommand
+	multiCommandChan chan *envMultiCommand
+	dataChan         chan *envData
+	subscriptionChan chan *envSubscription
+	pubChan          chan *Message
+	closerChan       chan bool
+	database         int
+	multiCounter     int
 }
 
 // Create a new protocol.
@@ -99,17 +99,17 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 
 	// Create the URP.
 	urp := &unifiedRequestProtocol{
-		conn:              conn,
-		writer:            bufio.NewWriter(conn),
-		reader:            bufio.NewReader(conn),
-		commandChan:       make(chan *envCommand),
-	multiCommandChan: make(chan *envMultiCommand),
-		subscriptionChan:  make(chan *envSubscription),
-		dataChan:          make(chan *envData, 10),
-		pubChan: make(chan *Message, 10),
-		closerChan:          make(chan bool),
-		database:          c.Database,
-		multiCounter:      -1,
+		conn:             conn,
+		writer:           bufio.NewWriter(conn),
+		reader:           bufio.NewReader(conn),
+		commandChan:      make(chan *envCommand),
+		multiCommandChan: make(chan *envMultiCommand),
+		subscriptionChan: make(chan *envSubscription),
+		dataChan:         make(chan *envData, 10),
+		pubChan:          make(chan *Message, 10),
+		closerChan:       make(chan bool),
+		database:         c.Database,
+		multiCounter:     -1,
 	}
 
 	// Start goroutines.
@@ -335,7 +335,7 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 		// Error reply
 		// NOTE: Redis SHOULD NOT send error replies while the connection is in pub/sub mode.
 		// These errors must always originate from radix itself.
-			urp.pubChan <- &Message{Type:MessageError, Error: r.Error()}
+		urp.pubChan <- &Message{Type: MessageError, Error: r.Error()}
 	} else {
 		var r0, r1 *Reply
 		m := &Message{}
@@ -373,22 +373,24 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 			goto Invalid
 		}
 
-		switch { 
-		case m.Type == MessageSubscribe || 
-				m.Type == MessageUnsubscribe || 
-				m.Type == MessagePSubscribe ||
-				m.Type == MessagePUnsubscribe:
-			if m.Type == MessageSubscribe || m.Type == MessageUnsubscribe {
-				m.Channel = r1.Str()
-			} else {
-				m.Pattern = r1.Str()
-			}
+		switch {
+		case m.Type == MessageSubscribe || m.Type == MessageUnsubscribe:
+			m.Channel = r1.Str()
 
 			// number of subscriptions
 			r2 := r.At(2)
 			if r2.Type() != ReplyInteger {
 				goto Invalid
-			}			
+			}
+			m.Subscriptions = r2.Int()
+		case m.Type == MessagePSubscribe || m.Type == MessagePUnsubscribe:
+			m.Pattern = r1.Str()
+
+			// number of subscriptions
+			r2 := r.At(2)
+			if r2.Type() != ReplyInteger {
+				goto Invalid
+			}
 			m.Subscriptions = r2.Int()
 		case m.Type == MessageMessage:
 			m.Channel = r1.Str()
@@ -397,7 +399,7 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 			r2 := r.At(2)
 			if r2.Type() != ReplyString {
 				goto Invalid
-			}			
+			}
 			m.Payload = r2.Str()
 		case m.Type == MessagePMessage:
 			m.Pattern = r1.Str()
@@ -406,26 +408,26 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 			r2 := r.At(2)
 			if r2.Type() != ReplyString {
 				goto Invalid
-			}			
+			}
 			m.Channel = r2.Str()
 
 			// payload
 			r3 := r.At(3)
 			if r3.Type() != ReplyString {
 				goto Invalid
-			}			
+			}
 			m.Channel = r3.Str()
 
 		default:
 			goto Invalid
 		}
-			
+
 		urp.pubChan <- m
 		return
 
-		Invalid:
+	Invalid:
 		// Invalid reply
-		urp.pubChan <- &Message{Type:MessageError, Error:errors.New("redis: received invalid pub/sub reply")}
+		urp.pubChan <- &Message{Type: MessageError, Error: errors.New("redis: received invalid pub/sub reply")}
 	}
 }
 
@@ -441,7 +443,7 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 	}
 
 	// Send the subscription request.
-		channels := make([]interface{}, len(es.channels))
+	channels := make([]interface{}, len(es.channels))
 	for i, v := range es.channels {
 		channels[i] = v
 	}

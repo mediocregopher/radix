@@ -176,7 +176,7 @@ func (c *Client) Subscription(channels ...string) (*Subscription, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return sub, nil
 }
 
