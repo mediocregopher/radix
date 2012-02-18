@@ -10,6 +10,7 @@ GOFILES=\
 	urp.go\
 	reply.go\
 	utils.go\
+	subscription.go\
 
 include $(GOROOT)/src/Make.pkg
 

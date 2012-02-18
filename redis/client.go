@@ -45,7 +45,7 @@ func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
 		urp, err = newUnifiedRequestProtocol(c.configuration)
 
 		if err != nil {
-			return
+			return nil, err
 		}
 	} else if urp.database != c.configuration.Database {
 		// Database changed, issue SELECT command
@@ -163,30 +163,26 @@ func (c *Client) Select(database int) {
 }
 
 //* PubSub
-/*
-// Subscribe to given channels. If successful, return a Subscription, number of channels that were
-// succesfully subscribed or an error.
-func (c *Client) Subscribe(channels ...string) (*Subscription, int, error) {
+
+// Subscribe to given channels and return a Subscription and an error, if any.
+func (c *Client) Subscription(channels ...string) (*Subscription, error) {
 	// URP handling.
 	urp, err := newUnifiedRequestProtocol(c.configuration)
-
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	sub, numSubs := newSubscription(urp, channels...)
-	return sub, numSubs, nil
+	sub, err := newSubscription(urp, channels...)
+	if err != nil {
+		return nil, err
+	}
+	
+	return sub, nil
 }
 
-// Publish a message to a channel.
-func (c *Client) Publish(channel string, message interface{}) int {
-	r := c.Command("publish", channel, message)
-	return int(r.Value().Int64())
-}
-*/
 //* Helpers
 
-// Check the configuration.
+// Check the given configuration.
 func checkConfiguration(c *Configuration) {
 	if c.Address == "" {
 		// Default is localhost and default port.

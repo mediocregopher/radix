@@ -186,7 +186,7 @@ func (r *Reply) Hash() Hash {
 
 // String returns a string representation of the reply and its sub-replies.
 // This method is mainly used for debugging.
-// Use method Reply.Str() instead for fetching a string reply.
+// Use method Reply.Str() for fetching a string reply.
 func (r *Reply) String() string {
 	switch r.t {
 	case ReplyStatus:

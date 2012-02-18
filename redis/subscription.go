@@ -2,98 +2,41 @@ package redis
 
 import "runtime"
 
-//* Subscription value
-
-// The subscription value is a result value
-// plus channel pattern and channel.
-type SubscriptionValue struct {
-	Reply
-	ChannelPattern string
-	Channel        string
-}
-
-// Create a new subscription value.
-func newSubscriptionValue(data [][]byte) *SubscriptionValue {
-	switch len(data) {
-	case 3:
-		s:= string(data[2])
-		return &SubscriptionValue{
-		Value:          Value{stre&s, nil},
-			ChannelPattern: "*",
-			Channel:        string(data[1]),
-		}
-	case 4:
-		s:= string(data[3])
-		return &SubscriptionValue{
-		Value:          Value{&s, nil},
-			ChannelPattern: string(data[1]),
-			Channel:        string(data[2]),
-		}
-	}
-
-	return nil
-}
-
 //* Subscription
 
 // Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
+	client                *Client
 	urp                   *unifiedRequestProtocol
 	error                 error
-	SubscriptionValueChan chan *SubscriptionValue
-	closerChan            chan bool
+	MessageChan           chan *Message
 }
 
-// Create a new subscription, subscribe to given channels and return the count of succesfully subscribed
-// channels.
-func newSubscription(urp *unifiedRequestProtocol, channels ...string) (*Subscription, int) {
+// Create a new Subscription or return an error.
+func newSubscription(urp *unifiedRequestProtocol, channels ...string) (*Subscription, error) {
 	sub := &Subscription{
 		urp: urp,
-		SubscriptionValueChan: make(chan *SubscriptionValue, 10),
-		closerChan:            make(chan bool, 1)}
-
-	runtime.SetFinalizer(sub, (*Subscription).Stop)
-	// Subscribe to the channels.
-	chanCount := sub.urp.subscribe(channels...)
-	go sub.backend()
-	return sub, chanCount
+		MessageChan: urp.pubChan,
 }
 
-// Subscribe to given channels and return the count of succesfully subscribed channels.
-func (s *Subscription) Subscribe(channels ...string) int {
+	runtime.SetFinalizer(sub, (*Subscription).Close)
+	err := sub.urp.subscribe(channels...)
+	return sub, err
+}
+
+// Subscribe to given channels and return an error, if any.
+func (s *Subscription) Subscribe(channels ...string) error {
 	return s.urp.subscribe(channels...)
 }
 
-// Unsubscribe from given channels and return the count of remaining subscribed channels.
-func (s *Subscription) Unsubscribe(channels ...string) int {
+// Unsubscribe from given channels and return an error, if any.
+func (s *Subscription) Unsubscribe(channels ...string) error {
 	return s.urp.unsubscribe(channels...)
 }
 
-// Close the subscription.
-func (s *Subscription) Stop() {
+// Close the Subscription.
+func (s *Subscription) Close() {
 	runtime.SetFinalizer(s, nil)
-	s.urp.stop()
-	s.closerChan <- true
-}
-
-// Backend of the subscription.
-func (s *Subscription) backend() {
-	for epd := range s.urp.publishedDataChan {
-		// Received a published data, republish
-		// as subscription value.
-		sv := newSubscriptionValue(epd.data)
-
-		// Send the subscription value.
-		select {
-		case <-s.closerChan:
-			// Close the backend.
-			close(s.SubscriptionValueChan)
-			return
-		case s.SubscriptionValueChan <- sv:
-			// OK.
-		default:
-			// Not sent!
-			return
-		}
-	}
+	s.urp.close()
+	s.urp = nil
 }
