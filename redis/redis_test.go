@@ -214,9 +214,9 @@ func (s *S) TestArgToRedis(c *C) {
 	// bool
 	rd.Command("set", "foo3", true)
 	c.Check(
-		rd.Command("get", "foo3").Bytes(),
+		rd.Command("get", "foo3").Bool(),
 		Equals,
-		[]byte{'1'})
+		true)
 
 	// integers
 	rd.Command("set", "foo4", 2)

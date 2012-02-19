@@ -72,35 +72,42 @@ func (r *Reply) Int() int {
 	return int(r.Int64())
 }
 
-// Bool returns true, if the reply value equals to 1, otherwise false.
-// It panics, if the reply type is not ReplyInteger.
+// Bool returns true, if the reply value equals to 1 or "1", otherwise false.
+// It panics, if the reply type is not ReplyInteger or ReplyString.
 func (r *Reply) Bool() bool {
-	if r.t != ReplyInteger {
-		panic("redis: boolean value is not available for this reply type")
+	switch r.t {
+	case ReplyInteger:
+		if r.Int() == 1 {
+			return true
+		}
+
+		return false
+	case ReplyString:
+		if r.Str() == "1" {
+			return true
+		}
+
+		return false
 	}
 
-	if r.Int() == 1 {
-		return true
-	}
-
-	return false
+	panic("redis: boolean value is not available for this reply type")
 }
 
 // Len returns the number of elements in a multi reply.
-// It panics, if the reply type is not ReplyMulti.
+// It panics, if the reply type is not ReplyMulti or ReplyNil.
 func (r *Reply) Len() int {
-	if r.t != ReplyMulti {
-		panic("redis: reply type is not ReplyMulti")
+	if !(r.t == ReplyMulti || r.t == ReplyNil) {
+		panic("redis: length is not available for this reply type")
 	}
 
 	return len(r.elems)
 }
 
-// Elems returns the elements (sub-replies) of a multi reply.
-// It panics, if the reply type is not ReplyMulti.
+// Elems returns the elements (sub-replies) of a multi reply or nil, if the reply is nil reply.
+// It panics, if the reply type is not ReplyMulti or ReplyNil.
 func (r *Reply) Elems() []*Reply {
-	if r.t != ReplyMulti {
-		panic("redis: reply type is not ReplyMulti")
+	if !(r.t == ReplyMulti || r.t == ReplyNil) {
+		panic("redis: reply type is not ReplyMulti or ReplyNil")
 	}
 
 	return r.elems
@@ -158,7 +165,7 @@ func (r *Reply) Strings() ([]string, error) {
 	return strings, nil
 }
 
-// Map returns a hash reply as map or an error.
+// Map returns a hash reply as a map or an error.
 // The reply must be a multi-bulk reply with "key value key value..."-style elements.
 // The reply type must be a ReplyMulti or ReplyNil.
 // An empty map is returned, if the reply type is ReplyNil.
