@@ -7,10 +7,11 @@ GOFILES=\
 	doc.go\
 	client.go\
 	multi_command.go\
-	urp.go\
+	connection.go\
 	reply.go\
 	utils.go\
 	subscription.go\
+	message.go\
 
 include $(GOROOT)/src/Make.pkg
 

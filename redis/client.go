@@ -13,8 +13,7 @@ type Configuration struct {
 // Client manages the access to a database.
 type Client struct {
 	configuration *Configuration
-	pool          chan *unifiedRequestProtocol
-	poolUsage     int
+	pool          chan *connection
 }
 
 // NewClient create a new accessor.
@@ -24,7 +23,7 @@ func NewClient(conf Configuration) *Client {
 	// Create the database client instance.
 	c := &Client{
 		configuration: &conf,
-		pool:          make(chan *unifiedRequestProtocol, conf.PoolSize),
+		pool:          make(chan *connection, conf.PoolSize),
 	}
 
 	// Init pool with nils.
@@ -35,22 +34,22 @@ func NewClient(conf Configuration) *Client {
 	return c
 }
 
-// Pull an URP from the pool, with lazy init.
-func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
-	urp = <-c.pool
+// Pull a connection from the pool, with lazy init.
+func (c *Client) pullConnection() (conn *connection, err error) {
+	conn = <-c.pool
 
-	// Lazy init of an URP.
-	if urp == nil {
-		// Create a new URP.
-		urp, err = newUnifiedRequestProtocol(c.configuration)
+	// Lazy init of a connection.
+	if conn == nil {
+		// Create a new connection.
+		conn, err = newConnection(c.configuration)
 
 		if err != nil {
 			return nil, err
 		}
-	} else if urp.database != c.configuration.Database {
+	} else if conn.database != c.configuration.Database {
 		// Database changed, issue SELECT command
 		r := &Reply{}
-		urp.command(r, "select", c.configuration.Database)
+		conn.command(r, "select", c.configuration.Database)
 
 		if !r.OK() {
 			err = r.Error()
@@ -58,28 +57,40 @@ func (c *Client) pullURP() (urp *unifiedRequestProtocol, err error) {
 		}
 	}
 
-	c.poolUsage++
-	return urp, nil
+	return conn, nil
 }
 
-// Push an URP to the pool.
-func (c *Client) pushURP(urp *unifiedRequestProtocol) {
-	if urp != nil {
-		c.poolUsage--
-	}
+// Push a connection to the pool.
+func (c *Client) pushConnection(conn *connection) {
+	c.pool <- conn
+}
 
-	c.pool <- urp
+// Close all connections of the client.
+func (c *Client) Close() {
+	var poolUsage int
+	for conn := range c.pool {
+		poolUsage++
+
+		if conn != nil {
+			conn.close()
+			conn = nil
+		}
+
+		if poolUsage == c.configuration.PoolSize {
+			return
+		}
+	}
 }
 
 // Command performs a Redis command.
 func (c *Client) Command(cmd string, args ...interface{}) *Reply {
 	r := &Reply{}
 
-	// URP handling.
-	urp, err := c.pullURP()
+	// Connection handling
+	conn, err := c.pullConnection()
 
 	defer func() {
-		c.pushURP(urp)
+		c.pushConnection(conn)
 	}()
 
 	if err != nil {
@@ -88,7 +99,7 @@ func (c *Client) Command(cmd string, args ...interface{}) *Reply {
 	}
 
 	// Now do it.
-	urp.command(r, cmd, args...)
+	conn.command(r, cmd, args...)
 
 	return r
 }
@@ -106,18 +117,18 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 
 // Helper method for MultiCommand and Transaction.
 func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
-	// URP handling.
-	urp, err := c.pullURP()
+	// Connection handling
+	conn, err := c.pullConnection()
 
 	defer func() {
-		c.pushURP(urp)
+		c.pushConnection(conn)
 	}()
 
 	if err != nil {
 		return &Reply{err: err}
 	}
 
-	return newMultiCommand(transaction, urp).process(f)
+	return newMultiCommand(transaction, conn).process(f)
 }
 
 // Perform a multi command.
@@ -156,8 +167,8 @@ func (c *Client) AsyncTransaction(f func(*MultiCommand)) Future {
 
 // Select changes the database of connections used by the Client to the given database.
 // This is the RECOMMENDED way of changing database as Redis SELECT command changes only
-// the database of one connection the Client.
-// Database changes occur after the next calls to pullURP (through Command, etc.)
+// the database of one connection of the Client.
+// Database changes occur after the next calls to pullConnection (through Command, etc.)
 func (c *Client) Select(database int) {
 	c.configuration.Database = database
 }
@@ -166,13 +177,18 @@ func (c *Client) Select(database int) {
 
 // Subscribe to given channels and return a Subscription and an error, if any.
 func (c *Client) Subscription(channels ...string) (*Subscription, error) {
-	// URP handling.
-	urp, err := newUnifiedRequestProtocol(c.configuration)
+	// Connection handling
+	conn, err := c.pullConnection()
+
+	defer func() {
+		c.pushConnection(conn)
+	}()
+
 	if err != nil {
 		return nil, err
 	}
 
-	sub, err := newSubscription(urp, channels...)
+	sub, err := newSubscription(conn, channels...)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +210,7 @@ func checkConfiguration(c *Configuration) {
 		c.Database = 0
 	}
 
-	if c.PoolSize <= 0 {
+	if c.PoolSize <= 1 {
 		// Default is 10.
 		c.PoolSize = 10
 	}

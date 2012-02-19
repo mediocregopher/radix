@@ -8,17 +8,17 @@ import (
 type MultiCommand struct {
 	transaction bool
 	r           *Reply
-	urp         *unifiedRequestProtocol
+	c         *connection
 	cmds        []command
 	cmdCounter  int
 }
 
 // Create a new MultiCommand.
-func newMultiCommand(transaction bool, urp *unifiedRequestProtocol) *MultiCommand {
+func newMultiCommand(transaction bool, c *connection) *MultiCommand {
 	return &MultiCommand{
 		transaction: transaction,
 		r:           &Reply{},
-		urp:         urp,
+		c:         c,
 	}
 }
 
@@ -29,10 +29,10 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 	}
 	f(mc)
 	if !mc.transaction {
-		mc.urp.multiCommand(mc.r, mc.cmds)
+		mc.c.multiCommand(mc.r, mc.cmds)
 	} else {
 		mc.Command("exec")
-		mc.urp.multiCommand(mc.r, mc.cmds)
+		mc.c.multiCommand(mc.r, mc.cmds)
 
 		exec_rs := mc.r.At(len(mc.r.elems) - 1)
 		if exec_rs.OK() {
@@ -58,7 +58,7 @@ func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
 // Send queued commands to the Redis server for execution and return the returned Reply.
 // The Reply associated with the MultiCommand will be reseted.
 func (mc *MultiCommand) Flush() *Reply {
-	mc.urp.multiCommand(mc.r, mc.cmds)
+	mc.c.multiCommand(mc.r, mc.cmds)
 	tmprs := mc.r
 	mc.r = &Reply{}
 	mc.cmds = nil

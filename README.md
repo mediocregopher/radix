@@ -2,7 +2,7 @@ Radix
 =====
 
 Radix is an asynchronous Redis client for Go.
-Radix was originally adapted from the Tideland-rdc redis client (http://code.google.com/p/tideland-rdc/)
+Radix was originally forked from the Tideland-rdc redis client (http://code.google.com/p/tideland-rdc/)
 developed by Frank Mueller.
 
 ## Installation

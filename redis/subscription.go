@@ -7,36 +7,65 @@ import "runtime"
 // Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
 	client      *Client
-	urp         *unifiedRequestProtocol
+	conn         *connection
 	error       error
-	MessageChan chan *Message
+	closerChan chan bool
+	messageChan chan *Message
+	MessageChan <-chan *Message
 }
 
 // Create a new Subscription or return an error.
-func newSubscription(urp *unifiedRequestProtocol, channels ...string) (*Subscription, error) {
+func newSubscription(conn *connection, channels ...string) (*Subscription, error) {
+	messageChan := make(chan *Message, 1)
 	sub := &Subscription{
-		urp:         urp,
-		MessageChan: urp.pubChan,
+		conn:         conn,
+	closerChan: make(chan bool, 1),
+	messageChan: messageChan,
+	MessageChan: messageChan,
+	}
+	runtime.SetFinalizer(sub, (*Subscription).Close)
+	go sub.backend()
+
+	err := sub.conn.subscribe(channels...)
+	if err != nil {
+		return nil, err
 	}
 
-	runtime.SetFinalizer(sub, (*Subscription).Close)
-	err := sub.urp.subscribe(channels...)
-	return sub, err
+	return sub, nil
 }
 
 // Subscribe to given channels and return an error, if any.
 func (s *Subscription) Subscribe(channels ...string) error {
-	return s.urp.subscribe(channels...)
+	return s.conn.subscribe(channels...)
 }
 
 // Unsubscribe from given channels and return an error, if any.
 func (s *Subscription) Unsubscribe(channels ...string) error {
-	return s.urp.unsubscribe(channels...)
+	return s.conn.unsubscribe(channels...)
 }
 
 // Close the Subscription.
 func (s *Subscription) Close() {
 	runtime.SetFinalizer(s, nil)
-	s.urp.close()
-	s.urp = nil
+	s.closerChan <- true
+	// Try to unsubscribe from all channels to reset the connection state back to normal
+	err := s.conn.unsubscribe()
+	if err != nil {
+		s.conn.close()
+		s.conn = nil
+	}
+}
+
+// Backend of the subscription.
+func (s *Subscription) backend() {
+	for {
+		select {
+		case <-s.closerChan:
+			// Close the backend.
+				close(s.messageChan)
+			return
+		case s.messageChan <- <-s.conn.messageChan:
+			// Message forwarding succesful
+		}
+	}
 }

@@ -12,16 +12,9 @@ import (
 
 //* Misc
 
-type MessageType int
-
 const (
-	MessageSubscribe MessageType = iota
-	MessageUnsubscribe
-	MessagePSubscribe
-	MessagePUnsubscribe
-	MessageMessage
-	MessagePMessage
-	MessageError
+	// Buffer size for some channels holding connection data
+	ConnectionChanBufSize = 10
 )
 
 type redisReply int
@@ -55,20 +48,10 @@ type envSubscription struct {
 	errChan      chan error
 }
 
-// Pub/sub message
-type Message struct {
-	Type          MessageType
-	Channel       string
-	Pattern       string
-	Subscriptions int
-	Payload       string
-	Error         error
-}
+//* connection
 
-//* Unified request protocol
-
-// Redis unified request protocol type.
-type unifiedRequestProtocol struct {
+// Redis connection
+type connection struct {
 	conn             *net.TCPConn
 	writer           *bufio.Writer
 	reader           *bufio.Reader
@@ -76,14 +59,14 @@ type unifiedRequestProtocol struct {
 	multiCommandChan chan *envMultiCommand
 	dataChan         chan *envData
 	subscriptionChan chan *envSubscription
-	pubChan          chan *Message
+	messageChan      chan *Message
 	closerChan       chan bool
 	database         int
 	multiCounter     int
 }
 
 // Create a new protocol.
-func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error) {
+func newConnection(c *Configuration) (*connection, error) {
 	// Establish the connection.
 	tcpAddr, err := net.ResolveTCPAddr("tcp", c.Address)
 
@@ -97,33 +80,30 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 		return nil, err
 	}
 
-	// Create the URP.
-	urp := &unifiedRequestProtocol{
+	co := &connection{
 		conn:             conn,
 		writer:           bufio.NewWriter(conn),
 		reader:           bufio.NewReader(conn),
 		commandChan:      make(chan *envCommand),
 		multiCommandChan: make(chan *envMultiCommand),
 		subscriptionChan: make(chan *envSubscription),
-		dataChan:         make(chan *envData, 10),
-		pubChan:          make(chan *Message, 10),
+		dataChan:         make(chan *envData, ConnectionChanBufSize),
+		messageChan:      make(chan *Message, ConnectionChanBufSize),
 		closerChan:       make(chan bool),
 		database:         c.Database,
 		multiCounter:     -1,
 	}
 
-	// Start goroutines.
-	go urp.receiver()
-	go urp.backend()
+	go co.receiver()
+	go co.backend()
 
 	// Select database.
 	r := &Reply{}
-
-	urp.command(r, "select", c.Database)
+	co.command(r, "select", c.Database)
 
 	if !r.OK() {
 		// Connection or database is not ok, so reset.
-		urp.close()
+		co.close()
 		return nil, r.Error()
 	}
 
@@ -131,22 +111,22 @@ func newUnifiedRequestProtocol(c *Configuration) (*unifiedRequestProtocol, error
 	if c.Auth != "" {
 		r = &Reply{}
 
-		urp.command(r, "auth", c.Auth)
+		co.command(r, "auth", c.Auth)
 
 		if !r.OK() {
 			// Authentication is not ok, so reset.
-			urp.close()
+			co.close()
 			return nil, r.Error()
 		}
 	}
 
-	return urp, nil
+	return co, nil
 }
 
 // Execute a command.
-func (urp *unifiedRequestProtocol) command(r *Reply, cmd string, args ...interface{}) {
+func (c *connection) command(r *Reply, cmd string, args ...interface{}) {
 	doneChan := make(chan bool)
-	urp.commandChan <- &envCommand{
+	c.commandChan <- &envCommand{
 		r,
 		command{cmd, args},
 		doneChan,
@@ -155,43 +135,43 @@ func (urp *unifiedRequestProtocol) command(r *Reply, cmd string, args ...interfa
 }
 
 // Execute a multi command.
-func (urp *unifiedRequestProtocol) multiCommand(r *Reply, cmds []command) {
+func (c *connection) multiCommand(r *Reply, cmds []command) {
 	doneChan := make(chan bool)
-	urp.multiCommandChan <- &envMultiCommand{r, cmds, doneChan}
+	c.multiCommandChan <- &envMultiCommand{r, cmds, doneChan}
 	<-doneChan
 }
 
 // Send a subscription request and return the count of succesfully subscribed channels.
-func (urp *unifiedRequestProtocol) subscribe(channels ...string) error {
+func (c *connection) subscribe(channels ...string) error {
 	errChan := make(chan error)
-	urp.subscriptionChan <- &envSubscription{true, channels, errChan}
+	c.subscriptionChan <- &envSubscription{true, channels, errChan}
 	return <-errChan
 }
 
 // Send an unsubscription request and return the count of remaining subscribed channels.
-func (urp *unifiedRequestProtocol) unsubscribe(channels ...string) error {
+func (c *connection) unsubscribe(channels ...string) error {
 	errChan := make(chan error)
-	urp.subscriptionChan <- &envSubscription{false, channels, errChan}
+	c.subscriptionChan <- &envSubscription{false, channels, errChan}
 	return <-errChan
 }
 
 // Close the connection.
-func (urp *unifiedRequestProtocol) close() {
-	urp.closerChan <- true
+func (c *connection) close() {
+	c.closerChan <- true
 }
 
 // Goroutine for receiving data from the TCP connection.
-func (urp *unifiedRequestProtocol) receiver() {
+func (c *connection) receiver() {
 	var ed *envData
 	var err error
 	var b []byte
 
 	// Read until the connection is closed.
-	for urp.conn != nil {
-		b, err = urp.reader.ReadBytes('\n')
+	for c.conn != nil {
+		b, err = c.reader.ReadBytes('\n')
 
 		if err != nil {
-			urp.dataChan <- &envData{0, nil, nil, err}
+			c.dataChan <- &envData{0, nil, nil, err}
 			return
 		}
 
@@ -237,10 +217,10 @@ func (urp *unifiedRequestProtocol) receiver() {
 				r := 0
 
 				for r < ir {
-					n, err := urp.reader.Read(br[r:])
+					n, err := c.reader.Read(br[r:])
 
 					if err != nil {
-						urp.dataChan <- &envData{0, nil, nil, err}
+						c.dataChan <- &envData{0, nil, nil, err}
 						return
 					}
 
@@ -265,42 +245,42 @@ func (urp *unifiedRequestProtocol) receiver() {
 		}
 
 		// Send result.
-		urp.dataChan <- ed
+		c.dataChan <- ed
 	}
 }
 
 // Goroutine as backend for the protocol.
-func (urp *unifiedRequestProtocol) backend() {
+func (c *connection) backend() {
 	// Receive commands and data.
 	for {
 		select {
-		case ec := <-urp.commandChan:
+		case <-c.closerChan:
+			// Close the connection and pub/sub messaging channel.
+			c.conn.Close()
+			c.conn = nil
+			return
+		case ec := <-c.commandChan:
 			// Received a command.
-			urp.handleCommand(ec)
-		case emc := <-urp.multiCommandChan:
+			c.handleCommand(ec)
+		case emc := <-c.multiCommandChan:
 			// Received a multi command.
-			urp.handleMultiCommand(emc)
-		case es := <-urp.subscriptionChan:
+			c.handleMultiCommand(emc)
+		case es := <-c.subscriptionChan:
 			// Received a subscription.
-			urp.handleSubscription(es)
-		case ed := <-urp.dataChan:
+			c.handleSubscription(es)
+		case ed := <-c.dataChan:
 			// Received data w/o command, so published data
 			// after a subscription.
-			urp.handlePublishing(ed)
-		case <-urp.closerChan:
-			// Close the connection.
-			urp.conn.Close()
-			urp.conn = nil
-			return
+			c.handlePublishing(ed)
 		}
 	}
 }
 
 // Handle a command.
-func (urp *unifiedRequestProtocol) handleCommand(ec *envCommand) {
-	if err := urp.writeRequest([]command{ec.cmd}); err == nil {
-		ed := <-urp.dataChan
-		urp.receiveReply(ed, ec.r)
+func (c *connection) handleCommand(ec *envCommand) {
+	if err := c.writeRequest([]command{ec.cmd}); err == nil {
+		ed := <-c.dataChan
+		c.receiveReply(ed, ec.r)
 	} else {
 		// Return error.
 		ec.r.err = err
@@ -310,13 +290,13 @@ func (urp *unifiedRequestProtocol) handleCommand(ec *envCommand) {
 }
 
 // Handle a multi command.
-func (urp *unifiedRequestProtocol) handleMultiCommand(ec *envMultiCommand) {
-	if err := urp.writeRequest(ec.cmds); err == nil {
+func (c *connection) handleMultiCommand(ec *envMultiCommand) {
+	if err := c.writeRequest(ec.cmds); err == nil {
 		ec.r.t = ReplyMulti
 		for i := 0; i < len(ec.cmds); i++ {
 			ec.r.elems = append(ec.r.elems, &Reply{})
-			ed := <-urp.dataChan
-			urp.receiveReply(ed, ec.r.elems[i])
+			ed := <-c.dataChan
+			c.receiveReply(ed, ec.r.elems[i])
 		}
 	} else {
 		// Return error.
@@ -327,20 +307,20 @@ func (urp *unifiedRequestProtocol) handleMultiCommand(ec *envMultiCommand) {
 }
 
 // Handle published data.
-func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
+func (c *connection) handlePublishing(ed *envData) {
 	r := &Reply{}
-	urp.receiveReply(ed, r)
+	c.receiveReply(ed, r)
 
 	if r.Type() == ReplyError {
 		// Error reply
 		// NOTE: Redis SHOULD NOT send error replies while the connection is in pub/sub mode.
 		// These errors must always originate from radix itself.
-		urp.pubChan <- &Message{Type: MessageError, Error: r.Error()}
+		c.messageChan <- &Message{Type: MessageError, Error: r.Error()}
 	} else {
 		var r0, r1 *Reply
 		m := &Message{}
 
-		if r.Type() != ReplyMulti || r.Len() >= 3 {
+		if r.Type() != ReplyMulti || r.Len() < 3 {
 			goto Invalid
 		}
 
@@ -417,22 +397,21 @@ func (urp *unifiedRequestProtocol) handlePublishing(ed *envData) {
 				goto Invalid
 			}
 			m.Channel = r3.Str()
-
 		default:
 			goto Invalid
 		}
 
-		urp.pubChan <- m
+		c.messageChan <- m
 		return
 
 	Invalid:
 		// Invalid reply
-		urp.pubChan <- &Message{Type: MessageError, Error: errors.New("redis: received invalid pub/sub reply")}
+		c.messageChan <- &Message{Type: MessageError, Error: errors.New("redis: received invalid pub/sub reply")}
 	}
 }
 
 // Handle a subscription.
-func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
+func (c *connection) handleSubscription(es *envSubscription) {
 	// Prepare command.
 	var cmd string
 
@@ -448,12 +427,12 @@ func (urp *unifiedRequestProtocol) handleSubscription(es *envSubscription) {
 		channels[i] = v
 	}
 
-	es.errChan <- urp.writeRequest([]command{command{cmd, channels}})
+	es.errChan <- c.writeRequest([]command{command{cmd, channels}})
 	// subscribe/etc. return their replies in pub/sub messages
 }
 
 // Write a request.
-func (urp *unifiedRequestProtocol) writeRequest(cmds []command) error {
+func (c *connection) writeRequest(cmds []command) error {
 	for _, cmd := range cmds {
 		// Calculate number of arguments.
 		argsLen := 1
@@ -476,28 +455,28 @@ func (urp *unifiedRequestProtocol) writeRequest(cmds []command) error {
 		}
 
 		// Write number of arguments.
-		if _, err := urp.writer.Write([]byte(fmt.Sprintf("*%d\r\n", argsLen))); err != nil {
+		if _, err := c.writer.Write([]byte(fmt.Sprintf("*%d\r\n", argsLen))); err != nil {
 			return err
 		}
 
 		// Write the command.
 		b := []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(cmd.cmd), cmd.cmd))
-		if _, err := urp.writer.Write(b); err != nil {
+		if _, err := c.writer.Write(b); err != nil {
 			return err
 		}
 		// Write arguments.
 		for _, arg := range cmd.args {
-			if _, err := urp.writer.Write(argToRedis(arg)); err != nil {
+			if _, err := c.writer.Write(argToRedis(arg)); err != nil {
 				return err
 			}
 		}
 	}
 
-	return urp.writer.Flush()
+	return c.writer.Flush()
 }
 
 // Receive a reply.
-func (urp *unifiedRequestProtocol) receiveReply(ed *envData, r *Reply) {
+func (c *connection) receiveReply(ed *envData, r *Reply) {
 	switch {
 	case ed.error != nil:
 		// Error reply
@@ -516,8 +495,8 @@ func (urp *unifiedRequestProtocol) receiveReply(ed *envData, r *Reply) {
 		r.t = ReplyMulti
 		for i := 0; i < ed.length; i++ {
 			r.elems = append(r.elems, &Reply{})
-			ed := <-urp.dataChan
-			urp.receiveReply(ed, r.elems[i])
+			ed := <-c.dataChan
+			c.receiveReply(ed, r.elems[i])
 		}
 	case ed.length == -1:
 		// nil reply

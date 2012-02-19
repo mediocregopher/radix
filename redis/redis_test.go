@@ -30,6 +30,7 @@ func tearDownTest(c *C) {
 	if !r.OK() {
 		c.Fatalf("tearDown FLUSHALL failed: %s", r.Error())
 	}
+	rd.Close()
 }
 
 //* Tests
@@ -368,42 +369,43 @@ func (s *S) TestAsyncTransaction(c *C) {
 	c.Check(r.At(1).Str(), Equals, "bar")
 }
 
-/*
-// Test subscribe.
-func (s *S) TestSubscribe(c *C) {
-	sub, numSubs, err := rd.Subscribe("subscribe:one", "subscribe:two")
+// Test Subscription.
+func (s *S) TestSubscription(c *C) {
+	var messages []*Message
+
+	sub, err := rd.Subscription("chan1", "chan2")
 	if err != nil {
-		c.Errorf("Can't subscribe: '%v'!", err)
+		c.Errorf("Failed to subscribe: '%v'!", err)
 		return
 	}
-	c.Check(numSubs, Equals, 2)
 
 	go func() {
-		for sv := range sub.SubscriptionValueChan {
-			if sv == nil {
-				c.Log("Received nil!")
-			} else {
-				c.Logf("Published '%v' Channel '%v' Pattern '%v'", sv, sv.Channel, sv.ChannelPattern)
-			}
+		for msg := range sub.MessageChan {
+			c.Log(msg)
+			messages = append(messages, msg)
 		}
-		c.Log("Subscription stopped!")
+		c.Log("Subscription closed!")
 	}()
-	c.Check(rd.Publish("subscribe:one", "1 Alpha"), Equals, 1)
 
-	rd.Publish("subscribe:one", "1 Beta")
-	rd.Publish("subscribe:one", "1 Gamma")
-	rd.Publish("subscribe:two", "2 Alpha")
-	rd.Publish("subscribe:two", "2 Beta")
-	c.Log(sub.Unsubscribe("subscribe:two"))
-	c.Log(sub.Unsubscribe("subscribe:one"))
-	c.Check(rd.Publish("subscribe:two", "2 Gamma"), Equals, 0)
+	c.Check(rd.Command("publish", "chan1", "foo").Int(), Equals, 1)
+	sub.Unsubscribe("chan1")
+	c.Check(rd.Command("publish", "chan1", "bar").Int(), Equals, 0)
+	sub.Close()
 
-	sub.Subscribe("subscribe:*")
-	rd.Publish("subscribe:one", "Pattern 1")
-	rd.Publish("subscribe:two", "Pattern 2")
-	sub.Stop()
+	c.Assert(len(messages), Equals, 4)
+	c.Check(messages[0].Type, Equals, MessageSubscribe)
+	c.Check(messages[0].Channel, Equals, "chan1")
+	c.Check(messages[0].Subscriptions, Equals, 1)
+	c.Check(messages[1].Type, Equals, MessageSubscribe)
+	c.Check(messages[1].Channel, Equals, "chan2")
+	c.Check(messages[1].Subscriptions, Equals, 2)
+	c.Check(messages[2].Type, Equals, MessageMessage)
+	c.Check(messages[2].Channel, Equals, "chan1")
+	c.Check(messages[2].Payload, Equals, "foo")
+	c.Check(messages[3].Type, Equals, MessageUnsubscribe)
+	c.Check(messages[3].Channel, Equals, "chan1")
 }
-*/
+
 //* Long tests
 
 // Test aborting complex tranactions.
