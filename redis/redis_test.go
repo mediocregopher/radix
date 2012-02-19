@@ -103,7 +103,6 @@ func (s *S) TestSimpleValue(c *C) {
 	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, false)
 }
 
-/*
 // Test multi return value commands.
 func (s *S) TestMultiple(c *C) {
 	// Set values first.
@@ -111,8 +110,10 @@ func (s *S) TestMultiple(c *C) {
 	rd.Command("set", "multiple:b", "b")
 	rd.Command("set", "multiple:c", "c")
 
+	mulstr, err := rd.Command("mget", "multiple:a", "multiple:b", "multiple:c").Strings()
+	c.Assert(err, IsNil)
 	c.Check(
-		rd.Command("mget", "multiple:a", "multiple:b", "multiple:c").Strings(),
+		mulstr,
 		Equals,
 		[]string{"a", "b", "c"})
 }
@@ -122,10 +123,10 @@ func (s *S) TestHash(c *C) {
 	//* Single  return value commands.
 	rd.Command("hset", "hash:bool", "true:1", 1)
 	rd.Command("hset", "hash:bool", "true:2", true)
-	rd.Command("hset", "hash:bool", "true:3", "T")
+	rd.Command("hset", "hash:bool", "true:3", "1")
 	rd.Command("hset", "hash:bool", "false:1", 0)
 	rd.Command("hset", "hash:bool", "false:2", false)
-	rd.Command("hset", "hash:bool", "false:3", "FALSE")
+	rd.Command("hset", "hash:bool", "false:3", "0")
 	c.Check(rd.Command("hget", "hash:bool", "true:1").Bool(), Equals, true)
 	c.Check(rd.Command("hget", "hash:bool", "true:2").Bool(), Equals, true)
 	c.Check(rd.Command("hget", "hash:bool", "true:3").Bool(), Equals, true)
@@ -133,16 +134,17 @@ func (s *S) TestHash(c *C) {
 	c.Check(rd.Command("hget", "hash:bool", "false:2").Bool(), Equals, false)
 	c.Check(rd.Command("hget", "hash:bool", "false:3").Bool(), Equals, false)
 
-	ha := rd.Command("hgetall", "hash:bool").Hash()
-	c.Assert(len(ha), Equals, 6)
-	c.Check(ha.Bool("true:1"), Equals, true)
-	c.Check(ha.Bool("true:2"), Equals, true)
-	c.Check(ha.Bool("true:3"), Equals, true)
-	c.Check(ha.Bool("false:1"), Equals, false)
-	c.Check(ha.Bool("false:2"), Equals, false)
-	c.Check(ha.Bool("false:3"), Equals, false)
+	ha, err := rd.Command("hgetall", "hash:bool").Map()
+	c.Assert(err, IsNil)
+	c.Check(ha["true:1"].Bool(), Equals, true)
+	c.Check(ha["true:2"].Bool(), Equals, true)
+	c.Check(ha["true:3"].Bool(), Equals, true)
+	c.Check(ha["false:1"].Bool(), Equals, false)
+	c.Check(ha["false:2"].Bool(), Equals, false)
+	c.Check(ha["false:3"].Bool(), Equals, false)
 }
 
+/*
 // Test list commands.
 func (s *S) TestList(c *C) {
 	rd.Command("rpush", "list:a", "one")
@@ -239,7 +241,7 @@ func (s *S) TestArgToRedis(c *C) {
 	rd.Command("hset", "foo6", "k2", "v2")
 	rd.Command("hset", "foo6", "k3", "v3")
 
-	foo6map, err := rd.Command("hgetall", "foo6").Map()
+	foo6map, err := rd.Command("hgetall", "foo6").StringMap()
 	c.Assert(err, IsNil)
 	c.Check(
 		foo6map,

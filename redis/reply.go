@@ -165,11 +165,43 @@ func (r *Reply) Strings() ([]string, error) {
 	return strings, nil
 }
 
-// Map returns a hash reply as a map or an error.
+// Map returns a hash reply as a map[string]*Reply or an error.
 // The reply must be a multi-bulk reply with "key value key value..."-style elements.
 // The reply type must be a ReplyMulti or ReplyNil.
 // An empty map is returned, if the reply type is ReplyNil.
-func (r *Reply) Map() (map[string]string, error) {
+func (r *Reply) Map() (map[string]*Reply, error) {
+	rmap := map[string]*Reply{}
+
+	if r.Type() == ReplyNil {
+		return rmap, nil
+	}
+
+	if r.Type() != ReplyMulti {
+		return nil, errors.New("redis: reply type was not ReplyMulti or ReplyNil")
+	}
+
+	if r.Len()%2 != 0 {
+		return nil, errors.New("redis: reply has odd number of elements")
+	}
+
+	for i := 0; i < r.Len()/2; i++ {
+		rkey := r.At(i * 2)
+		if rkey.Type() != ReplyString {
+			return nil, errors.New("redis: key element was not a string reply")
+		}
+		key := rkey.Str()
+
+		rmap[key] = r.At(i*2 + 1)
+	}
+
+	return rmap, nil
+}
+
+// StringMap returns a hash reply as a map[string]string or an error.
+// The reply must be a multi-bulk reply with "key value key value..."-style elements.
+// The reply type must be a ReplyMulti or ReplyNil.
+// An empty map is returned, if the reply type is ReplyNil.
+func (r *Reply) StringMap() (map[string]string, error) {
 	rmap := map[string]string{}
 
 	if r.Type() == ReplyNil {
