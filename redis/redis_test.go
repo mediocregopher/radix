@@ -92,18 +92,15 @@ func (s *S) TestSimpleValue(c *C) {
 	rd.Command("set", "simple:int", 10)
 	c.Check(rd.Command("incr", "simple:int").Int(), Equals, 11)
 
-	//rd.Command("set", "simple:float64", 47.11)
-	//c.Check(rd.Command("get", "simple:float64").Value().Float64(), Equals, 47.11)
+	rd.Command("setbit", "simple:bit", 0, true)
+	rd.Command("setbit", "simple:bit", 1, true)
+	c.Check(rd.Command("getbit", "simple:bit", 0).Bool(), Equals, true)
+	c.Check(rd.Command("getbit", "simple:bit", 1).Bool(), Equals, true)
 
-	//rd.Command("setbit", "simple:bit", 0, true)
-	//rd.Command("setbit", "simple:bit", 1, true)
-	//c.Check(rd.Command("getbit", "simple:bit", 0).Bool(), Equals, true)
-	//c.Check(rd.Command("getbit", "simple:bit", 1).Bool(), Equals, true)
-
-	//c.Check(rd.Command("get", "non:existing:key").Value(), IsNil)
-	//c.Check(rd.Command("exists", "non:existing:key").Bool(), Equals, false)
-	//c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, true)
-	//c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, false)
+	c.Check(rd.Command("get", "non:existing:key").Type(), Equals, ReplyNil)
+	c.Check(rd.Command("exists", "non:existing:key").Bool(), Equals, false)
+	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, true)
+	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, false)
 }
 
 /*
@@ -195,7 +192,7 @@ func (s *S) TestSets(c *C) {
 	rd.Command("sadd", "set:a", 4)
 	rd.Command("sadd", "set:a", 3)
 	c.Check(rd.Command("scard", "set:a").Int(), Equals, 5)
-	//c.Check(rd.Command("sismember", "set:a", "4").Bool(), Equals, true)
+	c.Check(rd.Command("sismember", "set:a", "4").Bool(), Equals, true)
 }
 
 // Test argument formatting.

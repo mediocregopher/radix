@@ -60,7 +60,7 @@ func (r *Reply) Bytes() []byte {
 // Int64 returns the reply value as a int64.
 // It panics, if the reply type is not ReplyInteger.
 func (r *Reply) Int64() int64 {
-	if !(r.t == ReplyInteger) {
+	if r.t != ReplyInteger {
 		panic("redis: integer value is not available for this reply type")
 	}
 	return *r.int
@@ -69,6 +69,21 @@ func (r *Reply) Int64() int64 {
 // Int is a convenience method for int(Reply.Int64()).
 func (r *Reply) Int() int {
 	return int(r.Int64())
+}
+
+
+// Bool returns true, if the reply value equals to 1, otherwise false.
+// It panics, if the reply type is not ReplyInteger.
+func (r *Reply) Bool() bool {
+	if r.t != ReplyInteger {
+		panic("redis: boolean value is not available for this reply type")
+	}
+	
+	if r.Int() == 1 {
+		return true
+	}
+
+	return false
 }
 
 // Len returns the number of elements in a multi reply.

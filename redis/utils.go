@@ -2,6 +2,7 @@ package redis
 
 import (
 	"fmt"
+	"strconv"
 	"reflect"
 )
 
@@ -21,6 +22,16 @@ func argToRedis(v interface{}) []byte {
 		bs = []byte(fmt.Sprintf("$%d\r\n%s\r\n", len([]byte(vt)), []byte(vt)))
 	case []byte:
 		bs = []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(vt), vt))
+	case int:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.Itoa(vt))), vt))
+	case int8:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatInt(int64(vt), 10))), vt))
+	case int16:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatInt(int64(vt), 10))), vt))
+	case int32:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatInt(int64(vt), 10))), vt))
+	case int64:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatInt(vt, 10))), vt))
 	case bool:
 		if vt {
 			bs = []byte("$1\r\n1\r\n")
