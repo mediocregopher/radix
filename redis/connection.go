@@ -14,7 +14,7 @@ import (
 
 const (
 	// Buffer size for some channels holding connection data
-	ConnectionChanBufSize = 10
+	connectionChanBufSize = 10
 )
 
 type redisReply int
