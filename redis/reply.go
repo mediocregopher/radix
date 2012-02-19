@@ -43,6 +43,15 @@ func (r *Reply) Type() ReplyType {
 	return r.t
 }
 
+// Nil returns true, if the reply is a nil reply, otherwise false.
+func (r *Reply) Nil() bool {
+	if r.t == ReplyNil {
+		return true
+	}
+
+	return false
+}
+
 // Str returns the reply value as a string.
 // It panics, if the reply type is not ReplyStatus, ReplyError or ReplyString.
 func (r *Reply) Str() string {

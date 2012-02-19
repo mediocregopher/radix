@@ -97,7 +97,7 @@ func (s *S) TestSimpleValue(c *C) {
 	c.Check(rd.Command("getbit", "simple:bit", 0).Bool(), Equals, true)
 	c.Check(rd.Command("getbit", "simple:bit", 1).Bool(), Equals, true)
 
-	c.Check(rd.Command("get", "non:existing:key").Type(), Equals, ReplyNil)
+	c.Check(rd.Command("get", "non:existing:key").Nil(), Equals, true)
 	c.Check(rd.Command("exists", "non:existing:key").Bool(), Equals, false)
 	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, true)
 	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, false)
@@ -144,7 +144,6 @@ func (s *S) TestHash(c *C) {
 	c.Check(ha["false:3"].Bool(), Equals, false)
 }
 
-/*
 // Test list commands.
 func (s *S) TestList(c *C) {
 	rd.Command("rpush", "list:a", "one")
@@ -156,24 +155,26 @@ func (s *S) TestList(c *C) {
 	rd.Command("rpush", "list:a", "seven")
 	rd.Command("rpush", "list:a", "eight")
 	rd.Command("rpush", "list:a", "nine")
+	lranges, err := rd.Command("lrange", "list:a", 0, -1).Strings()
+	c.Assert(err, IsNil)
 	c.Check(
-		rd.Command("lrange", "list:a", 0, -1).Strings(),
+		lranges,
 		Equals,
 		[]string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"})
 	c.Check(rd.Command("lpop", "list:a").Str(), Equals, "one")
 
-	vs := rd.Command("lrange", "list:a", 3, 6).Values()
-	c.Assert(len(vs), Equals, 4)
-	c.Check(vs[0].Str(), Equals, "five")
-	c.Check(vs[1].Str(), Equals, "six")
-	c.Check(vs[2].Str(), Equals, "seven")
-	c.Check(vs[3].Str(), Equals, "eight")
+	elems := rd.Command("lrange", "list:a", 3, 6).Elems()
+	c.Assert(len(elems), Equals, 4)
+	c.Check(elems[0].Str(), Equals, "five")
+	c.Check(elems[1].Str(), Equals, "six")
+	c.Check(elems[2].Str(), Equals, "seven")
+	c.Check(elems[3].Str(), Equals, "eight")
 
 	rd.Command("ltrim", "list:a", 0, 3)
 	c.Check(rd.Command("llen", "list:a").Int(), Equals, 4)
 
 	rd.Command("rpoplpush", "list:a", "list:b")
-	c.Check(rd.Command("lindex", "list:b", 4711).Value(), IsNil)
+	c.Check(rd.Command("lindex", "list:b", 4711).Nil(), Equals, true)
 	c.Check(rd.Command("lindex", "list:b", 0).Str(), Equals, "five")
 
 	rd.Command("rpush", "list:c", 1)
@@ -181,9 +182,9 @@ func (s *S) TestList(c *C) {
 	rd.Command("rpush", "list:c", 3)
 	rd.Command("rpush", "list:c", 4)
 	rd.Command("rpush", "list:c", 5)
-	c.Check(rd.Command("lpop", "list:c").Int(), Equals, 1)
+	c.Check(rd.Command("lpop", "list:c").Str(), Equals, "1")
 }
-*/
+
 // Test set commands.
 func (s *S) TestSets(c *C) {
 	rd.Command("sadd", "set:a", 1)
@@ -447,36 +448,9 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 2)
-	c.Check(r.At(1).Type(), Equals, ReplyNil)
+	c.Check(r.At(1).Nil(), Equals, true)
 }
 
-/*
-// Test pop.
-func (s *Long) TestPop(c *C) {
-	fooPush := func(rd *Client) {
-		time.Sleep(time.Second)
-		rd.Command("lpush", "pop:first", "foo")
-	}
-
-	// Set A: no database timeout.
-	rdA := NewClient(Configuration{})
-
-	go fooPush(rdA)
-
-	rAA := rdA.Command("blpop", "pop:first", 5)
-	kv := rAA.KeyValue()
-	c.Check(kv.Value.Str(), Equals, "foo")
-
-	rAB := rdA.Command("blpop", "pop:first", 1)
-	c.Check(rAB.OK(), Equals, true)
-
-	// Set B: database with timeout.
-	rdB := NewClient(Configuration{})
-
-	rBA := rdB.Command("blpop", "pop:first", 1)
-	c.Check(rBA.OK(), Equals, true)
-}
-*/
 // Test illegal databases.
 func (s *Long) TestIllegalDatabases(c *C) {
 	c.Log("Test selecting an illegal database...")

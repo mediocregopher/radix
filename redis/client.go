@@ -175,7 +175,7 @@ func (c *Client) Select(database int) {
 
 //* PubSub
 
-// Subscribe to given channels and return a Subscription and an error, if any.
+// Subscribe to given channels and return a Subscription or an error.
 func (c *Client) Subscription(channels ...string) (*Subscription, error) {
 	// Connection handling
 	conn, err := c.pullConnection()
