@@ -226,13 +226,29 @@ func (s *S) TestArgToRedis(c *C) {
 		"2")
 
 	// slice
-	/*
-		rd.Command("rpush", "foo5", []int{1, 2, 3})
-		c.Check(
-			rd.Command("lrange", "foo5", 0, -1).Ints(),
-			Equals,
-			[]int{1, 2, 3})
-	*/
+	rd.Command("rpush", "foo5", []int{1, 2, 3})
+	foo5strings, err := rd.Command("lrange", "foo5", 0, -1).Strings()
+	c.Assert(err, IsNil)
+	c.Check(
+		foo5strings,
+		Equals,
+		[]string{"1", "2", "3"})
+
+	// map
+	rd.Command("hset", "foo6", "k1", "v1")
+	rd.Command("hset", "foo6", "k2", "v2")
+	rd.Command("hset", "foo6", "k3", "v3")
+
+	foo6map, err := rd.Command("hgetall", "foo6").Map()
+	c.Assert(err, IsNil)
+	c.Check(
+		foo6map,
+		Equals,
+		map[string]string{
+			"k1": "v1",
+			"k2": "v2",
+			"k3": "v3",
+		})
 }
 
 // Test asynchronous commands.

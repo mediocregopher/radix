@@ -7,9 +7,9 @@ import "runtime"
 // Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
 	client      *Client
-	conn         *connection
+	conn        *connection
 	error       error
-	closerChan chan bool
+	closerChan  chan bool
 	messageChan chan *Message
 	MessageChan <-chan *Message
 }
@@ -18,10 +18,10 @@ type Subscription struct {
 func newSubscription(conn *connection, channels ...string) (*Subscription, error) {
 	messageChan := make(chan *Message, 1)
 	sub := &Subscription{
-		conn:         conn,
-	closerChan: make(chan bool, 1),
-	messageChan: messageChan,
-	MessageChan: messageChan,
+		conn:        conn,
+		closerChan:  make(chan bool, 1),
+		messageChan: messageChan,
+		MessageChan: messageChan,
 	}
 	runtime.SetFinalizer(sub, (*Subscription).Close)
 	go sub.backend()
@@ -62,7 +62,7 @@ func (s *Subscription) backend() {
 		select {
 		case <-s.closerChan:
 			// Close the backend.
-				close(s.messageChan)
+			close(s.messageChan)
 			return
 		case s.messageChan <- <-s.conn.messageChan:
 			// Message forwarding succesful

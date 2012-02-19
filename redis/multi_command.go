@@ -8,7 +8,7 @@ import (
 type MultiCommand struct {
 	transaction bool
 	r           *Reply
-	c         *connection
+	c           *connection
 	cmds        []command
 	cmdCounter  int
 }
@@ -18,7 +18,7 @@ func newMultiCommand(transaction bool, c *connection) *MultiCommand {
 	return &MultiCommand{
 		transaction: transaction,
 		r:           &Reply{},
-		c:         c,
+		c:           c,
 	}
 }
 

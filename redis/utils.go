@@ -2,8 +2,8 @@ package redis
 
 import (
 	"fmt"
-	"strconv"
 	"reflect"
+	"strconv"
 )
 
 type command struct {

@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"errors"
 	"strconv"
 )
 
@@ -71,14 +72,13 @@ func (r *Reply) Int() int {
 	return int(r.Int64())
 }
 
-
 // Bool returns true, if the reply value equals to 1, otherwise false.
 // It panics, if the reply type is not ReplyInteger.
 func (r *Reply) Bool() bool {
 	if r.t != ReplyInteger {
 		panic("redis: boolean value is not available for this reply type")
 	}
-	
+
 	if r.Int() == 1 {
 		return true
 	}
@@ -134,74 +134,71 @@ func (r *Reply) OK() bool {
 	return true
 }
 
-/*
-// Ints returns  as a slice of integer.
-func (r *Reply) Ints() []int {
-	if r.values == nil {
-		return nil
+// Strings returns a multi-bulk reply as a slice of strings or an error.
+// The reply type must be a ReplyMulti or ReplyNil.
+// An empty slice is returned, if the reply type is ReplyNil.
+func (r *Reply) Strings() ([]string, error) {
+	if r.Type() == ReplyNil {
+		return []string{}, nil
 	}
 
-	ints := make([]int, len(r.values))
-	for i, v := range r.values {
-		ints[i] = v.Int()
+	if r.Type() != ReplyMulti {
+		return nil, errors.New("redis: reply type was not ReplyMulti or ReplyNil")
 	}
 
-	return ints
-}
-
-// Strings returns all values as a slice of strings.
-func (r *Reply) Strings() []string {
-	if r.values == nil {
-		return nil
-	}
-
-	strings := make([]string, len(r.values))
-	for i, v := range r.values {
-		strings[i] = *v.str
-	}
-
-	return strings
-}
-
-// KeyValue return the first value as key and the second as value.
-// Will panic if there are less that two values in the result set.
-func (r *Reply) KeyValue() *KeyValue {
-	if r.Len() < 2 {
-		panic("redis: Reply does not have enough values for KeyValue")
-	}
-
-	return &KeyValue{
-		Key:   r.At(0).String(),
-		Value: r.At(1),
-	}
-}
-
-// Hash returns the values of the result set as hash.
-func (r *Reply) Hash() Hash {
-	var key string
-
-	result := make(Hash)
-	isVal := false
-
-	for _, v := range r.values {
-		if isVal {
-			// Write every second value.
-			result[key] = v
-			isVal = false
-		} else {
-			// First value is always a key.
-			key = v.String()
-			isVal = true
+	strings := make([]string, len(r.elems))
+	for i, v := range r.elems {
+		if v.Type() != ReplyString {
+			return nil, errors.New("redis: reply type was not ReplyString")
 		}
+
+		strings[i] = v.String()
 	}
 
-	return result
+	return strings, nil
 }
-*/
+
+// Map returns a hash reply as map or an error.
+// The reply must be a multi-bulk reply with "key value key value..."-style elements.
+// The reply type must be a ReplyMulti or ReplyNil.
+// An empty map is returned, if the reply type is ReplyNil.
+func (r *Reply) Map() (map[string]string, error) {
+	rmap := map[string]string{}
+
+	if r.Type() == ReplyNil {
+		return rmap, nil
+	}
+
+	if r.Type() != ReplyMulti {
+		return nil, errors.New("redis: reply type was not ReplyMulti or ReplyNil")
+	}
+
+	if r.Len()%2 != 0 {
+		return nil, errors.New("redis: reply has odd number of elements")
+	}
+
+	for i := 0; i < r.Len()/2; i++ {
+		rkey := r.At(i * 2)
+		if rkey.Type() != ReplyString {
+			return nil, errors.New("redis: key element was not a string reply")
+		}
+		key := rkey.Str()
+
+		rval := r.At(i*2 + 1)
+		if rval.Type() != ReplyString {
+			return nil, errors.New("redis: value element was not a string reply")
+		}
+		val := rval.Str()
+
+		rmap[key] = val
+	}
+
+	return rmap, nil
+}
 
 // String returns a string representation of the reply and its sub-replies.
 // This method is mainly used for debugging.
-// Use method Reply.Str() for fetching a string reply.
+// Use method Reply.Str for fetching a string reply.
 func (r *Reply) String() string {
 	switch r.t {
 	case ReplyStatus:
@@ -228,21 +225,20 @@ func (r *Reply) String() string {
 
 //* Future
 
-// Future just waits for a result set
-// returned somewhere in the future.
+// Future is a channel for fetching a reply of an asynchronous command.
 type Future chan *Reply
 
-// newFuture creates the new future.
+// newFuture creates a new Future.
 func newFuture() Future {
 	return make(chan *Reply, 1)
 }
 
-// setReply sets the result set.
+// setReply sets the reply.
 func (f Future) setReply(r *Reply) {
 	f <- r
 }
 
-// Reply blocks until the associated result set can be returned.
+// Reply blocks until the associated reply can be returned.
 func (f Future) Reply() (r *Reply) {
 	r = <-f
 	f <- r
