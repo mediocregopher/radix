@@ -39,12 +39,12 @@ ReplyNil -- nil reply
 ReplyString -- string reply
 ReplyMulti -- multi-bulk or multi-command reply
 */
-func (r *Reply) Type() ReplyType {
+func (r Reply) Type() ReplyType {
 	return r.t
 }
 
 // Nil returns true, if the reply is a nil reply, otherwise false.
-func (r *Reply) Nil() bool {
+func (r Reply) Nil() bool {
 	if r.t == ReplyNil {
 		return true
 	}
@@ -54,7 +54,7 @@ func (r *Reply) Nil() bool {
 
 // Str returns the reply value as a string.
 // It panics, if the reply type is not ReplyStatus, ReplyError or ReplyString.
-func (r *Reply) Str() string {
+func (r Reply) Str() string {
 	if !(r.t == ReplyStatus || r.t == ReplyError || r.t == ReplyString) {
 		panic("redis: string value is not available for this reply type")
 	}
@@ -63,13 +63,13 @@ func (r *Reply) Str() string {
 }
 
 // Bytes is a convenience method for []byte(Reply.String()).
-func (r *Reply) Bytes() []byte {
+func (r Reply) Bytes() []byte {
 	return []byte(r.Str())
 }
 
 // Int64 returns the reply value as a int64.
 // It panics, if the reply type is not ReplyInteger.
-func (r *Reply) Int64() int64 {
+func (r Reply) Int64() int64 {
 	if r.t != ReplyInteger {
 		panic("redis: integer value is not available for this reply type")
 	}
@@ -77,13 +77,13 @@ func (r *Reply) Int64() int64 {
 }
 
 // Int is a convenience method for int(Reply.Int64()).
-func (r *Reply) Int() int {
+func (r Reply) Int() int {
 	return int(r.Int64())
 }
 
 // Bool returns true, if the reply value equals to 1 or "1", otherwise false.
 // It panics, if the reply type is not ReplyInteger or ReplyString.
-func (r *Reply) Bool() bool {
+func (r Reply) Bool() bool {
 	switch r.t {
 	case ReplyInteger:
 		if r.Int() == 1 {
@@ -104,7 +104,7 @@ func (r *Reply) Bool() bool {
 
 // Len returns the number of elements in a multi reply.
 // It panics, if the reply type is not ReplyMulti or ReplyNil.
-func (r *Reply) Len() int {
+func (r Reply) Len() int {
 	if !(r.t == ReplyMulti || r.t == ReplyNil) {
 		panic("redis: length is not available for this reply type")
 	}
@@ -114,7 +114,7 @@ func (r *Reply) Len() int {
 
 // Elems returns the elements (sub-replies) of a multi reply or nil, if the reply is nil reply.
 // It panics, if the reply type is not ReplyMulti or ReplyNil.
-func (r *Reply) Elems() []*Reply {
+func (r Reply) Elems() []*Reply {
 	if !(r.t == ReplyMulti || r.t == ReplyNil) {
 		panic("redis: reply type is not ReplyMulti or ReplyNil")
 	}
@@ -124,7 +124,7 @@ func (r *Reply) Elems() []*Reply {
 
 // At returns a Reply of a multi reply by its index.
 // It panics, if the reply type is not ReplyMulti or if the index is out of range.
-func (r *Reply) At(i int) *Reply {
+func (r Reply) At(i int) *Reply {
 	if r.t != ReplyMulti {
 		panic("redis: reply type is not ReplyMulti")
 	}
@@ -137,12 +137,12 @@ func (r *Reply) At(i int) *Reply {
 }
 
 // Error returns the error value of the reply or nil, if no there were no errors.
-func (r *Reply) Error() error {
+func (r Reply) Error() error {
 	return r.err
 }
 
 // OK returns true if the reply had no error, otherwise false.
-func (r *Reply) OK() bool {
+func (r Reply) OK() bool {
 	if r.err != nil {
 		return false
 	}
@@ -153,7 +153,7 @@ func (r *Reply) OK() bool {
 // Strings returns a multi-bulk reply as a slice of strings or an error.
 // The reply type must be a ReplyMulti or ReplyNil.
 // An empty slice is returned, if the reply type is ReplyNil.
-func (r *Reply) Strings() ([]string, error) {
+func (r Reply) Strings() ([]string, error) {
 	if r.Type() == ReplyNil {
 		return []string{}, nil
 	}
@@ -178,7 +178,7 @@ func (r *Reply) Strings() ([]string, error) {
 // The reply must be a multi-bulk reply with "key value key value..."-style elements.
 // The reply type must be a ReplyMulti or ReplyNil.
 // An empty map is returned, if the reply type is ReplyNil.
-func (r *Reply) Map() (map[string]*Reply, error) {
+func (r Reply) Map() (map[string]*Reply, error) {
 	rmap := map[string]*Reply{}
 
 	if r.Type() == ReplyNil {
@@ -210,7 +210,7 @@ func (r *Reply) Map() (map[string]*Reply, error) {
 // The reply must be a multi-bulk reply with "key value key value..."-style elements.
 // The reply type must be a ReplyMulti or ReplyNil.
 // An empty map is returned, if the reply type is ReplyNil.
-func (r *Reply) StringMap() (map[string]string, error) {
+func (r Reply) StringMap() (map[string]string, error) {
 	rmap := map[string]string{}
 
 	if r.Type() == ReplyNil {
@@ -247,7 +247,7 @@ func (r *Reply) StringMap() (map[string]string, error) {
 // String returns a string representation of the reply and its sub-replies.
 // This method is mainly used for debugging.
 // Use method Reply.Str for fetching a string reply.
-func (r *Reply) String() string {
+func (r Reply) String() string {
 	switch r.t {
 	case ReplyStatus:
 		fallthrough

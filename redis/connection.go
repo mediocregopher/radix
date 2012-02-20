@@ -113,7 +113,6 @@ func newConnection(c *Configuration) (*connection, error) {
 		co.command(r, "auth", c.Auth)
 
 		if !r.OK() {
-			// Authentication is not ok, so reset.
 			co.close()
 			return nil, r.Error()
 		}
