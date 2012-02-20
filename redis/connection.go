@@ -87,8 +87,8 @@ func newConnection(c *Configuration) (*connection, error) {
 		commandChan:      make(chan *envCommand),
 		multiCommandChan: make(chan *envMultiCommand),
 		subscriptionChan: make(chan *envSubscription),
-		dataChan:         make(chan *envData, ConnectionChanBufSize),
-		messageChan:      make(chan *Message, ConnectionChanBufSize),
+		dataChan:         make(chan *envData, connectionChanBufSize),
+		messageChan:      make(chan *Message, connectionChanBufSize),
 		closerChan:       make(chan bool),
 		database:         c.Database,
 		multiCounter:     -1,
@@ -102,7 +102,6 @@ func newConnection(c *Configuration) (*connection, error) {
 	co.command(r, "select", c.Database)
 
 	if !r.OK() {
-		// Connection or database is not ok, so reset.
 		co.close()
 		return nil, r.Error()
 	}

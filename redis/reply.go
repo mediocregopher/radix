@@ -7,7 +7,7 @@ import (
 
 //* Reply
 
-type ReplyType uint
+type ReplyType uint8
 
 const (
 	ReplyStatus ReplyType = iota
