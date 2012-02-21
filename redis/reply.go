@@ -7,6 +7,18 @@ import (
 
 //* Reply
 
+/*
+ReplyType describes the type of reply.
+
+Possbile values are:
+
+ReplyStatus --  status reply
+ReplyError -- error reply
+ReplyInteger -- integer reply
+ReplyNil -- nil reply
+ReplyString -- string reply
+ReplyMulti -- multi-bulk or multi-command reply
+*/
 type ReplyType uint8
 
 const (
@@ -27,23 +39,13 @@ type Reply struct {
 	err   error
 }
 
-/* 
-Type returns the type of the reply.
 
-The possible types are:
-
-ReplyStatus --  status reply
-ReplyError -- error reply
-ReplyInteger -- integer reply
-ReplyNil -- nil reply
-ReplyString -- string reply
-ReplyMulti -- multi-bulk or multi-command reply
-*/
+// Type returns the type of the reply.
 func (r *Reply) Type() ReplyType {
 	return r.t
 }
 
-// Nil returns true, if the reply is a nil reply, otherwise false.
+// Return true, if the reply is a nil reply, otherwise false.
 func (r *Reply) Nil() bool {
 	if r.t == ReplyNil {
 		return true
@@ -52,7 +54,7 @@ func (r *Reply) Nil() bool {
 	return false
 }
 
-// Str returns the reply value as a string.
+// Return the reply value as a string.
 // It panics, if the reply type is not ReplyStatus, ReplyError or ReplyString.
 func (r *Reply) Str() string {
 	if !(r.t == ReplyStatus || r.t == ReplyError || r.t == ReplyString) {
@@ -67,7 +69,7 @@ func (r *Reply) Bytes() []byte {
 	return []byte(r.Str())
 }
 
-// Int64 returns the reply value as a int64.
+// Return the reply value as a int64.
 // It panics, if the reply type is not ReplyInteger.
 func (r *Reply) Int64() int64 {
 	if r.t != ReplyInteger {
@@ -81,7 +83,7 @@ func (r *Reply) Int() int {
 	return int(r.Int64())
 }
 
-// Bool returns true, if the reply value equals to 1 or "1", otherwise false.
+// Return true, if the reply value equals to 1 or "1", otherwise false.
 // It panics, if the reply type is not ReplyInteger or ReplyString.
 func (r *Reply) Bool() bool {
 	switch r.t {
@@ -102,7 +104,7 @@ func (r *Reply) Bool() bool {
 	panic("redis: boolean value is not available for this reply type")
 }
 
-// Len returns the number of elements in a multi reply.
+// Return the number of elements in a multi reply.
 // It panics, if the reply type is not ReplyMulti or ReplyNil.
 func (r *Reply) Len() int {
 	if !(r.t == ReplyMulti || r.t == ReplyNil) {
@@ -112,7 +114,7 @@ func (r *Reply) Len() int {
 	return len(r.elems)
 }
 
-// Elems returns the elements (sub-replies) of a multi reply or nil, if the reply is nil reply.
+// Return the elements (sub-replies) of a multi reply or nil, if the reply is nil reply.
 // It panics, if the reply type is not ReplyMulti or ReplyNil.
 func (r *Reply) Elems() []*Reply {
 	if !(r.t == ReplyMulti || r.t == ReplyNil) {
@@ -122,7 +124,7 @@ func (r *Reply) Elems() []*Reply {
 	return r.elems
 }
 
-// At returns a Reply of a multi reply by its index.
+// Return a Reply of a multi reply by its index.
 // It panics, if the reply type is not ReplyMulti or if the index is out of range.
 func (r *Reply) At(i int) *Reply {
 	if r.t != ReplyMulti {
@@ -136,12 +138,12 @@ func (r *Reply) At(i int) *Reply {
 	return r.elems[i]
 }
 
-// Error returns the error value of the reply or nil, if no there were no errors.
+// Return the error value of the reply or nil, if no there were no errors.
 func (r *Reply) Error() error {
 	return r.err
 }
 
-// OK returns true if the reply had no error, otherwise false.
+// Retur true if the reply had no error, otherwise false.
 func (r *Reply) OK() bool {
 	if r.err != nil {
 		return false
@@ -150,7 +152,7 @@ func (r *Reply) OK() bool {
 	return true
 }
 
-// Strings returns a multi-bulk reply as a slice of strings or an error.
+// Return a multi-bulk reply as a slice of strings or an error.
 // The reply type must be a ReplyMulti or ReplyNil.
 // An empty slice is returned, if the reply type is ReplyNil.
 func (r *Reply) Strings() ([]string, error) {
@@ -174,7 +176,7 @@ func (r *Reply) Strings() ([]string, error) {
 	return strings, nil
 }
 
-// Map returns a hash reply as a map[string]*Reply or an error.
+// Return a hash reply as a map[string]*Reply or an error.
 // The reply must be a multi-bulk reply with "key value key value..."-style elements.
 // The reply type must be a ReplyMulti or ReplyNil.
 // An empty map is returned, if the reply type is ReplyNil.
@@ -206,7 +208,7 @@ func (r *Reply) Map() (map[string]*Reply, error) {
 	return rmap, nil
 }
 
-// StringMap returns a hash reply as a map[string]string or an error.
+// Return a hash reply as a map[string]string or an error.
 // The reply must be a multi-bulk reply with "key value key value..."-style elements.
 // The reply type must be a ReplyMulti or ReplyNil.
 // An empty map is returned, if the reply type is ReplyNil.
@@ -244,7 +246,7 @@ func (r *Reply) StringMap() (map[string]string, error) {
 	return rmap, nil
 }
 
-// String returns a string representation of the reply and its sub-replies.
+// Return a string representation of the reply and its sub-replies.
 // This method is mainly used for debugging.
 // Use method Reply.Str for fetching a string reply.
 func (r *Reply) String() string {
@@ -276,17 +278,18 @@ func (r *Reply) String() string {
 // Future is a channel for fetching a reply of an asynchronous command.
 type Future chan *Reply
 
-// newFuture creates a new Future.
+// Create a new Future.
 func newFuture() Future {
 	return make(chan *Reply, 1)
 }
 
-// setReply sets the reply.
+// Set the Reply of the Future to given the given Reply.
 func (f Future) setReply(r *Reply) {
 	f <- r
 }
 
-// Reply blocks until the associated reply can be returned.
+// Return the Reply of the Future.
+// Blocks until the Reply is available.
 func (f Future) Reply() (r *Reply) {
 	r = <-f
 	f <- r
