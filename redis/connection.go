@@ -3,7 +3,6 @@ package redis
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -38,7 +37,7 @@ type envData struct {
 	length int
 	str    *string
 	int    *int64
-	error  error
+	err  error
 }
 
 // Envelope type for a subscription
@@ -180,9 +179,9 @@ func (c *connection) receiver() {
 		case '-':
 			// Error reply.
 			if bytes.HasPrefix(b, []byte("ERR")) {
-				ed = &envData{0, nil, nil, errors.New("redis: " + string(b[4:]))}
+				ed = &envData{0, nil, nil, newError(string(b[4:]))}
 			} else {
-				ed = &envData{0, nil, nil, errors.New("redis: " + string(b))}
+				ed = &envData{0, nil, nil, newError(string(b))}
 			}
 		case '+':
 			// Status reply.
@@ -193,7 +192,7 @@ func (c *connection) receiver() {
 			var i int64
 			i, err = strconv.ParseInt(string(b), 10, 64)
 			if err != nil {
-				ed = &envData{0, nil, nil, errors.New("redis: integer reply parse error")}
+				ed = &envData{0, nil, nil, newError("integer reply parse error")}
 				break
 			}
 			ed = &envData{0, nil, &i, nil}
@@ -202,7 +201,7 @@ func (c *connection) receiver() {
 			var i int
 			i, err = strconv.Atoi(string(b))
 			if err != nil {
-				ed = &envData{0, nil, nil, errors.New("redis: bulk reply parse error")}
+				ed = &envData{0, nil, nil, newError("bulk reply parse error")}
 				break
 			}
 
@@ -234,12 +233,12 @@ func (c *connection) receiver() {
 			var i int
 			i, err = strconv.Atoi(string(b))
 			if err != nil {
-				ed = &envData{0, nil, nil, errors.New("redis: multi-bulk reply parse error")}
+				ed = &envData{0, nil, nil, newError("multi-bulk reply parse error")}
 			}
 			ed = &envData{i, nil, nil, nil}
 		default:
 			// Invalid reply
-			ed = &envData{0, nil, nil, errors.New("redis: received invalid reply")}
+			ed = &envData{0, nil, nil, newError("received invalid reply")}
 		}
 
 		// Send result.
@@ -404,7 +403,7 @@ func (c *connection) handlePublishing(ed *envData) {
 
 	Invalid:
 		// Invalid reply
-		c.messageChan <- &Message{Type: MessageError, Error: errors.New("redis: received invalid pub/sub reply")}
+		c.messageChan <- &Message{Type: MessageError, Error: newError("received invalid pub/sub reply")}
 	}
 }
 
@@ -476,10 +475,10 @@ func (c *connection) writeRequest(cmds []command) error {
 // Receive a reply.
 func (c *connection) receiveReply(ed *envData, r *Reply) {
 	switch {
-	case ed.error != nil:
+	case ed.err != nil:
 		// Error reply
 		r.t = ReplyError
-		r.err = ed.error
+		r.err = ed.err
 	case ed.str != nil:
 		// Status or bulk reply
 		r.t = ReplyString
@@ -502,6 +501,6 @@ func (c *connection) receiveReply(ed *envData, r *Reply) {
 	default:
 		// Invalid reply
 		r.t = ReplyError
-		r.err = errors.New("redis: invalid reply")
+		r.err = newError("invalid reply")
 	}
 }

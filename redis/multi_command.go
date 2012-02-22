@@ -1,9 +1,5 @@
 package redis
 
-import (
-	"errors"
-)
-
 // MultiCommand holds data for a Redis multi command.
 type MultiCommand struct {
 	transaction bool
@@ -41,7 +37,7 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 			if err := exec_rs.Error(); err != nil {
 				mc.r.err = err
 			} else {
-				mc.r.err = errors.New("redis: unknown transaction error")
+				mc.r.err = newError("redis: unknown transaction error")
 			}
 		}
 	}

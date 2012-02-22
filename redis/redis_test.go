@@ -422,18 +422,10 @@ func (s *S) TestSubscription(c *C) {
 	c.Check(messages[3].Channel, Equals, "chan1")
 }
 
-// Test errors.
-func (s *S) TestError(c *C) {
-	err := newError("foo", ConnectionError)
-	c.Check(err.String(), Equals, "foo")
-	c.Check(err.Test(ConnectionError), Equals, true)
-	c.Check(err.Test(RedisError), Equals, false)
-
-	exterr := newExtError("bar", err, LoadingError)
-	c.Check(exterr.String(), Equals, "bar")
-	c.Check(exterr.Test(ConnectionError), Equals, true)
-	c.Check(exterr.Test(LoadingError), Equals, true)
-
+// Test newError.
+func (s *S) TestNewError(c *C) {
+	err := newError("foo")
+	c.Check(err.Error(), Equals, "redis: foo")
 }
 
 //* Long tests

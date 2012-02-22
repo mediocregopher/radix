@@ -1,7 +1,6 @@
 package redis
 
 import (
-	"errors"
 	"strconv"
 )
 
@@ -58,7 +57,7 @@ func (r *Reply) Nil() bool {
 // It panics, if the reply type is not ReplyStatus, ReplyError or ReplyString.
 func (r *Reply) Str() string {
 	if !(r.t == ReplyStatus || r.t == ReplyError || r.t == ReplyString) {
-		panic("redis: string value is not available for this reply type")
+		panic("string value is not available for this reply type")
 	}
 
 	return *r.str
@@ -73,7 +72,7 @@ func (r *Reply) Bytes() []byte {
 // It panics, if the reply type is not ReplyInteger.
 func (r *Reply) Int64() int64 {
 	if r.t != ReplyInteger {
-		panic("redis: integer value is not available for this reply type")
+		panic("integer value is not available for this reply type")
 	}
 	return *r.int
 }
@@ -101,14 +100,14 @@ func (r *Reply) Bool() bool {
 		return false
 	}
 
-	panic("redis: boolean value is not available for this reply type")
+	panic("boolean value is not available for this reply type")
 }
 
 // Return the number of elements in a multi reply.
 // It panics, if the reply type is not ReplyMulti or ReplyNil.
 func (r *Reply) Len() int {
 	if !(r.t == ReplyMulti || r.t == ReplyNil) {
-		panic("redis: length is not available for this reply type")
+		panic("length is not available for this reply type")
 	}
 
 	return len(r.elems)
@@ -118,7 +117,7 @@ func (r *Reply) Len() int {
 // It panics, if the reply type is not ReplyMulti or ReplyNil.
 func (r *Reply) Elems() []*Reply {
 	if !(r.t == ReplyMulti || r.t == ReplyNil) {
-		panic("redis: reply type is not ReplyMulti or ReplyNil")
+		panic("reply type is not ReplyMulti or ReplyNil")
 	}
 
 	return r.elems
@@ -128,11 +127,11 @@ func (r *Reply) Elems() []*Reply {
 // It panics, if the reply type is not ReplyMulti or if the index is out of range.
 func (r *Reply) At(i int) *Reply {
 	if r.t != ReplyMulti {
-		panic("redis: reply type is not ReplyMulti")
+		panic("reply type is not ReplyMulti")
 	}
 
 	if i < 0 || i >= len(r.elems) {
-		panic("redis: reply index out of range")
+		panic("reply index out of range")
 	}
 
 	return r.elems[i]
@@ -161,13 +160,13 @@ func (r *Reply) Strings() ([]string, error) {
 	}
 
 	if r.Type() != ReplyMulti {
-		return nil, errors.New("redis: reply type was not ReplyMulti or ReplyNil")
+		return nil, newError("reply type was not ReplyMulti or ReplyNil")
 	}
 
 	strings := make([]string, len(r.elems))
 	for i, v := range r.elems {
 		if v.Type() != ReplyString {
-			return nil, errors.New("redis: reply type was not ReplyString")
+			return nil, newError("reply type was not ReplyString")
 		}
 
 		strings[i] = v.String()
@@ -188,17 +187,17 @@ func (r *Reply) Map() (map[string]*Reply, error) {
 	}
 
 	if r.Type() != ReplyMulti {
-		return nil, errors.New("redis: reply type was not ReplyMulti or ReplyNil")
+		return nil, newError("reply type was not ReplyMulti or ReplyNil")
 	}
 
 	if r.Len()%2 != 0 {
-		return nil, errors.New("redis: reply has odd number of elements")
+		return nil, newError("reply has odd number of elements")
 	}
 
 	for i := 0; i < r.Len()/2; i++ {
 		rkey := r.At(i * 2)
 		if rkey.Type() != ReplyString {
-			return nil, errors.New("redis: key element was not a string reply")
+			return nil, newError("key element was not a string reply")
 		}
 		key := rkey.Str()
 
@@ -220,23 +219,23 @@ func (r *Reply) StringMap() (map[string]string, error) {
 	}
 
 	if r.Type() != ReplyMulti {
-		return nil, errors.New("redis: reply type was not ReplyMulti or ReplyNil")
+		return nil, newError("reply type was not ReplyMulti or ReplyNil")
 	}
 
 	if r.Len()%2 != 0 {
-		return nil, errors.New("redis: reply has odd number of elements")
+		return nil, newError("reply has odd number of elements")
 	}
 
 	for i := 0; i < r.Len()/2; i++ {
 		rkey := r.At(i * 2)
 		if rkey.Type() != ReplyString {
-			return nil, errors.New("redis: key element was not a string reply")
+			return nil, newError("key element was not a string reply")
 		}
 		key := rkey.Str()
 
 		rval := r.At(i*2 + 1)
 		if rval.Type() != ReplyString {
-			return nil, errors.New("redis: value element was not a string reply")
+			return nil, newError("value element was not a string reply")
 		}
 		val := rval.Str()
 
