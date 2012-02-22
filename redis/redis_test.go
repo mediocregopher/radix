@@ -422,6 +422,14 @@ func (s *S) TestSubscription(c *C) {
 	c.Check(messages[3].Channel, Equals, "chan1")
 }
 
+// Test errors.
+func (s *S) TestError(c *C) {
+	err := newError("foo", ConnectionError, LoadingError)
+	c.Check(err.String(), Equals, "foo")
+	c.Check(err.Test(LoadingError), Equals, true)
+	c.Check(err.Test(RedisError), Equals, false)
+}
+
 //* Long tests
 
 // Test aborting complex tranactions.
