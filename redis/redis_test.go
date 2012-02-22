@@ -426,6 +426,7 @@ func (s *S) TestSubscription(c *C) {
 func (s *S) TestError(c *C) {
 	err := newError("foo", ConnectionError, LoadingError)
 	c.Check(err.String(), Equals, "foo")
+	c.Check(err.Flags(), Equals, []ErrorFlag{ConnectionError, LoadingError})
 	c.Check(err.Test(LoadingError), Equals, true)
 	c.Check(err.Test(RedisError), Equals, false)
 }

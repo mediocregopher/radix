@@ -19,7 +19,7 @@ type Error struct {
 	flags   [lenErrorFlags]bool
 }
 
-// Create new Error.
+// Create a new Error.
 func newError(msg string, flags ...ErrorFlag) *Error {
 	if len(flags) < 1 {
 		panic("redis: invalid number of parameters")
@@ -42,6 +42,17 @@ func newError(msg string, flags ...ErrorFlag) *Error {
 // Return a string representation of the error.
 func (e *Error) String() string {
 	return e.msg
+}
+
+// Return error flags of the error.
+func (e *Error) Flags() (errFlags []ErrorFlag) {
+	for i, f := range e.flags {
+		if f {
+			errFlags = append(errFlags, ErrorFlag(i))
+		}
+	}
+
+	return
 }
 
 // Return true, if any of the given error flags is set in the error, otherwise false.
