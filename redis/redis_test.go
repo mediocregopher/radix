@@ -424,11 +424,16 @@ func (s *S) TestSubscription(c *C) {
 
 // Test errors.
 func (s *S) TestError(c *C) {
-	err := newError("foo", ConnectionError, LoadingError)
+	err := newError("foo", ConnectionError)
 	c.Check(err.String(), Equals, "foo")
-	c.Check(err.Flags(), Equals, []ErrorFlag{ConnectionError, LoadingError})
-	c.Check(err.Test(LoadingError), Equals, true)
+	c.Check(err.Test(ConnectionError), Equals, true)
 	c.Check(err.Test(RedisError), Equals, false)
+
+	exterr := newExtError("bar", err, LoadingError)
+	c.Check(err.String(), Equals, "bar")
+	c.Check(err.Test(ConnectionError), Equals, true)
+	c.Check(err.Test(LoadingError), Equals, true)
+
 }
 
 //* Long tests

@@ -39,20 +39,14 @@ func newError(msg string, flags ...ErrorFlag) *Error {
 	return err
 }
 
+// Create a new Error with flags of the given error.
+func newExtError(msg string, err Error, flags ...ErrorFlag) *Error {
+	return newError(msg, append(err.flags(), flags...))
+}
+
 // Return a string representation of the error.
 func (e *Error) String() string {
 	return e.msg
-}
-
-// Return error flags of the error.
-func (e *Error) Flags() (errFlags []ErrorFlag) {
-	for i, f := range e.flags {
-		if f {
-			errFlags = append(errFlags, ErrorFlag(i))
-		}
-	}
-
-	return
 }
 
 // Return true, if any of the given error flags is set in the error, otherwise false.
@@ -68,4 +62,15 @@ func (e *Error) Test(flags ...ErrorFlag) bool {
 	}
 
 	return false
+}
+
+// Return error flags of the error.
+func (e *Error) flags() (errFlags []ErrorFlag) {
+	for i, f := range e.flags {
+		if f {
+			errFlags = append(errFlags, ErrorFlag(i))
+		}
+	}
+
+	return
 }
