@@ -430,9 +430,9 @@ func (s *S) TestError(c *C) {
 	c.Check(err.Test(RedisError), Equals, false)
 
 	exterr := newExtError("bar", err, LoadingError)
-	c.Check(err.String(), Equals, "bar")
-	c.Check(err.Test(ConnectionError), Equals, true)
-	c.Check(err.Test(LoadingError), Equals, true)
+	c.Check(exterr.String(), Equals, "bar")
+	c.Check(exterr.Test(ConnectionError), Equals, true)
+	c.Check(exterr.Test(LoadingError), Equals, true)
 
 }
 

@@ -16,7 +16,7 @@ const (
 
 type Error struct {
 	msg     string
-	flags   [lenErrorFlags]bool
+	flags_   [lenErrorFlags]bool
 }
 
 // Create a new Error.
@@ -33,15 +33,15 @@ func newError(msg string, flags ...ErrorFlag) *Error {
 
 	err := &Error{
 	msg: msg,
-	flags: flags_,
+	flags_: flags_,
 	}
 
 	return err
 }
 
 // Create a new Error with flags of the given error.
-func newExtError(msg string, err Error, flags ...ErrorFlag) *Error {
-	return newError(msg, append(err.flags(), flags...))
+func newExtError(msg string, err *Error, flags ...ErrorFlag) *Error {
+	return newError(msg, append(err.flags(), flags...)...)
 }
 
 // Return a string representation of the error.
@@ -56,7 +56,7 @@ func (e *Error) Test(flags ...ErrorFlag) bool {
 	}
 
 	for _, f := range flags {
-		if e.flags[f] {
+		if e.flags_[f] {
 			return true
 		}
 	}
@@ -66,7 +66,7 @@ func (e *Error) Test(flags ...ErrorFlag) bool {
 
 // Return error flags of the error.
 func (e *Error) flags() (errFlags []ErrorFlag) {
-	for i, f := range e.flags {
+	for i, f := range e.flags_ {
 		if f {
 			errFlags = append(errFlags, ErrorFlag(i))
 		}
