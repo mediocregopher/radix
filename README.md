@@ -50,7 +50,7 @@ The default is set to 50 connections which should be fine for around 99.9% of ca
 However, note that each Subscription instance requires its own connection until it's closed.
 
 Sometimes Redis may give a LOADING error when it is loading keys from the disk.
-The default behaviour of radix is to retry connecting until Redis is done with it, 
+The default behaviour of Radix is to retry connecting until Redis is done with it, 
 but you may wish to override this behaviour with the NoLoadingRetry parameter.
 
 Simple blocking commands are executed using Client.Command and Client.AsyncCommand methods.
