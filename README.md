@@ -89,6 +89,7 @@ The interface{} parameters are converted into byte strings as follows:
 * s bool -> "1", if true, otherwise "0"
 
 Furthermore, there is special handling for slices and maps, eg.
+
 * []int{1,2,3} is the same as giving parameters: "1", "2", "3"
 * map[string]int{"foo":1, "bar":2} is the same as giving parameters: "foo", 1, "bar", 2
 
