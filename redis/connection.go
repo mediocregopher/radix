@@ -4,19 +4,26 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 //* Misc
 
+type subType uint8
+
 const (
 	// Buffer size for some channels holding connection data
 	connectionChanBufSize = 10
-)
 
-type redisReply int
+	subSubscribe subType = iota
+	subUnsubscribe
+	subPSubscribe
+	subPUnsubscribe
+)
 
 // Envelope type for a command
 type envCommand struct {
@@ -37,23 +44,27 @@ type envData struct {
 	length int
 	str    *string
 	int    *int64
-	err  error
+	error  *Error
 }
 
 // Envelope type for a subscription
 type envSubscription struct {
-	subscription bool
-	channels     []string
-	errChan      chan error
+	subType subType
+	data    []string
+	errChan chan *Error
+}
+
+type bufioReadWriteCloser struct {
+	*bufio.Reader
+	*bufio.Writer
+	io.Closer
 }
 
 //* connection
 
 // Redis connection
 type connection struct {
-	conn             *net.TCPConn
-	writer           *bufio.Writer
-	reader           *bufio.Reader
+	rwc              *bufioReadWriteCloser
 	commandChan      chan *envCommand
 	multiCommandChan chan *envMultiCommand
 	dataChan         chan *envData
@@ -62,27 +73,12 @@ type connection struct {
 	closerChan       chan bool
 	database         int
 	multiCounter     int
+	timeout          int
 }
 
 // Create a new protocol.
-func newConnection(c *Configuration) (*connection, error) {
-	// Establish the connection.
-	tcpAddr, err := net.ResolveTCPAddr("tcp", c.Address)
-
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := net.DialTCP("tcp", nil, tcpAddr)
-
-	if err != nil {
-		return nil, err
-	}
-
+func newConnection(c *Configuration) (*connection, *Error) {
 	co := &connection{
-		conn:             conn,
-		writer:           bufio.NewWriter(conn),
-		reader:           bufio.NewReader(conn),
 		commandChan:      make(chan *envCommand),
 		multiCommandChan: make(chan *envMultiCommand),
 		subscriptionChan: make(chan *envSubscription),
@@ -91,6 +87,40 @@ func newConnection(c *Configuration) (*connection, error) {
 		closerChan:       make(chan bool),
 		database:         c.Database,
 		multiCounter:     -1,
+		timeout:          c.Timeout,
+	}
+
+	// Establish a connection.
+	if c.Address != "" {
+		// tcp connection
+		tcpAddr, err := net.ResolveTCPAddr("tcp", c.Address)
+
+		if err != nil {
+			return nil, newError(err.Error(), ErrorConnection)
+		}
+
+		conn, err := net.DialTCP("tcp", nil, tcpAddr)
+
+		if err != nil {
+			return nil, newError(err.Error(), ErrorConnection)
+		}
+
+		co.rwc = &bufioReadWriteCloser{bufio.NewReader(conn), bufio.NewWriter(conn), conn}
+	} else {
+		// unix connection
+		unixAddr, err := net.ResolveUnixAddr("unix", c.Path)
+
+		if err != nil {
+			return nil, newError(err.Error(), ErrorConnection)
+		}
+
+		conn, err := net.DialUnix("unix", nil, unixAddr)
+
+		if err != nil {
+			return nil, newError(err.Error(), ErrorConnection)
+		}
+
+		co.rwc = &bufioReadWriteCloser{bufio.NewReader(conn), bufio.NewWriter(conn), conn}
 	}
 
 	go co.receiver()
@@ -100,9 +130,22 @@ func newConnection(c *Configuration) (*connection, error) {
 	r := &Reply{}
 	co.command(r, "select", c.Database)
 
-	if !r.OK() {
-		co.close()
-		return nil, r.Error()
+	if r.Error() != nil {
+		if !c.NoLoadingRetry && r.Error().Test(ErrorLoading) {
+			// Keep retrying SELECT until it succeeds or we got some other error.
+			co.command(r, "select", c.Database)
+			for r.Error() != nil {
+				if !r.Error().Test(ErrorLoading) {
+					co.close()
+					return nil, newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
+				}
+				time.Sleep(time.Second)
+				co.command(r, "select", c.Database)
+			}
+		} else {
+			co.close()
+			return nil, newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
+		}
 	}
 
 	// Authenticate if needed.
@@ -111,9 +154,9 @@ func newConnection(c *Configuration) (*connection, error) {
 
 		co.command(r, "auth", c.Auth)
 
-		if !r.OK() {
+		if r.Error() != nil {
 			co.close()
-			return nil, r.Error()
+			return nil, newErrorExt("failed to authenticate", r.Error(), ErrorAuth, ErrorConnection)
 		}
 	}
 
@@ -138,17 +181,31 @@ func (c *connection) multiCommand(r *Reply, cmds []command) {
 	<-doneChan
 }
 
-// Send a subscription request and return the count of succesfully subscribed channels.
-func (c *connection) subscribe(channels ...string) error {
-	errChan := make(chan error)
-	c.subscriptionChan <- &envSubscription{true, channels, errChan}
+// Send a subscription request to the given channels and return an error, if any.
+func (c *connection) subscribe(channels ...string) *Error {
+	errChan := make(chan *Error)
+	c.subscriptionChan <- &envSubscription{subSubscribe, channels, errChan}
 	return <-errChan
 }
 
-// Send an unsubscription request and return the count of remaining subscribed channels.
-func (c *connection) unsubscribe(channels ...string) error {
-	errChan := make(chan error)
-	c.subscriptionChan <- &envSubscription{false, channels, errChan}
+// Send an unsubscription request to the given channels and return an error, if any.
+func (c *connection) unsubscribe(channels ...string) *Error {
+	errChan := make(chan *Error)
+	c.subscriptionChan <- &envSubscription{subUnsubscribe, channels, errChan}
+	return <-errChan
+}
+
+// Send a subscription request to the given patterns and return an error, if any.
+func (c *connection) psubscribe(patterns ...string) *Error {
+	errChan := make(chan *Error)
+	c.subscriptionChan <- &envSubscription{subPSubscribe, patterns, errChan}
+	return <-errChan
+}
+
+// Send an unsubscription request to the given patterns and return an error, if any.
+func (c *connection) punsubscribe(patterns ...string) *Error {
+	errChan := make(chan *Error)
+	c.subscriptionChan <- &envSubscription{subPUnsubscribe, patterns, errChan}
 	return <-errChan
 }
 
@@ -162,14 +219,36 @@ func (c *connection) receiver() {
 	var ed *envData
 	var err error
 	var b []byte
+	doneChan := make(chan bool, 1)
 
 	// Read until the connection is closed.
-	for c.conn != nil {
-		b, err = c.reader.ReadBytes('\n')
+	for {
+		if c.timeout > 0 {
+			go func(b_ *[]byte, err_ *error) {
+				*b_, *err_ = c.rwc.ReadBytes('\n')
+				doneChan <- true
+			}(&b, &err)
+
+			select {
+			case <-doneChan:
+				// use err and reply
+			case <-time.After(time.Duration(c.timeout) * time.Second):
+				// ReadBytes timed out
+				c.dataChan <- &envData{0, nil, nil, newError("timeout", ErrorConnection, ErrorTimeout)}
+				continue
+			}
+		} else {
+			b, err = c.rwc.ReadBytes('\n')
+		}
 
 		if err != nil {
-			c.dataChan <- &envData{0, nil, nil, err}
-			return
+			if err.Error() == "EOF" {
+				// connection was closed
+				return
+			} else {
+				c.dataChan <- &envData{0, nil, nil, newError(err.Error(), ErrorConnection)}
+				return
+			}
 		}
 
 		// Analyze the first byte.
@@ -178,10 +257,15 @@ func (c *connection) receiver() {
 		switch fb {
 		case '-':
 			// Error reply.
-			if bytes.HasPrefix(b, []byte("ERR")) {
-				ed = &envData{0, nil, nil, newError(string(b[4:]))}
-			} else {
-				ed = &envData{0, nil, nil, newError(string(b))}
+			switch {
+			case bytes.HasPrefix(b, []byte("ERR")):
+				ed = &envData{0, nil, nil, newError(string(b[4:]), ErrorRedis)}
+			case bytes.HasPrefix(b, []byte("LOADING")):
+				ed = &envData{0, nil, nil, newError("Redis is loading data into memory",
+					ErrorRedis, ErrorLoading)}
+			default:
+				// this should not execute
+				ed = &envData{0, nil, nil, newError(string(b), ErrorRedis)}
 			}
 		case '+':
 			// Status reply.
@@ -192,7 +276,7 @@ func (c *connection) receiver() {
 			var i int64
 			i, err = strconv.ParseInt(string(b), 10, 64)
 			if err != nil {
-				ed = &envData{0, nil, nil, newError("integer reply parse error")}
+				ed = &envData{0, nil, nil, newError("integer reply parse error", ErrorParse)}
 				break
 			}
 			ed = &envData{0, nil, &i, nil}
@@ -201,11 +285,12 @@ func (c *connection) receiver() {
 			var i int
 			i, err = strconv.Atoi(string(b))
 			if err != nil {
-				ed = &envData{0, nil, nil, newError("bulk reply parse error")}
+				ed = &envData{0, nil, nil, newError("bulk reply parse error", ErrorParse)}
 				break
 			}
 
 			if i == -1 {
+				// Key not found
 				ed = &envData{-1, nil, nil, nil}
 			} else {
 				// Reading the data.
@@ -214,10 +299,11 @@ func (c *connection) receiver() {
 				r := 0
 
 				for r < ir {
-					n, err := c.reader.Read(br[r:])
+					n, err := c.rwc.Read(br[r:])
 
 					if err != nil {
-						c.dataChan <- &envData{0, nil, nil, err}
+						c.dataChan <- &envData{0, nil, nil, newError("bulk reply read error",
+							ErrorConnection)}
 						return
 					}
 
@@ -233,12 +319,17 @@ func (c *connection) receiver() {
 			var i int
 			i, err = strconv.Atoi(string(b))
 			if err != nil {
-				ed = &envData{0, nil, nil, newError("multi-bulk reply parse error")}
+				ed = &envData{0, nil, nil, newError("multi-bulk reply parse error", ErrorParse)}
 			}
-			ed = &envData{i, nil, nil, nil}
+			if i == -1 {
+				// nil multi-bulk
+				ed = &envData{-1, nil, nil, nil}
+			} else {
+				ed = &envData{i, nil, nil, nil}
+			}
 		default:
 			// Invalid reply
-			ed = &envData{0, nil, nil, newError("received invalid reply")}
+			ed = &envData{0, nil, nil, newError("received invalid reply", ErrorInvalidReply)}
 		}
 
 		// Send result.
@@ -252,9 +343,9 @@ func (c *connection) backend() {
 	for {
 		select {
 		case <-c.closerChan:
-			// Close the connection and pub/sub messaging channel.
-			c.conn.Close()
-			c.conn = nil
+			// Close the connection.
+			c.rwc.Close()
+			c.rwc = nil
 			return
 		case ec := <-c.commandChan:
 			// Received a command.
@@ -280,7 +371,7 @@ func (c *connection) handleCommand(ec *envCommand) {
 		c.receiveReply(ed, ec.r)
 	} else {
 		// Return error.
-		ec.r.err = err
+		ec.r.err = newError(err.Error())
 	}
 
 	ec.doneChan <- true
@@ -297,7 +388,7 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 		}
 	} else {
 		// Return error.
-		ec.r.err = err
+		ec.r.err = newError(err.Error())
 	}
 
 	ec.doneChan <- true
@@ -359,6 +450,7 @@ func (c *connection) handlePublishing(ed *envData) {
 			if r2.Type() != ReplyInteger {
 				goto Invalid
 			}
+
 			m.Subscriptions = r2.Int()
 		case m.Type == MessagePSubscribe || m.Type == MessagePUnsubscribe:
 			m.Pattern = r1.Str()
@@ -368,6 +460,7 @@ func (c *connection) handlePublishing(ed *envData) {
 			if r2.Type() != ReplyInteger {
 				goto Invalid
 			}
+
 			m.Subscriptions = r2.Int()
 		case m.Type == MessageMessage:
 			m.Channel = r1.Str()
@@ -377,6 +470,7 @@ func (c *connection) handlePublishing(ed *envData) {
 			if r2.Type() != ReplyString {
 				goto Invalid
 			}
+
 			m.Payload = r2.Str()
 		case m.Type == MessagePMessage:
 			m.Pattern = r1.Str()
@@ -386,6 +480,7 @@ func (c *connection) handlePublishing(ed *envData) {
 			if r2.Type() != ReplyString {
 				goto Invalid
 			}
+
 			m.Channel = r2.Str()
 
 			// payload
@@ -393,7 +488,8 @@ func (c *connection) handlePublishing(ed *envData) {
 			if r3.Type() != ReplyString {
 				goto Invalid
 			}
-			m.Channel = r3.Str()
+
+			m.Payload = r3.Str()
 		default:
 			goto Invalid
 		}
@@ -403,7 +499,8 @@ func (c *connection) handlePublishing(ed *envData) {
 
 	Invalid:
 		// Invalid reply
-		c.messageChan <- &Message{Type: MessageError, Error: newError("received invalid pub/sub reply")}
+		c.messageChan <- &Message{Type: MessageError, Error: newError("received invalid pub/sub reply",
+			ErrorInvalidReply)}
 	}
 }
 
@@ -412,19 +509,30 @@ func (c *connection) handleSubscription(es *envSubscription) {
 	// Prepare command.
 	var cmd string
 
-	if es.subscription {
+	switch es.subType {
+	case subSubscribe:
 		cmd = "subscribe"
-	} else {
+	case subUnsubscribe:
 		cmd = "unsubscribe"
+	case subPSubscribe:
+		cmd = "psubscribe"
+	case subPUnsubscribe:
+		cmd = "punsubscribe"
 	}
 
 	// Send the subscription request.
-	channels := make([]interface{}, len(es.channels))
-	for i, v := range es.channels {
+	channels := make([]interface{}, len(es.data))
+	for i, v := range es.data {
 		channels[i] = v
 	}
 
-	es.errChan <- c.writeRequest([]command{command{cmd, channels}})
+	err := c.writeRequest([]command{command{cmd, channels}})
+
+	if err == nil {
+		es.errChan <- nil
+	} else {
+		es.errChan <- newError(err.Error())
+	}
 	// subscribe/etc. return their replies in pub/sub messages
 }
 
@@ -452,33 +560,33 @@ func (c *connection) writeRequest(cmds []command) error {
 		}
 
 		// Write number of arguments.
-		if _, err := c.writer.Write([]byte(fmt.Sprintf("*%d\r\n", argsLen))); err != nil {
+		if _, err := c.rwc.Write([]byte(fmt.Sprintf("*%d\r\n", argsLen))); err != nil {
 			return err
 		}
 
 		// Write the command.
 		b := []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(cmd.cmd), cmd.cmd))
-		if _, err := c.writer.Write(b); err != nil {
+		if _, err := c.rwc.Write(b); err != nil {
 			return err
 		}
 		// Write arguments.
 		for _, arg := range cmd.args {
-			if _, err := c.writer.Write(argToRedis(arg)); err != nil {
+			if _, err := c.rwc.Write(argToRedis(arg)); err != nil {
 				return err
 			}
 		}
 	}
 
-	return c.writer.Flush()
+	return c.rwc.Flush()
 }
 
 // Receive a reply.
 func (c *connection) receiveReply(ed *envData, r *Reply) {
 	switch {
-	case ed.err != nil:
+	case ed.error != nil:
 		// Error reply
 		r.t = ReplyError
-		r.err = ed.err
+		r.err = ed.error
 	case ed.str != nil:
 		// Status or bulk reply
 		r.t = ReplyString
@@ -487,13 +595,18 @@ func (c *connection) receiveReply(ed *envData, r *Reply) {
 		// Integer reply
 		r.t = ReplyInteger
 		r.int = ed.int
-	case ed.length > 0:
+	case ed.length >= 0:
 		// Multi-bulk reply
 		r.t = ReplyMulti
-		for i := 0; i < ed.length; i++ {
-			r.elems = append(r.elems, &Reply{})
-			ed := <-c.dataChan
-			c.receiveReply(ed, r.elems[i])
+		if ed.length == 0 {
+			// Empty multi-bulk
+			r.elems = []*Reply{}
+		} else {
+			for i := 0; i < ed.length; i++ {
+				r.elems = append(r.elems, &Reply{})
+				ed := <-c.dataChan
+				c.receiveReply(ed, r.elems[i])
+			}
 		}
 	case ed.length == -1:
 		// nil reply
@@ -501,6 +614,6 @@ func (c *connection) receiveReply(ed *envData, r *Reply) {
 	default:
 		// Invalid reply
 		r.t = ReplyError
-		r.err = newError("invalid reply")
+		r.err = newError("invalid reply", ErrorInvalidReply)
 	}
 }

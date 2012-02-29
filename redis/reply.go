@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"errors"
 	"strconv"
 )
 
@@ -35,9 +36,8 @@ type Reply struct {
 	str   *string
 	int   *int64
 	elems []*Reply
-	err   error
+	err   *Error
 }
-
 
 // Type returns the type of the reply.
 func (r *Reply) Type() ReplyType {
@@ -53,11 +53,11 @@ func (r *Reply) Nil() bool {
 	return false
 }
 
-// Return the reply value as a string.
-// It panics, if the reply type is not ReplyStatus, ReplyError or ReplyString.
+// Return the reply value as a string or a nil, if the reply type is ReplyNil.
+// It panics, if the reply type is not ReplyNil, ReplyStatus or ReplyString.
 func (r *Reply) Str() string {
-	if !(r.t == ReplyStatus || r.t == ReplyError || r.t == ReplyString) {
-		panic("string value is not available for this reply type")
+	if !(r.t == ReplyNil || r.t == ReplyStatus || r.t == ReplyString) {
+		panic("redis: string value is not available for this reply type")
 	}
 
 	return *r.str
@@ -72,7 +72,7 @@ func (r *Reply) Bytes() []byte {
 // It panics, if the reply type is not ReplyInteger.
 func (r *Reply) Int64() int64 {
 	if r.t != ReplyInteger {
-		panic("integer value is not available for this reply type")
+		panic("redis: integer value is not available for this reply type")
 	}
 	return *r.int
 }
@@ -100,24 +100,20 @@ func (r *Reply) Bool() bool {
 		return false
 	}
 
-	panic("boolean value is not available for this reply type")
+	panic("redis: boolean value is not available for this reply type")
 }
 
 // Return the number of elements in a multi reply.
-// It panics, if the reply type is not ReplyMulti or ReplyNil.
+// Zero is returned when reply type is not ReplyMulti.
 func (r *Reply) Len() int {
-	if !(r.t == ReplyMulti || r.t == ReplyNil) {
-		panic("length is not available for this reply type")
-	}
-
 	return len(r.elems)
 }
 
-// Return the elements (sub-replies) of a multi reply or nil, if the reply is nil reply.
-// It panics, if the reply type is not ReplyMulti or ReplyNil.
+// Return the elements (sub-replies) of a multi reply.
+// It panics, if the reply type is not ReplyMulti.
 func (r *Reply) Elems() []*Reply {
-	if !(r.t == ReplyMulti || r.t == ReplyNil) {
-		panic("reply type is not ReplyMulti or ReplyNil")
+	if !(r.t == ReplyMulti) {
+		panic("redis: reply type is not ReplyMulti")
 	}
 
 	return r.elems
@@ -127,46 +123,43 @@ func (r *Reply) Elems() []*Reply {
 // It panics, if the reply type is not ReplyMulti or if the index is out of range.
 func (r *Reply) At(i int) *Reply {
 	if r.t != ReplyMulti {
-		panic("reply type is not ReplyMulti")
+		panic("redis: reply type is not ReplyMulti")
 	}
 
 	if i < 0 || i >= len(r.elems) {
-		panic("reply index out of range")
+		panic("redis: reply index out of range")
 	}
 
 	return r.elems[i]
 }
 
-// Return the error value of the reply or nil, if no there were no errors.
-func (r *Reply) Error() error {
+// Return the error value of the reply or nil,
+// if the reply type is not ReplyError.
+func (r *Reply) Error() *Error {
 	return r.err
 }
 
-// Retur true if the reply had no error, otherwise false.
-func (r *Reply) OK() bool {
+// Return the error string of the error value of the reply or an empty string,
+// if the reply type is not ReplyError.
+func (r *Reply) ErrorString() string {
 	if r.err != nil {
-		return false
+		return r.err.Error()
 	}
 
-	return true
+	return ""
 }
 
 // Return a multi-bulk reply as a slice of strings or an error.
-// The reply type must be a ReplyMulti or ReplyNil.
-// An empty slice is returned, if the reply type is ReplyNil.
+// The reply type must be ReplyMulti and its elements must be ReplyString.
 func (r *Reply) Strings() ([]string, error) {
-	if r.Type() == ReplyNil {
-		return []string{}, nil
-	}
-
 	if r.Type() != ReplyMulti {
-		return nil, newError("reply type was not ReplyMulti or ReplyNil")
+		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
 	strings := make([]string, len(r.elems))
 	for i, v := range r.elems {
 		if v.Type() != ReplyString {
-			return nil, newError("reply type was not ReplyString")
+			return nil, errors.New("sub-reply type is not ReplyString")
 		}
 
 		strings[i] = v.String()
@@ -175,29 +168,23 @@ func (r *Reply) Strings() ([]string, error) {
 	return strings, nil
 }
 
-// Return a hash reply as a map[string]*Reply or an error.
-// The reply must be a multi-bulk reply with "key value key value..."-style elements.
-// The reply type must be a ReplyMulti or ReplyNil.
-// An empty map is returned, if the reply type is ReplyNil.
+// Return a multi-bulk reply as a map[string]*Reply or an error.
+// The reply elements must be in a "key value key value..."-style order.
 func (r *Reply) Map() (map[string]*Reply, error) {
 	rmap := map[string]*Reply{}
 
-	if r.Type() == ReplyNil {
-		return rmap, nil
-	}
-
 	if r.Type() != ReplyMulti {
-		return nil, newError("reply type was not ReplyMulti or ReplyNil")
+		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
 	if r.Len()%2 != 0 {
-		return nil, newError("reply has odd number of elements")
+		return nil, errors.New("reply has odd number of elements")
 	}
 
 	for i := 0; i < r.Len()/2; i++ {
 		rkey := r.At(i * 2)
 		if rkey.Type() != ReplyString {
-			return nil, newError("key element was not a string reply")
+			return nil, errors.New("key element is not a string reply")
 		}
 		key := rkey.Str()
 
@@ -207,35 +194,29 @@ func (r *Reply) Map() (map[string]*Reply, error) {
 	return rmap, nil
 }
 
-// Return a hash reply as a map[string]string or an error.
-// The reply must be a multi-bulk reply with "key value key value..."-style elements.
-// The reply type must be a ReplyMulti or ReplyNil.
-// An empty map is returned, if the reply type is ReplyNil.
+// Return a multi-bulk reply as a map[string]string or an error.
+// The reply elements must be in a "key value key value..."-style order.
 func (r *Reply) StringMap() (map[string]string, error) {
 	rmap := map[string]string{}
 
-	if r.Type() == ReplyNil {
-		return rmap, nil
-	}
-
 	if r.Type() != ReplyMulti {
-		return nil, newError("reply type was not ReplyMulti or ReplyNil")
+		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
 	if r.Len()%2 != 0 {
-		return nil, newError("reply has odd number of elements")
+		return nil, errors.New("reply has odd number of elements")
 	}
 
 	for i := 0; i < r.Len()/2; i++ {
 		rkey := r.At(i * 2)
 		if rkey.Type() != ReplyString {
-			return nil, newError("key element was not a string reply")
+			return nil, errors.New("key element is not a string reply")
 		}
 		key := rkey.Str()
 
 		rval := r.At(i*2 + 1)
 		if rval.Type() != ReplyString {
-			return nil, newError("value element was not a string reply")
+			return nil, errors.New("value element is not a string reply")
 		}
 		val := rval.Str()
 
@@ -250,9 +231,9 @@ func (r *Reply) StringMap() (map[string]string, error) {
 // Use method Reply.Str for fetching a string reply.
 func (r *Reply) String() string {
 	switch r.t {
-	case ReplyStatus:
-		fallthrough
 	case ReplyError:
+		return r.err.Error()
+	case ReplyStatus:
 		fallthrough
 	case ReplyString:
 		return r.Str()
@@ -268,7 +249,7 @@ func (r *Reply) String() string {
 		return s + "]"
 	}
 
-	// This should never execute.
+	// This should never execute
 	return ""
 }
 

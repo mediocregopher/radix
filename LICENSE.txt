@@ -1,5 +1,5 @@
 Copyright 2011-2012 The "Radix" Authors. All rights reserved.
-Portions copyright 2011 Frank Mueller / Oldenburg / Germany (tideland-rdc)
+Portions copyright 2011 Frank Mueller / Oldenburg / Germany (tideland-rdc).
 
 BSD 3-Clause License
 

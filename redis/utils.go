@@ -1,7 +1,6 @@
 package redis
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -61,9 +60,4 @@ func argToRedis(v interface{}) []byte {
 	}
 
 	return bs
-}
-
-// Return error with properly formatted message.
-func newError(msg string) error {
-	return errors.New("redis: " + msg)
 }

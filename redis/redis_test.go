@@ -13,21 +13,28 @@ func Test(t *testing.T) {
 }
 
 var rd *Client
+var conf Configuration = Configuration{
+	Database: 8,
+	Address:  "127.0.0.1:6379",
+	Timeout:  10,
+}
 
-func setUpTest(c *C) {
-	rd = NewClient(Configuration{
-		Database: 8,
-		Address:  "127.0.0.1:6379"})
+type TI interface {
+	Fatalf(string, ...interface{})
+}
+
+func setUpTest(c TI) {
+	rd = NewClient(conf)
 
 	r := rd.Command("flushall")
-	if !r.OK() {
+	if r.Error() != nil {
 		c.Fatalf("setUp FLUSHALL failed: %s", r.Error())
 	}
 }
 
-func tearDownTest(c *C) {
+func tearDownTest(c TI) {
 	r := rd.Command("flushall")
-	if !r.OK() {
+	if r.Error() != nil {
 		c.Fatalf("tearDown FLUSHALL failed: %s", r.Error())
 	}
 	rd.Close()
@@ -69,10 +76,18 @@ func (s *Long) TearDownTest(c *C) {
 // Test Select.
 func (s *S) TestSelect(c *C) {
 	rd.Select(9)
-	c.Check(rd.configuration.Database, Equals, 9)
-	rd.Command("set", "foo", "bar")
 
-	rdA := NewClient(Configuration{Database: 9})
+	c.Check(rd.configuration.Database, Equals, 9)
+	rep := rd.Command("set", "foo", "bar")
+	c.Assert(rep.Error(), IsNil)
+
+	conf2 := conf
+	conf2.Database = 9
+	rdA := NewClient(conf2)
+	rep = rdA.Command("get", "foo")
+	if rep.Error() != nil {
+		c.Log(rep.Error())
+	}
 	c.Check(rdA.Command("get", "foo").Str(), Equals, "bar")
 }
 
@@ -183,6 +198,10 @@ func (s *S) TestList(c *C) {
 	rd.Command("rpush", "list:c", 4)
 	rd.Command("rpush", "list:c", 5)
 	c.Check(rd.Command("lpop", "list:c").Str(), Equals, "1")
+
+	lrangenil, err := rd.Command("lrange", "non-existent-list", 0, -1).Strings()
+	c.Assert(err, IsNil)
+	c.Check(lrangenil, Equals, []string{})
 }
 
 // Test set commands.
@@ -277,20 +296,20 @@ func (s *S) TestMultiCommand(c *C) {
 		mc.Command("get", "foo")
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
-	c.Check(r.At(0).OK(), Equals, true)
+	c.Check(r.At(0).Error(), IsNil)
 	c.Check(r.At(1).Str(), Equals, "bar")
 
 	r = rd.MultiCommand(func(mc *MultiCommand) {
 		mc.Command("set", "foo2", "baz")
 		mc.Command("get", "foo2")
 		rmc := mc.Flush()
-		c.Check(rmc.At(0).OK(), Equals, true)
+		c.Check(rmc.At(0).Error(), IsNil)
 		c.Check(rmc.At(1).Str(), Equals, "baz")
 		mc.Command("set", "foo2", "qux")
 		mc.Command("get", "foo2")
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
-	c.Check(r.At(0).OK(), Equals, true)
+	c.Check(r.At(0).Error(), IsNil)
 	c.Check(r.At(1).Str(), Equals, "qux")
 }
 
@@ -325,8 +344,8 @@ func (s *S) TestComplexTransaction(c *C) {
 		rmc := mc.Flush()
 		c.Assert(rmc.Type(), Equals, ReplyMulti)
 		c.Assert(rmc.Len(), Equals, 2)
-		c.Assert(rmc.At(0).OK(), Equals, true)
-		c.Assert(rmc.At(1).OK(), Equals, true)
+		c.Assert(rmc.At(0).Error(), IsNil)
+		c.Assert(rmc.At(1).Error(), IsNil)
 
 		mc.Command("multi")
 		mc.Command("set", "foo", "baz")
@@ -336,13 +355,13 @@ func (s *S) TestComplexTransaction(c *C) {
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 5)
-	c.Check(r.At(0).OK(), Equals, true)
-	c.Check(r.At(1).OK(), Equals, true)
-	c.Check(r.At(2).OK(), Equals, true)
-	c.Check(r.At(3).OK(), Equals, false)
+	c.Check(r.At(0).Error(), IsNil)
+	c.Check(r.At(1).Error(), IsNil)
+	c.Check(r.At(2).Error(), IsNil)
+	c.Check(r.At(3).Error(), NotNil)
 	c.Assert(r.At(4).Type(), Equals, ReplyMulti)
 	c.Assert(r.At(4).Len(), Equals, 2)
-	c.Check(r.At(4).At(0).OK(), Equals, true)
+	c.Check(r.At(4).At(0).Error(), IsNil)
 	c.Check(r.At(4).At(1).Str(), Equals, "baz")
 
 	// Discarding transaction
@@ -355,11 +374,11 @@ func (s *S) TestComplexTransaction(c *C) {
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 5)
-	c.Check(r.At(0).OK(), Equals, true)
-	c.Check(r.At(1).OK(), Equals, true)
-	c.Check(r.At(2).OK(), Equals, true)
-	c.Check(r.At(3).OK(), Equals, true)
-	c.Check(r.At(4).OK(), Equals, true)
+	c.Check(r.At(0).Error(), IsNil)
+	c.Check(r.At(1).Error(), IsNil)
+	c.Check(r.At(2).Error(), IsNil)
+	c.Check(r.At(3).Error(), IsNil)
+	c.Check(r.At(4).Error(), IsNil)
 	c.Check(r.At(4).Str(), Equals, "bar")
 }
 
@@ -370,7 +389,7 @@ func (s *S) TestAsyncMultiCommand(c *C) {
 		mc.Command("get", "foo")
 	}).Reply()
 	c.Assert(r.Type(), Equals, ReplyMulti)
-	c.Check(r.At(0).OK(), Equals, true)
+	c.Check(r.At(0).Error(), IsNil)
 	c.Check(r.At(1).Str(), Equals, "bar")
 }
 
@@ -388,20 +407,18 @@ func (s *S) TestAsyncTransaction(c *C) {
 // Test Subscription.
 func (s *S) TestSubscription(c *C) {
 	var messages []*Message
+	msgHdlr := func(msg *Message) {
+		c.Log(msg)
+		messages = append(messages, msg)
+	}
 
-	sub, err := rd.Subscription("chan1", "chan2")
+	sub, err := rd.Subscription(msgHdlr)
 	if err != nil {
 		c.Errorf("Failed to subscribe: '%v'!", err)
 		return
 	}
 
-	go func() {
-		for msg := range sub.MessageChan {
-			c.Log(msg)
-			messages = append(messages, msg)
-		}
-		c.Log("Subscription closed!")
-	}()
+	sub.Subscribe("chan1", "chan2")
 
 	c.Check(rd.Command("publish", "chan1", "foo").Int(), Equals, 1)
 	sub.Unsubscribe("chan1")
@@ -422,10 +439,61 @@ func (s *S) TestSubscription(c *C) {
 	c.Check(messages[3].Channel, Equals, "chan1")
 }
 
-// Test newError.
-func (s *S) TestNewError(c *C) {
-	err := newError("foo")
+// Test pattern subscriptions.
+func (s *S) TestPSubscribe(c *C) {
+	var messages []*Message
+	msgHdlr := func(msg *Message) {
+		//c.Log(msg)
+		messages = append(messages, msg)
+	}
+
+	sub, err := rd.Subscription(msgHdlr)
+	if err != nil {
+		c.Errorf("Failed to subscribe: '%v'!", err)
+		return
+	}
+
+	sub.PSubscribe("foo.*")
+
+	c.Check(rd.Command("publish", "foo.foo", "foo").Int(), Equals, 1)
+	sub.PUnsubscribe("foo.*")
+	c.Check(rd.Command("publish", "foo.bar", "bar").Int(), Equals, 0)
+	sub.Close()
+
+	c.Assert(len(messages), Equals, 3)
+	c.Check(messages[0].Type, Equals, MessagePSubscribe)
+	c.Check(messages[0].Pattern, Equals, "foo.*")
+	c.Check(messages[0].Subscriptions, Equals, 1)
+	c.Check(messages[1].Type, Equals, MessagePMessage)
+	c.Check(messages[1].Channel, Equals, "foo.foo")
+	c.Check(messages[1].Payload, Equals, "foo")
+	c.Check(messages[1].Pattern, Equals, "foo.*")
+	c.Check(messages[2].Type, Equals, MessagePUnsubscribe)
+	c.Check(messages[2].Pattern, Equals, "foo.*")
+}
+
+// Test errors.
+func (s *S) TestError(c *C) {
+	err := newError("foo", ErrorConnection)
 	c.Check(err.Error(), Equals, "redis: foo")
+	c.Check(err.Test(ErrorConnection), Equals, true)
+	c.Check(err.Test(ErrorRedis), Equals, false)
+
+	errext := newErrorExt("bar", err, ErrorLoading)
+	c.Check(errext.Error(), Equals, "redis: bar")
+	c.Check(errext.Test(ErrorConnection), Equals, true)
+	c.Check(errext.Test(ErrorLoading), Equals, true)
+}
+
+// Test unix connections.
+func (s *S) TestUnix(c *C) {
+	conf2 := conf
+	conf2.Address = ""
+	conf2.Path = "/tmp/redis.sock"
+	rdA := NewClient(conf2)
+	rep := rdA.Command("echo", "Hello, World!")
+	c.Assert(rep.Error(), IsNil)
+	c.Check(rep.Str(), Equals, "Hello, World!")
 }
 
 //* Long tests
@@ -444,9 +512,9 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 		rmc := mc.Flush()
 		c.Assert(rmc.Type(), Equals, ReplyMulti)
 		c.Assert(rmc.Len(), Equals, 3)
-		c.Assert(rmc.At(0).OK(), Equals, true)
-		c.Assert(rmc.At(1).OK(), Equals, true)
-		c.Assert(rmc.At(2).OK(), Equals, true)
+		c.Assert(rmc.At(0).Error(), IsNil)
+		c.Assert(rmc.At(1).Error(), IsNil)
+		c.Assert(rmc.At(2).Error(), IsNil)
 
 		time.Sleep(time.Second * 2)
 		mc.Command("set", "foo", 2)
@@ -459,13 +527,81 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 
 // Test illegal databases.
 func (s *Long) TestIllegalDatabases(c *C) {
-	c.Log("Test selecting an illegal database...")
-	rdA := NewClient(Configuration{Database: 4711})
+	conf2 := conf
+	conf2.Database = 4711
+	rdA := NewClient(conf2)
 	rA := rdA.Command("ping")
-	c.Check(rA.OK(), Equals, false)
+	c.Check(rA.Error(), NotNil)
 
-	c.Log("Test connecting to an illegal address...")
-	rdB := NewClient(Configuration{Address: "192.168.100.100:12345"})
+	conf3 := conf
+	conf3.Address = "192.168.100.100:12345"
+	rdB := NewClient(conf3)
 	rB := rdB.Command("ping")
-	c.Check(rB.OK(), Equals, false)
+	c.Check(rB.Error(), NotNil)
+}
+
+//* Benchmarks
+
+func BenchmarkBlockingPing(b *testing.B) {
+	setUpTest(b)
+
+	for i := 0; i < b.N; i++ {		
+		rd.Command("ping")
+	}
+
+	tearDownTest(b)
+}
+
+func BenchmarkBlockingSet(b *testing.B) {
+	setUpTest(b)
+
+	for i := 0; i < b.N; i++ {		
+		rd.Command("set", "foo", "bar")
+	}
+
+	tearDownTest(b)
+}
+
+func BenchmarkBlockingGet(b *testing.B) {
+	setUpTest(b)
+
+	for i := 0; i < b.N; i++ {		
+		rd.Command("get", "foo", "bar")
+	}
+
+	tearDownTest(b)
+}
+
+func BenchmarkAsyncPing(b *testing.B) {
+	setUpTest(b)
+
+	for i := 0; i < b.N; i++ {		
+		fut := rd.AsyncCommand("ping")
+		fut.Reply()
+	}
+
+	tearDownTest(b)
+}
+
+
+func BenchmarkAsyncSet(b *testing.B) {
+	setUpTest(b)
+
+	for i := 0; i < b.N; i++ {		
+		fut := rd.AsyncCommand("set", "foo", "bar")
+		fut.Reply()
+	}
+
+	tearDownTest(b)
+}
+
+func BenchmarkAsyncGet(b *testing.B) {
+	setUpTest(b)
+
+	for i := 0; i < b.N; i++ {		
+		fut := rd.AsyncCommand("get", "foo", "bar")
+		fut.Reply()
+	}
+
+	tearDownTest(b)
 }

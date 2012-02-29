@@ -12,6 +12,7 @@ GOFILES=\
 	utils.go\
 	subscription.go\
 	message.go\
+	error.go\
 
 include $(GOROOT)/src/Make.pkg
 

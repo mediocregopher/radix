@@ -31,13 +31,13 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 		mc.c.multiCommand(mc.r, mc.cmds)
 
 		exec_rs := mc.r.At(len(mc.r.elems) - 1)
-		if exec_rs.OK() {
+		if exec_rs.Error() == nil {
 			mc.r.elems = exec_rs.elems
 		} else {
 			if err := exec_rs.Error(); err != nil {
 				mc.r.err = err
 			} else {
-				mc.r.err = newError("redis: unknown transaction error")
+				mc.r.err = newError("unknown transaction error")
 			}
 		}
 	}

@@ -2,10 +2,13 @@ package redis
 
 // Configuration of a database client.
 type Configuration struct {
-	Address  string
-	Database int
-	Auth     string
-	PoolSize int
+	Address        string
+	Path           string
+	Database       int
+	Auth           string
+	PoolSize       int
+	Timeout        int
+	NoLoadingRetry bool
 }
 
 //* Client
@@ -35,7 +38,7 @@ func NewClient(conf Configuration) *Client {
 }
 
 // Pull a connection from the pool, with lazy init.
-func (c *Client) pullConnection() (conn *connection, err error) {
+func (c *Client) pullConnection() (conn *connection, err *Error) {
 	conn = <-c.pool
 
 	// Lazy init of a connection.
@@ -51,7 +54,7 @@ func (c *Client) pullConnection() (conn *connection, err error) {
 		r := &Reply{}
 		conn.command(r, "select", c.configuration.Database)
 
-		if !r.OK() {
+		if r.Error() != nil {
 			err = r.Error()
 			return
 		}
@@ -176,19 +179,13 @@ func (c *Client) Select(database int) {
 //* PubSub
 
 // Subscribe to given channels and return a Subscription or an error.
-func (c *Client) Subscription(channels ...string) (*Subscription, error) {
-	// Connection handling
-	conn, err := c.pullConnection()
-
-	defer func() {
-		c.pushConnection(conn)
-	}()
-
-	if err != nil {
-		return nil, err
+// The msgHdlr function is called whenever a new message arrives.
+func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error) {
+	if msgHdlr == nil {
+		panic("redis: message handler must not be nil")
 	}
 
-	sub, err := newSubscription(conn, channels...)
+	sub, err := newSubscription(c, msgHdlr)
 	if err != nil {
 		return nil, err
 	}
@@ -200,18 +197,19 @@ func (c *Client) Subscription(channels ...string) (*Subscription, error) {
 
 // Check the given configuration.
 func checkConfiguration(c *Configuration) {
-	if c.Address == "" {
-		// Default is localhost and default port.
+	if c.Address != "" && c.Path != "" {
+		panic("redis: configuration has both tcp/ip address and unix path")
+	}
+
+	if c.Address == "" && c.Path == "" {
 		c.Address = "127.0.0.1:6379"
 	}
 
 	if c.Database < 0 {
-		// Shouldn't happen.
 		c.Database = 0
 	}
 
-	if c.PoolSize <= 1 {
-		// Default is 10.
-		c.PoolSize = 10
+	if c.PoolSize <= 0 {
+		c.PoolSize = 50
 	}
 }

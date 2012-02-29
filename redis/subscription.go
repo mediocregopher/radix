@@ -8,43 +8,57 @@ import "runtime"
 type Subscription struct {
 	client      *Client
 	conn        *connection
-	error       error
 	closerChan  chan bool
 	messageChan chan *Message
-	MessageChan <-chan *Message
+	msgHdlr     func(msg *Message)
 }
 
 // Create a new Subscription or return an error.
-func newSubscription(conn *connection, channels ...string) (*Subscription, error) {
-	messageChan := make(chan *Message, 1)
-	sub := &Subscription{
-		conn:        conn,
-		closerChan:  make(chan bool, 1),
-		messageChan: messageChan,
-		MessageChan: messageChan,
-	}
-	runtime.SetFinalizer(sub, (*Subscription).Close)
-	go sub.backend()
+func newSubscription(client *Client, msgHdlr func(msg *Message)) (*Subscription, *Error) {
+	var err *Error
 
-	err := sub.conn.subscribe(channels...)
+	sub := &Subscription{
+		client:      client,
+		closerChan:  make(chan bool, 1),
+		messageChan: make(chan *Message, 1),
+		msgHdlr:     msgHdlr,
+	}
+
+	// Connection handling
+	sub.conn, err = sub.client.pullConnection()
+
 	if err != nil {
+		sub.client.pushConnection(sub.conn)
 		return nil, err
 	}
+
+	runtime.SetFinalizer(sub, (*Subscription).Close)
+	go sub.backend()
 
 	return sub, nil
 }
 
-// Subscribe to given channels and return an error, if any.
-func (s *Subscription) Subscribe(channels ...string) error {
+// Subscribe to given channels or return an error.
+func (s *Subscription) Subscribe(channels ...string) *Error {
 	return s.conn.subscribe(channels...)
 }
 
-// Unsubscribe from given channels and return an error, if any.
-func (s *Subscription) Unsubscribe(channels ...string) error {
+// Unsubscribe from given channels or return an error.
+func (s *Subscription) Unsubscribe(channels ...string) *Error {
 	return s.conn.unsubscribe(channels...)
 }
 
-// Close the Subscription.
+// Subscribe to given patterns or return an error.
+func (s *Subscription) PSubscribe(patterns ...string) *Error {
+	return s.conn.psubscribe(patterns...)
+}
+
+// Unsubscribe from given patterns or return an error.
+func (s *Subscription) PUnsubscribe(patterns ...string) *Error {
+	return s.conn.punsubscribe(patterns...)
+}
+
+// Close the Subscription and return its connection to the connection pool.
 func (s *Subscription) Close() {
 	runtime.SetFinalizer(s, nil)
 	s.closerChan <- true
@@ -54,6 +68,8 @@ func (s *Subscription) Close() {
 		s.conn.close()
 		s.conn = nil
 	}
+
+	s.client.pushConnection(s.conn)
 }
 
 // Backend of the subscription.
@@ -61,11 +77,9 @@ func (s *Subscription) backend() {
 	for {
 		select {
 		case <-s.closerChan:
-			// Close the backend.
-			close(s.messageChan)
 			return
-		case s.messageChan <- <-s.conn.messageChan:
-			// Message forwarding succesful
+		case msg := <-s.conn.messageChan:
+			s.msgHdlr(msg)
 		}
 	}
 }
