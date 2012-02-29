@@ -98,13 +98,13 @@ take a look at the example program in `example/example.go`.
 
 ## API reference
 
-API reference is available in `http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix/redis`.
+API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix/redis.
 
 Alternatively, run godoc for API reference:
 
 	godoc -http=:8080
 
-and point your browser to `http://localhost:8080/pkg/github.com/fzzbt/radix/redis`.
+and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/redis.
 
 
 ## HACKING
