@@ -13,6 +13,6 @@
 * * *
 
 
-### 2012-03-01 Release
+### 2012-03-01 Release v0.1
 
 + First stable release.
