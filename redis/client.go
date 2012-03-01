@@ -16,7 +16,7 @@ type Configuration struct {
 // Client manages the access to a database.
 type Client struct {
 	configuration *Configuration
-	pool          chan *connection
+	pool          *connectionPool
 }
 
 // NewClient create a new accessor.
@@ -26,12 +26,12 @@ func NewClient(conf Configuration) *Client {
 	// Create the database client instance.
 	c := &Client{
 		configuration: &conf,
-		pool:          make(chan *connection, conf.PoolSize),
+		pool:          newConnectionPool(),
 	}
 
 	// Init pool with nils.
 	for i := 0; i < conf.PoolSize; i++ {
-		c.pool <- nil
+		c.pool.push(nil)
 	}
 
 	return c
@@ -39,7 +39,7 @@ func NewClient(conf Configuration) *Client {
 
 // Pull a connection from the pool, with lazy init.
 func (c *Client) pullConnection() (conn *connection, err *Error) {
-	conn = <-c.pool
+	conn = c.pool.pull()
 
 	// Lazy init of a connection.
 	if conn == nil {
@@ -65,13 +65,14 @@ func (c *Client) pullConnection() (conn *connection, err *Error) {
 
 // Push a connection to the pool.
 func (c *Client) pushConnection(conn *connection) {
-	c.pool <- conn
+	c.pool.push(conn)
 }
 
 // Close all connections of the client.
 func (c *Client) Close() {
 	var poolUsage int
-	for conn := range c.pool {
+	for {
+		conn := c.pool.pull()
 		poolUsage++
 
 		if conn != nil {

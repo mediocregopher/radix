@@ -13,6 +13,7 @@ GOFILES=\
 	subscription.go\
 	message.go\
 	error.go\
+	connection_pool.go\
 
 include $(GOROOT)/src/Make.pkg
 

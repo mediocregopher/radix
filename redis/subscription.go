@@ -19,8 +19,8 @@ func newSubscription(client *Client, msgHdlr func(msg *Message)) (*Subscription,
 
 	sub := &Subscription{
 		client:      client,
-		closerChan:  make(chan bool, 1),
-		messageChan: make(chan *Message, 1),
+		closerChan:  make(chan bool),
+		messageChan: make(chan *Message),
 		msgHdlr:     msgHdlr,
 	}
 

@@ -545,7 +545,7 @@ func (s *Long) TestIllegalDatabases(c *C) {
 func BenchmarkBlockingPing(b *testing.B) {
 	setUpTest(b)
 
-	for i := 0; i < b.N; i++ {		
+	for i := 0; i < b.N; i++ {
 		rd.Command("ping")
 	}
 
@@ -555,7 +555,7 @@ func BenchmarkBlockingPing(b *testing.B) {
 func BenchmarkBlockingSet(b *testing.B) {
 	setUpTest(b)
 
-	for i := 0; i < b.N; i++ {		
+	for i := 0; i < b.N; i++ {
 		rd.Command("set", "foo", "bar")
 	}
 
@@ -565,7 +565,7 @@ func BenchmarkBlockingSet(b *testing.B) {
 func BenchmarkBlockingGet(b *testing.B) {
 	setUpTest(b)
 
-	for i := 0; i < b.N; i++ {		
+	for i := 0; i < b.N; i++ {
 		rd.Command("get", "foo", "bar")
 	}
 
@@ -575,7 +575,7 @@ func BenchmarkBlockingGet(b *testing.B) {
 func BenchmarkAsyncPing(b *testing.B) {
 	setUpTest(b)
 
-	for i := 0; i < b.N; i++ {		
+	for i := 0; i < b.N; i++ {
 		fut := rd.AsyncCommand("ping")
 		fut.Reply()
 	}
@@ -583,11 +583,10 @@ func BenchmarkAsyncPing(b *testing.B) {
 	tearDownTest(b)
 }
 
-
 func BenchmarkAsyncSet(b *testing.B) {
 	setUpTest(b)
 
-	for i := 0; i < b.N; i++ {		
+	for i := 0; i < b.N; i++ {
 		fut := rd.AsyncCommand("set", "foo", "bar")
 		fut.Reply()
 	}
@@ -598,7 +597,7 @@ func BenchmarkAsyncSet(b *testing.B) {
 func BenchmarkAsyncGet(b *testing.B) {
 	setUpTest(b)
 
-	for i := 0; i < b.N; i++ {		
+	for i := 0; i < b.N; i++ {
 		fut := rd.AsyncCommand("get", "foo", "bar")
 		fut.Reply()
 	}
