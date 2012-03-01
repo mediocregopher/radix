@@ -15,7 +15,7 @@ func Test(t *testing.T) {
 var rd *Client
 var conf Configuration = Configuration{
 	Database: 8,
-	Address:  "127.0.0.1:6379",
+Path: "/tmp/redis.sock",
 	Timeout:  10,
 }
 
