@@ -127,6 +127,6 @@ when submitting their first commit. See the CONTRIBUTORS file for details.
 
 ## Copyright and licensing
 
-*Copyright 2011 The "radix" Authors*. See file AUTHORS and CONTRIBUTORS.  
+*Copyright 2012 The "Radix" Authors*. See file AUTHORS and CONTRIBUTORS.  
 Unless otherwise noted, the source files are distributed under the
 *BSD 3-Clause License* found in the LICENSE file.
