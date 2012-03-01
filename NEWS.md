@@ -4,7 +4,7 @@
 
 *Items should be added to this file as:*
 
-	### YYYY-MM-DD  Release
+	### YYYY-MM-DD Release
 
 	+ Additional changes.
 
@@ -13,3 +13,6 @@
 * * *
 
 
+### 2012-03-01 Release
+
++ First stable release.
