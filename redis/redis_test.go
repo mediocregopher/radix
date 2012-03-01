@@ -425,6 +425,7 @@ func (s *S) TestSubscription(c *C) {
 	c.Check(rd.Command("publish", "chan1", "bar").Int(), Equals, 0)
 	sub.Close()
 
+	time.Sleep(time.Second)
 	c.Assert(len(messages), Equals, 4)
 	c.Check(messages[0].Type, Equals, MessageSubscribe)
 	c.Check(messages[0].Channel, Equals, "chan1")
@@ -460,6 +461,7 @@ func (s *S) TestPSubscribe(c *C) {
 	c.Check(rd.Command("publish", "foo.bar", "bar").Int(), Equals, 0)
 	sub.Close()
 
+	time.Sleep(time.Second)
 	c.Assert(len(messages), Equals, 3)
 	c.Check(messages[0].Type, Equals, MessagePSubscribe)
 	c.Check(messages[0].Pattern, Equals, "foo.*")
