@@ -12,6 +12,9 @@
 
 * * *
 
+### 2012-03-01 Release v0.1.1
+
++ Updated connection pool to reuse old connections more efficiently.
 
 ### 2012-03-01 Release v0.1
 
