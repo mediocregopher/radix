@@ -7,14 +7,12 @@ developed by Frank Mueller.
 
 ## Installation
 
-    cd /path/to/go/src/pkg
-	git clone git@github.com:fzzbt/radix.git
-    make install
+    go get github.com/fzzbt/radix
 
 To run the tests:
 
-    cd $GOROOT/src/pkg/radix &&
-    gotest -v -bench=".*" && make clean && cd -
+    cd $GOROOT/src/pkg/radix
+    go test -v -bench=".*"
 
 ## Getting started
 
