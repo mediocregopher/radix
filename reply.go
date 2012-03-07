@@ -1,4 +1,4 @@
-package redis
+package radix
 
 import (
 	"errors"
@@ -44,7 +44,7 @@ func (r *Reply) Type() ReplyType {
 	return r.t
 }
 
-// Return true, if the reply is a nil reply, otherwise false.
+// Nil returns true, if the reply is a nil reply, otherwise false.
 func (r *Reply) Nil() bool {
 	if r.t == ReplyNil {
 		return true
@@ -53,7 +53,7 @@ func (r *Reply) Nil() bool {
 	return false
 }
 
-// Return the reply value as a string or a nil, if the reply type is ReplyNil.
+// Str returns the reply value as a string or a nil, if the reply type is ReplyNil.
 // It panics, if the reply type is not ReplyNil, ReplyStatus or ReplyString.
 func (r *Reply) Str() string {
 	if !(r.t == ReplyNil || r.t == ReplyStatus || r.t == ReplyString) {
@@ -68,7 +68,7 @@ func (r *Reply) Bytes() []byte {
 	return []byte(r.Str())
 }
 
-// Return the reply value as a int64.
+// Int64 returns the reply value as a int64.
 // It panics, if the reply type is not ReplyInteger.
 func (r *Reply) Int64() int64 {
 	if r.t != ReplyInteger {
@@ -82,7 +82,7 @@ func (r *Reply) Int() int {
 	return int(r.Int64())
 }
 
-// Return true, if the reply value equals to 1 or "1", otherwise false.
+// Bool returns true, if the reply value equals to 1 or "1", otherwise false.
 // It panics, if the reply type is not ReplyInteger or ReplyString.
 func (r *Reply) Bool() bool {
 	switch r.t {
@@ -103,13 +103,13 @@ func (r *Reply) Bool() bool {
 	panic("redis: boolean value is not available for this reply type")
 }
 
-// Return the number of elements in a multi reply.
+// Len returns the number of elements in a multi reply.
 // Zero is returned when reply type is not ReplyMulti.
 func (r *Reply) Len() int {
 	return len(r.elems)
 }
 
-// Return the elements (sub-replies) of a multi reply.
+// Elems returns the elements (sub-replies) of a multi reply.
 // It panics, if the reply type is not ReplyMulti.
 func (r *Reply) Elems() []*Reply {
 	if !(r.t == ReplyMulti) {
@@ -119,7 +119,7 @@ func (r *Reply) Elems() []*Reply {
 	return r.elems
 }
 
-// Return a Reply of a multi reply by its index.
+// At returns a Reply of a multi reply by its index.
 // It panics, if the reply type is not ReplyMulti or if the index is out of range.
 func (r *Reply) At(i int) *Reply {
 	if r.t != ReplyMulti {
@@ -133,13 +133,13 @@ func (r *Reply) At(i int) *Reply {
 	return r.elems[i]
 }
 
-// Return the error value of the reply or nil,
+// Error returns the error value of the reply or nil,
 // if the reply type is not ReplyError.
 func (r *Reply) Error() *Error {
 	return r.err
 }
 
-// Return the error string of the error value of the reply or an empty string,
+// ErrorString returns the error string of the error value of the reply or an empty string,
 // if the reply type is not ReplyError.
 func (r *Reply) ErrorString() string {
 	if r.err != nil {
@@ -149,7 +149,7 @@ func (r *Reply) ErrorString() string {
 	return ""
 }
 
-// Return a multi-bulk reply as a slice of strings or an error.
+// Strings returns a multi-bulk reply as a slice of strings or an error.
 // The reply type must be ReplyMulti and its elements must be ReplyString.
 func (r *Reply) Strings() ([]string, error) {
 	if r.Type() != ReplyMulti {
@@ -168,7 +168,7 @@ func (r *Reply) Strings() ([]string, error) {
 	return strings, nil
 }
 
-// Return a multi-bulk reply as a map[string]*Reply or an error.
+// Map returns a multi-bulk reply as a map[string]*Reply or an error.
 // The reply elements must be in a "key value key value..."-style order.
 func (r *Reply) Map() (map[string]*Reply, error) {
 	rmap := map[string]*Reply{}
@@ -194,7 +194,7 @@ func (r *Reply) Map() (map[string]*Reply, error) {
 	return rmap, nil
 }
 
-// Return a multi-bulk reply as a map[string]string or an error.
+// StringMap returns a multi-bulk reply as a map[string]string or an error.
 // The reply elements must be in a "key value key value..."-style order.
 func (r *Reply) StringMap() (map[string]string, error) {
 	rmap := map[string]string{}
@@ -226,7 +226,7 @@ func (r *Reply) StringMap() (map[string]string, error) {
 	return rmap, nil
 }
 
-// Return a string representation of the reply and its sub-replies.
+// String returns a string representation of the reply and its sub-replies.
 // This method is mainly used for debugging.
 // Use method Reply.Str for fetching a string reply.
 func (r *Reply) String() string {
@@ -258,18 +258,17 @@ func (r *Reply) String() string {
 // Future is a channel for fetching a reply of an asynchronous command.
 type Future chan *Reply
 
-// Create a new Future.
 func newFuture() Future {
 	return make(chan *Reply, 1)
 }
 
-// Set the Reply of the Future to given the given Reply.
+// setReply sets the Reply of the Future to given the given Reply.
 func (f Future) setReply(r *Reply) {
 	f <- r
 }
 
-// Return the Reply of the Future.
-// Blocks until the Reply is available.
+// Reply returns the Reply of the Future.
+// It blocks until the Reply is available.
 func (f Future) Reply() (r *Reply) {
 	r = <-f
 	f <- r

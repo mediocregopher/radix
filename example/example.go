@@ -4,13 +4,13 @@ package main
 
 import (
 	"fmt"
-	"redis"
+	"radix"
 	"strconv"
 	"time"
 )
 
 func main() {
-	c := redis.NewClient(redis.Configuration{
+	c := radix.NewClient(radix.Configuration{
 		Database: 8,
 		// Timeout in seconds
 		Timeout: 10,
@@ -45,12 +45,12 @@ func main() {
 
 	rep = c.Command("get", "mykey1")
 	switch rep.Type() {
-	case redis.ReplyString:
+	case radix.ReplyString:
 		fmt.Printf("mykey1: %s\n", rep.Str())
-	case redis.ReplyNil:
+	case radix.ReplyNil:
 		fmt.Println("mykey1 does not exist")
 		return
-	case redis.ReplyError:
+	case radix.ReplyError:
 		fmt.Printf("get failed: %s\n", rep.Error())
 		return
 	default:
@@ -61,7 +61,7 @@ func main() {
 
 	//* Another error handling pattern
 	rep = c.Command("get", "mykey2")
-	if rep.Type() != redis.ReplyString {
+	if rep.Type() != radix.ReplyString {
 		if rep.Error() != nil {
 			fmt.Printf("get failed: %s\n", rep.Error())
 		} else {
@@ -76,7 +76,7 @@ func main() {
 	//  Note that ErrorString will return "", if the reply type is not ReplyError.
 	//  eg. if mykey3 would not exist, ReplyNil would be returned, Not ReplyError.
 	rep = c.Command("get", "mykey3")
-	if rep.Type() != redis.ReplyString {
+	if rep.Type() != radix.ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -131,7 +131,7 @@ func main() {
 	fmt.Printf("myhash: %v\n", myhash)
 
 	//* MultiCommands
-	rep = c.MultiCommand(func(mc *redis.MultiCommand) {
+	rep = c.MultiCommand(func(mc *radix.MultiCommand) {
 		mc.Command("set", "multikey", "multival")
 		mc.Command("get", "multikey")
 	})
@@ -142,7 +142,7 @@ func main() {
 	}
 
 	// Note that you can now assume that rep.Len() == 2 regardless whether all of the commands succeeded
-	if rep.At(1).Type() != redis.ReplyString {
+	if rep.At(1).Type() != radix.ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -150,7 +150,7 @@ func main() {
 	fmt.Printf("multikey: %s\n", rep.At(1).Str())
 
 	//* Transactions
-	rep = c.Transaction(func(mc *redis.MultiCommand) {
+	rep = c.Transaction(func(mc *radix.MultiCommand) {
 		mc.Command("set", "trankey", "tranval")
 		mc.Command("get", "trankey")
 	})
@@ -160,7 +160,7 @@ func main() {
 		return
 	}
 
-	if rep.At(1).Type() != redis.ReplyString {
+	if rep.At(1).Type() != radix.ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -169,8 +169,8 @@ func main() {
 
 	//* Complex transactions
 	//  Atomic INCR replacement with transactions
-	myIncr := func(key string) *redis.Reply {
-		return c.MultiCommand(func(mc *redis.MultiCommand) {
+	myIncr := func(key string) *radix.Reply {
+		return c.MultiCommand(func(mc *radix.MultiCommand) {
 			var curval int
 
 			mc.Command("watch", key)
@@ -181,7 +181,7 @@ func main() {
 				return
 			}
 
-			if rep.At(1).Type() == redis.ReplyString {
+			if rep.At(1).Type() == radix.ReplyString {
 				var err error
 				curval, err = strconv.Atoi(rep.At(1).Str())
 				if err != nil {
@@ -201,7 +201,7 @@ func main() {
 	myIncr("ctrankey")
 
 	rep = c.Command("get", "ctrankey")
-	if rep.Type() != redis.ReplyString {
+	if rep.Type() != radix.ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -221,7 +221,7 @@ func main() {
 
 	// block until reply is available
 	rep = fut.Reply()
-	if rep.Type() != redis.ReplyString {
+	if rep.Type() != radix.ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -229,11 +229,11 @@ func main() {
 	fmt.Printf("asynckey: %s\n", rep.Str())
 
 	//* Pub/sub
-	msgHdlr := func(msg *redis.Message) {
+	msgHdlr := func(msg *radix.Message) {
 		switch msg.Type {
-		case redis.MessageMessage:
+		case radix.MessageMessage:
 			fmt.Printf("Received message \"%s\" from channel \"%s\".\n", msg.Payload, msg.Channel)
-		case redis.MessagePMessage:
+		case radix.MessagePMessage:
 			fmt.Printf("Received pattern message \"%s\" from channel \"%s\" with pattern "+
 				"\"%s\".\n", msg.Payload, msg.Channel, msg.Pattern)
 		}

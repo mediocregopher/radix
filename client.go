@@ -1,4 +1,4 @@
-package redis
+package radix
 
 // Configuration of a database client.
 type Configuration struct {
@@ -19,7 +19,7 @@ type Client struct {
 	pool          *connectionPool
 }
 
-// NewClient create a new accessor.
+// NewClient creates a new accessor.
 func NewClient(conf Configuration) *Client {
 	checkConfiguration(&conf)
 
@@ -37,7 +37,7 @@ func NewClient(conf Configuration) *Client {
 	return c
 }
 
-// Pull a connection from the pool, with lazy init.
+// pullConnection pulls a connection from the pool, with lazy initialization.
 func (c *Client) pullConnection() (conn *connection, err *Error) {
 	conn = c.pool.pull()
 
@@ -63,12 +63,12 @@ func (c *Client) pullConnection() (conn *connection, err *Error) {
 	return conn, nil
 }
 
-// Push a connection to the pool.
+// pushConnection pushes a connection to the pool.
 func (c *Client) pushConnection(conn *connection) {
 	c.pool.push(conn)
 }
 
-// Close all connections of the client.
+// Close closes all connections of the client.
 func (c *Client) Close() {
 	var poolUsage int
 	for {
@@ -86,7 +86,7 @@ func (c *Client) Close() {
 	}
 }
 
-// Command performs a Redis command.
+// Command calls a Redis command.
 func (c *Client) Command(cmd string, args ...interface{}) *Reply {
 	r := &Reply{}
 
@@ -108,7 +108,7 @@ func (c *Client) Command(cmd string, args ...interface{}) *Reply {
 	return r
 }
 
-// AsyncCommand performs a Redis command asynchronously.
+// AsyncCommand calls a Redis command asynchronously.
 func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 	fut := newFuture()
 
@@ -119,7 +119,6 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 	return fut
 }
 
-// Helper method for MultiCommand and Transaction.
 func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
 	// Connection handling
 	conn, err := c.pullConnection()
@@ -135,19 +134,19 @@ func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
 	return newMultiCommand(transaction, conn).process(f)
 }
 
-// Perform a multi command.
+// MultiCommand calls a multi-command.
 func (c *Client) MultiCommand(f func(*MultiCommand)) *Reply {
 	return c.multiCommand(false, f)
 }
 
-// Perform a simple transaction.
+// Transaction performs a simple transaction.
 // Simple transaction is a multi command that is wrapped in a MULTI-EXEC block.
 // For complex transactions with WATCH, UNWATCH or DISCARD commands use MultiCommand.
 func (c *Client) Transaction(f func(*MultiCommand)) *Reply {
 	return c.multiCommand(true, f)
 }
 
-// Perform an asynchronous multi command.
+// AsyncMultiCommand calls an asynchronous multi-command.
 func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) Future {
 	fut := newFuture()
 
@@ -158,7 +157,7 @@ func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) Future {
 	return fut
 }
 
-// Perform a simple asynchronous transaction.
+// AsyncTransaction performs a simple asynchronous transaction.
 func (c *Client) AsyncTransaction(f func(*MultiCommand)) Future {
 	fut := newFuture()
 
@@ -179,7 +178,7 @@ func (c *Client) Select(database int) {
 
 //* PubSub
 
-// Subscribe to given channels and return a Subscription or an error.
+// Subscription subscribes to given channels and return a Subscription or an error.
 // The msgHdlr function is called whenever a new message arrives.
 func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error) {
 	if msgHdlr == nil {
@@ -196,7 +195,6 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 
 //* Helpers
 
-// Check the given configuration.
 func checkConfiguration(c *Configuration) {
 	if c.Address != "" && c.Path != "" {
 		panic("redis: configuration has both tcp/ip address and unix path")

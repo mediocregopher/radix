@@ -1,18 +1,19 @@
-Radix
+radix
 =====
 
-Radix is an asynchronous Redis client for Go.
-Radix was originally forked from the Tideland-rdc redis client (http://code.google.com/p/tideland-rdc/)
+radix is a package for Go that implements an asynchronous Redis client.
+radix was originally forked from the Tideland-rdc redis client (http://code.google.com/p/tideland-rdc/)
 developed by Frank Mueller.
 
 ## Installation
 
-    cd /path/to/radix/redis   
+    cd /path/to/go/src/pkg
+	git clone git@github.com:fzzbt/radix.git
     make install
 
 To run the tests:
 
-    cd $GOROOT/src/pkg/redis &&
+    cd $GOROOT/src/pkg/radix &&
     gotest -v -bench=".*" && make clean && cd -
 
 ## Getting started
@@ -20,17 +21,17 @@ To run the tests:
 Creating a Client instance is done as follows:
 
 ```go
-	import "redis"
+	import "radix"
 
 	...
 
-	c := redis.NewClient(redis.Configuration{
+	c := radix.NewClient(radix.Configuration{
 		Database: 0, // (default: 0)
 		// Timeout in seconds
 		Timeout: 10, // (default: 10)
 
 		// Replace the line below with
-		// Path: "/tmp/redis.sock" or similar for unix connections
+		// Path: "/tmp/radix.sock" or similar for unix connections
 		Address: "127.0.0.1:6379",
 
 		//* Optional parameters
@@ -50,7 +51,7 @@ The default is set to 50 connections which should be fine for around 99.9% of ca
 However, note that each Subscription instance requires its own connection until it's closed.
 
 Sometimes Redis may give a LOADING error when it is loading keys from the disk.
-The default behaviour of Radix is to retry connecting until Redis is done with it, 
+The default behaviour of radix is to retry connecting until Redis is done with it, 
 but you may wish to override this behaviour with the NoLoadingRetry parameter.
 
 Simple blocking commands are executed using Client.Command and Client.AsyncCommand methods.
@@ -67,7 +68,7 @@ if reply.Error() != nil {
 }
 
 reply = c.Command("get", "mykey")
-if reply.Type() != redis.ReplyString {
+if reply.Type() != radix.ReplyString {
 	fmt.Printf("get failed: %s\n", reply.Error())
 	return
 }
@@ -98,13 +99,13 @@ take a look at the example program in `example/example.go`.
 
 ## API reference
 
-API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix/redis.
+API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix/radix.
 
 Alternatively, run godoc for API reference:
 
 	godoc -http=:8080
 
-and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/redis.
+and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/radix.
 
 
 ## HACKING
@@ -127,6 +128,6 @@ when submitting their first commit. See the CONTRIBUTORS file for details.
 
 ## Copyright and licensing
 
-*Copyright 2012 The "Radix" Authors*. See file AUTHORS and CONTRIBUTORS.  
+*Copyright 2012 The "radix" Authors*. See file AUTHORS and CONTRIBUTORS.  
 Unless otherwise noted, the source files are distributed under the
 *BSD 3-Clause License* found in the LICENSE file.

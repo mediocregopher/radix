@@ -1,4 +1,4 @@
-package redis
+package radix
 
 type ErrorFlag uint8
 
@@ -19,7 +19,7 @@ type Error struct {
 	flags_ [lenErrorFlags]bool
 }
 
-// Create a new Error.
+// newError creates a new Error.
 func newError(msg string, flags ...ErrorFlag) *Error {
 	flags_ := [lenErrorFlags]bool{}
 
@@ -35,17 +35,17 @@ func newError(msg string, flags ...ErrorFlag) *Error {
 	return err
 }
 
-// Create a new Error with flags of the given error.
+// newErrorExt creates a new Error with flags of the given error.
 func newErrorExt(msg string, err *Error, flags ...ErrorFlag) *Error {
 	return newError(msg, append(err.flags(), flags...)...)
 }
 
-// Return a string representation of the error.
+// Error returns a string representation of the error.
 func (e *Error) Error() string {
 	return "redis: " + e.msg
 }
 
-// Return true, if any of the given error flags is set in the error, otherwise false.
+// Test returns true, if any of the given error flags is set in the error, otherwise false.
 func (e *Error) Test(flags ...ErrorFlag) bool {
 	if len(flags) < 1 {
 		panic("redis: invalid number of parameters")
@@ -60,7 +60,7 @@ func (e *Error) Test(flags ...ErrorFlag) bool {
 	return false
 }
 
-// Return error flags of the error.
+// flags returns error flags of the error.
 func (e *Error) flags() (errFlags []ErrorFlag) {
 	for i, f := range e.flags_ {
 		if f {

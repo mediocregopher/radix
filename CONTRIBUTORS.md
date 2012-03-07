@@ -1,4 +1,4 @@
-*This is the official list of people who have contributed code to **Radix**.*
+*This is the official list of people who have contributed code to **radix**.*
 
 *The AUTHORS file lists the copyright holders; this file lists people. For
 example, the employees of an organization are listed here but not in AUTHORS,

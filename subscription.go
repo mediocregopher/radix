@@ -1,4 +1,4 @@
-package redis
+package radix
 
 import "runtime"
 
@@ -8,19 +8,19 @@ import "runtime"
 type Subscription struct {
 	client      *Client
 	conn        *connection
-	closerChan  chan bool
+	closerChan  chan struct{}
 	messageChan chan *Message
 	msgHdlr     func(msg *Message)
 }
 
-// Create a new Subscription or return an error.
+// newSubscription returns a new Subscription or an error.
 func newSubscription(client *Client, msgHdlr func(msg *Message)) (*Subscription, *Error) {
 	var err *Error
 
 	sub := &Subscription{
 		client:      client,
-		closerChan:  make(chan bool),
-		messageChan: make(chan *Message),
+		closerChan:  make(chan struct{}),
+		messageChan: make(chan *Message, 1),
 		msgHdlr:     msgHdlr,
 	}
 
@@ -38,30 +38,30 @@ func newSubscription(client *Client, msgHdlr func(msg *Message)) (*Subscription,
 	return sub, nil
 }
 
-// Subscribe to given channels or return an error.
+// Subscribe subscribes to given channels or returns an error.
 func (s *Subscription) Subscribe(channels ...string) *Error {
 	return s.conn.subscribe(channels...)
 }
 
-// Unsubscribe from given channels or return an error.
+// Unsubscribe unsubscribes from given channels or returns an error.
 func (s *Subscription) Unsubscribe(channels ...string) *Error {
 	return s.conn.unsubscribe(channels...)
 }
 
-// Subscribe to given patterns or return an error.
+// PSubscribe subscribes to given patterns or returns an error.
 func (s *Subscription) PSubscribe(patterns ...string) *Error {
 	return s.conn.psubscribe(patterns...)
 }
 
-// Unsubscribe from given patterns or return an error.
+// PUnsubscribe unsubscribes from given patterns or returns an error.
 func (s *Subscription) PUnsubscribe(patterns ...string) *Error {
 	return s.conn.punsubscribe(patterns...)
 }
 
-// Close the Subscription and return its connection to the connection pool.
+// Close closes the Subscription and returns its connection to the connection pool.
 func (s *Subscription) Close() {
 	runtime.SetFinalizer(s, nil)
-	s.closerChan <- true
+	s.closerChan <- struct{}{}
 	// Try to unsubscribe from all channels to reset the connection state back to normal
 	err := s.conn.unsubscribe()
 	if err != nil {
@@ -72,7 +72,6 @@ func (s *Subscription) Close() {
 	s.client.pushConnection(s.conn)
 }
 
-// Backend of the subscription.
 func (s *Subscription) backend() {
 	for {
 		select {

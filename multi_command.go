@@ -1,4 +1,4 @@
-package redis
+package radix
 
 // MultiCommand holds data for a Redis multi command.
 type MultiCommand struct {
@@ -9,7 +9,6 @@ type MultiCommand struct {
 	cmdCounter  int
 }
 
-// Create a new MultiCommand.
 func newMultiCommand(transaction bool, c *connection) *MultiCommand {
 	return &MultiCommand{
 		transaction: transaction,
@@ -18,7 +17,7 @@ func newMultiCommand(transaction bool, c *connection) *MultiCommand {
 	}
 }
 
-// Call the given multi command function, flush the commands and return the returned Reply.
+// process calls the given multi command function, flushes the commands and returns the returned Reply.
 func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 	if mc.transaction {
 		mc.Command("multi")
@@ -45,13 +44,13 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 	return mc.r
 }
 
-// Queue a command for later execution.
+// Command queues a command for later execution.
 func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
 	mc.cmds = append(mc.cmds, command{cmd, args})
 	mc.cmdCounter++
 }
 
-// Send queued commands to the Redis server for execution and return the returned Reply.
+// Flush sends queued commands to the Redis server for execution and returns the returned Reply.
 // The Reply associated with the MultiCommand will be reseted.
 func (mc *MultiCommand) Flush() *Reply {
 	mc.c.multiCommand(mc.r, mc.cmds)

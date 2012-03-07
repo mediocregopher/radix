@@ -1,4 +1,4 @@
-package redis
+package radix
 
 import (
 	"flag"
@@ -15,7 +15,7 @@ func Test(t *testing.T) {
 var rd *Client
 var conf Configuration = Configuration{
 	Database: 8,
-Path: "/tmp/redis.sock",
+	Path:     "/tmp/redis.sock",
 	Timeout:  10,
 }
 

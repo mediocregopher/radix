@@ -1,4 +1,4 @@
-*This is the official list of **Radix** authors for copyright purposes.*
+*This is the official list of **radix** authors for copyright purposes.*
 
 *This file is distinct from the CONTRIBUTORS file. See the latter for an
 explanation.*

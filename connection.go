@@ -1,4 +1,4 @@
-package redis
+package radix
 
 import (
 	"bufio"
@@ -29,14 +29,14 @@ const (
 type envCommand struct {
 	r        *Reply
 	cmd      command
-	doneChan chan bool
+	doneChan chan struct{}
 }
 
 // Envelope type for a multi command
 type envMultiCommand struct {
 	r        *Reply
 	cmds     []command
-	doneChan chan bool
+	doneChan chan struct{}
 }
 
 // Envelope type for read data
@@ -62,7 +62,7 @@ type bufioReadWriteCloser struct {
 
 //* connection
 
-// Redis connection
+// connection describes a Redis connection.
 type connection struct {
 	rwc              *bufioReadWriteCloser
 	commandChan      chan *envCommand
@@ -70,21 +70,20 @@ type connection struct {
 	dataChan         chan *envData
 	subscriptionChan chan *envSubscription
 	messageChan      chan *Message
-	closerChan       chan bool
+	closerChan       chan struct{}
 	database         int
 	multiCounter     int
 	timeout          int
 }
 
-// Create a new protocol.
 func newConnection(c *Configuration) (*connection, *Error) {
 	co := &connection{
-		commandChan:      make(chan *envCommand),
-		multiCommandChan: make(chan *envMultiCommand),
-		subscriptionChan: make(chan *envSubscription),
+		commandChan:      make(chan *envCommand, 1),
+		multiCommandChan: make(chan *envMultiCommand, 1),
+		subscriptionChan: make(chan *envSubscription, 1),
 		dataChan:         make(chan *envData, connectionChanBufSize),
 		messageChan:      make(chan *Message, connectionChanBufSize),
-		closerChan:       make(chan bool),
+		closerChan:       make(chan struct{}),
 		database:         c.Database,
 		multiCounter:     -1,
 		timeout:          c.Timeout,
@@ -163,9 +162,9 @@ func newConnection(c *Configuration) (*connection, *Error) {
 	return co, nil
 }
 
-// Execute a command.
+// command calls a Redis command.
 func (c *connection) command(r *Reply, cmd string, args ...interface{}) {
-	doneChan := make(chan bool)
+	doneChan := make(chan struct{})
 	c.commandChan <- &envCommand{
 		r,
 		command{cmd, args},
@@ -174,59 +173,58 @@ func (c *connection) command(r *Reply, cmd string, args ...interface{}) {
 	<-doneChan
 }
 
-// Execute a multi command.
+// multicommand calls a Redis multi-command.
 func (c *connection) multiCommand(r *Reply, cmds []command) {
-	doneChan := make(chan bool)
+	doneChan := make(chan struct{})
 	c.multiCommandChan <- &envMultiCommand{r, cmds, doneChan}
 	<-doneChan
 }
 
-// Send a subscription request to the given channels and return an error, if any.
+// subscribes sends a subscription request to the given channels and returns an error, if any.
 func (c *connection) subscribe(channels ...string) *Error {
 	errChan := make(chan *Error)
 	c.subscriptionChan <- &envSubscription{subSubscribe, channels, errChan}
 	return <-errChan
 }
 
-// Send an unsubscription request to the given channels and return an error, if any.
+// unsubscribe sends an unsubscription request to the given channels and returns an error, if any.
 func (c *connection) unsubscribe(channels ...string) *Error {
 	errChan := make(chan *Error)
 	c.subscriptionChan <- &envSubscription{subUnsubscribe, channels, errChan}
 	return <-errChan
 }
 
-// Send a subscription request to the given patterns and return an error, if any.
+// psubscribe seds a subscription request to the given patterns and returns an error, if any.
 func (c *connection) psubscribe(patterns ...string) *Error {
 	errChan := make(chan *Error)
 	c.subscriptionChan <- &envSubscription{subPSubscribe, patterns, errChan}
 	return <-errChan
 }
 
-// Send an unsubscription request to the given patterns and return an error, if any.
+// punsubscribe sends an unsubscription request to the given patterns and returns an error, if any.
 func (c *connection) punsubscribe(patterns ...string) *Error {
 	errChan := make(chan *Error)
 	c.subscriptionChan <- &envSubscription{subPUnsubscribe, patterns, errChan}
 	return <-errChan
 }
 
-// Close the connection.
 func (c *connection) close() {
-	c.closerChan <- true
+	c.closerChan <- struct{}{}
 }
 
-// Goroutine for receiving data from the TCP connection.
+// receiver receives data from the connection.
 func (c *connection) receiver() {
 	var ed *envData
 	var err error
 	var b []byte
-	doneChan := make(chan bool, 1)
+	doneChan := make(chan struct{})
 
 	// Read until the connection is closed.
 	for {
 		if c.timeout > 0 {
 			go func(b_ *[]byte, err_ *error) {
 				*b_, *err_ = c.rwc.ReadBytes('\n')
-				doneChan <- true
+				doneChan <- struct{}{}
 			}(&b, &err)
 
 			select {
@@ -337,7 +335,6 @@ func (c *connection) receiver() {
 	}
 }
 
-// Goroutine as backend for the protocol.
 func (c *connection) backend() {
 	// Receive commands and data.
 	for {
@@ -364,7 +361,6 @@ func (c *connection) backend() {
 	}
 }
 
-// Handle a command.
 func (c *connection) handleCommand(ec *envCommand) {
 	if err := c.writeRequest([]command{ec.cmd}); err == nil {
 		ed := <-c.dataChan
@@ -374,10 +370,9 @@ func (c *connection) handleCommand(ec *envCommand) {
 		ec.r.err = newError(err.Error())
 	}
 
-	ec.doneChan <- true
+	ec.doneChan <- struct{}{}
 }
 
-// Handle a multi command.
 func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 	if err := c.writeRequest(ec.cmds); err == nil {
 		ec.r.t = ReplyMulti
@@ -391,10 +386,9 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 		ec.r.err = newError(err.Error())
 	}
 
-	ec.doneChan <- true
+	ec.doneChan <- struct{}{}
 }
 
-// Handle published data.
 func (c *connection) handlePublishing(ed *envData) {
 	r := &Reply{}
 	c.receiveReply(ed, r)
@@ -504,7 +498,6 @@ func (c *connection) handlePublishing(ed *envData) {
 	}
 }
 
-// Handle a subscription.
 func (c *connection) handleSubscription(es *envSubscription) {
 	// Prepare command.
 	var cmd string
@@ -536,7 +529,6 @@ func (c *connection) handleSubscription(es *envSubscription) {
 	// subscribe/etc. return their replies in pub/sub messages
 }
 
-// Write a request.
 func (c *connection) writeRequest(cmds []command) error {
 	for _, cmd := range cmds {
 		// Calculate number of arguments.
@@ -580,7 +572,6 @@ func (c *connection) writeRequest(cmds []command) error {
 	return c.rwc.Flush()
 }
 
-// Receive a reply.
 func (c *connection) receiveReply(ed *envData, r *Reply) {
 	switch {
 	case ed.error != nil:
