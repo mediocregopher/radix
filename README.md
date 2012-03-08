@@ -97,13 +97,13 @@ take a look at the example program in `example/example.go`.
 
 ## API reference
 
-API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix/radix.
+API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix.
 
 Alternatively, run godoc for API reference:
 
 	godoc -http=:8080
 
-and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/radix.
+and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix.
 
 
 ## HACKING
