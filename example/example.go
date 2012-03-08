@@ -1,4 +1,4 @@
-// Radix example program.
+// radix example program.
 
 package main
 
