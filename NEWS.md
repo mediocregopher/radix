@@ -12,6 +12,13 @@
 
 * * *
 
+### 2012-04-10 Release v0.1.3
+
++ Go v1.0 compatible.
++ Fixed broken tests.
++ Fixed issue #1: Very high memory usage due to bug in timeout error handling.
++ Fixed issue #2: Graceful reset of Connections when connection error is encountered.
+
 ### 2012-03-06 Release v0.1.2
 
 + Various small fixes to make the package work with Go weekly/Go 1.
