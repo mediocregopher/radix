@@ -15,9 +15,9 @@ func main() {
 		// Timeout in seconds
 		Timeout: 10,
 
-		// Replace the line below with
-		// Path: "/tmp/redis.sock" or similar for unix connections
-		Address: "127.0.0.1:6379",
+		// Custom TCP/IP address or Unix path.
+		// Path: "/tmp/redis.sock",
+		// Address: "127.0.0.1:6379",
 	})
 	defer c.Close()
 

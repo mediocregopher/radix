@@ -28,9 +28,9 @@ Creating a Client instance is done as follows:
 		// Timeout in seconds
 		Timeout: 10, // (default: 10)
 
-		// Replace the line below with
-		// Path: "/tmp/radix.sock" or similar for unix connections
-		Address: "127.0.0.1:6379",
+		// Custom TCP/IP address or Unix path. (default: Address: "127.0.0.1:6379")
+		// Address: "127.0.0.1:6379", 
+		// Path: "/tmp/radix.sock"
 
 		//* Optional parameters
 		// Password for authenticating (default: "")
