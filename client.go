@@ -1,5 +1,9 @@
 package radix
 
+import (
+	"sync"
+)
+
 // Configuration of a database client.
 type Configuration struct {
 	Address        string
@@ -17,6 +21,7 @@ type Configuration struct {
 type Client struct {
 	configuration *Configuration
 	pool          *connectionPool
+	lock          *sync.Mutex
 }
 
 // NewClient creates a new accessor.
@@ -25,56 +30,24 @@ func NewClient(conf Configuration) *Client {
 
 	// Create the database client instance.
 	c := &Client{
-		configuration: &conf,
-		pool:          newConnectionPool(),
+	configuration: &conf,
+	lock: &sync.Mutex{},
 	}
-
-	// Init pool with nils.
-	for i := 0; i < conf.PoolSize; i++ {
-		c.pool.push(nil)
-	}
+	c.pool = newConnectionPool(c.configuration)
 
 	return c
-}
-
-// pullConnection pulls a connection from the pool, with lazy initialization.
-func (c *Client) pullConnection() (conn *connection, err *Error) {
-	conn = c.pool.pull()
-
-	// Lazy init of a connection.
-	if conn == nil {
-		// Create a new connection.
-		conn, err = newConnection(c.configuration)
-
-		if err != nil {
-			return nil, err
-		}
-	} else if conn.database != c.configuration.Database {
-		// Database changed, issue SELECT command
-		r := &Reply{}
-		conn.command(r, "select", c.configuration.Database)
-
-		if r.Error() != nil {
-			err = r.Error()
-			return
-		}
-	}
-
-	return conn, nil
-}
-
-// pushConnection pushes a connection to the pool.
-func (c *Client) pushConnection(conn *connection) {
-	c.pool.push(conn)
 }
 
 // Close closes all connections of the client.
 func (c *Client) Close() {
 	var poolUsage int
 	for {
-		conn := c.pool.pull()
-		poolUsage++
+		conn, err := c.pool.pull()
+		if err != nil {
+			break
+		}
 
+		poolUsage++
 		if conn != nil {
 			conn.close()
 			conn = nil
@@ -91,18 +64,17 @@ func (c *Client) Command(cmd string, args ...interface{}) *Reply {
 	r := &Reply{}
 
 	// Connection handling
-	conn, err := c.pullConnection()
-
-	defer func() {
-		c.pushConnection(conn)
-	}()
+	conn, err := c.pool.pull()
 
 	if err != nil {
 		r.err = err
 		return r
 	}
 
-	// Now do it.
+	defer func() {
+		c.pool.push(conn)
+	}()
+
 	conn.command(r, cmd, args...)
 
 	return r
@@ -121,15 +93,15 @@ func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 
 func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
 	// Connection handling
-	conn, err := c.pullConnection()
-
-	defer func() {
-		c.pushConnection(conn)
-	}()
+	conn, err := c.pool.pull()
 
 	if err != nil {
 		return &Reply{err: err}
 	}
+
+	defer func() {
+		c.pool.push(conn)
+	}()
 
 	return newMultiCommand(transaction, conn).process(f)
 }
@@ -168,14 +140,6 @@ func (c *Client) AsyncTransaction(f func(*MultiCommand)) Future {
 	return fut
 }
 
-// Select changes the database of connections used by the Client to the given database.
-// This is the RECOMMENDED way of changing database as Redis SELECT command changes only
-// the database of one connection of the Client.
-// Database changes occur after the next calls to pullConnection (through Command, etc.)
-func (c *Client) Select(database int) {
-	c.configuration.Database = database
-}
-
 //* PubSub
 
 // Subscription subscribes to given channels and return a Subscription or an error.
@@ -200,6 +164,8 @@ func checkConfiguration(c *Configuration) {
 		panic("redis: configuration has both tcp/ip address and unix path")
 	}
 
+	//* Some default values
+
 	if c.Address == "" && c.Path == "" {
 		c.Address = "127.0.0.1:6379"
 	}
@@ -209,6 +175,6 @@ func checkConfiguration(c *Configuration) {
 	}
 
 	if c.PoolSize <= 0 {
-		c.PoolSize = 50
+		c.PoolSize = 10
 	}
 }

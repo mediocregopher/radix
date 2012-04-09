@@ -4,7 +4,7 @@ package main
 
 import (
 	"fmt"
-	"radix"
+	"github.com/fzzbt/radix"
 	"strconv"
 	"time"
 )

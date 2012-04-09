@@ -15,7 +15,7 @@ func Test(t *testing.T) {
 var rd *Client
 var conf Configuration = Configuration{
 	Database: 8,
-	Path:     "/tmp/redis.sock",
+	Path: "/tmp/redis.sock",
 	Timeout:  10,
 }
 
@@ -73,24 +73,6 @@ func (s *Long) TearDownTest(c *C) {
 	tearDownTest(c)
 }
 
-// Test Select.
-func (s *S) TestSelect(c *C) {
-	rd.Select(9)
-
-	c.Check(rd.configuration.Database, Equals, 9)
-	rep := rd.Command("set", "foo", "bar")
-	c.Assert(rep.Error(), IsNil)
-
-	conf2 := conf
-	conf2.Database = 9
-	rdA := NewClient(conf2)
-	rep = rdA.Command("get", "foo")
-	if rep.Error() != nil {
-		c.Log(rep.Error())
-	}
-	c.Check(rdA.Command("get", "foo").Str(), Equals, "bar")
-}
-
 // Test connection commands.
 func (s *S) TestConnection(c *C) {
 	c.Check(rd.Command("echo", "Hello, World!").Str(), Equals, "Hello, World!")
@@ -129,7 +111,7 @@ func (s *S) TestMultiple(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(
 		mulstr,
-		Equals,
+		DeepEquals,
 		[]string{"a", "b", "c"})
 }
 
@@ -174,7 +156,7 @@ func (s *S) TestList(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(
 		lranges,
-		Equals,
+		DeepEquals,
 		[]string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"})
 	c.Check(rd.Command("lpop", "list:a").Str(), Equals, "one")
 
@@ -201,7 +183,7 @@ func (s *S) TestList(c *C) {
 
 	lrangenil, err := rd.Command("lrange", "non-existent-list", 0, -1).Strings()
 	c.Assert(err, IsNil)
-	c.Check(lrangenil, Equals, []string{})
+	c.Check(lrangenil, DeepEquals, []string{})
 }
 
 // Test set commands.
@@ -230,7 +212,7 @@ func (s *S) TestArgToRedis(c *C) {
 	rd.Command("set", "foo2", []byte{'b', 'a', 'r'})
 	c.Check(
 		rd.Command("get", "foo2").Bytes(),
-		Equals,
+		DeepEquals,
 		[]byte{'b', 'a', 'r'})
 
 	// bool
@@ -253,7 +235,7 @@ func (s *S) TestArgToRedis(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(
 		foo5strings,
-		Equals,
+		DeepEquals,
 		[]string{"1", "2", "3"})
 
 	// map
@@ -265,7 +247,7 @@ func (s *S) TestArgToRedis(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(
 		foo6map,
-		Equals,
+		DeepEquals,
 		map[string]string{
 			"k1": "v1",
 			"k2": "v2",
@@ -444,7 +426,7 @@ func (s *S) TestSubscription(c *C) {
 func (s *S) TestPSubscribe(c *C) {
 	var messages []*Message
 	msgHdlr := func(msg *Message) {
-		//c.Log(msg)
+		c.Log(msg)
 		messages = append(messages, msg)
 	}
 
@@ -487,6 +469,18 @@ func (s *S) TestError(c *C) {
 	c.Check(errext.Test(ErrorLoading), Equals, true)
 }
 
+// Test tcp/ip connections.
+func (s *S) TestTCP(c *C) {
+	conf2 := conf
+	conf2.Address = "127.0.0.1:6379"
+	conf2.Path = ""
+	rdA := NewClient(conf2)
+	rep := rdA.Command("echo", "Hello, World!")
+	c.Assert(rep.Error(), IsNil)
+	c.Check(rep.Str(), Equals, "Hello, World!")
+}
+
+
 // Test unix connections.
 func (s *S) TestUnix(c *C) {
 	conf2 := conf
@@ -527,19 +521,24 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 	c.Check(r.At(1).Nil(), Equals, true)
 }
 
-// Test illegal databases.
-func (s *Long) TestIllegalDatabases(c *C) {
+// Test timeout.
+func (s *Long) TestTimeout(c *C) {
+	conf2 := conf
+	conf2.Path = ""
+	conf2.Address = "127.0.0.1:12345"
+	rdB := NewClient(conf2)
+	rB := rdB.Command("ping")
+	c.Log(rB.Error())
+	c.Check(rB.Error(), NotNil)
+}
+
+// Test illegal database.
+func (s *Long) TestIllegalDatabase(c *C) {
 	conf2 := conf
 	conf2.Database = 4711
 	rdA := NewClient(conf2)
 	rA := rdA.Command("ping")
 	c.Check(rA.Error(), NotNil)
-
-	conf3 := conf
-	conf3.Address = "192.168.100.100:12345"
-	rdB := NewClient(conf3)
-	rB := rdB.Command("ping")
-	c.Check(rB.Error(), NotNil)
 }
 
 //* Benchmarks
@@ -606,3 +605,15 @@ func BenchmarkAsyncGet(b *testing.B) {
 
 	tearDownTest(b)
 }
+
+func BenchmarkConnectionPool(b *testing.B) {
+	setUpTest(b)
+
+	for i := 0; i < b.N; i++ {
+		fut := rd.AsyncCommand("get", "foo", "bar")
+		fut.Reply()
+	}
+
+	tearDownTest(b)
+}
+

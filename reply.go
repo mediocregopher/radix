@@ -255,20 +255,20 @@ func (r *Reply) String() string {
 
 //* Future
 
-// Future is a channel for fetching a reply of an asynchronous command.
+// Future is a channel for fetching the reply of an asynchronous command.
 type Future chan *Reply
 
 func newFuture() Future {
 	return make(chan *Reply, 1)
 }
 
-// setReply sets the Reply of the Future to given the given Reply.
+// setReply sets the reply of the Future to given the given reply.
 func (f Future) setReply(r *Reply) {
 	f <- r
 }
 
-// Reply returns the Reply of the Future.
-// It blocks until the Reply is available.
+// Reply returns the reply of the Future.
+// It blocks until the reply is available.
 func (f Future) Reply() (r *Reply) {
 	r = <-f
 	f <- r

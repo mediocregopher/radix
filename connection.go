@@ -73,7 +73,8 @@ type connection struct {
 	closerChan       chan struct{}
 	database         int
 	multiCounter     int
-	timeout          int
+	timeout          time.Duration
+	closed           bool
 }
 
 func newConnection(c *Configuration) (*connection, *Error) {
@@ -86,8 +87,11 @@ func newConnection(c *Configuration) (*connection, *Error) {
 		closerChan:       make(chan struct{}),
 		database:         c.Database,
 		multiCounter:     -1,
-		timeout:          c.Timeout,
+		timeout:          time.Duration(c.Timeout),
 	}
+
+	// Backend must be started before connecting for closing purposes, in case of error.
+	go co.backend()
 
 	// Establish a connection.
 	if c.Address != "" {
@@ -95,12 +99,14 @@ func newConnection(c *Configuration) (*connection, *Error) {
 		tcpAddr, err := net.ResolveTCPAddr("tcp", c.Address)
 
 		if err != nil {
+			co.close()
 			return nil, newError(err.Error(), ErrorConnection)
 		}
 
 		conn, err := net.DialTCP("tcp", nil, tcpAddr)
 
 		if err != nil {
+			co.close()
 			return nil, newError(err.Error(), ErrorConnection)
 		}
 
@@ -110,12 +116,14 @@ func newConnection(c *Configuration) (*connection, *Error) {
 		unixAddr, err := net.ResolveUnixAddr("unix", c.Path)
 
 		if err != nil {
+			co.close()
 			return nil, newError(err.Error(), ErrorConnection)
 		}
 
 		conn, err := net.DialUnix("unix", nil, unixAddr)
 
 		if err != nil {
+			co.close()
 			return nil, newError(err.Error(), ErrorConnection)
 		}
 
@@ -123,7 +131,6 @@ func newConnection(c *Configuration) (*connection, *Error) {
 	}
 
 	go co.receiver()
-	go co.backend()
 
 	// Select database.
 	r := &Reply{}
@@ -217,33 +224,17 @@ func (c *connection) receiver() {
 	var ed *envData
 	var err error
 	var b []byte
-	doneChan := make(chan struct{})
 
-	// Read until the connection is closed.
+	// Read until the connection is closed or timeouts.
 	for {
-		if c.timeout > 0 {
-			go func(b_ *[]byte, err_ *error) {
-				*b_, *err_ = c.rwc.ReadBytes('\n')
-				doneChan <- struct{}{}
-			}(&b, &err)
-
-			select {
-			case <-doneChan:
-				// use err and reply
-			case <-time.After(time.Duration(c.timeout) * time.Second):
-				// ReadBytes timed out
-				c.dataChan <- &envData{0, nil, nil, newError("timeout", ErrorConnection, ErrorTimeout)}
-				continue
-			}
-		} else {
-			b, err = c.rwc.ReadBytes('\n')
-		}
+		b, err = c.rwc.ReadBytes('\n')
 
 		if err != nil {
 			if err.Error() == "EOF" {
 				// connection was closed
 				return
 			} else {
+				c.close()
 				c.dataChan <- &envData{0, nil, nil, newError(err.Error(), ErrorConnection)}
 				return
 			}
@@ -300,6 +291,7 @@ func (c *connection) receiver() {
 					n, err := c.rwc.Read(br[r:])
 
 					if err != nil {
+						c.close()
 						c.dataChan <- &envData{0, nil, nil, newError("bulk reply read error",
 							ErrorConnection)}
 						return
@@ -341,8 +333,11 @@ func (c *connection) backend() {
 		select {
 		case <-c.closerChan:
 			// Close the connection.
-			c.rwc.Close()
-			c.rwc = nil
+			if c.rwc != nil {
+				c.rwc.Close()
+			}
+
+			c.closed = true
 			return
 		case ec := <-c.commandChan:
 			// Received a command.
@@ -361,10 +356,30 @@ func (c *connection) backend() {
 	}
 }
 
+func (c *connection) receiveEnvData() *envData {
+	if c.timeout > 0 {
+		select {
+		case ed := <-c.dataChan:
+			// OK
+			return ed
+		case <-time.After(c.timeout * time.Second):
+			// timeout error
+			c.close()
+			return nil
+		}
+	}
+	
+	return <-c.dataChan
+}
+
 func (c *connection) handleCommand(ec *envCommand) {
 	if err := c.writeRequest([]command{ec.cmd}); err == nil {
-		ed := <-c.dataChan
-		c.receiveReply(ed, ec.r)
+		ed := c.receiveEnvData()
+		if ed == nil {
+			ec.r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
+		} else {
+			c.receiveReply(ed, ec.r)
+		}
 	} else {
 		// Return error.
 		ec.r.err = newError(err.Error())
@@ -377,9 +392,14 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 	if err := c.writeRequest(ec.cmds); err == nil {
 		ec.r.t = ReplyMulti
 		for i := 0; i < len(ec.cmds); i++ {
-			ec.r.elems = append(ec.r.elems, &Reply{})
-			ed := <-c.dataChan
-			c.receiveReply(ed, ec.r.elems[i])
+			ed := c.receiveEnvData()
+			if ed == nil {
+				ec.r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
+				break
+			} else {
+				ec.r.elems = append(ec.r.elems, &Reply{})
+				c.receiveReply(ed, ec.r.elems[i])
+			}
 		}
 	} else {
 		// Return error.
@@ -594,9 +614,16 @@ func (c *connection) receiveReply(ed *envData, r *Reply) {
 			r.elems = []*Reply{}
 		} else {
 			for i := 0; i < ed.length; i++ {
-				r.elems = append(r.elems, &Reply{})
-				ed := <-c.dataChan
-				c.receiveReply(ed, r.elems[i])
+				ed := c.receiveEnvData()
+				if ed == nil {
+					// Timeout error
+					r.t = ReplyError
+					r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
+					break
+				} else {
+					r.elems = append(r.elems, &Reply{})
+					c.receiveReply(ed, r.elems[i])
+				}
 			}
 		}
 	case ed.length == -1:

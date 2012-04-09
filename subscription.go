@@ -25,10 +25,9 @@ func newSubscription(client *Client, msgHdlr func(msg *Message)) (*Subscription,
 	}
 
 	// Connection handling
-	sub.conn, err = sub.client.pullConnection()
+	sub.conn, err = sub.client.pool.pull()
 
 	if err != nil {
-		sub.client.pushConnection(sub.conn)
 		return nil, err
 	}
 
@@ -69,7 +68,7 @@ func (s *Subscription) Close() {
 		s.conn = nil
 	}
 
-	s.client.pushConnection(s.conn)
+	s.client.pool.push(s.conn)
 }
 
 func (s *Subscription) backend() {
