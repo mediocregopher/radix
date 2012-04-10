@@ -18,7 +18,7 @@
 + Fixed broken tests.
 + Fixed issue #1: Very high memory usage due to bug in timeout error handling.
 + Fixed issue #2: Graceful reset of Connections when connection error is encountered.
-+ Removed support Client.Select method. Use separate clients for and MOVE command for controlling multiple databases instead.
++ Removed support for Client.Select method. Use separate clients for and MOVE command for controlling multiple databases instead.
 
 ### 2012-03-06 Release v0.1.2
 
