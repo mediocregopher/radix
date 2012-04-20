@@ -45,7 +45,7 @@ Creating a Client instance is done as follows:
 
 As Redis is mostly a single threaded database, increasing the PoolSize parameter does not usually make
 much difference unless the latency to your server is very high. 
-The default is set to 50 connections which should be fine for around 99.9% of cases.
+The default is set to 10 connections which should be fine for around 99% of cases.
 However, note that each Subscription instance requires its own connection until it's closed.
 
 Sometimes Redis may give a LOADING error when it is loading keys from the disk.
