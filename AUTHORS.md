@@ -12,3 +12,4 @@ Please keep the list sorted.
 * * *
 
 * Juhani Åhman <juhanipm@gmail.com>
+* Bobby Powers <bobbypowers@gmail.com>
