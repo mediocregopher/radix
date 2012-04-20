@@ -15,7 +15,7 @@ func Test(t *testing.T) {
 var rd *Client
 var conf Configuration = Configuration{
 	Database: 8,
-	Path: "/tmp/redis.sock",
+	Path:     "/tmp/redis.sock",
 	Timeout:  10,
 }
 
@@ -113,7 +113,7 @@ func (s *S) TestMultiple(c *C) {
 		mulstr,
 		DeepEquals,
 		[]string{"a", "b", "c"},
-		)
+	)
 }
 
 // Test hash accessing.
@@ -481,7 +481,6 @@ func (s *S) TestTCP(c *C) {
 	c.Check(rep.Str(), Equals, "Hello, World!")
 }
 
-
 // Test unix connections.
 func (s *S) TestUnix(c *C) {
 	conf2 := conf
@@ -617,4 +616,3 @@ func BenchmarkConnectionPool(b *testing.B) {
 
 	tearDownTest(b)
 }
-

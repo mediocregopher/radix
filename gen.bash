@@ -27,7 +27,7 @@ const (
 EOF
 for cmd in $cmds; do
     if [ "$cmd" == "client" ]; then
-	keyword="ClientCmd"
+	keyword="CmdClient"
     else
 	keyword="${cmd~}"
     fi

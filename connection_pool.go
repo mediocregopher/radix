@@ -6,24 +6,24 @@ import (
 
 // connectionPool is a stack-like structure that holds the connections of a Client.
 type connectionPool struct {
-	size int
-	capacity int
-	pool []*connection
-	lock *sync.Mutex
-	fullCond *sync.Cond
-	emptyCond *sync.Cond
+	size          int
+	capacity      int
+	pool          []*connection
+	lock          *sync.Mutex
+	fullCond      *sync.Cond
+	emptyCond     *sync.Cond
 	configuration *Configuration
 }
 
 func newConnectionPool(conf *Configuration) *connectionPool {
 	locker := &sync.Mutex{}
 	cp := &connectionPool{
-		size: conf.PoolSize,
-		capacity: conf.PoolSize,
-		pool: make([]*connection, conf.PoolSize),
-		lock: locker,
-		fullCond: sync.NewCond(locker),
-		emptyCond: sync.NewCond(locker),
+		size:          conf.PoolSize,
+		capacity:      conf.PoolSize,
+		pool:          make([]*connection, conf.PoolSize),
+		lock:          locker,
+		fullCond:      sync.NewCond(locker),
+		emptyCond:     sync.NewCond(locker),
 		configuration: conf,
 	}
 
@@ -56,11 +56,11 @@ func (cp *connectionPool) pull() (*connection, *Error) {
 		cp.emptyCond.Wait()
 	}
 
-	conn := cp.pool[cp.size - 1]
+	conn := cp.pool[cp.size-1]
 	if conn == nil {
 		// Lazy init of a connection
 		conn, err = newConnection(cp.configuration)
-		
+
 		if err != nil {
 			cp.lock.Unlock()
 			return nil, err

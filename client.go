@@ -30,8 +30,8 @@ func NewClient(conf Configuration) *Client {
 
 	// Create the database client instance.
 	c := &Client{
-	configuration: &conf,
-	lock: &sync.Mutex{},
+		configuration: &conf,
+		lock:          &sync.Mutex{},
 	}
 	c.pool = newConnectionPool(c.configuration)
 

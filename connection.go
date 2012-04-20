@@ -368,7 +368,7 @@ func (c *connection) receiveEnvData() *envData {
 			return nil
 		}
 	}
-	
+
 	return <-c.dataChan
 }
 

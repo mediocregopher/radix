@@ -28,6 +28,27 @@ type Message struct {
 
 // String returns a string representation of the message.
 func (m *Message) String() string {
-	return fmt.Sprintf("Message{ Type: %v, Channel: %v, Pattern: %v, Subscriptions: %v, Payload: %v, "+
-		"Error: %v }", m.Type, m.Channel, m.Pattern, m.Subscriptions, m.Payload, m.Error)
+	var mtype string
+
+	switch m.Type {
+	case MessageSubscribe:
+		mtype = "subscribe"
+	case MessageUnsubscribe:
+		mtype = "unsubscribe"
+	case MessagePSubscribe:
+		mtype = "psubscribe"
+	case MessagePUnsubscribe:
+		mtype = "punsubscribe"
+	case MessageMessage:
+		mtype = "message"
+	case MessagePMessage:
+		mtype = "pmessage"
+	case MessageError:
+		mtype = "error"
+	default:
+		mtype = "unknown"
+	}
+
+	return fmt.Sprintf("Message{Type: %s, Channel: %v, Pattern: %v, Subscriptions: %v, Payload: %v, "+
+		"Error: %v}", mtype, m.Channel, m.Pattern, m.Subscriptions, m.Payload, m.Error)
 }

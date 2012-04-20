@@ -4,13 +4,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/fzzbt/radix"
+	. "github.com/fzzbt/radix"
 	"strconv"
 	"time"
 )
 
 func main() {
-	c := radix.NewClient(radix.Configuration{
+	c := NewClient(Configuration{
 		Database: 8,
 		// Timeout in seconds
 		Timeout: 10,
@@ -22,7 +22,7 @@ func main() {
 	defer c.Close()
 
 	//** Blocking calls
-	rep := c.Command("flushdb")
+	rep := c.Command(Flushdb)
 	if rep.Error() != nil {
 		fmt.Printf("flushdb failed: %s\n", rep.Error())
 		return
@@ -34,7 +34,7 @@ func main() {
 		"mykey3": "myval3",
 	}
 
-	rep = c.Command("mset", mykeys)
+	rep = c.Command(Mset, mykeys)
 	// Alternatively:
 	// rep = c.Command("mset", "mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
 
@@ -43,14 +43,14 @@ func main() {
 		return
 	}
 
-	rep = c.Command("get", "mykey1")
+	rep = c.Command(Get, "mykey1")
 	switch rep.Type() {
-	case radix.ReplyString:
+	case ReplyString:
 		fmt.Printf("mykey1: %s\n", rep.Str())
-	case radix.ReplyNil:
+	case ReplyNil:
 		fmt.Println("mykey1 does not exist")
 		return
-	case radix.ReplyError:
+	case ReplyError:
 		fmt.Printf("get failed: %s\n", rep.Error())
 		return
 	default:
@@ -60,8 +60,8 @@ func main() {
 	}
 
 	//* Another error handling pattern
-	rep = c.Command("get", "mykey2")
-	if rep.Type() != radix.ReplyString {
+	rep = c.Command(Get, "mykey2")
+	if rep.Type() != ReplyString {
 		if rep.Error() != nil {
 			fmt.Printf("get failed: %s\n", rep.Error())
 		} else {
@@ -75,8 +75,8 @@ func main() {
 	//* Simplest error handling pattern
 	//  Note that ErrorString will return "", if the reply type is not ReplyError.
 	//  eg. if mykey3 would not exist, ReplyNil would be returned, Not ReplyError.
-	rep = c.Command("get", "mykey3")
-	if rep.Type() != radix.ReplyString {
+	rep = c.Command(Get, "mykey3")
+	if rep.Type() != ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -85,15 +85,15 @@ func main() {
 
 	//* List handling
 	mylist := []string{"foo", "bar", "qux"}
-	rep = c.Command("rpush", "mylist", mylist)
+	rep = c.Command(Rpush, "mylist", mylist)
 	// Alternativaly:
-	// rep = c.Command("rpush", "mylist", "foo", "bar", "qux")
+	// rep = c.Command(Rpush, "mylist", "foo", "bar", "qux")
 	if rep.Error() != nil {
 		fmt.Printf("rpush failed: %s\n", rep.Error())
 		return
 	}
 
-	rep = c.Command("lrange", "mylist", 0, -1)
+	rep = c.Command(Lrange, "mylist", 0, -1)
 	if rep.Error() != nil {
 		fmt.Printf("lrange failed: %s\n", rep.Error())
 		return
@@ -108,15 +108,15 @@ func main() {
 	fmt.Printf("mylist: %v\n", mylist)
 
 	//* Hash handling
-	rep = c.Command("hmset", "myhash", mykeys)
+	rep = c.Command(Hmset, "myhash", mykeys)
 	// Alternatively:
-	// rep = c.Command("hmset", "myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
+	// rep = c.Command(Hmset, "myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
 	if rep.Error() != nil {
 		fmt.Printf("hmset failed: %s\n", rep.Error())
 		return
 	}
 
-	rep = c.Command("hgetall", "myhash")
+	rep = c.Command(Hgetall, "myhash")
 	if rep.Error() != nil {
 		fmt.Printf("hgetall failed: %s\n", rep.Error())
 		return
@@ -131,9 +131,9 @@ func main() {
 	fmt.Printf("myhash: %v\n", myhash)
 
 	//* MultiCommands
-	rep = c.MultiCommand(func(mc *radix.MultiCommand) {
-		mc.Command("set", "multikey", "multival")
-		mc.Command("get", "multikey")
+	rep = c.MultiCommand(func(mc *MultiCommand) {
+		mc.Command(Set, "multikey", "multival")
+		mc.Command(Get, "multikey")
 	})
 
 	if rep.Error() != nil {
@@ -142,7 +142,7 @@ func main() {
 	}
 
 	// Note that you can now assume that rep.Len() == 2 regardless whether all of the commands succeeded
-	if rep.At(1).Type() != radix.ReplyString {
+	if rep.At(1).Type() != ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -150,9 +150,9 @@ func main() {
 	fmt.Printf("multikey: %s\n", rep.At(1).Str())
 
 	//* Transactions
-	rep = c.Transaction(func(mc *radix.MultiCommand) {
-		mc.Command("set", "trankey", "tranval")
-		mc.Command("get", "trankey")
+	rep = c.Transaction(func(mc *MultiCommand) {
+		mc.Command(Set, "trankey", "tranval")
+		mc.Command(Get, "trankey")
 	})
 
 	if rep.Error() != nil {
@@ -160,7 +160,7 @@ func main() {
 		return
 	}
 
-	if rep.At(1).Type() != radix.ReplyString {
+	if rep.At(1).Type() != ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -169,19 +169,19 @@ func main() {
 
 	//* Complex transactions
 	//  Atomic INCR replacement with transactions
-	myIncr := func(key string) *radix.Reply {
-		return c.MultiCommand(func(mc *radix.MultiCommand) {
+	myIncr := func(key string) *Reply {
+		return c.MultiCommand(func(mc *MultiCommand) {
 			var curval int
 
-			mc.Command("watch", key)
-			mc.Command("get", key)
+			mc.Command(Watch, key)
+			mc.Command(Get, key)
 			rep := mc.Flush()
 
 			if rep.Error() != nil {
 				return
 			}
 
-			if rep.At(1).Type() == radix.ReplyString {
+			if rep.At(1).Type() == ReplyString {
 				var err error
 				curval, err = strconv.Atoi(rep.At(1).Str())
 				if err != nil {
@@ -190,9 +190,9 @@ func main() {
 			}
 			nextval := curval + 1
 
-			mc.Command("multi")
-			mc.Command("set", key, nextval)
-			mc.Command("exec")
+			mc.Command(Multi)
+			mc.Command(Set, key, nextval)
+			mc.Command(Exec)
 		})
 	}
 
@@ -200,8 +200,8 @@ func main() {
 	myIncr("ctrankey")
 	myIncr("ctrankey")
 
-	rep = c.Command("get", "ctrankey")
-	if rep.Type() != radix.ReplyString {
+	rep = c.Command(Get, "ctrankey")
+	if rep.Type() != ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -209,19 +209,19 @@ func main() {
 	fmt.Printf("ctrankey: %s\n", rep.Str())
 
 	//** Asynchronous calls
-	rep = c.Command("set", "asynckey", "asyncval")
+	rep = c.Command(Set, "asynckey", "asyncval")
 	if rep.Error() != nil {
 		fmt.Printf("set failed: %s\n", rep.Error())
 		return
 	}
 
-	fut := c.AsyncCommand("get", "asynckey")
+	fut := c.AsyncCommand(Get, "asynckey")
 
 	// do something here
 
 	// block until reply is available
 	rep = fut.Reply()
-	if rep.Type() != radix.ReplyString {
+	if rep.Type() != ReplyString {
 		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
 		return
 	}
@@ -229,13 +229,15 @@ func main() {
 	fmt.Printf("asynckey: %s\n", rep.Str())
 
 	//* Pub/sub
-	msgHdlr := func(msg *radix.Message) {
+	msgHdlr := func(msg *Message) {
 		switch msg.Type {
-		case radix.MessageMessage:
+		case MessageMessage:
 			fmt.Printf("Received message \"%s\" from channel \"%s\".\n", msg.Payload, msg.Channel)
-		case radix.MessagePMessage:
+		case MessagePMessage:
 			fmt.Printf("Received pattern message \"%s\" from channel \"%s\" with pattern "+
 				"\"%s\".\n", msg.Payload, msg.Channel, msg.Pattern)
+		default:
+			fmt.Println("Received other message:", msg)
 		}
 	}
 
@@ -250,9 +252,9 @@ func main() {
 	sub.Subscribe("chan1", "chan2")
 	sub.PSubscribe("chan*")
 
-	c.Command("publish", "chan1", "foo")
+	c.Command(Publish, "chan1", "foo")
 	sub.Unsubscribe("chan1")
-	c.Command("publish", "chan2", "bar")
+	c.Command(Publish, "chan2", "bar")
 
 	// give some time for the message handler to receive the messages
 	time.Sleep(time.Second)
