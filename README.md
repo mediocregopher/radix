@@ -7,11 +7,11 @@ developed by Frank Mueller.
 
 ## Installation
 
-    go get github.com/fzzbt/radix
+    go get github.com/fzzbt/radix/radix
 
 To run the tests:
 
-    cd $GOROOT/src/pkg/github.com/fzzbt/radix
+    cd $GOROOT/src/pkg/github.com/fzzbt/radix/radix
     go test -v -bench=".*"
 
 ## Getting started
@@ -19,7 +19,7 @@ To run the tests:
 Creating a Client instance is done as follows:
 
 ```go
-	. import "radix"
+	. import "github.com/fzzbt/radix/radix"
 
 	...
 

@@ -2,7 +2,7 @@
 # used to regenerate command.go
 set -e
 
-command="command.go"
+command="radix/command.go"
 
 if [ $# == 1 ]; then
     redis_h=$1
