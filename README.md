@@ -19,11 +19,11 @@ To run the tests:
 Creating a Client instance is done as follows:
 
 ```go
-	import "radix"
+	. import "radix"
 
 	...
 
-	c := radix.NewClient(radix.Configuration{
+	c := NewClient(Configuration{
 		Database: 0, // (default: 0)
 		// Timeout in seconds
 		Timeout: 10, // (default: 10)
@@ -59,13 +59,13 @@ Client.Transaction methods. All of these methods return a Reply instance which c
 Here's a simple example how to call single commands:
 
 ```go
-reply := c.Command("set", "mykey", "myvalue")
+reply := c.Command(Set, "mykey", "myvalue")
 if reply.Error() != nil {
 	fmt.Printf("set failed: %s\n", reply.Error())
 	return
 }
 
-reply = c.Command("get", "mykey")
+reply = c.Command(Get, "mykey")
 if reply.Type() != radix.ReplyString {
 	fmt.Printf("get failed: %s\n", reply.Error())
 	return
