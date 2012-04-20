@@ -7,7 +7,6 @@
 	### YYYY-MM-DD Release
 
 	+ Additional changes.
-
 	+ More changes.
 
 * * *
