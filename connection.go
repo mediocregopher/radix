@@ -134,19 +134,19 @@ func newConnection(c *Configuration) (*connection, *Error) {
 
 	// Select database.
 	r := &Reply{}
-	co.command(r, "select", c.Database)
+	co.command(r, Select, c.Database)
 
 	if r.Error() != nil {
 		if !c.NoLoadingRetry && r.Error().Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
-			co.command(r, "select", c.Database)
+			co.command(r, Select, c.Database)
 			for r.Error() != nil {
 				if !r.Error().Test(ErrorLoading) {
 					co.close()
 					return nil, newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
 				}
 				time.Sleep(time.Second)
-				co.command(r, "select", c.Database)
+				co.command(r, Select, c.Database)
 			}
 		} else {
 			co.close()
@@ -158,7 +158,7 @@ func newConnection(c *Configuration) (*connection, *Error) {
 	if c.Auth != "" {
 		r = &Reply{}
 
-		co.command(r, "auth", c.Auth)
+		co.command(r, Auth, c.Auth)
 
 		if r.Error() != nil {
 			co.close()
@@ -170,7 +170,7 @@ func newConnection(c *Configuration) (*connection, *Error) {
 }
 
 // command calls a Redis command.
-func (c *connection) command(r *Reply, cmd string, args ...interface{}) {
+func (c *connection) command(r *Reply, cmd Command, args ...interface{}) {
 	doneChan := make(chan struct{})
 	c.commandChan <- &envCommand{
 		r,
@@ -520,17 +520,17 @@ func (c *connection) handlePublishing(ed *envData) {
 
 func (c *connection) handleSubscription(es *envSubscription) {
 	// Prepare command.
-	var cmd string
+	var cmd Command
 
 	switch es.subType {
 	case subSubscribe:
-		cmd = "subscribe"
+		cmd = Subscribe
 	case subUnsubscribe:
-		cmd = "unsubscribe"
+		cmd = Unsubscribe
 	case subPSubscribe:
-		cmd = "psubscribe"
+		cmd = Psubscribe
 	case subPUnsubscribe:
-		cmd = "punsubscribe"
+		cmd = Punsubscribe
 	}
 
 	// Send the subscription request.
