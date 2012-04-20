@@ -11,7 +11,7 @@ developed by Frank Mueller.
 
 To run the tests:
 
-    cd $GOROOT/src/pkg/radix
+    cd $GOROOT/src/pkg/github.com/fzzbt/radix
     go test -v -bench=".*"
 
 ## Getting started
