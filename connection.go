@@ -170,7 +170,7 @@ func newConnection(c *Configuration) (*connection, *Error) {
 }
 
 // command calls a Redis command.
-func (c *connection) command(r *Reply, cmd string, args ...interface{}) {
+func (c *connection) command(r *Reply, cmd Command, args ...interface{}) {
 	doneChan := make(chan struct{})
 	c.commandChan <- &envCommand{
 		r,
@@ -520,7 +520,7 @@ func (c *connection) handlePublishing(ed *envData) {
 
 func (c *connection) handleSubscription(es *envSubscription) {
 	// Prepare command.
-	var cmd string
+	var cmd Command
 
 	switch es.subType {
 	case subSubscribe:

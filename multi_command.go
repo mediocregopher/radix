@@ -45,7 +45,7 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 }
 
 // Command queues a command for later execution.
-func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
+func (mc *MultiCommand) Command(cmd Command, args ...interface{}) {
 	mc.cmds = append(mc.cmds, command{cmd, args})
 	mc.cmdCounter++
 }

@@ -7,7 +7,7 @@ import (
 )
 
 type command struct {
-	cmd  string
+	cmd  Command
 	args []interface{}
 }
 

@@ -60,7 +60,7 @@ func (c *Client) Close() {
 }
 
 // Command calls a Redis command.
-func (c *Client) Command(cmd string, args ...interface{}) *Reply {
+func (c *Client) Command(cmd Command, args ...interface{}) *Reply {
 	r := &Reply{}
 
 	// Connection handling
@@ -81,7 +81,7 @@ func (c *Client) Command(cmd string, args ...interface{}) *Reply {
 }
 
 // AsyncCommand calls a Redis command asynchronously.
-func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
+func (c *Client) AsyncCommand(cmd Command, args ...interface{}) Future {
 	fut := newFuture()
 
 	go func() {
