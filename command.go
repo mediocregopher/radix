@@ -11,7 +11,7 @@ const (
 	Blpop            Command = "blpop"
 	Brpop            Command = "brpop"
 	Brpoplpush       Command = "brpoplpush"
-	CmdClient        Command = "client"
+	ClientCmd        Command = "client"
 	Cluster          Command = "cluster"
 	Config           Command = "config"
 	Dbsize           Command = "dbsize"
