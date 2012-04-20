@@ -11,6 +11,11 @@
 
 * * *
 
+### 2012-04-20 Release v0.1.4
+
++ New API for commands (thanks Bobby Powers).
++ Source code moved to its own directory.
+
 ### 2012-04-10 Release v0.1.3
 
 + Go v1.0 compatible.
