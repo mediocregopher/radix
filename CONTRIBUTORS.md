@@ -13,6 +13,4 @@ because the organization holds the copyright.*
 * * *
 
 * Juhani Åhman <juhanipm@gmail.com>
-
-
-
+* Bobby Powers <bobbypowers@gmail.com>
