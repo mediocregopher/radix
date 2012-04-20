@@ -136,4 +136,5 @@ const (
 	Zrevrank         Command = "zrevrank"
 	Zscore           Command = "zscore"
 	Zunionstore      Command = "zunionstore"
+	Smembers         Command = "smembers"
 )

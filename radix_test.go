@@ -26,14 +26,14 @@ type TI interface {
 func setUpTest(c TI) {
 	rd = NewClient(conf)
 
-	r := rd.Command("flushall")
+	r := rd.Command(Flushall)
 	if r.Error() != nil {
 		c.Fatalf("setUp FLUSHALL failed: %s", r.Error())
 	}
 }
 
 func tearDownTest(c TI) {
-	r := rd.Command("flushall")
+	r := rd.Command(Flushall)
 	if r.Error() != nil {
 		c.Fatalf("tearDown FLUSHALL failed: %s", r.Error())
 	}
@@ -75,63 +75,64 @@ func (s *Long) TearDownTest(c *C) {
 
 // Test connection commands.
 func (s *S) TestConnection(c *C) {
-	c.Check(rd.Command("echo", "Hello, World!").Str(), Equals, "Hello, World!")
-	c.Check(rd.Command("ping").Str(), Equals, "PONG")
+	c.Check(rd.Command(Echo, "Hello, World!").Str(), Equals, "Hello, World!")
+	c.Check(rd.Command(Ping).Str(), Equals, "PONG")
 }
 
 // Test single return value commands.
 func (s *S) TestSimpleValue(c *C) {
 	// Simple value commands.
-	rd.Command("set", "simple:string", "Hello,")
-	rd.Command("append", "simple:string", " World!")
+	rd.Command(Set, "simple:string", "Hello,")
+	rd.Command(Append, "simple:string", " World!")
 	c.Check(rd.Command("get", "simple:string").Str(), Equals, "Hello, World!")
 
-	rd.Command("set", "simple:int", 10)
+	rd.Command(Set, "simple:int", 10)
 	c.Check(rd.Command("incr", "simple:int").Int(), Equals, 11)
 
-	rd.Command("setbit", "simple:bit", 0, true)
-	rd.Command("setbit", "simple:bit", 1, true)
-	c.Check(rd.Command("getbit", "simple:bit", 0).Bool(), Equals, true)
-	c.Check(rd.Command("getbit", "simple:bit", 1).Bool(), Equals, true)
+	rd.Command(Setbit, "simple:bit", 0, true)
+	rd.Command(Setbit, "simple:bit", 1, true)
+	c.Check(rd.Command(Getbit, "simple:bit", 0).Bool(), Equals, true)
+	c.Check(rd.Command(Getbit, "simple:bit", 1).Bool(), Equals, true)
 
-	c.Check(rd.Command("get", "non:existing:key").Nil(), Equals, true)
-	c.Check(rd.Command("exists", "non:existing:key").Bool(), Equals, false)
-	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, true)
-	c.Check(rd.Command("setnx", "simple:nx", "Test").Bool(), Equals, false)
+	c.Check(rd.Command(Get, "non:existing:key").Nil(), Equals, true)
+	c.Check(rd.Command(Exists, "non:existing:key").Bool(), Equals, false)
+	c.Check(rd.Command(Setnx, "simple:nx", "Test").Bool(), Equals, true)
+	c.Check(rd.Command(Setnx, "simple:nx", "Test").Bool(), Equals, false)
 }
 
 // Test multi return value commands.
 func (s *S) TestMultiple(c *C) {
 	// Set values first.
-	rd.Command("set", "multiple:a", "a")
-	rd.Command("set", "multiple:b", "b")
-	rd.Command("set", "multiple:c", "c")
+	rd.Command(Set, "multiple:a", "a")
+	rd.Command(Set, "multiple:b", "b")
+	rd.Command(Set, "multiple:c", "c")
 
-	mulstr, err := rd.Command("mget", "multiple:a", "multiple:b", "multiple:c").Strings()
+	mulstr, err := rd.Command(Mget, "multiple:a", "multiple:b", "multiple:c").Strings()
 	c.Assert(err, IsNil)
 	c.Check(
 		mulstr,
 		DeepEquals,
-		[]string{"a", "b", "c"})
+		[]string{"a", "b", "c"},
+		)
 }
 
 // Test hash accessing.
 func (s *S) TestHash(c *C) {
 	//* Single  return value commands.
-	rd.Command("hset", "hash:bool", "true:1", 1)
-	rd.Command("hset", "hash:bool", "true:2", true)
-	rd.Command("hset", "hash:bool", "true:3", "1")
-	rd.Command("hset", "hash:bool", "false:1", 0)
-	rd.Command("hset", "hash:bool", "false:2", false)
-	rd.Command("hset", "hash:bool", "false:3", "0")
-	c.Check(rd.Command("hget", "hash:bool", "true:1").Bool(), Equals, true)
-	c.Check(rd.Command("hget", "hash:bool", "true:2").Bool(), Equals, true)
-	c.Check(rd.Command("hget", "hash:bool", "true:3").Bool(), Equals, true)
-	c.Check(rd.Command("hget", "hash:bool", "false:1").Bool(), Equals, false)
-	c.Check(rd.Command("hget", "hash:bool", "false:2").Bool(), Equals, false)
-	c.Check(rd.Command("hget", "hash:bool", "false:3").Bool(), Equals, false)
+	rd.Command(Hset, "hash:bool", "true:1", 1)
+	rd.Command(Hset, "hash:bool", "true:2", true)
+	rd.Command(Hset, "hash:bool", "true:3", "1")
+	rd.Command(Hset, "hash:bool", "false:1", 0)
+	rd.Command(Hset, "hash:bool", "false:2", false)
+	rd.Command(Hset, "hash:bool", "false:3", "0")
+	c.Check(rd.Command(Hget, "hash:bool", "true:1").Bool(), Equals, true)
+	c.Check(rd.Command(Hget, "hash:bool", "true:2").Bool(), Equals, true)
+	c.Check(rd.Command(Hget, "hash:bool", "true:3").Bool(), Equals, true)
+	c.Check(rd.Command(Hget, "hash:bool", "false:1").Bool(), Equals, false)
+	c.Check(rd.Command(Hget, "hash:bool", "false:2").Bool(), Equals, false)
+	c.Check(rd.Command(Hget, "hash:bool", "false:3").Bool(), Equals, false)
 
-	ha, err := rd.Command("hgetall", "hash:bool").Map()
+	ha, err := rd.Command(Hgetall, "hash:bool").Map()
 	c.Assert(err, IsNil)
 	c.Check(ha["true:1"].Bool(), Equals, true)
 	c.Check(ha["true:2"].Bool(), Equals, true)
@@ -143,95 +144,95 @@ func (s *S) TestHash(c *C) {
 
 // Test list commands.
 func (s *S) TestList(c *C) {
-	rd.Command("rpush", "list:a", "one")
-	rd.Command("rpush", "list:a", "two")
-	rd.Command("rpush", "list:a", "three")
-	rd.Command("rpush", "list:a", "four")
-	rd.Command("rpush", "list:a", "five")
-	rd.Command("rpush", "list:a", "six")
-	rd.Command("rpush", "list:a", "seven")
-	rd.Command("rpush", "list:a", "eight")
-	rd.Command("rpush", "list:a", "nine")
-	lranges, err := rd.Command("lrange", "list:a", 0, -1).Strings()
+	rd.Command(Rpush, "list:a", "one")
+	rd.Command(Rpush, "list:a", "two")
+	rd.Command(Rpush, "list:a", "three")
+	rd.Command(Rpush, "list:a", "four")
+	rd.Command(Rpush, "list:a", "five")
+	rd.Command(Rpush, "list:a", "six")
+	rd.Command(Rpush, "list:a", "seven")
+	rd.Command(Rpush, "list:a", "eight")
+	rd.Command(Rpush, "list:a", "nine")
+	lranges, err := rd.Command(Lrange, "list:a", 0, -1).Strings()
 	c.Assert(err, IsNil)
 	c.Check(
 		lranges,
 		DeepEquals,
 		[]string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"})
-	c.Check(rd.Command("lpop", "list:a").Str(), Equals, "one")
+	c.Check(rd.Command(Lpop, "list:a").Str(), Equals, "one")
 
-	elems := rd.Command("lrange", "list:a", 3, 6).Elems()
+	elems := rd.Command(Lrange, "list:a", 3, 6).Elems()
 	c.Assert(len(elems), Equals, 4)
 	c.Check(elems[0].Str(), Equals, "five")
 	c.Check(elems[1].Str(), Equals, "six")
 	c.Check(elems[2].Str(), Equals, "seven")
 	c.Check(elems[3].Str(), Equals, "eight")
 
-	rd.Command("ltrim", "list:a", 0, 3)
-	c.Check(rd.Command("llen", "list:a").Int(), Equals, 4)
+	rd.Command(Ltrim, "list:a", 0, 3)
+	c.Check(rd.Command(Llen, "list:a").Int(), Equals, 4)
 
-	rd.Command("rpoplpush", "list:a", "list:b")
-	c.Check(rd.Command("lindex", "list:b", 4711).Nil(), Equals, true)
-	c.Check(rd.Command("lindex", "list:b", 0).Str(), Equals, "five")
+	rd.Command(Rpoplpush, "list:a", "list:b")
+	c.Check(rd.Command(Lindex, "list:b", 4711).Nil(), Equals, true)
+	c.Check(rd.Command(Lindex, "list:b", 0).Str(), Equals, "five")
 
-	rd.Command("rpush", "list:c", 1)
-	rd.Command("rpush", "list:c", 2)
-	rd.Command("rpush", "list:c", 3)
-	rd.Command("rpush", "list:c", 4)
-	rd.Command("rpush", "list:c", 5)
-	c.Check(rd.Command("lpop", "list:c").Str(), Equals, "1")
+	rd.Command(Rpush, "list:c", 1)
+	rd.Command(Rpush, "list:c", 2)
+	rd.Command(Rpush, "list:c", 3)
+	rd.Command(Rpush, "list:c", 4)
+	rd.Command(Rpush, "list:c", 5)
+	c.Check(rd.Command(Lpop, "list:c").Str(), Equals, "1")
 
-	lrangenil, err := rd.Command("lrange", "non-existent-list", 0, -1).Strings()
+	lrangenil, err := rd.Command(Lrange, "non-existent-list", 0, -1).Strings()
 	c.Assert(err, IsNil)
 	c.Check(lrangenil, DeepEquals, []string{})
 }
 
 // Test set commands.
 func (s *S) TestSets(c *C) {
-	rd.Command("sadd", "set:a", 1)
-	rd.Command("sadd", "set:a", 2)
-	rd.Command("sadd", "set:a", 3)
-	rd.Command("sadd", "set:a", 4)
-	rd.Command("sadd", "set:a", 5)
-	rd.Command("sadd", "set:a", 4)
-	rd.Command("sadd", "set:a", 3)
-	c.Check(rd.Command("scard", "set:a").Int(), Equals, 5)
-	c.Check(rd.Command("sismember", "set:a", "4").Bool(), Equals, true)
+	rd.Command(Sadd, "set:a", 1)
+	rd.Command(Sadd, "set:a", 2)
+	rd.Command(Sadd, "set:a", 3)
+	rd.Command(Sadd, "set:a", 4)
+	rd.Command(Sadd, "set:a", 5)
+	rd.Command(Sadd, "set:a", 4)
+	rd.Command(Sadd, "set:a", 3)
+	c.Check(rd.Command(Scard, "set:a").Int(), Equals, 5)
+	c.Check(rd.Command(Sismember, "set:a", "4").Bool(), Equals, true)
 }
 
 // Test argument formatting.
 func (s *S) TestArgToRedis(c *C) {
 	// string
-	rd.Command("set", "foo", "bar")
+	rd.Command(Set, "foo", "bar")
 	c.Check(
-		rd.Command("get", "foo").Str(),
+		rd.Command(Get, "foo").Str(),
 		Equals,
 		"bar")
 
 	// []byte
-	rd.Command("set", "foo2", []byte{'b', 'a', 'r'})
+	rd.Command(Set, "foo2", []byte{'b', 'a', 'r'})
 	c.Check(
-		rd.Command("get", "foo2").Bytes(),
+		rd.Command(Get, "foo2").Bytes(),
 		DeepEquals,
 		[]byte{'b', 'a', 'r'})
 
 	// bool
-	rd.Command("set", "foo3", true)
+	rd.Command(Set, "foo3", true)
 	c.Check(
-		rd.Command("get", "foo3").Bool(),
+		rd.Command(Get, "foo3").Bool(),
 		Equals,
 		true)
 
 	// integers
-	rd.Command("set", "foo4", 2)
+	rd.Command(Set, "foo4", 2)
 	c.Check(
-		rd.Command("get", "foo4").Str(),
+		rd.Command(Get, "foo4").Str(),
 		Equals,
 		"2")
 
 	// slice
-	rd.Command("rpush", "foo5", []int{1, 2, 3})
-	foo5strings, err := rd.Command("lrange", "foo5", 0, -1).Strings()
+	rd.Command(Rpush, "foo5", []int{1, 2, 3})
+	foo5strings, err := rd.Command(Lrange, "foo5", 0, -1).Strings()
 	c.Assert(err, IsNil)
 	c.Check(
 		foo5strings,
@@ -239,11 +240,11 @@ func (s *S) TestArgToRedis(c *C) {
 		[]string{"1", "2", "3"})
 
 	// map
-	rd.Command("hset", "foo6", "k1", "v1")
-	rd.Command("hset", "foo6", "k2", "v2")
-	rd.Command("hset", "foo6", "k3", "v3")
+	rd.Command(Hset, "foo6", "k1", "v1")
+	rd.Command(Hset, "foo6", "k2", "v2")
+	rd.Command(Hset, "foo6", "k3", "v3")
 
-	foo6map, err := rd.Command("hgetall", "foo6").StringMap()
+	foo6map, err := rd.Command(Hgetall, "foo6").StringMap()
 	c.Assert(err, IsNil)
 	c.Check(
 		foo6map,
@@ -257,38 +258,38 @@ func (s *S) TestArgToRedis(c *C) {
 
 // Test asynchronous commands.
 func (s *S) TestAsync(c *C) {
-	fut := rd.AsyncCommand("PING")
+	fut := rd.AsyncCommand(Ping)
 	r := fut.Reply()
 	c.Check(r.Str(), Equals, "PONG")
 }
 
 // Test multi-value commands.
 func (s *S) TestMulti(c *C) {
-	rd.Command("sadd", "multi:set", "one")
-	rd.Command("sadd", "multi:set", "two")
-	rd.Command("sadd", "multi:set", "three")
+	rd.Command(Sadd, "multi:set", "one")
+	rd.Command(Sadd, "multi:set", "two")
+	rd.Command(Sadd, "multi:set", "three")
 
-	c.Check(rd.Command("smembers", "multi:set").Len(), Equals, 3)
+	c.Check(rd.Command(Smembers, "multi:set").Len(), Equals, 3)
 }
 
 // Test multi commands.
 func (s *S) TestMultiCommand(c *C) {
 	r := rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "foo", "bar")
-		mc.Command("get", "foo")
+		mc.Command(Set, "foo", "bar")
+		mc.Command(Get, "foo")
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Check(r.At(0).Error(), IsNil)
 	c.Check(r.At(1).Str(), Equals, "bar")
 
 	r = rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "foo2", "baz")
-		mc.Command("get", "foo2")
+		mc.Command(Set, "foo2", "baz")
+		mc.Command(Get, "foo2")
 		rmc := mc.Flush()
 		c.Check(rmc.At(0).Error(), IsNil)
 		c.Check(rmc.At(1).Str(), Equals, "baz")
-		mc.Command("set", "foo2", "qux")
-		mc.Command("get", "foo2")
+		mc.Command(Set, "foo2", "qux")
+		mc.Command(Get, "foo2")
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Check(r.At(0).Error(), IsNil)
@@ -298,8 +299,8 @@ func (s *S) TestMultiCommand(c *C) {
 // Test simple transactions.
 func (s *S) TestTransaction(c *C) {
 	r := rd.Transaction(func(mc *MultiCommand) {
-		mc.Command("set", "foo", "bar")
-		mc.Command("get", "foo")
+		mc.Command(Set, "foo", "bar")
+		mc.Command(Get, "foo")
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Check(r.At(0).Str(), Equals, "OK")
@@ -307,9 +308,9 @@ func (s *S) TestTransaction(c *C) {
 
 	// Flushing transaction
 	r = rd.Transaction(func(mc *MultiCommand) {
-		mc.Command("set", "foo", "bar")
+		mc.Command(Set, "foo", "bar")
 		mc.Flush()
-		mc.Command("get", "foo")
+		mc.Command(Get, "foo")
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Check(r.Len(), Equals, 2)
@@ -321,19 +322,19 @@ func (s *S) TestTransaction(c *C) {
 func (s *S) TestComplexTransaction(c *C) {
 	// Succesful transaction.
 	r := rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "foo", "bar")
-		mc.Command("watch", "foo")
+		mc.Command(Set, "foo", "bar")
+		mc.Command(Watch, "foo")
 		rmc := mc.Flush()
 		c.Assert(rmc.Type(), Equals, ReplyMulti)
 		c.Assert(rmc.Len(), Equals, 2)
 		c.Assert(rmc.At(0).Error(), IsNil)
 		c.Assert(rmc.At(1).Error(), IsNil)
 
-		mc.Command("multi")
-		mc.Command("set", "foo", "baz")
-		mc.Command("get", "foo")
+		mc.Command(Multi)
+		mc.Command(Set, "foo", "baz")
+		mc.Command(Get, "foo")
 		mc.Command("brokenfunc")
-		mc.Command("exec")
+		mc.Command(Exec)
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 5)
@@ -348,11 +349,11 @@ func (s *S) TestComplexTransaction(c *C) {
 
 	// Discarding transaction
 	r = rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "foo", "bar")
-		mc.Command("multi")
-		mc.Command("set", "foo", "baz")
-		mc.Command("discard")
-		mc.Command("get", "foo")
+		mc.Command(Set, "foo", "bar")
+		mc.Command(Multi)
+		mc.Command(Set, "foo", "baz")
+		mc.Command(Discard)
+		mc.Command(Get, "foo")
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 5)
@@ -367,8 +368,8 @@ func (s *S) TestComplexTransaction(c *C) {
 // Test asynchronous multi commands.
 func (s *S) TestAsyncMultiCommand(c *C) {
 	r := rd.AsyncMultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "foo", "bar")
-		mc.Command("get", "foo")
+		mc.Command(Set, "foo", "bar")
+		mc.Command(Get, "foo")
 	}).Reply()
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Check(r.At(0).Error(), IsNil)
@@ -378,8 +379,8 @@ func (s *S) TestAsyncMultiCommand(c *C) {
 // Test simple asynchronous transactions.
 func (s *S) TestAsyncTransaction(c *C) {
 	r := rd.AsyncTransaction(func(mc *MultiCommand) {
-		mc.Command("set", "foo", "bar")
-		mc.Command("get", "foo")
+		mc.Command(Set, "foo", "bar")
+		mc.Command(Get, "foo")
 	}).Reply()
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Check(r.At(0).Str(), Equals, "OK")
@@ -402,9 +403,9 @@ func (s *S) TestSubscription(c *C) {
 
 	sub.Subscribe("chan1", "chan2")
 
-	c.Check(rd.Command("publish", "chan1", "foo").Int(), Equals, 1)
+	c.Check(rd.Command(Publish, "chan1", "foo").Int(), Equals, 1)
 	sub.Unsubscribe("chan1")
-	c.Check(rd.Command("publish", "chan1", "bar").Int(), Equals, 0)
+	c.Check(rd.Command(Publish, "chan1", "bar").Int(), Equals, 0)
 	sub.Close()
 
 	time.Sleep(time.Second)
@@ -438,9 +439,9 @@ func (s *S) TestPSubscribe(c *C) {
 
 	sub.PSubscribe("foo.*")
 
-	c.Check(rd.Command("publish", "foo.foo", "foo").Int(), Equals, 1)
+	c.Check(rd.Command(Publish, "foo.foo", "foo").Int(), Equals, 1)
 	sub.PUnsubscribe("foo.*")
-	c.Check(rd.Command("publish", "foo.bar", "bar").Int(), Equals, 0)
+	c.Check(rd.Command(Publish, "foo.bar", "bar").Int(), Equals, 0)
 	sub.Close()
 
 	time.Sleep(time.Second)
@@ -475,7 +476,7 @@ func (s *S) TestTCP(c *C) {
 	conf2.Address = "127.0.0.1:6379"
 	conf2.Path = ""
 	rdA := NewClient(conf2)
-	rep := rdA.Command("echo", "Hello, World!")
+	rep := rdA.Command(Echo, "Hello, World!")
 	c.Assert(rep.Error(), IsNil)
 	c.Check(rep.Str(), Equals, "Hello, World!")
 }
@@ -487,7 +488,7 @@ func (s *S) TestUnix(c *C) {
 	conf2.Address = ""
 	conf2.Path = "/tmp/redis.sock"
 	rdA := NewClient(conf2)
-	rep := rdA.Command("echo", "Hello, World!")
+	rep := rdA.Command(Echo, "Hello, World!")
 	c.Assert(rep.Error(), IsNil)
 	c.Check(rep.Str(), Equals, "Hello, World!")
 }
@@ -498,13 +499,13 @@ func (s *S) TestUnix(c *C) {
 func (s *Long) TestAbortingComplexTransaction(c *C) {
 	go func() {
 		time.Sleep(time.Second)
-		rd.Command("set", "foo", 9)
+		rd.Command(Set, "foo", 9)
 	}()
 
 	r := rd.MultiCommand(func(mc *MultiCommand) {
-		mc.Command("set", "foo", 1)
-		mc.Command("watch", "foo")
-		mc.Command("multi")
+		mc.Command(Set, "foo", 1)
+		mc.Command(Watch, "foo")
+		mc.Command(Multi)
 		rmc := mc.Flush()
 		c.Assert(rmc.Type(), Equals, ReplyMulti)
 		c.Assert(rmc.Len(), Equals, 3)
@@ -513,8 +514,8 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 		c.Assert(rmc.At(2).Error(), IsNil)
 
 		time.Sleep(time.Second * 2)
-		mc.Command("set", "foo", 2)
-		mc.Command("exec")
+		mc.Command(Set, "foo", 2)
+		mc.Command(Exec)
 	})
 	c.Assert(r.Type(), Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 2)
@@ -527,7 +528,7 @@ func (s *Long) TestTimeout(c *C) {
 	conf2.Path = ""
 	conf2.Address = "127.0.0.1:12345"
 	rdB := NewClient(conf2)
-	rB := rdB.Command("ping")
+	rB := rdB.Command(Ping)
 	c.Log(rB.Error())
 	c.Check(rB.Error(), NotNil)
 }
@@ -537,7 +538,7 @@ func (s *Long) TestIllegalDatabase(c *C) {
 	conf2 := conf
 	conf2.Database = 4711
 	rdA := NewClient(conf2)
-	rA := rdA.Command("ping")
+	rA := rdA.Command(Ping)
 	c.Check(rA.Error(), NotNil)
 }
 
@@ -547,7 +548,7 @@ func BenchmarkBlockingPing(b *testing.B) {
 	setUpTest(b)
 
 	for i := 0; i < b.N; i++ {
-		rd.Command("ping")
+		rd.Command(Ping)
 	}
 
 	tearDownTest(b)
@@ -557,7 +558,7 @@ func BenchmarkBlockingSet(b *testing.B) {
 	setUpTest(b)
 
 	for i := 0; i < b.N; i++ {
-		rd.Command("set", "foo", "bar")
+		rd.Command(Set, "foo", "bar")
 	}
 
 	tearDownTest(b)
@@ -567,7 +568,7 @@ func BenchmarkBlockingGet(b *testing.B) {
 	setUpTest(b)
 
 	for i := 0; i < b.N; i++ {
-		rd.Command("get", "foo", "bar")
+		rd.Command(Get, "foo", "bar")
 	}
 
 	tearDownTest(b)
@@ -577,7 +578,7 @@ func BenchmarkAsyncPing(b *testing.B) {
 	setUpTest(b)
 
 	for i := 0; i < b.N; i++ {
-		fut := rd.AsyncCommand("ping")
+		fut := rd.AsyncCommand(Ping)
 		fut.Reply()
 	}
 
@@ -588,7 +589,7 @@ func BenchmarkAsyncSet(b *testing.B) {
 	setUpTest(b)
 
 	for i := 0; i < b.N; i++ {
-		fut := rd.AsyncCommand("set", "foo", "bar")
+		fut := rd.AsyncCommand(Set, "foo", "bar")
 		fut.Reply()
 	}
 
@@ -599,7 +600,7 @@ func BenchmarkAsyncGet(b *testing.B) {
 	setUpTest(b)
 
 	for i := 0; i < b.N; i++ {
-		fut := rd.AsyncCommand("get", "foo", "bar")
+		fut := rd.AsyncCommand(Get, "foo", "bar")
 		fut.Reply()
 	}
 
@@ -610,7 +611,7 @@ func BenchmarkConnectionPool(b *testing.B) {
 	setUpTest(b)
 
 	for i := 0; i < b.N; i++ {
-		fut := rd.AsyncCommand("get", "foo", "bar")
+		fut := rd.AsyncCommand(Get, "foo", "bar")
 		fut.Reply()
 	}
 

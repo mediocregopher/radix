@@ -33,6 +33,11 @@ for cmd in $cmds; do
     fi
     echo "	$keyword Command = \"$cmd\"" >>$command
 done
+# for some reason, some commands arent in redis.h
+for cmd in smembers; do
+    keyword="${cmd~}"
+    echo "	$keyword Command = \"$cmd\"" >>$command
+done
 echo ")" >>$command
 
 gofmt -w $command
