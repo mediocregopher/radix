@@ -21,7 +21,7 @@ type Configuration struct {
 // Client manages the access to a database.
 type Client struct {
 	config Configuration
-	pool   *connectionPool
+	pool   *connPool
 	lock   sync.Mutex
 }
 
@@ -33,7 +33,7 @@ func NewClient(config Configuration) (*Client, error) {
 
 	c := new(Client)
 	c.config = config
-	c.pool = newConnectionPool(&c.config)
+	c.pool = newConnPool(&c.config)
 
 	return c, nil
 }
@@ -161,7 +161,7 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 
 func checkConfig(c *Configuration) error {
 	if c.Address != "" && c.Path != "" {
-		return errors.New("redis: configuration has both tcp/ip address and unix path")
+		return errors.New("redis: config has both tcp/ip address and unix path")
 	}
 
 	// Some default values

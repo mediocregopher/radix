@@ -4,8 +4,8 @@ import (
 	"sync"
 )
 
-// connectionPool is a stack-like structure that holds the connections of a Client.
-type connectionPool struct {
+// connPool is a stack-like structure that holds the connections of a Client.
+type connPool struct {
 	size          int
 	capacity      int
 	pool          []*connection
@@ -15,9 +15,9 @@ type connectionPool struct {
 	configuration *Configuration
 }
 
-func newConnectionPool(conf *Configuration) *connectionPool {
+func newConnPool(conf *Configuration) *connPool {
 	locker := &sync.Mutex{}
-	cp := &connectionPool{
+	cp := &connPool{
 		size:          conf.PoolSize,
 		capacity:      conf.PoolSize,
 		pool:          make([]*connection, conf.PoolSize),
@@ -29,7 +29,7 @@ func newConnectionPool(conf *Configuration) *connectionPool {
 
 	return cp
 }
-func (cp *connectionPool) push(conn *connection) {
+func (cp *connPool) push(conn *connection) {
 	if conn != nil && conn.closed {
 		// Connection was closed likely due to an error.
 		// Don't attempt to reuse closed connections.
@@ -48,7 +48,7 @@ func (cp *connectionPool) push(conn *connection) {
 	cp.lock.Unlock()
 }
 
-func (cp *connectionPool) pull() (*connection, *Error) {
+func (cp *connPool) pull() (*connection, *Error) {
 	var err *Error
 
 	cp.lock.Lock()
