@@ -6,7 +6,7 @@ import (
 
 // connPool is a stack-like structure that holds the connections of a Client.
 type connPool struct {
-	size      int
+	available int
 	capacity  int
 	pool      []*connection
 	lock      sync.Mutex
@@ -17,10 +17,10 @@ type connPool struct {
 
 func newConnPool(config *Configuration) *connPool {
 	cp := &connPool{
-		size:     config.PoolSize,
-		capacity: config.PoolSize,
-		pool:     make([]*connection, config.PoolSize),
-		config:   config,
+		available: config.PoolSize,
+		capacity:  config.PoolSize,
+		pool:      make([]*connection, config.PoolSize),
+		config:    config,
 	}
 	cp.fullCond  = sync.NewCond(&cp.lock)
 	cp.emptyCond = sync.NewCond(&cp.lock)
@@ -35,12 +35,12 @@ func (cp *connPool) push(conn *connection) {
 	}
 
 	cp.lock.Lock()
-	for cp.size == cp.capacity {
+	for cp.available == cp.capacity {
 		cp.fullCond.Wait()
 	}
 
-	cp.pool[cp.size] = conn
-	cp.size++
+	cp.pool[cp.available] = conn
+	cp.available++
 
 	cp.emptyCond.Signal()
 	cp.lock.Unlock()
@@ -50,11 +50,11 @@ func (cp *connPool) pull() (*connection, *Error) {
 	var err *Error
 
 	cp.lock.Lock()
-	for cp.size == 0 {
+	for cp.available == 0 {
 		cp.emptyCond.Wait()
 	}
 
-	conn := cp.pool[cp.size-1]
+	conn := cp.pool[cp.available-1]
 	if conn == nil {
 		// Lazy init of a connection
 		conn, err = newConnection(cp.config)
@@ -65,7 +65,7 @@ func (cp *connPool) pull() (*connection, *Error) {
 		}
 	}
 
-	cp.size--
+	cp.available--
 	cp.fullCond.Signal()
 	cp.lock.Unlock()
 
