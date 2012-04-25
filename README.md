@@ -23,7 +23,7 @@ Creating a Client instance is done as follows:
 
 	...
 
-	c := NewClient(Configuration{
+	c, err := NewClient(Configuration{
 		Database: 0, // (default: 0)
 		// Timeout in seconds
 		Timeout: 10, // (default: 10)
@@ -40,6 +40,11 @@ Creating a Client instance is done as follows:
 		// Don't try to retry on LOADING error? (default: false)
 		// NoLoadingRetry: false, 
 	})
+
+	if err != nil {
+		fmt.Printf("NewClient failed: %s\n", err)
+	}
+
 	defer c.Close()
 ```
 
