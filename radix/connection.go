@@ -61,7 +61,7 @@ type envSubscription struct {
 type bufioReadWriteCloser struct {
 	*bufio.Reader
 	*bufio.Writer
-	io.Closer
+	io.Closer // the underlying conn
 }
 
 //* connection
@@ -138,7 +138,6 @@ func newConnection(c *Configuration) (*connection, *Error) {
 
 	// Select database.
 	r := co.command(Select, c.Database)
-
 	if r.Error() != nil {
 		if !c.NoLoadingRetry && r.Error().Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
@@ -215,7 +214,12 @@ func (c *connection) punsubscribe(patterns ...string) *Error {
 }
 
 func (c *connection) close() {
-	c.closerChan <- struct{}{}
+	select {
+	case c.closerChan <- struct{}{}:
+	default:
+		// don't block if close has been called before, and
+		// the receiver has already shut down
+	}
 }
 
 // receiver receives data from the connection.
