@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"container/list"
 	"sync"
 )
 
@@ -8,9 +9,9 @@ import (
 type connPool struct {
 	available int
 	capacity  int
-	pool      []*connection
+	all       map[*connection]struct{}
+	free      list.List
 	lock      sync.Mutex
-	fullCond  *sync.Cond
 	emptyCond *sync.Cond
 	config    *Configuration
 }
@@ -19,55 +20,55 @@ func newConnPool(config *Configuration) *connPool {
 	cp := &connPool{
 		available: config.PoolSize,
 		capacity:  config.PoolSize,
-		pool:      make([]*connection, config.PoolSize),
+		all:       map[*connection]struct{}{},
 		config:    config,
 	}
-	cp.fullCond  = sync.NewCond(&cp.lock)
 	cp.emptyCond = sync.NewCond(&cp.lock)
 
 	return cp
 }
 func (cp *connPool) push(conn *connection) {
-	if conn != nil && conn.closed {
-		// Connection was closed likely due to an error.
-		// Don't attempt to reuse closed connections.
-		conn = nil
+	if conn == nil {
+		return
 	}
 
 	cp.lock.Lock()
-	for cp.available == cp.capacity {
-		cp.fullCond.Wait()
-	}
+	defer cp.lock.Unlock()
 
-	cp.pool[cp.available] = conn
+	if !conn.closed {
+		cp.free.PushBack(conn)
+	} else {
+		delete(cp.all, conn)
+	}
 	cp.available++
 
 	cp.emptyCond.Signal()
-	cp.lock.Unlock()
 }
 
-func (cp *connPool) pull() (*connection, *Error) {
-	var err *Error
+func (cp *connPool) pull() (conn *connection, err *Error) {
 
 	cp.lock.Lock()
+	defer cp.lock.Unlock()
+
 	for cp.available == 0 {
 		cp.emptyCond.Wait()
 	}
 
-	conn := cp.pool[cp.available-1]
-	if conn == nil {
+	if cp.free.Len() > 0 {
+		conn, _ = cp.free.Remove(cp.free.Back()).(*connection)
+	} else {
 		// Lazy init of a connection
 		conn, err = newConnection(cp.config)
 
 		if err != nil {
-			cp.lock.Unlock()
 			return nil, err
 		}
+		// make sure to keep track of it, so that we can close
+		// it later.
+		cp.all[conn] = struct{}{}
 	}
 
 	cp.available--
-	cp.fullCond.Signal()
-	cp.lock.Unlock()
 
 	return conn, nil
 }
@@ -76,10 +77,9 @@ func (cp *connPool) close() {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 
-	for i, conn := range cp.pool {
-		if conn != nil {
-			conn.close()
-			cp.pool[i] = nil
-		}
+	for conn, _ := range cp.all {
+		conn.close()
 	}
+
+	cp.all = nil
 }
