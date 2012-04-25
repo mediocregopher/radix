@@ -35,8 +35,8 @@ Creating a Client instance is done as follows:
 		//* Optional parameters
 		// Password for authenticating (default: "")
 		// Auth: "my_password", 
-		// Size of the connection pool (default: 50)
-		// PoolSize: 50, 
+		// Size of the connection pool (default: 10)
+		// PoolSize: 10, 
 		// Don't try to retry on LOADING error? (default: false)
 		// NoLoadingRetry: false, 
 	})
