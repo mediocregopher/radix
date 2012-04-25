@@ -24,7 +24,7 @@ type TI interface {
 }
 
 func setUpTest(c TI) {
-	rd = NewClient(conf)
+	rd, _ = NewClient(conf)
 
 	r := rd.Command(Flushall)
 	if r.Error() != nil {
@@ -475,7 +475,7 @@ func (s *S) TestTCP(c *C) {
 	conf2 := conf
 	conf2.Address = "127.0.0.1:6379"
 	conf2.Path = ""
-	rdA := NewClient(conf2)
+	rdA, _ := NewClient(conf2)
 	rep := rdA.Command(Echo, "Hello, World!")
 	c.Assert(rep.Error(), IsNil)
 	c.Check(rep.Str(), Equals, "Hello, World!")
@@ -486,7 +486,7 @@ func (s *S) TestUnix(c *C) {
 	conf2 := conf
 	conf2.Address = ""
 	conf2.Path = "/tmp/redis.sock"
-	rdA := NewClient(conf2)
+	rdA, _ := NewClient(conf2)
 	rep := rdA.Command(Echo, "Hello, World!")
 	c.Assert(rep.Error(), IsNil)
 	c.Check(rep.Str(), Equals, "Hello, World!")
@@ -526,7 +526,7 @@ func (s *Long) TestTimeout(c *C) {
 	conf2 := conf
 	conf2.Path = ""
 	conf2.Address = "127.0.0.1:12345"
-	rdB := NewClient(conf2)
+	rdB, _ := NewClient(conf2)
 	rB := rdB.Command(Ping)
 	c.Log(rB.Error())
 	c.Check(rB.Error(), NotNil)
@@ -536,7 +536,7 @@ func (s *Long) TestTimeout(c *C) {
 func (s *Long) TestIllegalDatabase(c *C) {
 	conf2 := conf
 	conf2.Database = 4711
-	rdA := NewClient(conf2)
+	rdA, _ := NewClient(conf2)
 	rA := rdA.Command(Ping)
 	c.Check(rA.Error(), NotNil)
 }

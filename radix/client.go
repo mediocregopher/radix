@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"errors"
 	"sync"
 )
 
@@ -19,23 +20,22 @@ type Configuration struct {
 
 // Client manages the access to a database.
 type Client struct {
-	configuration *Configuration
-	pool          *connectionPool
-	lock          *sync.Mutex
+	config Configuration
+	pool   *connectionPool
+	lock   sync.Mutex
 }
 
 // NewClient creates a new accessor.
-func NewClient(conf Configuration) *Client {
-	checkConfiguration(&conf)
-
-	// Create the database client instance.
-	c := &Client{
-		configuration: &conf,
-		lock:          &sync.Mutex{},
+func NewClient(config Configuration) (*Client, error) {
+	if err := checkConfig(&config); err != nil {
+		return nil, err
 	}
-	c.pool = newConnectionPool(c.configuration)
 
-	return c
+	c := new(Client)
+	c.config = config
+	c.pool = newConnectionPool(&c.config)
+
+	return c, nil
 }
 
 // Close closes all connections of the client.
@@ -53,7 +53,7 @@ func (c *Client) Close() {
 			conn = nil
 		}
 
-		if poolUsage == c.configuration.PoolSize {
+		if poolUsage == c.config.PoolSize {
 			return
 		}
 	}
@@ -159,22 +159,22 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 
 //* Helpers
 
-func checkConfiguration(c *Configuration) {
+func checkConfig(c *Configuration) error {
 	if c.Address != "" && c.Path != "" {
-		panic("redis: configuration has both tcp/ip address and unix path")
+		return errors.New("redis: configuration has both tcp/ip address and unix path")
 	}
 
-	//* Some default values
+	// Some default values
 
 	if c.Address == "" && c.Path == "" {
 		c.Address = "127.0.0.1:6379"
 	}
-
 	if c.Database < 0 {
 		c.Database = 0
 	}
-
 	if c.PoolSize <= 0 {
 		c.PoolSize = 10
 	}
+
+	return nil
 }
