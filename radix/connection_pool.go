@@ -6,26 +6,24 @@ import (
 
 // connPool is a stack-like structure that holds the connections of a Client.
 type connPool struct {
-	size          int
-	capacity      int
-	pool          []*connection
-	lock          *sync.Mutex
-	fullCond      *sync.Cond
-	emptyCond     *sync.Cond
-	configuration *Configuration
+	size      int
+	capacity  int
+	pool      []*connection
+	lock      sync.Mutex
+	fullCond  *sync.Cond
+	emptyCond *sync.Cond
+	config    *Configuration
 }
 
-func newConnPool(conf *Configuration) *connPool {
-	locker := &sync.Mutex{}
+func newConnPool(config *Configuration) *connPool {
 	cp := &connPool{
-		size:          conf.PoolSize,
-		capacity:      conf.PoolSize,
-		pool:          make([]*connection, conf.PoolSize),
-		lock:          locker,
-		fullCond:      sync.NewCond(locker),
-		emptyCond:     sync.NewCond(locker),
-		configuration: conf,
+		size:     config.PoolSize,
+		capacity: config.PoolSize,
+		pool:     make([]*connection, config.PoolSize),
+		config:   config,
 	}
+	cp.fullCond  = sync.NewCond(&cp.lock)
+	cp.emptyCond = sync.NewCond(&cp.lock)
 
 	return cp
 }
@@ -59,7 +57,7 @@ func (cp *connPool) pull() (*connection, *Error) {
 	conn := cp.pool[cp.size-1]
 	if conn == nil {
 		// Lazy init of a connection
-		conn, err = newConnection(cp.configuration)
+		conn, err = newConnection(cp.config)
 
 		if err != nil {
 			cp.lock.Unlock()
