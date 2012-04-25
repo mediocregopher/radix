@@ -373,7 +373,7 @@ func (c *connection) receiveEnvData() *envData {
 }
 
 func (c *connection) handleCommand(ec *envCommand) {
-	if err := c.writeRequest([]command{ec.cmd}); err == nil {
+	if err := c.writeRequest(ec.cmd); err == nil {
 		ed := c.receiveEnvData()
 		if ed == nil {
 			ec.r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
@@ -389,7 +389,7 @@ func (c *connection) handleCommand(ec *envCommand) {
 }
 
 func (c *connection) handleMultiCommand(ec *envMultiCommand) {
-	if err := c.writeRequest(ec.cmds); err == nil {
+	if err := c.writeRequest(ec.cmds...); err == nil {
 		ec.r.t = ReplyMulti
 		for i := 0; i < len(ec.cmds); i++ {
 			ed := c.receiveEnvData()
@@ -539,7 +539,7 @@ func (c *connection) handleSubscription(es *envSubscription) {
 		channels[i] = v
 	}
 
-	err := c.writeRequest([]command{command{cmd, channels}})
+	err := c.writeRequest(command{cmd, channels})
 
 	if err == nil {
 		es.errChan <- nil
@@ -549,7 +549,7 @@ func (c *connection) handleSubscription(es *envSubscription) {
 	// subscribe/etc. return their replies in pub/sub messages
 }
 
-func (c *connection) writeRequest(cmds []command) error {
+func (c *connection) writeRequest(cmds ...command) error {
 	for _, cmd := range cmds {
 		// Calculate number of arguments.
 		argsLen := 1
