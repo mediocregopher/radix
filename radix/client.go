@@ -44,22 +44,15 @@ func (c *Client) Close() {
 
 // Command calls a Redis command.
 func (c *Client) Command(cmd Command, args ...interface{}) *Reply {
-	r := &Reply{}
 
 	// Connection handling
 	conn, err := c.pool.pull()
-
 	if err != nil {
-		r.err = err
-		return r
+		return &Reply{err: err}
 	}
 
-	defer func() {
-		c.pool.push(conn)
-	}()
-
-	conn.command(r, cmd, args...)
-	return r
+	defer c.pool.push(conn)
+	return conn.command(cmd, args...)
 }
 
 // AsyncCommand calls a Redis command asynchronously.
@@ -81,10 +74,7 @@ func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
 		return &Reply{err: err}
 	}
 
-	defer func() {
-		c.pool.push(conn)
-	}()
-
+	defer c.pool.push(conn)
 	return newMultiCommand(transaction, conn).process(f)
 }
 

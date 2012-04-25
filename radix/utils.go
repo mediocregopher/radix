@@ -6,11 +6,6 @@ import (
 	"strconv"
 )
 
-type command struct {
-	cmd  Command
-	args []interface{}
-}
-
 //* Useful helpers
 
 // argToRedis formats an argument value into a Redis styled byte slice argument.

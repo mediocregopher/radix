@@ -25,11 +25,15 @@ const (
 	subPUnsubscribe
 )
 
+type command struct {
+	cmd  Command
+	args []interface{}
+}
+
 // Envelope type for a command
 type envCommand struct {
-	r        *Reply
 	cmd      command
-	doneChan chan struct{}
+	replyChan chan *Reply
 }
 
 // Envelope type for a multi command
@@ -133,20 +137,19 @@ func newConnection(c *Configuration) (*connection, *Error) {
 	go co.receiver()
 
 	// Select database.
-	r := &Reply{}
-	co.command(r, Select, c.Database)
+	r := co.command(Select, c.Database)
 
 	if r.Error() != nil {
 		if !c.NoLoadingRetry && r.Error().Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
-			co.command(r, Select, c.Database)
+			r = co.command(Select, c.Database)
 			for r.Error() != nil {
 				if !r.Error().Test(ErrorLoading) {
 					co.close()
 					return nil, newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
 				}
 				time.Sleep(time.Second)
-				co.command(r, Select, c.Database)
+				r = co.command(Select, c.Database)
 			}
 		} else {
 			co.close()
@@ -156,10 +159,7 @@ func newConnection(c *Configuration) (*connection, *Error) {
 
 	// Authenticate if needed.
 	if c.Auth != "" {
-		r = &Reply{}
-
-		co.command(r, Auth, c.Auth)
-
+		r = co.command(Auth, c.Auth)
 		if r.Error() != nil {
 			co.close()
 			return nil, newErrorExt("failed to authenticate", r.Error(), ErrorAuth, ErrorConnection)
@@ -170,14 +170,13 @@ func newConnection(c *Configuration) (*connection, *Error) {
 }
 
 // command calls a Redis command.
-func (c *connection) command(r *Reply, cmd Command, args ...interface{}) {
-	doneChan := make(chan struct{})
+func (c *connection) command(cmd Command, args ...interface{}) *Reply {
+	replyChan := make(chan *Reply)
 	c.commandChan <- &envCommand{
-		r,
-		command{cmd, args},
-		doneChan,
+		cmd: command{cmd, args},
+		replyChan: replyChan,
 	}
-	<-doneChan
+	return <-replyChan
 }
 
 // multicommand calls a Redis multi-command.
@@ -373,19 +372,20 @@ func (c *connection) receiveEnvData() *envData {
 }
 
 func (c *connection) handleCommand(ec *envCommand) {
+	r := new(Reply)
 	if err := c.writeRequest(ec.cmd); err == nil {
 		ed := c.receiveEnvData()
 		if ed == nil {
-			ec.r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
+			r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
 		} else {
-			c.receiveReply(ed, ec.r)
+			c.receiveReply(ed, r)
 		}
 	} else {
 		// Return error.
-		ec.r.err = newError(err.Error())
+		r.err = newError(err.Error())
 	}
 
-	ec.doneChan <- struct{}{}
+	ec.replyChan <- r
 }
 
 func (c *connection) handleMultiCommand(ec *envMultiCommand) {
