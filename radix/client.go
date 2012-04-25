@@ -40,23 +40,7 @@ func NewClient(config Configuration) (*Client, error) {
 
 // Close closes all connections of the client.
 func (c *Client) Close() {
-	var poolUsage int
-	for {
-		conn, err := c.pool.pull()
-		if err != nil {
-			break
-		}
-
-		poolUsage++
-		if conn != nil {
-			conn.close()
-			conn = nil
-		}
-
-		if poolUsage == c.config.PoolSize {
-			return
-		}
-	}
+	c.pool.close()
 }
 
 // Command calls a Redis command.

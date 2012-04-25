@@ -71,3 +71,15 @@ func (cp *connPool) pull() (*connection, *Error) {
 
 	return conn, nil
 }
+
+func (cp *connPool) close() {
+	cp.lock.Lock()
+	defer cp.lock.Unlock()
+
+	for i, conn := range cp.pool {
+		if conn != nil {
+			conn.close()
+			cp.pool[i] = nil
+		}
+	}
+}
