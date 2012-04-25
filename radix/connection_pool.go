@@ -9,7 +9,7 @@ import (
 type connPool struct {
 	available int
 	capacity  int
-	all       map[*connection]struct{}
+	all       map[*connection]struct{} // connection set
 	free      list.List
 	lock      sync.Mutex
 	emptyCond *sync.Cond
@@ -23,10 +23,11 @@ func newConnPool(config *Configuration) *connPool {
 		all:       map[*connection]struct{}{},
 		config:    config,
 	}
-	cp.emptyCond = sync.NewCond(&cp.lock)
 
+	cp.emptyCond = sync.NewCond(&cp.lock)
 	return cp
 }
+
 func (cp *connPool) push(conn *connection) {
 	if conn == nil {
 		return
@@ -40,13 +41,12 @@ func (cp *connPool) push(conn *connection) {
 	} else {
 		delete(cp.all, conn)
 	}
-	cp.available++
 
+	cp.available++
 	cp.emptyCond.Signal()
 }
 
 func (cp *connPool) pull() (conn *connection, err *Error) {
-
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 
@@ -63,20 +63,17 @@ func (cp *connPool) pull() (conn *connection, err *Error) {
 		if err != nil {
 			return nil, err
 		}
-		// make sure to keep track of it, so that we can close
-		// it later.
+		// make sure to keep track of it, so that we can close it later.
 		cp.all[conn] = struct{}{}
 	}
 
 	cp.available--
-
 	return conn, nil
 }
 
 func (cp *connPool) close() {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
-
 	for conn, _ := range cp.all {
 		conn.close()
 	}

@@ -242,7 +242,7 @@ func (c *connection) receiver() {
 
 		// Analyze the first byte.
 		fb := b[0]
-		b = b[1 : len(b)-2] // get rid of fb and the trailing \r
+		b = b[1 : len(b)-2] // get rid of the first byte and the trailing \r
 		switch fb {
 		case '-':
 			// Error reply.

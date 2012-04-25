@@ -34,7 +34,6 @@ func NewClient(config Configuration) (*Client, error) {
 	c := new(Client)
 	c.config = config
 	c.pool = newConnPool(&c.config)
-
 	return c, nil
 }
 
@@ -60,7 +59,6 @@ func (c *Client) Command(cmd Command, args ...interface{}) *Reply {
 	}()
 
 	conn.command(r, cmd, args...)
-
 	return r
 }
 
@@ -105,7 +103,6 @@ func (c *Client) Transaction(f func(*MultiCommand)) *Reply {
 // AsyncMultiCommand calls an asynchronous multi-command.
 func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) Future {
 	fut := newFuture()
-
 	go func() {
 		fut.setReply(c.MultiCommand(f))
 	}()
@@ -116,7 +113,6 @@ func (c *Client) AsyncMultiCommand(f func(*MultiCommand)) Future {
 // AsyncTransaction performs a simple asynchronous transaction.
 func (c *Client) AsyncTransaction(f func(*MultiCommand)) Future {
 	fut := newFuture()
-
 	go func() {
 		fut.setReply(c.Transaction(f))
 	}()
@@ -145,11 +141,10 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 
 func checkConfig(c *Configuration) error {
 	if c.Address != "" && c.Path != "" {
-		return errors.New("redis: config has both tcp/ip address and unix path")
+		return errors.New("redis: configuration has both tcp/ip address and unix path")
 	}
 
-	// Some default values
-
+	//* Some default values
 	if c.Address == "" && c.Path == "" {
 		c.Address = "127.0.0.1:6379"
 	}

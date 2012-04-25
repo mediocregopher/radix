@@ -10,7 +10,10 @@ import (
 )
 
 func main() {
-	c := NewClient(Configuration{
+	var c *Client
+	var err error
+
+	c, err = NewClient(Configuration{
 		Database: 8,
 		// Timeout in seconds
 		Timeout: 10,
@@ -19,6 +22,11 @@ func main() {
 		// Path: "/tmp/redis.sock",
 		// Address: "127.0.0.1:6379",
 	})
+
+	if err != nil {
+		fmt.Printf("NewClient failed: %s\n", err)
+	}
+
 	defer c.Close()
 
 	//** Blocking calls
@@ -99,7 +107,7 @@ func main() {
 		return
 	}
 
-	mylist, err := rep.Strings()
+	mylist, err = rep.Strings()
 	if err != nil {
 		fmt.Printf("Strings failed: %s\n", err.Error())
 		return
