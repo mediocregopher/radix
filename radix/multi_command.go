@@ -3,7 +3,6 @@ package radix
 // MultiCommand holds data for a Redis multi command.
 type MultiCommand struct {
 	transaction bool
-	r           *Reply
 	c           *connection
 	cmds        []command
 	cmdCounter  int
@@ -12,36 +11,37 @@ type MultiCommand struct {
 func newMultiCommand(transaction bool, c *connection) *MultiCommand {
 	return &MultiCommand{
 		transaction: transaction,
-		r:           &Reply{},
 		c:           c,
 	}
 }
 
-// process calls the given multi command function, flushes the commands and returns the returned Reply.
+// Calls the given multi command function, flushes the
+// commands, and returns the returned Reply.
 func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 	if mc.transaction {
 		mc.Command(Multi)
 	}
 	f(mc)
+	var r *Reply
 	if !mc.transaction {
-		mc.c.multiCommand(mc.r, mc.cmds)
+		r = mc.c.multiCommand(mc.cmds)
 	} else {
 		mc.Command(Exec)
-		mc.c.multiCommand(mc.r, mc.cmds)
+		r = mc.c.multiCommand(mc.cmds)
 
-		exec_rs := mc.r.At(len(mc.r.elems) - 1)
+		exec_rs := r.At(len(r.elems) - 1)
 		if exec_rs.Error() == nil {
-			mc.r.elems = exec_rs.elems
+			r.elems = exec_rs.elems
 		} else {
 			if err := exec_rs.Error(); err != nil {
-				mc.r.err = err
+				r.err = err
 			} else {
-				mc.r.err = newError("unknown transaction error")
+				r.err = newError("unknown transaction error")
 			}
 		}
 	}
 
-	return mc.r
+	return r
 }
 
 // Command queues a command for later execution.
@@ -50,12 +50,10 @@ func (mc *MultiCommand) Command(cmd Command, args ...interface{}) {
 	mc.cmdCounter++
 }
 
-// Flush sends queued commands to the Redis server for execution and returns the returned Reply.
-// The Reply associated with the MultiCommand will be reseted.
-func (mc *MultiCommand) Flush() *Reply {
-	mc.c.multiCommand(mc.r, mc.cmds)
-	tmprs := mc.r
-	mc.r = &Reply{}
+// Flush sends queued commands to the Redis server for execution and
+// returns the returned Reply.
+func (mc *MultiCommand) Flush() (r *Reply) {
+	r = mc.c.multiCommand(mc.cmds)
 	mc.cmds = nil
-	return tmprs
+	return
 }

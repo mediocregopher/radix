@@ -38,9 +38,8 @@ type envCommand struct {
 
 // Envelope type for a multi command
 type envMultiCommand struct {
-	r        *Reply
 	cmds     []command
-	doneChan chan struct{}
+	doneChan chan *Reply
 }
 
 // Envelope type for read data
@@ -179,10 +178,10 @@ func (c *connection) command(cmd Command, args ...interface{}) *Reply {
 }
 
 // multicommand calls a Redis multi-command.
-func (c *connection) multiCommand(r *Reply, cmds []command) {
-	doneChan := make(chan struct{})
-	c.multiCommandChan <- &envMultiCommand{r, cmds, doneChan}
-	<-doneChan
+func (c *connection) multiCommand(cmds []command) *Reply {
+	doneChan := make(chan *Reply)
+	c.multiCommandChan <- &envMultiCommand{cmds, doneChan}
+	return <-doneChan
 }
 
 // subscribes sends a subscription request to the given channels and returns an error, if any.
@@ -393,24 +392,25 @@ func (c *connection) handleCommand(ec *envCommand) {
 }
 
 func (c *connection) handleMultiCommand(ec *envMultiCommand) {
+	r := new(Reply)
 	if err := c.writeRequest(ec.cmds...); err == nil {
-		ec.r.t = ReplyMulti
+		r.t = ReplyMulti
 		for i := 0; i < len(ec.cmds); i++ {
 			ed := c.receiveEnvData()
 			if ed == nil {
-				ec.r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
+				r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
 				break
 			} else {
 				reply := c.receiveReply(ed)
-				ec.r.elems = append(ec.r.elems, reply)
+				r.elems = append(r.elems, reply)
 			}
 		}
 	} else {
 		// Return error.
-		ec.r.err = newError(err.Error())
+		r.err = newError(err.Error())
 	}
 
-	ec.doneChan <- struct{}{}
+	ec.doneChan <- r
 }
 
 func (c *connection) handlePublishing(ed *envData) {
