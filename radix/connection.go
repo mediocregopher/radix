@@ -382,7 +382,7 @@ func (c *connection) handleCommand(ec *envCommand) {
 		if ed == nil {
 			r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
 		} else {
-			c.receiveReply(ed, r)
+			r = c.receiveReply(ed)
 		}
 	} else {
 		// Return error.
@@ -401,8 +401,8 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 				ec.r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
 				break
 			} else {
-				ec.r.elems = append(ec.r.elems, &Reply{})
-				c.receiveReply(ed, ec.r.elems[i])
+				reply := c.receiveReply(ed)
+				ec.r.elems = append(ec.r.elems, reply)
 			}
 		}
 	} else {
@@ -414,8 +414,7 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 }
 
 func (c *connection) handlePublishing(ed *envData) {
-	r := &Reply{}
-	c.receiveReply(ed, r)
+	r := c.receiveReply(ed)
 
 	if r.Type() == ReplyError {
 		// Error reply
@@ -597,7 +596,8 @@ func (c *connection) writeRequest(cmds ...command) error {
 	return c.rwc.Flush()
 }
 
-func (c *connection) receiveReply(ed *envData, r *Reply) {
+func (c *connection) receiveReply(ed *envData) *Reply {
+	r := new(Reply)
 	switch {
 	case ed.error != nil:
 		// Error reply
@@ -626,8 +626,8 @@ func (c *connection) receiveReply(ed *envData, r *Reply) {
 					r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
 					break
 				} else {
-					r.elems = append(r.elems, &Reply{})
-					c.receiveReply(ed, r.elems[i])
+					reply := c.receiveReply(ed)
+					r.elems = append(r.elems, reply)
 				}
 			}
 		}
@@ -639,4 +639,5 @@ func (c *connection) receiveReply(ed *envData, r *Reply) {
 		r.t = ReplyError
 		r.err = newError("invalid reply", ErrorInvalidReply)
 	}
+	return r
 }
