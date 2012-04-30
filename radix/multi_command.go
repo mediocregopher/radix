@@ -5,7 +5,6 @@ type MultiCommand struct {
 	transaction bool
 	c           *connection
 	cmds        []command
-	cmdCounter  int
 }
 
 func newMultiCommand(transaction bool, c *connection) *MultiCommand {
@@ -17,11 +16,11 @@ func newMultiCommand(transaction bool, c *connection) *MultiCommand {
 
 // Calls the given multi command function, flushes the
 // commands, and returns the returned Reply.
-func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
+func (mc *MultiCommand) process(userCommands func(*MultiCommand)) *Reply {
 	if mc.transaction {
 		mc.Command(Multi)
 	}
-	f(mc)
+	userCommands(mc)
 	var r *Reply
 	if !mc.transaction {
 		r = mc.c.multiCommand(mc.cmds)
@@ -47,7 +46,6 @@ func (mc *MultiCommand) process(f func(*MultiCommand)) *Reply {
 // Command queues a command for later execution.
 func (mc *MultiCommand) Command(cmd Command, args ...interface{}) {
 	mc.cmds = append(mc.cmds, command{cmd, args})
-	mc.cmdCounter++
 }
 
 // Flush sends queued commands to the Redis server for execution and
