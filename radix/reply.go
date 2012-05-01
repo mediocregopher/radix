@@ -134,16 +134,6 @@ func (r *Reply) Error() *Error {
 	return r.err
 }
 
-// ErrorString returns the error string of the error value of the reply or an empty string,
-// if the reply type is not ReplyError.
-func (r *Reply) ErrorString() string {
-	if r.err != nil {
-		return r.err.Error()
-	}
-
-	return ""
-}
-
 // Strings returns a multi-bulk reply as a slice of strings or an error.
 // The reply type must be ReplyMulti and its elements must be ReplyString.
 func (r *Reply) Strings() ([]string, error) {
