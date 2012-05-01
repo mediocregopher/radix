@@ -247,15 +247,8 @@ func newFuture() Future {
 	return make(chan *Reply, 1)
 }
 
-// setReply sets the reply of the Future to given the given reply.
-func (f Future) setReply(r *Reply) {
-	f <- r
-}
-
 // Reply returns the reply of the Future.
 // It blocks until the reply is available.
-func (f Future) Reply() (r *Reply) {
-	r = <-f
-	f <- r
-	return
+func (f Future) Reply() *Reply {
+	return <- f
 }
