@@ -394,7 +394,7 @@ func (c *connection) handleCommand(ec *envCommand) {
 func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 	r := new(Reply)
 	if err := c.writeRequest(ec.cmds...); err == nil {
-		r.t = ReplyMulti
+		r.Type = ReplyMulti
 		for i := 0; i < len(ec.cmds); i++ {
 			ed := c.receiveEnvData()
 			if ed == nil {
@@ -416,7 +416,7 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 func (c *connection) handlePublishing(ed *envData) {
 	r := c.receiveReply(ed)
 
-	if r.Type() == ReplyError {
+	if r.Type == ReplyError {
 		// Error reply
 		// NOTE: Redis SHOULD NOT send error replies while the connection is in pub/sub mode.
 		// These errors must always originate from radix itself.
@@ -427,12 +427,12 @@ func (c *connection) handlePublishing(ed *envData) {
 	var r0, r1 *Reply
 	m := &Message{}
 
-	if r.Type() != ReplyMulti || r.Len() < 3 {
+	if r.Type != ReplyMulti || r.Len() < 3 {
 		goto Invalid
 	}
 
 	r0 = r.At(0)
-	if r0.Type() != ReplyString {
+	if r0.Type != ReplyString {
 		goto Invalid
 	}
 
@@ -456,7 +456,7 @@ func (c *connection) handlePublishing(ed *envData) {
 
 	// second argument
 	r1 = r.At(1)
-	if r1.Type() != ReplyString {
+	if r1.Type != ReplyString {
 		goto Invalid
 	}
 
@@ -466,7 +466,7 @@ func (c *connection) handlePublishing(ed *envData) {
 
 		// number of subscriptions
 		r2 := r.At(2)
-		if r2.Type() != ReplyInteger {
+		if r2.Type != ReplyInteger {
 			goto Invalid
 		}
 
@@ -476,7 +476,7 @@ func (c *connection) handlePublishing(ed *envData) {
 
 		// number of subscriptions
 		r2 := r.At(2)
-		if r2.Type() != ReplyInteger {
+		if r2.Type != ReplyInteger {
 			goto Invalid
 		}
 
@@ -486,7 +486,7 @@ func (c *connection) handlePublishing(ed *envData) {
 
 		// payload
 		r2 := r.At(2)
-		if r2.Type() != ReplyString {
+		if r2.Type != ReplyString {
 			goto Invalid
 		}
 
@@ -496,7 +496,7 @@ func (c *connection) handlePublishing(ed *envData) {
 
 		// name of the originating channel
 		r2 := r.At(2)
-		if r2.Type() != ReplyString {
+		if r2.Type != ReplyString {
 			goto Invalid
 		}
 
@@ -504,7 +504,7 @@ func (c *connection) handlePublishing(ed *envData) {
 
 		// payload
 		r3 := r.At(3)
-		if r3.Type() != ReplyString {
+		if r3.Type != ReplyString {
 			goto Invalid
 		}
 
@@ -601,19 +601,19 @@ func (c *connection) receiveReply(ed *envData) *Reply {
 	switch {
 	case ed.error != nil:
 		// Error reply
-		r.t = ReplyError
+		r.Type = ReplyError
 		r.err = ed.error
 	case ed.str != nil:
 		// Status or bulk reply
-		r.t = ReplyString
+		r.Type = ReplyString
 		r.str = ed.str
 	case ed.int != nil:
 		// Integer reply
-		r.t = ReplyInteger
+		r.Type = ReplyInteger
 		r.int = ed.int
 	case ed.length >= 0:
 		// Multi-bulk reply
-		r.t = ReplyMulti
+		r.Type = ReplyMulti
 		if ed.length == 0 {
 			// Empty multi-bulk
 			r.elems = []*Reply{}
@@ -622,7 +622,7 @@ func (c *connection) receiveReply(ed *envData) *Reply {
 				ed := c.receiveEnvData()
 				if ed == nil {
 					// Timeout error
-					r.t = ReplyError
+					r.Type = ReplyError
 					r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
 					break
 				} else {
@@ -633,10 +633,10 @@ func (c *connection) receiveReply(ed *envData) *Reply {
 		}
 	case ed.length == -1:
 		// nil reply
-		r.t = ReplyNil
+		r.Type = ReplyNil
 	default:
 		// Invalid reply
-		r.t = ReplyError
+		r.Type = ReplyError
 		r.err = newError("invalid reply", ErrorInvalidReply)
 	}
 	return r

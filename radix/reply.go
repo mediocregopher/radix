@@ -32,21 +32,16 @@ const (
 
 // Reply holds a Redis reply.
 type Reply struct {
-	t     ReplyType
+	Type  ReplyType
 	str   *string
 	int   *int64
 	elems []*Reply
 	err   *Error
 }
 
-// Type returns the type of the reply.
-func (r *Reply) Type() ReplyType {
-	return r.t
-}
-
 // Nil returns true, if the reply is a nil reply, otherwise false.
 func (r *Reply) Nil() bool {
-	if r.t == ReplyNil {
+	if r.Type == ReplyNil {
 		return true
 	}
 
@@ -56,7 +51,7 @@ func (r *Reply) Nil() bool {
 // Str returns the reply value as a string or a nil, if the reply type is ReplyNil.
 // It panics, if the reply type is not ReplyNil, ReplyStatus or ReplyString.
 func (r *Reply) Str() string {
-	if !(r.t == ReplyNil || r.t == ReplyStatus || r.t == ReplyString) {
+	if !(r.Type == ReplyNil || r.Type == ReplyStatus || r.Type == ReplyString) {
 		panic("redis: string value is not available for this reply type")
 	}
 
@@ -71,7 +66,7 @@ func (r *Reply) Bytes() []byte {
 // Int64 returns the reply value as a int64.
 // It panics, if the reply type is not ReplyInteger.
 func (r *Reply) Int64() int64 {
-	if r.t != ReplyInteger {
+	if r.Type != ReplyInteger {
 		panic("redis: integer value is not available for this reply type")
 	}
 	return *r.int
@@ -85,7 +80,7 @@ func (r *Reply) Int() int {
 // Bool returns true, if the reply value equals to 1 or "1", otherwise false.
 // It panics, if the reply type is not ReplyInteger or ReplyString.
 func (r *Reply) Bool() bool {
-	switch r.t {
+	switch r.Type {
 	case ReplyInteger:
 		if r.Int() == 1 {
 			return true
@@ -112,7 +107,7 @@ func (r *Reply) Len() int {
 // Elems returns the elements (sub-replies) of a multi reply.
 // It panics, if the reply type is not ReplyMulti.
 func (r *Reply) Elems() []*Reply {
-	if !(r.t == ReplyMulti) {
+	if r.Type != ReplyMulti {
 		panic("redis: reply type is not ReplyMulti")
 	}
 
@@ -122,7 +117,7 @@ func (r *Reply) Elems() []*Reply {
 // At returns a Reply of a multi reply by its index.
 // It panics, if the reply type is not ReplyMulti or if the index is out of range.
 func (r *Reply) At(i int) *Reply {
-	if r.t != ReplyMulti {
+	if r.Type != ReplyMulti {
 		panic("redis: reply type is not ReplyMulti")
 	}
 
@@ -152,13 +147,13 @@ func (r *Reply) ErrorString() string {
 // Strings returns a multi-bulk reply as a slice of strings or an error.
 // The reply type must be ReplyMulti and its elements must be ReplyString.
 func (r *Reply) Strings() ([]string, error) {
-	if r.Type() != ReplyMulti {
+	if r.Type != ReplyMulti {
 		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
 	strings := make([]string, len(r.elems))
 	for i, v := range r.elems {
-		if v.Type() != ReplyString {
+		if v.Type != ReplyString {
 			return nil, errors.New("sub-reply type is not ReplyString")
 		}
 
@@ -173,7 +168,7 @@ func (r *Reply) Strings() ([]string, error) {
 func (r *Reply) Map() (map[string]*Reply, error) {
 	rmap := map[string]*Reply{}
 
-	if r.Type() != ReplyMulti {
+	if r.Type != ReplyMulti {
 		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
@@ -183,7 +178,7 @@ func (r *Reply) Map() (map[string]*Reply, error) {
 
 	for i := 0; i < r.Len()/2; i++ {
 		rkey := r.At(i * 2)
-		if rkey.Type() != ReplyString {
+		if rkey.Type != ReplyString {
 			return nil, errors.New("key element is not a string reply")
 		}
 		key := rkey.Str()
@@ -199,7 +194,7 @@ func (r *Reply) Map() (map[string]*Reply, error) {
 func (r *Reply) StringMap() (map[string]string, error) {
 	rmap := map[string]string{}
 
-	if r.Type() != ReplyMulti {
+	if r.Type != ReplyMulti {
 		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
@@ -209,13 +204,13 @@ func (r *Reply) StringMap() (map[string]string, error) {
 
 	for i := 0; i < r.Len()/2; i++ {
 		rkey := r.At(i * 2)
-		if rkey.Type() != ReplyString {
+		if rkey.Type != ReplyString {
 			return nil, errors.New("key element is not a string reply")
 		}
 		key := rkey.Str()
 
 		rval := r.At(i*2 + 1)
-		if rval.Type() != ReplyString {
+		if rval.Type != ReplyString {
 			return nil, errors.New("value element is not a string reply")
 		}
 		val := rval.Str()
@@ -230,7 +225,7 @@ func (r *Reply) StringMap() (map[string]string, error) {
 // This method is mainly used for debugging.
 // Use method Reply.Str for fetching a string reply.
 func (r *Reply) String() string {
-	switch r.t {
+	switch r.Type {
 	case ReplyError:
 		return r.err.Error()
 	case ReplyStatus:
