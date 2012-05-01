@@ -32,15 +32,15 @@ func setUpTest(c TI) {
 	}
 
 	r := rd.Command(Flushall)
-	if r.Error() != nil {
-		c.Fatalf("setUp FLUSHALL failed: %s", r.Error())
+	if r.Error != nil {
+		c.Fatalf("setUp FLUSHALL failed: %s", r.Error)
 	}
 }
 
 func tearDownTest(c TI) {
 	r := rd.Command(Flushall)
-	if r.Error() != nil {
-		c.Fatalf("tearDown FLUSHALL failed: %s", r.Error())
+	if r.Error != nil {
+		c.Fatalf("tearDown FLUSHALL failed: %s", r.Error)
 	}
 
 	rd.Close()
@@ -285,20 +285,20 @@ func (s *S) TestMultiCommand(c *C) {
 		mc.Command(Get, "foo")
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Error(), IsNil)
+	c.Check(r.At(0).Error, IsNil)
 	c.Check(r.At(1).Str(), Equals, "bar")
 
 	r = rd.MultiCommand(func(mc *MultiCommand) {
 		mc.Command(Set, "foo2", "baz")
 		mc.Command(Get, "foo2")
 		rmc := mc.Flush()
-		c.Check(rmc.At(0).Error(), IsNil)
+		c.Check(rmc.At(0).Error, IsNil)
 		c.Check(rmc.At(1).Str(), Equals, "baz")
 		mc.Command(Set, "foo2", "qux")
 		mc.Command(Get, "foo2")
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Error(), IsNil)
+	c.Check(r.At(0).Error, IsNil)
 	c.Check(r.At(1).Str(), Equals, "qux")
 }
 
@@ -333,8 +333,8 @@ func (s *S) TestComplexTransaction(c *C) {
 		rmc := mc.Flush()
 		c.Assert(rmc.Type, Equals, ReplyMulti)
 		c.Assert(rmc.Len(), Equals, 2)
-		c.Assert(rmc.At(0).Error(), IsNil)
-		c.Assert(rmc.At(1).Error(), IsNil)
+		c.Assert(rmc.At(0).Error, IsNil)
+		c.Assert(rmc.At(1).Error, IsNil)
 
 		mc.Command(Multi)
 		mc.Command(Set, "foo", "baz")
@@ -344,13 +344,13 @@ func (s *S) TestComplexTransaction(c *C) {
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 5)
-	c.Check(r.At(0).Error(), IsNil)
-	c.Check(r.At(1).Error(), IsNil)
-	c.Check(r.At(2).Error(), IsNil)
-	c.Check(r.At(3).Error(), NotNil)
+	c.Check(r.At(0).Error, IsNil)
+	c.Check(r.At(1).Error, IsNil)
+	c.Check(r.At(2).Error, IsNil)
+	c.Check(r.At(3).Error, NotNil)
 	c.Assert(r.At(4).Type, Equals, ReplyMulti)
 	c.Assert(r.At(4).Len(), Equals, 2)
-	c.Check(r.At(4).At(0).Error(), IsNil)
+	c.Check(r.At(4).At(0).Error, IsNil)
 	c.Check(r.At(4).At(1).Str(), Equals, "baz")
 
 	// Discarding transaction
@@ -363,11 +363,11 @@ func (s *S) TestComplexTransaction(c *C) {
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 5)
-	c.Check(r.At(0).Error(), IsNil)
-	c.Check(r.At(1).Error(), IsNil)
-	c.Check(r.At(2).Error(), IsNil)
-	c.Check(r.At(3).Error(), IsNil)
-	c.Check(r.At(4).Error(), IsNil)
+	c.Check(r.At(0).Error, IsNil)
+	c.Check(r.At(1).Error, IsNil)
+	c.Check(r.At(2).Error, IsNil)
+	c.Check(r.At(3).Error, IsNil)
+	c.Check(r.At(4).Error, IsNil)
 	c.Check(r.At(4).Str(), Equals, "bar")
 }
 
@@ -378,7 +378,7 @@ func (s *S) TestAsyncMultiCommand(c *C) {
 		mc.Command(Get, "foo")
 	}).Reply()
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Error(), IsNil)
+	c.Check(r.At(0).Error, IsNil)
 	c.Check(r.At(1).Str(), Equals, "bar")
 }
 
@@ -484,7 +484,7 @@ func (s *S) TestTCP(c *C) {
 	rdA, errA := NewClient(conf2)
 	c.Assert(errA, IsNil)
 	rep := rdA.Command(Echo, "Hello, World!")
-	c.Assert(rep.Error(), IsNil)
+	c.Assert(rep.Error, IsNil)
 	c.Check(rep.Str(), Equals, "Hello, World!")
 }
 
@@ -496,7 +496,7 @@ func (s *S) TestUnix(c *C) {
 	rdA, errA := NewClient(conf2)
 	c.Assert(errA, IsNil)
 	rep := rdA.Command(Echo, "Hello, World!")
-	c.Assert(rep.Error(), IsNil)
+	c.Assert(rep.Error, IsNil)
 	c.Check(rep.Str(), Equals, "Hello, World!")
 }
 
@@ -516,9 +516,9 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 		rmc := mc.Flush()
 		c.Assert(rmc.Type, Equals, ReplyMulti)
 		c.Assert(rmc.Len(), Equals, 3)
-		c.Assert(rmc.At(0).Error(), IsNil)
-		c.Assert(rmc.At(1).Error(), IsNil)
-		c.Assert(rmc.At(2).Error(), IsNil)
+		c.Assert(rmc.At(0).Error, IsNil)
+		c.Assert(rmc.At(1).Error, IsNil)
+		c.Assert(rmc.At(2).Error, IsNil)
 
 		time.Sleep(time.Second * 2)
 		mc.Command(Set, "foo", 2)
@@ -537,8 +537,8 @@ func (s *Long) TestTimeout(c *C) {
 	rdB, errB := NewClient(conf2)
 	c.Assert(errB, IsNil)
 	rB := rdB.Command(Ping)
-	c.Log(rB.Error())
-	c.Check(rB.Error(), NotNil)
+	c.Log(rB.Error)
+	c.Check(rB.Error, NotNil)
 }
 
 // Test illegal database.
@@ -548,7 +548,7 @@ func (s *Long) TestIllegalDatabase(c *C) {
 	rdA, errA := NewClient(conf2)
 	c.Assert(errA, IsNil)
 	rA := rdA.Command(Ping)
-	c.Check(rA.Error(), NotNil)
+	c.Check(rA.Error, NotNil)
 }
 
 //* Benchmarks

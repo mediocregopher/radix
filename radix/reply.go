@@ -36,7 +36,7 @@ type Reply struct {
 	str   *string
 	int   *int64
 	elems []*Reply
-	err   *Error
+	Error *Error
 }
 
 // Nil returns true, if the reply is a nil reply, otherwise false.
@@ -128,12 +128,6 @@ func (r *Reply) At(i int) *Reply {
 	return r.elems[i]
 }
 
-// Error returns the error value of the reply or nil,
-// if the reply type is not ReplyError.
-func (r *Reply) Error() *Error {
-	return r.err
-}
-
 // Strings returns a multi-bulk reply as a slice of strings or an error.
 // The reply type must be ReplyMulti and its elements must be ReplyString.
 func (r *Reply) Strings() ([]string, error) {
@@ -217,7 +211,7 @@ func (r *Reply) StringMap() (map[string]string, error) {
 func (r *Reply) String() string {
 	switch r.Type {
 	case ReplyError:
-		return r.err.Error()
+		return r.Error.Error()
 	case ReplyStatus:
 		fallthrough
 	case ReplyString:

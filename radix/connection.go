@@ -137,30 +137,30 @@ func newConnection(c *Configuration) (*connection, *Error) {
 
 	// Select database.
 	r := co.command(Select, c.Database)
-	if r.Error() != nil {
-		if !c.NoLoadingRetry && r.Error().Test(ErrorLoading) {
+	if r.Error != nil {
+		if !c.NoLoadingRetry && r.Error.Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
 			r = co.command(Select, c.Database)
-			for r.Error() != nil {
-				if !r.Error().Test(ErrorLoading) {
+			for r.Error != nil {
+				if !r.Error.Test(ErrorLoading) {
 					co.close()
-					return nil, newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
+					return nil, newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
 				}
 				time.Sleep(time.Second)
 				r = co.command(Select, c.Database)
 			}
 		} else {
 			co.close()
-			return nil, newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
+			return nil, newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
 		}
 	}
 
 	// Authenticate if needed.
 	if c.Auth != "" {
 		r = co.command(Auth, c.Auth)
-		if r.Error() != nil {
+		if r.Error != nil {
 			co.close()
-			return nil, newErrorExt("failed to authenticate", r.Error(), ErrorAuth, ErrorConnection)
+			return nil, newErrorExt("failed to authenticate", r.Error, ErrorAuth, ErrorConnection)
 		}
 	}
 
@@ -375,17 +375,17 @@ func (c *connection) receiveEnvData() *envData {
 }
 
 func (c *connection) handleCommand(ec *envCommand) {
+	// FIXME
 	r := new(Reply)
-	if err := c.writeRequest(ec.cmd); err == nil {
+	if err := c.writeRequest(ec.cmd); err != nil {
+		r.Error = newError(err.Error())
+	} else {
 		ed := c.receiveEnvData()
 		if ed == nil {
-			r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
+			r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
 		} else {
 			r = c.receiveReply(ed)
 		}
-	} else {
-		// Return error.
-		r.err = newError(err.Error())
 	}
 
 	ec.replyChan <- r
@@ -398,7 +398,7 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 		for i := 0; i < len(ec.cmds); i++ {
 			ed := c.receiveEnvData()
 			if ed == nil {
-				r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
+				r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
 				break
 			} else {
 				reply := c.receiveReply(ed)
@@ -406,8 +406,7 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 			}
 		}
 	} else {
-		// Return error.
-		r.err = newError(err.Error())
+		r.Error = newError(err.Error())
 	}
 
 	ec.doneChan <- r
@@ -420,7 +419,7 @@ func (c *connection) handlePublishing(ed *envData) {
 		// Error reply
 		// NOTE: Redis SHOULD NOT send error replies while the connection is in pub/sub mode.
 		// These errors must always originate from radix itself.
-		c.messageChan <- &Message{Type: MessageError, Error: r.Error()}
+		c.messageChan <- &Message{Type: MessageError, Error: r.Error}
 		return
 	}
 
@@ -602,7 +601,7 @@ func (c *connection) receiveReply(ed *envData) *Reply {
 	case ed.error != nil:
 		// Error reply
 		r.Type = ReplyError
-		r.err = ed.error
+		r.Error = ed.error
 	case ed.str != nil:
 		// Status or bulk reply
 		r.Type = ReplyString
@@ -623,7 +622,7 @@ func (c *connection) receiveReply(ed *envData) *Reply {
 				if ed == nil {
 					// Timeout error
 					r.Type = ReplyError
-					r.err = newError("timeout error", ErrorTimeout, ErrorConnection)
+					r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
 					break
 				} else {
 					reply := c.receiveReply(ed)
@@ -637,7 +636,7 @@ func (c *connection) receiveReply(ed *envData) *Reply {
 	default:
 		// Invalid reply
 		r.Type = ReplyError
-		r.err = newError("invalid reply", ErrorInvalidReply)
+		r.Error = newError("invalid reply", ErrorInvalidReply)
 	}
 	return r
 }

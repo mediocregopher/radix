@@ -48,7 +48,7 @@ func (c *Client) Command(cmd Command, args ...interface{}) *Reply {
 	// Connection handling
 	conn, err := c.pool.pull()
 	if err != nil {
-		return &Reply{err: err}
+		return &Reply{Error: err}
 	}
 
 	defer c.pool.push(conn)
@@ -71,7 +71,7 @@ func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
 	conn, err := c.pool.pull()
 
 	if err != nil {
-		return &Reply{err: err}
+		return &Reply{Error: err}
 	}
 
 	defer c.pool.push(conn)

@@ -28,14 +28,14 @@ func (mc *MultiCommand) process(userCommands func(*MultiCommand)) *Reply {
 		mc.Command(Exec)
 		r = mc.c.multiCommand(mc.cmds)
 
-		exec_rs := r.At(len(r.elems) - 1)
-		if exec_rs.Error() == nil {
-			r.elems = exec_rs.elems
+		execReply := r.At(len(r.elems) - 1)
+		if execReply.Error == nil {
+			r.elems = execReply.elems
 		} else {
-			if err := exec_rs.Error(); err != nil {
-				r.err = err
+			if execReply.Error != nil {
+				r.Error = execReply.Error
 			} else {
-				r.err = newError("unknown transaction error")
+				r.Error = newError("unknown transaction error")
 			}
 		}
 	}
