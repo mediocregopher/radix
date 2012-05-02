@@ -1,4 +1,4 @@
-package radix
+package redis
 
 import (
 	"container/list"
@@ -36,7 +36,7 @@ func (cp *connPool) push(conn *connection) {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 
-	if !conn.closed {
+	if conn.closed == 0 {
 		cp.free.PushBack(conn)
 	} else {
 		delete(cp.all, conn)

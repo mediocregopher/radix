@@ -1,13 +1,15 @@
-package radix
+package redis
 
 import (
 	"bufio"
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"reflect"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
@@ -77,7 +79,7 @@ type connection struct {
 	database         int
 	multiCounter     int
 	timeout          time.Duration
-	closed           bool
+	closed           int32 // manipulated with atomic primitives
 	config           *Configuration
 }
 
@@ -92,6 +94,7 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 		database:         config.Database,
 		multiCounter:     -1,
 		timeout:          time.Duration(config.Timeout),
+		closed:           1,
 		config:           config,
 	}
 
@@ -104,6 +107,11 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 }
 
 func (c *connection) init() *Error {
+	if !atomic.CompareAndSwapInt32(&c.closed, 1, 0) {
+		log.Printf(radixError("tried to init a connection when not closed, ignoring"))
+		return nil
+	}
+
 	// Backend must be started before connecting for closing purposes, in case of error.
 	go c.backend()
 
@@ -144,30 +152,30 @@ func (c *connection) init() *Error {
 
 	// Select database.
 	r := c.command(Select, c.config.Database)
-	if r.Error() != nil {
-		if !c.config.NoLoadingRetry && r.Error().Test(ErrorLoading) {
+	if r.Error != nil {
+		if !c.config.NoLoadingRetry && r.Error.Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
 			r = c.command(Select, c.config.Database)
-			for r.Error() != nil {
-				if !r.Error().Test(ErrorLoading) {
+			for r.Error != nil {
+				if !r.Error.Test(ErrorLoading) {
 					c.close()
-					return newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
+					return newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
 				}
 				time.Sleep(time.Second)
 				r = c.command(Select, c.config.Database)
 			}
 		} else {
 			c.close()
-			return newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
+			return newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
 		}
 	}
 
 	// Authenticate if needed.
 	if c.config.Auth != "" {
 		r = c.command(Auth, c.config.Auth)
-		if r.Error() != nil {
+		if r.Error != nil {
 			c.close()
-			return newErrorExt("failed to authenticate", r.Error(), ErrorAuth, ErrorConnection)
+			return newErrorExt("failed to authenticate", r.Error, ErrorAuth, ErrorConnection)
 		}
 	}
 	return nil
@@ -175,6 +183,10 @@ func (c *connection) init() *Error {
 
 // command calls a Redis command.
 func (c *connection) command(cmd Command, args ...interface{}) *Reply {
+	if c.closed == 1 {
+		c.init()
+	}
+
 	replyChan := make(chan *Reply)
 	c.commandChan <- &envCommand{
 		cmd:       command{cmd, args},
@@ -345,7 +357,7 @@ func (c *connection) backend() {
 				c.rwc.Close()
 			}
 
-			c.closed = true
+			atomic.CompareAndSwapInt32(&c.closed, 0, 1)
 			return
 		case ec := <-c.commandChan:
 			// Received a command.

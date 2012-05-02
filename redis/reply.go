@@ -1,4 +1,4 @@
-package radix
+package redis
 
 import (
 	"errors"

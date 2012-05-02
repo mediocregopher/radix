@@ -1,4 +1,4 @@
-package radix
+package redis
 
 // MultiCommand holds data for a Redis multi command.
 type MultiCommand struct {

@@ -1,4 +1,4 @@
-package radix
+package redis
 
 type ErrorFlag uint8
 
@@ -34,7 +34,7 @@ func newErrorExt(msg string, err *Error, flags ...ErrorFlag) *Error {
 
 // Error returns a string representation of the error.
 func (e *Error) Error() string {
-	return "redis: " + e.msg
+	return radixError(e.msg)
 }
 
 // Test returns true, if any of the given error flags is set in the error, otherwise false.
@@ -45,4 +45,8 @@ func (e *Error) Test(flags ...ErrorFlag) bool {
 		}
 	}
 	return false
+}
+
+func radixError(msg string) string {
+	return "redis: " + msg
 }

@@ -4,10 +4,19 @@ package main
 
 import (
 	"fmt"
-	. "github.com/fzzbt/radix/radix"
+	. "github.com/fzzbt/radix/redis"
 	"strconv"
 	"time"
 )
+
+// Return a string representation of the error in the given reply or an empty string, 
+// if it is not an error reply.
+func ErrorString(rep *Reply) string {
+	if rep.Error != nil {
+		return rep.Error.Error()
+	}
+	return ""
+}
 
 func main() {
 	var c *Client
@@ -31,8 +40,8 @@ func main() {
 
 	//** Blocking calls
 	rep := c.Command(Flushdb)
-	if rep.Error() != nil {
-		fmt.Printf("flushdb failed: %s\n", rep.Error())
+	if rep.Error != nil {
+		fmt.Printf("flushdb failed: %s\n", rep.Error)
 		return
 	}
 
@@ -46,20 +55,20 @@ func main() {
 	// Alternatively:
 	// rep = c.Command("mset", "mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
 
-	if rep.Error() != nil {
-		fmt.Printf("mset failed: %s\n", rep.Error())
+	if rep.Error != nil {
+		fmt.Printf("mset failed: %s\n", rep.Error)
 		return
 	}
 
 	rep = c.Command(Get, "mykey1")
-	switch rep.Type() {
+	switch rep.Type {
 	case ReplyString:
 		fmt.Printf("mykey1: %s\n", rep.Str())
 	case ReplyNil:
 		fmt.Println("mykey1 does not exist")
 		return
 	case ReplyError:
-		fmt.Printf("get failed: %s\n", rep.Error())
+		fmt.Printf("get failed: %s\n", rep.Error)
 		return
 	default:
 		// Shouldn't generally happen
@@ -69,9 +78,9 @@ func main() {
 
 	//* Another error handling pattern
 	rep = c.Command(Get, "mykey2")
-	if rep.Type() != ReplyString {
-		if rep.Error() != nil {
-			fmt.Printf("get failed: %s\n", rep.Error())
+	if rep.Type != ReplyString {
+		if rep.Error != nil {
+			fmt.Printf("get failed: %s\n", rep.Error)
 		} else {
 			fmt.Println("unexpected reply type")
 		}
@@ -80,30 +89,31 @@ func main() {
 
 	fmt.Printf("mykey2: %s\n", rep.Str())
 
-	//* Simplest error handling pattern
-	//  Note that ErrorString will return "", if the reply type is not ReplyError.
-	//  eg. if mykey3 would not exist, ReplyNil would be returned, Not ReplyError.
+	//* Simplified error handling pattern
+	//  ErrorString returns "", if the reply type is not ReplyError.
+	//  eg. if mykey3 would not exist, the reply would have type ReplyNil, and "" would be returned,
+    //  not ReplyError.
 	rep = c.Command(Get, "mykey3")
-	if rep.Type() != ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
+	if rep.Type != ReplyString {
+		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
 		return
 	}
 
-	fmt.Printf("mykey2: %s\n", rep.Str())
+	fmt.Printf("mykey3: %s\n", rep.Str())
 
 	//* List handling
 	mylist := []string{"foo", "bar", "qux"}
 	rep = c.Command(Rpush, "mylist", mylist)
 	// Alternativaly:
 	// rep = c.Command(Rpush, "mylist", "foo", "bar", "qux")
-	if rep.Error() != nil {
-		fmt.Printf("rpush failed: %s\n", rep.Error())
+	if rep.Error != nil {
+		fmt.Printf("rpush failed: %s\n", rep.Error)
 		return
 	}
 
 	rep = c.Command(Lrange, "mylist", 0, -1)
-	if rep.Error() != nil {
-		fmt.Printf("lrange failed: %s\n", rep.Error())
+	if rep.Error != nil {
+		fmt.Printf("lrange failed: %s\n", rep.Error)
 		return
 	}
 
@@ -119,14 +129,14 @@ func main() {
 	rep = c.Command(Hmset, "myhash", mykeys)
 	// Alternatively:
 	// rep = c.Command(Hmset, "myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
-	if rep.Error() != nil {
-		fmt.Printf("hmset failed: %s\n", rep.Error())
+	if rep.Error != nil {
+		fmt.Printf("hmset failed: %s\n", rep.Error)
 		return
 	}
 
 	rep = c.Command(Hgetall, "myhash")
-	if rep.Error() != nil {
-		fmt.Printf("hgetall failed: %s\n", rep.Error())
+	if rep.Error != nil {
+		fmt.Printf("hgetall failed: %s\n", rep.Error)
 		return
 	}
 
@@ -144,14 +154,14 @@ func main() {
 		mc.Command(Get, "multikey")
 	})
 
-	if rep.Error() != nil {
+	if rep.Error != nil {
 		fmt.Printf("MultiCommand failed: %s\n", err.Error())
 		return
 	}
 
 	// Note that you can now assume that rep.Len() == 2 regardless whether all of the commands succeeded
-	if rep.At(1).Type() != ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
+	if rep.At(1).Type != ReplyString {
+		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
 		return
 	}
 
@@ -163,13 +173,13 @@ func main() {
 		mc.Command(Get, "trankey")
 	})
 
-	if rep.Error() != nil {
+	if rep.Error != nil {
 		fmt.Printf("Transaction failed: %s\n", err.Error())
 		return
 	}
 
-	if rep.At(1).Type() != ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
+	if rep.At(1).Type != ReplyString {
+		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
 		return
 	}
 
@@ -185,11 +195,11 @@ func main() {
 			mc.Command(Get, key)
 			rep := mc.Flush()
 
-			if rep.Error() != nil {
+			if rep.Error != nil {
 				return
 			}
 
-			if rep.At(1).Type() == ReplyString {
+			if rep.At(1).Type == ReplyString {
 				var err error
 				curval, err = strconv.Atoi(rep.At(1).Str())
 				if err != nil {
@@ -209,8 +219,8 @@ func main() {
 	myIncr("ctrankey")
 
 	rep = c.Command(Get, "ctrankey")
-	if rep.Type() != ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
+	if rep.Type != ReplyString {
+		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
 		return
 	}
 
@@ -218,8 +228,8 @@ func main() {
 
 	//** Asynchronous calls
 	rep = c.Command(Set, "asynckey", "asyncval")
-	if rep.Error() != nil {
-		fmt.Printf("set failed: %s\n", rep.Error())
+	if rep.Error != nil {
+		fmt.Printf("set failed: %s\n", rep.Error)
 		return
 	}
 
@@ -229,8 +239,8 @@ func main() {
 
 	// block until reply is available
 	rep = fut.Reply()
-	if rep.Type() != ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", rep.ErrorString())
+	if rep.Type != ReplyString {
+		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
 		return
 	}
 
