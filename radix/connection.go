@@ -78,93 +78,99 @@ type connection struct {
 	multiCounter     int
 	timeout          time.Duration
 	closed           bool
+	config           *Configuration
 }
 
-func newConnection(c *Configuration) (*connection, *Error) {
-	co := &connection{
+func newConnection(config *Configuration) (conn *connection, err *Error) {
+	conn = &connection{
 		commandChan:      make(chan *envCommand, 1),
 		multiCommandChan: make(chan *envMultiCommand, 1),
 		subscriptionChan: make(chan *envSubscription, 1),
 		dataChan:         make(chan *envData, connectionChanBufSize),
 		messageChan:      make(chan *Message, connectionChanBufSize),
 		closerChan:       make(chan struct{}),
-		database:         c.Database,
+		database:         config.Database,
 		multiCounter:     -1,
-		timeout:          time.Duration(c.Timeout),
+		timeout:          time.Duration(config.Timeout),
+		config:           config,
 	}
 
+	if err = conn.init(); err != nil {
+		conn.close()
+		conn = nil
+	}
+
+	return
+}
+
+func (c *connection) init() *Error {
 	// Backend must be started before connecting for closing purposes, in case of error.
-	go co.backend()
+	go c.backend()
 
 	// Establish a connection.
-	if c.Address != "" {
+	if c.config.Address != "" {
 		// tcp connection
-		tcpAddr, err := net.ResolveTCPAddr("tcp", c.Address)
-
+		tcpAddr, err := net.ResolveTCPAddr("tcp", c.config.Address)
 		if err != nil {
-			co.close()
-			return nil, newError(err.Error(), ErrorConnection)
+			c.close()
+			return newError(err.Error(), ErrorConnection)
 		}
 
 		conn, err := net.DialTCP("tcp", nil, tcpAddr)
-
 		if err != nil {
-			co.close()
-			return nil, newError(err.Error(), ErrorConnection)
+			c.close()
+			return newError(err.Error(), ErrorConnection)
 		}
 
-		co.rwc = &bufioReadWriteCloser{bufio.NewReader(conn), bufio.NewWriter(conn), conn}
+		c.rwc = &bufioReadWriteCloser{bufio.NewReader(conn), bufio.NewWriter(conn), conn}
 	} else {
 		// unix connection
-		unixAddr, err := net.ResolveUnixAddr("unix", c.Path)
-
+		unixAddr, err := net.ResolveUnixAddr("unix", c.config.Path)
 		if err != nil {
-			co.close()
-			return nil, newError(err.Error(), ErrorConnection)
+			c.close()
+			return newError(err.Error(), ErrorConnection)
 		}
 
 		conn, err := net.DialUnix("unix", nil, unixAddr)
-
 		if err != nil {
-			co.close()
-			return nil, newError(err.Error(), ErrorConnection)
+			c.close()
+			return newError(err.Error(), ErrorConnection)
 		}
 
-		co.rwc = &bufioReadWriteCloser{bufio.NewReader(conn), bufio.NewWriter(conn), conn}
+		c.rwc = &bufioReadWriteCloser{bufio.NewReader(conn), bufio.NewWriter(conn), conn}
 	}
 
-	go co.receiver()
+	go c.receiver()
 
 	// Select database.
-	r := co.command(Select, c.Database)
-	if r.Error != nil {
-		if !c.NoLoadingRetry && r.Error.Test(ErrorLoading) {
+	r := c.command(Select, c.config.Database)
+	if r.Error() != nil {
+		if !c.config.NoLoadingRetry && r.Error().Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
-			r = co.command(Select, c.Database)
-			for r.Error != nil {
-				if !r.Error.Test(ErrorLoading) {
-					co.close()
-					return nil, newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
+			r = c.command(Select, c.config.Database)
+			for r.Error() != nil {
+				if !r.Error().Test(ErrorLoading) {
+					c.close()
+					return newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
 				}
 				time.Sleep(time.Second)
-				r = co.command(Select, c.Database)
+				r = c.command(Select, c.config.Database)
 			}
 		} else {
-			co.close()
-			return nil, newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
+			c.close()
+			return newErrorExt(r.Error().Error(), r.Error(), ErrorConnection)
 		}
 	}
 
 	// Authenticate if needed.
-	if c.Auth != "" {
-		r = co.command(Auth, c.Auth)
-		if r.Error != nil {
-			co.close()
-			return nil, newErrorExt("failed to authenticate", r.Error, ErrorAuth, ErrorConnection)
+	if c.config.Auth != "" {
+		r = c.command(Auth, c.config.Auth)
+		if r.Error() != nil {
+			c.close()
+			return newErrorExt("failed to authenticate", r.Error(), ErrorAuth, ErrorConnection)
 		}
 	}
-
-	return co, nil
+	return nil
 }
 
 // command calls a Redis command.
