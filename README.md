@@ -117,7 +117,6 @@ If you make contributions to the project, please follow the guidelines below:
 
 *  Maximum line-width is 110 characters.
 *  Run "gofmt -tabs=true -tabwidth=4" for any Go code before committing. 
-   You may do this for all code files by running "make format".
 *  Any copyright notices, etc. should not be put in any files containing program code to avoid clutter. 
    Place them in separate files instead. 
 *  Avoid commenting trivial or otherwise obvious code.
