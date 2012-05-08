@@ -50,7 +50,7 @@ func tearDownTest(c TI) {
 type S struct{}
 type Long struct{}
 
-var long = flag.Bool("long", false, "Include blocking tests")
+var long = flag.Bool("long", false, "Include long running tests")
 
 func init() {
 	Suite(&S{})
