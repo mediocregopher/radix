@@ -32,7 +32,7 @@ type command struct {
 
 // Envelope type for a command
 type envCommand struct {
-	cmd      command
+	cmd       command
 	replyChan chan *Reply
 }
 
@@ -173,7 +173,7 @@ func newConnection(c *Configuration) (*connection, *Error) {
 func (c *connection) command(cmd Command, args ...interface{}) *Reply {
 	replyChan := make(chan *Reply)
 	c.commandChan <- &envCommand{
-		cmd: command{cmd, args},
+		cmd:       command{cmd, args},
 		replyChan: replyChan,
 	}
 	return <-replyChan
