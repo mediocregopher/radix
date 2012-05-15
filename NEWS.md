@@ -11,6 +11,14 @@
 
 * * *
 
+### 2012-05-16 Release v0.1.5
+
++ Package name changed to redis (project name is still radix).
++ Merged commits from Bobby Powers.
+    + Fix for memory leak in connection closing.
+	+ Fix for reconnection.
+	+ Minor changes to Reply API.
+
 ### 2012-04-20 Release v0.1.4
 
 + New API for commands (thanks Bobby Powers).
