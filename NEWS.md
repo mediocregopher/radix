@@ -1,6 +1,6 @@
 ###### Notice
 
-*This file documents the changes in **radix** versions that are listed below.*
+*This file documents the changes in **Radix** versions that are listed below.*
 
 *Items should be added to this file as:*
 
@@ -13,7 +13,7 @@
 
 ### 2012-05-16 Release v0.1.5
 
-+ Package name changed to redis (project name is still radix).
++ Package name changed to redis (project name is still Radix).
 + Merged commits from Bobby Powers.
     + Fix for memory leak in connection closing.
 	+ Fix for reconnection.
@@ -35,7 +35,7 @@
 ### 2012-03-06 Release v0.1.2
 
 + Various small fixes to make the package work with Go weekly/Go 1.
-+ Renames the package name to radix.
++ Renamed the package name to radix.
 + Removed Makefiles as Go 1's "go build" deprecates them.
 + Moved files from redis/ to the root directory of the project.
 + Rewrote most of the godoc strings to match more Go conventions.

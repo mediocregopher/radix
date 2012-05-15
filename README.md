@@ -1,8 +1,8 @@
-radix
+Radix
 =====
 
-radix is an asynchronous Redis client for Go.
-radix was originally forked from the Tideland-rdc redis client (http://code.google.com/p/tideland-rdc/)
+Radix is an asynchronous Redis client for Go.
+Radix was originally forked from the Tideland-rdc redis client (http://code.google.com/p/tideland-rdc/)
 developed by Frank Mueller.
 
 
@@ -56,7 +56,7 @@ The default is set to 10 connections which should be fine for around 99% of case
 However, note that each Subscription instance requires its own connection until it's closed.
 
 Sometimes Redis may give a LOADING error when it is loading keys from the disk.
-The default behaviour of radix is to retry connecting until Redis is done with it, 
+The default behaviour of Radix is to retry connecting until Redis is done with it, 
 but you may wish to override this behaviour with the NoLoadingRetry parameter.
 
 Simple blocking commands are executed using Client.Command and Client.AsyncCommand methods.
@@ -132,6 +132,6 @@ when submitting their first commit. See the CONTRIBUTORS file for details.
 
 ## Copyright and licensing
 
-*Copyright 2012 The "radix" Authors*. See file AUTHORS and CONTRIBUTORS.  
+*Copyright 2012 The "Radix" Authors*. See file AUTHORS and CONTRIBUTORS.  
 Unless otherwise noted, the source files are distributed under the
 *BSD 3-Clause License* found in the LICENSE file.
