@@ -40,7 +40,7 @@ func (e *Error) Error() string {
 // Test returns true, if any of the given error flags is set in the error, otherwise false.
 func (e *Error) Test(flags ...ErrorFlag) bool {
 	for _, f := range flags {
-		if e.flags & f > 0 {
+		if e.flags&f > 0 {
 			return true
 		}
 	}

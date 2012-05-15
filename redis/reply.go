@@ -244,5 +244,5 @@ func newFuture() Future {
 // Reply returns the reply of the Future.
 // It blocks until the reply is available.
 func (f Future) Reply() *Reply {
-	return <- f
+	return <-f
 }

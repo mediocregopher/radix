@@ -1,25 +1,27 @@
 radix
 =====
 
-radix is a package for Go that implements an asynchronous Redis client.
+radix is an asynchronous Redis client for Go.
 radix was originally forked from the Tideland-rdc redis client (http://code.google.com/p/tideland-rdc/)
 developed by Frank Mueller.
 
+
 ## Installation
 
-    go get github.com/fzzbt/radix/radix
+    go get github.com/fzzbt/radix/redis
 
 To run the tests:
 
-    cd $GOROOT/src/pkg/github.com/fzzbt/radix/radix
+    cd $GOROOT/src/pkg/github.com/fzzbt/radix/redis
     go test -v -bench=".*"
+
 
 ## Getting started
 
 Creating a Client instance is done as follows:
 
 ```go
-	. import "github.com/fzzbt/radix/radix"
+	. import "github.com/fzzbt/radix/redis"
 
 	...
 
@@ -102,13 +104,13 @@ take a look at the example program in `example/example.go`.
 
 ## API reference
 
-API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix/radix.
+API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix/redis.
 
 Alternatively, run godoc for API reference:
 
 	godoc -http=:8080
 
-and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/radix.
+and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/redis.
 
 
 ## HACKING
@@ -116,7 +118,7 @@ and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/radix
 If you make contributions to the project, please follow the guidelines below:
 
 *  Maximum line-width is 110 characters.
-*  Run "gofmt -tabs=true -tabwidth=4" for any Go code before committing. 
+*  Run "gofmt -tabs=true -tabwidth=4 -w redis/" before pushing your code from your repository. 
 *  Any copyright notices, etc. should not be put in any files containing program code to avoid clutter. 
    Place them in separate files instead. 
 *  Avoid commenting trivial or otherwise obvious code.
