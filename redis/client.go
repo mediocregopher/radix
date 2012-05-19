@@ -53,7 +53,7 @@ func (c *Client) command(cmd cmdName, args ...interface{}) *Reply {
 	return conn.command(cmdName(cmd), args...)
 }
 
-// Command calls a Redis command.
+// Command calls the given Redis command.
 func (c *Client) Command(cmd string, args ...interface{}) *Reply {
 	return c.command(cmdName(cmd), args...)
 }
@@ -68,7 +68,7 @@ func (c *Client) asyncCommand(cmd cmdName, args ...interface{}) Future {
 	return f
 }
 
-// AsyncCommand calls a Redis command asynchronously.
+// AsyncCommand calls the given Redis command asynchronously.
 func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 	return c.asyncCommand(cmdName(cmd), args...)
 }
@@ -85,7 +85,7 @@ func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
 	return newMultiCommand(transaction, conn).process(f)
 }
 
-// MultiCommand calls a multi-command.
+// MultiCommand executes the given multi-command.
 func (c *Client) MultiCommand(f func(*MultiCommand)) *Reply {
 	return c.multiCommand(false, f)
 }

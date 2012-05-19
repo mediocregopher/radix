@@ -142,1610 +142,2012 @@ const (
 	zunionstore_      cmdName = "zunionstore"
 )
 
+// Append calls Redis append command. 
 func (c *Client) Append(args ...interface{}) *Reply {
 	return c.command(append_, args...)
 }
 
+// Asking calls Redis asking command. 
 func (c *Client) Asking(args ...interface{}) *Reply {
 	return c.command(asking_, args...)
 }
 
+// Auth calls Redis auth command. 
 func (c *Client) Auth(args ...interface{}) *Reply {
 	return c.command(auth_, args...)
 }
 
+// Bgrewriteaof calls Redis bgrewriteaof command. 
 func (c *Client) Bgrewriteaof(args ...interface{}) *Reply {
 	return c.command(bgrewriteaof_, args...)
 }
 
+// Bgsave calls Redis bgsave command. 
 func (c *Client) Bgsave(args ...interface{}) *Reply {
 	return c.command(bgsave_, args...)
 }
 
+// Blpop calls Redis blpop command. 
 func (c *Client) Blpop(args ...interface{}) *Reply {
 	return c.command(blpop_, args...)
 }
 
+// Brpop calls Redis brpop command. 
 func (c *Client) Brpop(args ...interface{}) *Reply {
 	return c.command(brpop_, args...)
 }
 
+// Brpoplpush calls Redis brpoplpush command. 
 func (c *Client) Brpoplpush(args ...interface{}) *Reply {
 	return c.command(brpoplpush_, args...)
 }
 
+// Client calls Redis client command. 
 func (c *Client) Client(args ...interface{}) *Reply {
 	return c.command(client_, args...)
 }
 
+// Cluster calls Redis cluster command. 
 func (c *Client) Cluster(args ...interface{}) *Reply {
 	return c.command(cluster_, args...)
 }
 
+// Config calls Redis config command. 
 func (c *Client) Config(args ...interface{}) *Reply {
 	return c.command(config_, args...)
 }
 
+// Dbsize calls Redis dbsize command. 
 func (c *Client) Dbsize(args ...interface{}) *Reply {
 	return c.command(dbsize_, args...)
 }
 
+// Debug calls Redis debug command. 
 func (c *Client) Debug(args ...interface{}) *Reply {
 	return c.command(debug_, args...)
 }
 
+// Decr calls Redis decr command. 
 func (c *Client) Decr(args ...interface{}) *Reply {
 	return c.command(decr_, args...)
 }
 
+// Decrby calls Redis decrby command. 
 func (c *Client) Decrby(args ...interface{}) *Reply {
 	return c.command(decrby_, args...)
 }
 
+// Del calls Redis del command. 
 func (c *Client) Del(args ...interface{}) *Reply {
 	return c.command(del_, args...)
 }
 
+// Discard calls Redis discard command. 
 func (c *Client) Discard(args ...interface{}) *Reply {
 	return c.command(discard_, args...)
 }
 
+// Dump calls Redis dump command. 
 func (c *Client) Dump(args ...interface{}) *Reply {
 	return c.command(dump_, args...)
 }
 
+// Echo calls Redis echo command. 
 func (c *Client) Echo(args ...interface{}) *Reply {
 	return c.command(echo_, args...)
 }
 
+// Eval calls Redis eval command. 
 func (c *Client) Eval(args ...interface{}) *Reply {
 	return c.command(eval_, args...)
 }
 
+// Exec calls Redis exec command. 
 func (c *Client) Exec(args ...interface{}) *Reply {
 	return c.command(exec_, args...)
 }
 
+// Exists calls Redis exists command. 
 func (c *Client) Exists(args ...interface{}) *Reply {
 	return c.command(exists_, args...)
 }
 
+// Expire calls Redis expire command. 
 func (c *Client) Expire(args ...interface{}) *Reply {
 	return c.command(expire_, args...)
 }
 
+// Expireat calls Redis expireat command. 
 func (c *Client) Expireat(args ...interface{}) *Reply {
 	return c.command(expireat_, args...)
 }
 
+// Flushall calls Redis flushall command. 
 func (c *Client) Flushall(args ...interface{}) *Reply {
 	return c.command(flushall_, args...)
 }
 
+// Flushdb calls Redis flushdb command. 
 func (c *Client) Flushdb(args ...interface{}) *Reply {
 	return c.command(flushdb_, args...)
 }
 
+// Get calls Redis get command. 
 func (c *Client) Get(args ...interface{}) *Reply {
 	return c.command(get_, args...)
 }
 
+// Getbit calls Redis getbit command. 
 func (c *Client) Getbit(args ...interface{}) *Reply {
 	return c.command(getbit_, args...)
 }
 
+// Getrange calls Redis getrange command. 
 func (c *Client) Getrange(args ...interface{}) *Reply {
 	return c.command(getrange_, args...)
 }
 
+// Getset calls Redis getset command. 
 func (c *Client) Getset(args ...interface{}) *Reply {
 	return c.command(getset_, args...)
 }
 
+// Hdel calls Redis hdel command. 
 func (c *Client) Hdel(args ...interface{}) *Reply {
 	return c.command(hdel_, args...)
 }
 
+// Hexists calls Redis hexists command. 
 func (c *Client) Hexists(args ...interface{}) *Reply {
 	return c.command(hexists_, args...)
 }
 
+// Hget calls Redis hget command. 
 func (c *Client) Hget(args ...interface{}) *Reply {
 	return c.command(hget_, args...)
 }
 
+// Hgetall calls Redis hgetall command. 
 func (c *Client) Hgetall(args ...interface{}) *Reply {
 	return c.command(hgetall_, args...)
 }
 
+// Hincrby calls Redis hincrby command. 
 func (c *Client) Hincrby(args ...interface{}) *Reply {
 	return c.command(hincrby_, args...)
 }
 
+// Hincrbyfloat calls Redis hincrbyfloat command. 
 func (c *Client) Hincrbyfloat(args ...interface{}) *Reply {
 	return c.command(hincrbyfloat_, args...)
 }
 
+// Hkeys calls Redis hkeys command. 
 func (c *Client) Hkeys(args ...interface{}) *Reply {
 	return c.command(hkeys_, args...)
 }
 
+// Hlen calls Redis hlen command. 
 func (c *Client) Hlen(args ...interface{}) *Reply {
 	return c.command(hlen_, args...)
 }
 
+// Hmget calls Redis hmget command. 
 func (c *Client) Hmget(args ...interface{}) *Reply {
 	return c.command(hmget_, args...)
 }
 
+// Hmset calls Redis hmset command. 
 func (c *Client) Hmset(args ...interface{}) *Reply {
 	return c.command(hmset_, args...)
 }
 
+// Hset calls Redis hset command. 
 func (c *Client) Hset(args ...interface{}) *Reply {
 	return c.command(hset_, args...)
 }
 
+// Hsetnx calls Redis hsetnx command. 
 func (c *Client) Hsetnx(args ...interface{}) *Reply {
 	return c.command(hsetnx_, args...)
 }
 
+// Hvals calls Redis hvals command. 
 func (c *Client) Hvals(args ...interface{}) *Reply {
 	return c.command(hvals_, args...)
 }
 
+// Incr calls Redis incr command. 
 func (c *Client) Incr(args ...interface{}) *Reply {
 	return c.command(incr_, args...)
 }
 
+// Incrby calls Redis incrby command. 
 func (c *Client) Incrby(args ...interface{}) *Reply {
 	return c.command(incrby_, args...)
 }
 
+// Incrbyfloat calls Redis incrbyfloat command. 
 func (c *Client) Incrbyfloat(args ...interface{}) *Reply {
 	return c.command(incrbyfloat_, args...)
 }
 
+// Info calls Redis info command. 
 func (c *Client) Info(args ...interface{}) *Reply {
 	return c.command(info_, args...)
 }
 
+// Keys calls Redis keys command. 
 func (c *Client) Keys(args ...interface{}) *Reply {
 	return c.command(keys_, args...)
 }
 
+// Lastsave calls Redis lastsave command. 
 func (c *Client) Lastsave(args ...interface{}) *Reply {
 	return c.command(lastsave_, args...)
 }
 
+// Lindex calls Redis lindex command. 
 func (c *Client) Lindex(args ...interface{}) *Reply {
 	return c.command(lindex_, args...)
 }
 
+// Linsert calls Redis linsert command. 
 func (c *Client) Linsert(args ...interface{}) *Reply {
 	return c.command(linsert_, args...)
 }
 
+// Llen calls Redis llen command. 
 func (c *Client) Llen(args ...interface{}) *Reply {
 	return c.command(llen_, args...)
 }
 
+// Lpop calls Redis lpop command. 
 func (c *Client) Lpop(args ...interface{}) *Reply {
 	return c.command(lpop_, args...)
 }
 
+// Lpush calls Redis lpush command. 
 func (c *Client) Lpush(args ...interface{}) *Reply {
 	return c.command(lpush_, args...)
 }
 
+// Lpushx calls Redis lpushx command. 
 func (c *Client) Lpushx(args ...interface{}) *Reply {
 	return c.command(lpushx_, args...)
 }
 
+// Lrange calls Redis lrange command. 
 func (c *Client) Lrange(args ...interface{}) *Reply {
 	return c.command(lrange_, args...)
 }
 
+// Lrem calls Redis lrem command. 
 func (c *Client) Lrem(args ...interface{}) *Reply {
 	return c.command(lrem_, args...)
 }
 
+// Lset calls Redis lset command. 
 func (c *Client) Lset(args ...interface{}) *Reply {
 	return c.command(lset_, args...)
 }
 
+// Ltrim calls Redis ltrim command. 
 func (c *Client) Ltrim(args ...interface{}) *Reply {
 	return c.command(ltrim_, args...)
 }
 
+// Mget calls Redis mget command. 
 func (c *Client) Mget(args ...interface{}) *Reply {
 	return c.command(mget_, args...)
 }
 
+// Migrate calls Redis migrate command. 
 func (c *Client) Migrate(args ...interface{}) *Reply {
 	return c.command(migrate_, args...)
 }
 
+// Monitor calls Redis monitor command. 
 func (c *Client) Monitor(args ...interface{}) *Reply {
 	return c.command(monitor_, args...)
 }
 
+// Move calls Redis move command. 
 func (c *Client) Move(args ...interface{}) *Reply {
 	return c.command(move_, args...)
 }
 
+// Mset calls Redis mset command. 
 func (c *Client) Mset(args ...interface{}) *Reply {
 	return c.command(mset_, args...)
 }
 
+// Msetnx calls Redis msetnx command. 
 func (c *Client) Msetnx(args ...interface{}) *Reply {
 	return c.command(msetnx_, args...)
 }
 
+// Multi calls Redis multi command. 
 func (c *Client) Multi(args ...interface{}) *Reply {
 	return c.command(multi_, args...)
 }
 
+// Object calls Redis object command. 
 func (c *Client) Object(args ...interface{}) *Reply {
 	return c.command(object_, args...)
 }
 
+// Persist calls Redis persist command. 
 func (c *Client) Persist(args ...interface{}) *Reply {
 	return c.command(persist_, args...)
 }
 
+// Pexpire calls Redis pexpire command. 
 func (c *Client) Pexpire(args ...interface{}) *Reply {
 	return c.command(pexpire_, args...)
 }
 
+// Pexpireat calls Redis pexpireat command. 
 func (c *Client) Pexpireat(args ...interface{}) *Reply {
 	return c.command(pexpireat_, args...)
 }
 
+// Ping calls Redis ping command. 
 func (c *Client) Ping(args ...interface{}) *Reply {
 	return c.command(ping_, args...)
 }
 
+// Psetex calls Redis psetex command. 
 func (c *Client) Psetex(args ...interface{}) *Reply {
 	return c.command(psetex_, args...)
 }
 
+// Psubscribe calls Redis psubscribe command. 
 func (c *Client) Psubscribe(args ...interface{}) *Reply {
 	return c.command(psubscribe_, args...)
 }
 
+// Pttl calls Redis pttl command. 
 func (c *Client) Pttl(args ...interface{}) *Reply {
 	return c.command(pttl_, args...)
 }
 
+// Publish calls Redis publish command. 
 func (c *Client) Publish(args ...interface{}) *Reply {
 	return c.command(publish_, args...)
 }
 
+// Punsubscribe calls Redis punsubscribe command. 
 func (c *Client) Punsubscribe(args ...interface{}) *Reply {
 	return c.command(punsubscribe_, args...)
 }
 
+// Randomkey calls Redis randomkey command. 
 func (c *Client) Randomkey(args ...interface{}) *Reply {
 	return c.command(randomkey_, args...)
 }
 
+// Rename calls Redis rename command. 
 func (c *Client) Rename(args ...interface{}) *Reply {
 	return c.command(rename_, args...)
 }
 
+// Renamenx calls Redis renamenx command. 
 func (c *Client) Renamenx(args ...interface{}) *Reply {
 	return c.command(renamenx_, args...)
 }
 
+// Restore calls Redis restore command. 
 func (c *Client) Restore(args ...interface{}) *Reply {
 	return c.command(restore_, args...)
 }
 
+// Rpop calls Redis rpop command. 
 func (c *Client) Rpop(args ...interface{}) *Reply {
 	return c.command(rpop_, args...)
 }
 
+// Rpoplpush calls Redis rpoplpush command. 
 func (c *Client) Rpoplpush(args ...interface{}) *Reply {
 	return c.command(rpoplpush_, args...)
 }
 
+// Rpush calls Redis rpush command. 
 func (c *Client) Rpush(args ...interface{}) *Reply {
 	return c.command(rpush_, args...)
 }
 
+// Rpushx calls Redis rpushx command. 
 func (c *Client) Rpushx(args ...interface{}) *Reply {
 	return c.command(rpushx_, args...)
 }
 
+// Sadd calls Redis sadd command. 
 func (c *Client) Sadd(args ...interface{}) *Reply {
 	return c.command(sadd_, args...)
 }
 
+// Save calls Redis save command. 
 func (c *Client) Save(args ...interface{}) *Reply {
 	return c.command(save_, args...)
 }
 
+// Scard calls Redis scard command. 
 func (c *Client) Scard(args ...interface{}) *Reply {
 	return c.command(scard_, args...)
 }
 
+// Script calls Redis script command. 
 func (c *Client) Script(args ...interface{}) *Reply {
 	return c.command(script_, args...)
 }
 
+// Sdiff calls Redis sdiff command. 
 func (c *Client) Sdiff(args ...interface{}) *Reply {
 	return c.command(sdiff_, args...)
 }
 
+// Sdiffstore calls Redis sdiffstore command. 
 func (c *Client) Sdiffstore(args ...interface{}) *Reply {
 	return c.command(sdiffstore_, args...)
 }
 
+// Select calls Redis select command. 
 func (c *Client) Select(args ...interface{}) *Reply {
 	return c.command(select_, args...)
 }
 
+// Set calls Redis set command. 
 func (c *Client) Set(args ...interface{}) *Reply {
 	return c.command(set_, args...)
 }
 
+// Setbit calls Redis setbit command. 
 func (c *Client) Setbit(args ...interface{}) *Reply {
 	return c.command(setbit_, args...)
 }
 
+// Setex calls Redis setex command. 
 func (c *Client) Setex(args ...interface{}) *Reply {
 	return c.command(setex_, args...)
 }
 
+// Setnx calls Redis setnx command. 
 func (c *Client) Setnx(args ...interface{}) *Reply {
 	return c.command(setnx_, args...)
 }
 
+// Setrange calls Redis setrange command. 
 func (c *Client) Setrange(args ...interface{}) *Reply {
 	return c.command(setrange_, args...)
 }
 
+// Shutdown calls Redis shutdown command. 
 func (c *Client) Shutdown(args ...interface{}) *Reply {
 	return c.command(shutdown_, args...)
 }
 
+// Sinter calls Redis sinter command. 
 func (c *Client) Sinter(args ...interface{}) *Reply {
 	return c.command(sinter_, args...)
 }
 
+// Sinterstore calls Redis sinterstore command. 
 func (c *Client) Sinterstore(args ...interface{}) *Reply {
 	return c.command(sinterstore_, args...)
 }
 
+// Sismember calls Redis sismember command. 
 func (c *Client) Sismember(args ...interface{}) *Reply {
 	return c.command(sismember_, args...)
 }
 
+// Slaveof calls Redis slaveof command. 
 func (c *Client) Slaveof(args ...interface{}) *Reply {
 	return c.command(slaveof_, args...)
 }
 
+// Smembers calls Redis smembers command. 
 func (c *Client) Smembers(args ...interface{}) *Reply {
 	return c.command(smembers_, args...)
 }
 
+// Smove calls Redis smove command. 
 func (c *Client) Smove(args ...interface{}) *Reply {
 	return c.command(smove_, args...)
 }
 
+// Sort calls Redis sort command. 
 func (c *Client) Sort(args ...interface{}) *Reply {
 	return c.command(sort_, args...)
 }
 
+// Spop calls Redis spop command. 
 func (c *Client) Spop(args ...interface{}) *Reply {
 	return c.command(spop_, args...)
 }
 
+// Srandmember calls Redis srandmember command. 
 func (c *Client) Srandmember(args ...interface{}) *Reply {
 	return c.command(srandmember_, args...)
 }
 
+// Srem calls Redis srem command. 
 func (c *Client) Srem(args ...interface{}) *Reply {
 	return c.command(srem_, args...)
 }
 
+// Strlen calls Redis strlen command. 
 func (c *Client) Strlen(args ...interface{}) *Reply {
 	return c.command(strlen_, args...)
 }
 
+// Subscribe calls Redis subscribe command. 
 func (c *Client) Subscribe(args ...interface{}) *Reply {
 	return c.command(subscribe_, args...)
 }
 
+// Sunion calls Redis sunion command. 
 func (c *Client) Sunion(args ...interface{}) *Reply {
 	return c.command(sunion_, args...)
 }
 
+// Sunionstore calls Redis sunionstore command. 
 func (c *Client) Sunionstore(args ...interface{}) *Reply {
 	return c.command(sunionstore_, args...)
 }
 
+// Sync calls Redis sync command. 
 func (c *Client) Sync(args ...interface{}) *Reply {
 	return c.command(sync_, args...)
 }
 
+// Time calls Redis time command. 
 func (c *Client) Time(args ...interface{}) *Reply {
 	return c.command(time_, args...)
 }
 
+// Ttl calls Redis ttl command. 
 func (c *Client) Ttl(args ...interface{}) *Reply {
 	return c.command(ttl_, args...)
 }
 
+// Type calls Redis type command. 
 func (c *Client) Type(args ...interface{}) *Reply {
 	return c.command(type_, args...)
 }
 
+// Unsubscribe calls Redis unsubscribe command. 
 func (c *Client) Unsubscribe(args ...interface{}) *Reply {
 	return c.command(unsubscribe_, args...)
 }
 
+// Unwatch calls Redis unwatch command. 
 func (c *Client) Unwatch(args ...interface{}) *Reply {
 	return c.command(unwatch_, args...)
 }
 
+// Watch calls Redis watch command. 
 func (c *Client) Watch(args ...interface{}) *Reply {
 	return c.command(watch_, args...)
 }
 
+// Zadd calls Redis zadd command. 
 func (c *Client) Zadd(args ...interface{}) *Reply {
 	return c.command(zadd_, args...)
 }
 
+// Zcard calls Redis zcard command. 
 func (c *Client) Zcard(args ...interface{}) *Reply {
 	return c.command(zcard_, args...)
 }
 
+// Zcount calls Redis zcount command. 
 func (c *Client) Zcount(args ...interface{}) *Reply {
 	return c.command(zcount_, args...)
 }
 
+// Zincrby calls Redis zincrby command. 
 func (c *Client) Zincrby(args ...interface{}) *Reply {
 	return c.command(zincrby_, args...)
 }
 
+// Zinterstore calls Redis zinterstore command. 
 func (c *Client) Zinterstore(args ...interface{}) *Reply {
 	return c.command(zinterstore_, args...)
 }
 
+// Zrange calls Redis zrange command. 
 func (c *Client) Zrange(args ...interface{}) *Reply {
 	return c.command(zrange_, args...)
 }
 
+// Zrangebyscore calls Redis zrangebyscore command. 
 func (c *Client) Zrangebyscore(args ...interface{}) *Reply {
 	return c.command(zrangebyscore_, args...)
 }
 
+// Zrank calls Redis zrank command. 
 func (c *Client) Zrank(args ...interface{}) *Reply {
 	return c.command(zrank_, args...)
 }
 
+// Zrem calls Redis zrem command. 
 func (c *Client) Zrem(args ...interface{}) *Reply {
 	return c.command(zrem_, args...)
 }
 
+// Zremrangebyrank calls Redis zremrangebyrank command. 
 func (c *Client) Zremrangebyrank(args ...interface{}) *Reply {
 	return c.command(zremrangebyrank_, args...)
 }
 
+// Zremrangebyscore calls Redis zremrangebyscore command. 
 func (c *Client) Zremrangebyscore(args ...interface{}) *Reply {
 	return c.command(zremrangebyscore_, args...)
 }
 
+// Zrevrange calls Redis zrevrange command. 
 func (c *Client) Zrevrange(args ...interface{}) *Reply {
 	return c.command(zrevrange_, args...)
 }
 
+// Zrevrangebyscore calls Redis zrevrangebyscore command. 
 func (c *Client) Zrevrangebyscore(args ...interface{}) *Reply {
 	return c.command(zrevrangebyscore_, args...)
 }
 
+// Zrevrank calls Redis zrevrank command. 
 func (c *Client) Zrevrank(args ...interface{}) *Reply {
 	return c.command(zrevrank_, args...)
 }
 
+// Zscore calls Redis zscore command. 
 func (c *Client) Zscore(args ...interface{}) *Reply {
 	return c.command(zscore_, args...)
 }
 
+// Zunionstore calls Redis zunionstore command. 
 func (c *Client) Zunionstore(args ...interface{}) *Reply {
 	return c.command(zunionstore_, args...)
 }
 
+// AsyncAppend calls Redis append asynchronously. 
 func (c *Client) AsyncAppend(args ...interface{}) Future {
 	return c.asyncCommand(append_, args...)
 }
 
+// AsyncAsking calls Redis asking asynchronously. 
 func (c *Client) AsyncAsking(args ...interface{}) Future {
 	return c.asyncCommand(asking_, args...)
 }
 
+// AsyncAuth calls Redis auth asynchronously. 
 func (c *Client) AsyncAuth(args ...interface{}) Future {
 	return c.asyncCommand(auth_, args...)
 }
 
+// AsyncBgrewriteaof calls Redis bgrewriteaof asynchronously. 
 func (c *Client) AsyncBgrewriteaof(args ...interface{}) Future {
 	return c.asyncCommand(bgrewriteaof_, args...)
 }
 
+// AsyncBgsave calls Redis bgsave asynchronously. 
 func (c *Client) AsyncBgsave(args ...interface{}) Future {
 	return c.asyncCommand(bgsave_, args...)
 }
 
+// AsyncBlpop calls Redis blpop asynchronously. 
 func (c *Client) AsyncBlpop(args ...interface{}) Future {
 	return c.asyncCommand(blpop_, args...)
 }
 
+// AsyncBrpop calls Redis brpop asynchronously. 
 func (c *Client) AsyncBrpop(args ...interface{}) Future {
 	return c.asyncCommand(brpop_, args...)
 }
 
+// AsyncBrpoplpush calls Redis brpoplpush asynchronously. 
 func (c *Client) AsyncBrpoplpush(args ...interface{}) Future {
 	return c.asyncCommand(brpoplpush_, args...)
 }
 
+// AsyncClient calls Redis client asynchronously. 
 func (c *Client) AsyncClient(args ...interface{}) Future {
 	return c.asyncCommand(client_, args...)
 }
 
+// AsyncCluster calls Redis cluster asynchronously. 
 func (c *Client) AsyncCluster(args ...interface{}) Future {
 	return c.asyncCommand(cluster_, args...)
 }
 
+// AsyncConfig calls Redis config asynchronously. 
 func (c *Client) AsyncConfig(args ...interface{}) Future {
 	return c.asyncCommand(config_, args...)
 }
 
+// AsyncDbsize calls Redis dbsize asynchronously. 
 func (c *Client) AsyncDbsize(args ...interface{}) Future {
 	return c.asyncCommand(dbsize_, args...)
 }
 
+// AsyncDebug calls Redis debug asynchronously. 
 func (c *Client) AsyncDebug(args ...interface{}) Future {
 	return c.asyncCommand(debug_, args...)
 }
 
+// AsyncDecr calls Redis decr asynchronously. 
 func (c *Client) AsyncDecr(args ...interface{}) Future {
 	return c.asyncCommand(decr_, args...)
 }
 
+// AsyncDecrby calls Redis decrby asynchronously. 
 func (c *Client) AsyncDecrby(args ...interface{}) Future {
 	return c.asyncCommand(decrby_, args...)
 }
 
+// AsyncDel calls Redis del asynchronously. 
 func (c *Client) AsyncDel(args ...interface{}) Future {
 	return c.asyncCommand(del_, args...)
 }
 
+// AsyncDiscard calls Redis discard asynchronously. 
 func (c *Client) AsyncDiscard(args ...interface{}) Future {
 	return c.asyncCommand(discard_, args...)
 }
 
+// AsyncDump calls Redis dump asynchronously. 
 func (c *Client) AsyncDump(args ...interface{}) Future {
 	return c.asyncCommand(dump_, args...)
 }
 
+// AsyncEcho calls Redis echo asynchronously. 
 func (c *Client) AsyncEcho(args ...interface{}) Future {
 	return c.asyncCommand(echo_, args...)
 }
 
+// AsyncEval calls Redis eval asynchronously. 
 func (c *Client) AsyncEval(args ...interface{}) Future {
 	return c.asyncCommand(eval_, args...)
 }
 
+// AsyncExec calls Redis exec asynchronously. 
 func (c *Client) AsyncExec(args ...interface{}) Future {
 	return c.asyncCommand(exec_, args...)
 }
 
+// AsyncExists calls Redis exists asynchronously. 
 func (c *Client) AsyncExists(args ...interface{}) Future {
 	return c.asyncCommand(exists_, args...)
 }
 
+// AsyncExpire calls Redis expire asynchronously. 
 func (c *Client) AsyncExpire(args ...interface{}) Future {
 	return c.asyncCommand(expire_, args...)
 }
 
+// AsyncExpireat calls Redis expireat asynchronously. 
 func (c *Client) AsyncExpireat(args ...interface{}) Future {
 	return c.asyncCommand(expireat_, args...)
 }
 
+// AsyncFlushall calls Redis flushall asynchronously. 
 func (c *Client) AsyncFlushall(args ...interface{}) Future {
 	return c.asyncCommand(flushall_, args...)
 }
 
+// AsyncFlushdb calls Redis flushdb asynchronously. 
 func (c *Client) AsyncFlushdb(args ...interface{}) Future {
 	return c.asyncCommand(flushdb_, args...)
 }
 
+// AsyncGet calls Redis get asynchronously. 
 func (c *Client) AsyncGet(args ...interface{}) Future {
 	return c.asyncCommand(get_, args...)
 }
 
+// AsyncGetbit calls Redis getbit asynchronously. 
 func (c *Client) AsyncGetbit(args ...interface{}) Future {
 	return c.asyncCommand(getbit_, args...)
 }
 
+// AsyncGetrange calls Redis getrange asynchronously. 
 func (c *Client) AsyncGetrange(args ...interface{}) Future {
 	return c.asyncCommand(getrange_, args...)
 }
 
+// AsyncGetset calls Redis getset asynchronously. 
 func (c *Client) AsyncGetset(args ...interface{}) Future {
 	return c.asyncCommand(getset_, args...)
 }
 
+// AsyncHdel calls Redis hdel asynchronously. 
 func (c *Client) AsyncHdel(args ...interface{}) Future {
 	return c.asyncCommand(hdel_, args...)
 }
 
+// AsyncHexists calls Redis hexists asynchronously. 
 func (c *Client) AsyncHexists(args ...interface{}) Future {
 	return c.asyncCommand(hexists_, args...)
 }
 
+// AsyncHget calls Redis hget asynchronously. 
 func (c *Client) AsyncHget(args ...interface{}) Future {
 	return c.asyncCommand(hget_, args...)
 }
 
+// AsyncHgetall calls Redis hgetall asynchronously. 
 func (c *Client) AsyncHgetall(args ...interface{}) Future {
 	return c.asyncCommand(hgetall_, args...)
 }
 
+// AsyncHincrby calls Redis hincrby asynchronously. 
 func (c *Client) AsyncHincrby(args ...interface{}) Future {
 	return c.asyncCommand(hincrby_, args...)
 }
 
+// AsyncHincrbyfloat calls Redis hincrbyfloat asynchronously. 
 func (c *Client) AsyncHincrbyfloat(args ...interface{}) Future {
 	return c.asyncCommand(hincrbyfloat_, args...)
 }
 
+// AsyncHkeys calls Redis hkeys asynchronously. 
 func (c *Client) AsyncHkeys(args ...interface{}) Future {
 	return c.asyncCommand(hkeys_, args...)
 }
 
+// AsyncHlen calls Redis hlen asynchronously. 
 func (c *Client) AsyncHlen(args ...interface{}) Future {
 	return c.asyncCommand(hlen_, args...)
 }
 
+// AsyncHmget calls Redis hmget asynchronously. 
 func (c *Client) AsyncHmget(args ...interface{}) Future {
 	return c.asyncCommand(hmget_, args...)
 }
 
+// AsyncHmset calls Redis hmset asynchronously. 
 func (c *Client) AsyncHmset(args ...interface{}) Future {
 	return c.asyncCommand(hmset_, args...)
 }
 
+// AsyncHset calls Redis hset asynchronously. 
 func (c *Client) AsyncHset(args ...interface{}) Future {
 	return c.asyncCommand(hset_, args...)
 }
 
+// AsyncHsetnx calls Redis hsetnx asynchronously. 
 func (c *Client) AsyncHsetnx(args ...interface{}) Future {
 	return c.asyncCommand(hsetnx_, args...)
 }
 
+// AsyncHvals calls Redis hvals asynchronously. 
 func (c *Client) AsyncHvals(args ...interface{}) Future {
 	return c.asyncCommand(hvals_, args...)
 }
 
+// AsyncIncr calls Redis incr asynchronously. 
 func (c *Client) AsyncIncr(args ...interface{}) Future {
 	return c.asyncCommand(incr_, args...)
 }
 
+// AsyncIncrby calls Redis incrby asynchronously. 
 func (c *Client) AsyncIncrby(args ...interface{}) Future {
 	return c.asyncCommand(incrby_, args...)
 }
 
+// AsyncIncrbyfloat calls Redis incrbyfloat asynchronously. 
 func (c *Client) AsyncIncrbyfloat(args ...interface{}) Future {
 	return c.asyncCommand(incrbyfloat_, args...)
 }
 
+// AsyncInfo calls Redis info asynchronously. 
 func (c *Client) AsyncInfo(args ...interface{}) Future {
 	return c.asyncCommand(info_, args...)
 }
 
+// AsyncKeys calls Redis keys asynchronously. 
 func (c *Client) AsyncKeys(args ...interface{}) Future {
 	return c.asyncCommand(keys_, args...)
 }
 
+// AsyncLastsave calls Redis lastsave asynchronously. 
 func (c *Client) AsyncLastsave(args ...interface{}) Future {
 	return c.asyncCommand(lastsave_, args...)
 }
 
+// AsyncLindex calls Redis lindex asynchronously. 
 func (c *Client) AsyncLindex(args ...interface{}) Future {
 	return c.asyncCommand(lindex_, args...)
 }
 
+// AsyncLinsert calls Redis linsert asynchronously. 
 func (c *Client) AsyncLinsert(args ...interface{}) Future {
 	return c.asyncCommand(linsert_, args...)
 }
 
+// AsyncLlen calls Redis llen asynchronously. 
 func (c *Client) AsyncLlen(args ...interface{}) Future {
 	return c.asyncCommand(llen_, args...)
 }
 
+// AsyncLpop calls Redis lpop asynchronously. 
 func (c *Client) AsyncLpop(args ...interface{}) Future {
 	return c.asyncCommand(lpop_, args...)
 }
 
+// AsyncLpush calls Redis lpush asynchronously. 
 func (c *Client) AsyncLpush(args ...interface{}) Future {
 	return c.asyncCommand(lpush_, args...)
 }
 
+// AsyncLpushx calls Redis lpushx asynchronously. 
 func (c *Client) AsyncLpushx(args ...interface{}) Future {
 	return c.asyncCommand(lpushx_, args...)
 }
 
+// AsyncLrange calls Redis lrange asynchronously. 
 func (c *Client) AsyncLrange(args ...interface{}) Future {
 	return c.asyncCommand(lrange_, args...)
 }
 
+// AsyncLrem calls Redis lrem asynchronously. 
 func (c *Client) AsyncLrem(args ...interface{}) Future {
 	return c.asyncCommand(lrem_, args...)
 }
 
+// AsyncLset calls Redis lset asynchronously. 
 func (c *Client) AsyncLset(args ...interface{}) Future {
 	return c.asyncCommand(lset_, args...)
 }
 
+// AsyncLtrim calls Redis ltrim asynchronously. 
 func (c *Client) AsyncLtrim(args ...interface{}) Future {
 	return c.asyncCommand(ltrim_, args...)
 }
 
+// AsyncMget calls Redis mget asynchronously. 
 func (c *Client) AsyncMget(args ...interface{}) Future {
 	return c.asyncCommand(mget_, args...)
 }
 
+// AsyncMigrate calls Redis migrate asynchronously. 
 func (c *Client) AsyncMigrate(args ...interface{}) Future {
 	return c.asyncCommand(migrate_, args...)
 }
 
+// AsyncMonitor calls Redis monitor asynchronously. 
 func (c *Client) AsyncMonitor(args ...interface{}) Future {
 	return c.asyncCommand(monitor_, args...)
 }
 
+// AsyncMove calls Redis move asynchronously. 
 func (c *Client) AsyncMove(args ...interface{}) Future {
 	return c.asyncCommand(move_, args...)
 }
 
+// AsyncMset calls Redis mset asynchronously. 
 func (c *Client) AsyncMset(args ...interface{}) Future {
 	return c.asyncCommand(mset_, args...)
 }
 
+// AsyncMsetnx calls Redis msetnx asynchronously. 
 func (c *Client) AsyncMsetnx(args ...interface{}) Future {
 	return c.asyncCommand(msetnx_, args...)
 }
 
+// AsyncMulti calls Redis multi asynchronously. 
 func (c *Client) AsyncMulti(args ...interface{}) Future {
 	return c.asyncCommand(multi_, args...)
 }
 
+// AsyncObject calls Redis object asynchronously. 
 func (c *Client) AsyncObject(args ...interface{}) Future {
 	return c.asyncCommand(object_, args...)
 }
 
+// AsyncPersist calls Redis persist asynchronously. 
 func (c *Client) AsyncPersist(args ...interface{}) Future {
 	return c.asyncCommand(persist_, args...)
 }
 
+// AsyncPexpire calls Redis pexpire asynchronously. 
 func (c *Client) AsyncPexpire(args ...interface{}) Future {
 	return c.asyncCommand(pexpire_, args...)
 }
 
+// AsyncPexpireat calls Redis pexpireat asynchronously. 
 func (c *Client) AsyncPexpireat(args ...interface{}) Future {
 	return c.asyncCommand(pexpireat_, args...)
 }
 
+// AsyncPing calls Redis ping asynchronously. 
 func (c *Client) AsyncPing(args ...interface{}) Future {
 	return c.asyncCommand(ping_, args...)
 }
 
+// AsyncPsetex calls Redis psetex asynchronously. 
 func (c *Client) AsyncPsetex(args ...interface{}) Future {
 	return c.asyncCommand(psetex_, args...)
 }
 
+// AsyncPsubscribe calls Redis psubscribe asynchronously. 
 func (c *Client) AsyncPsubscribe(args ...interface{}) Future {
 	return c.asyncCommand(psubscribe_, args...)
 }
 
+// AsyncPttl calls Redis pttl asynchronously. 
 func (c *Client) AsyncPttl(args ...interface{}) Future {
 	return c.asyncCommand(pttl_, args...)
 }
 
+// AsyncPublish calls Redis publish asynchronously. 
 func (c *Client) AsyncPublish(args ...interface{}) Future {
 	return c.asyncCommand(publish_, args...)
 }
 
+// AsyncPunsubscribe calls Redis punsubscribe asynchronously. 
 func (c *Client) AsyncPunsubscribe(args ...interface{}) Future {
 	return c.asyncCommand(punsubscribe_, args...)
 }
 
+// AsyncRandomkey calls Redis randomkey asynchronously. 
 func (c *Client) AsyncRandomkey(args ...interface{}) Future {
 	return c.asyncCommand(randomkey_, args...)
 }
 
+// AsyncRename calls Redis rename asynchronously. 
 func (c *Client) AsyncRename(args ...interface{}) Future {
 	return c.asyncCommand(rename_, args...)
 }
 
+// AsyncRenamenx calls Redis renamenx asynchronously. 
 func (c *Client) AsyncRenamenx(args ...interface{}) Future {
 	return c.asyncCommand(renamenx_, args...)
 }
 
+// AsyncRestore calls Redis restore asynchronously. 
 func (c *Client) AsyncRestore(args ...interface{}) Future {
 	return c.asyncCommand(restore_, args...)
 }
 
+// AsyncRpop calls Redis rpop asynchronously. 
 func (c *Client) AsyncRpop(args ...interface{}) Future {
 	return c.asyncCommand(rpop_, args...)
 }
 
+// AsyncRpoplpush calls Redis rpoplpush asynchronously. 
 func (c *Client) AsyncRpoplpush(args ...interface{}) Future {
 	return c.asyncCommand(rpoplpush_, args...)
 }
 
+// AsyncRpush calls Redis rpush asynchronously. 
 func (c *Client) AsyncRpush(args ...interface{}) Future {
 	return c.asyncCommand(rpush_, args...)
 }
 
+// AsyncRpushx calls Redis rpushx asynchronously. 
 func (c *Client) AsyncRpushx(args ...interface{}) Future {
 	return c.asyncCommand(rpushx_, args...)
 }
 
+// AsyncSadd calls Redis sadd asynchronously. 
 func (c *Client) AsyncSadd(args ...interface{}) Future {
 	return c.asyncCommand(sadd_, args...)
 }
 
+// AsyncSave calls Redis save asynchronously. 
 func (c *Client) AsyncSave(args ...interface{}) Future {
 	return c.asyncCommand(save_, args...)
 }
 
+// AsyncScard calls Redis scard asynchronously. 
 func (c *Client) AsyncScard(args ...interface{}) Future {
 	return c.asyncCommand(scard_, args...)
 }
 
+// AsyncScript calls Redis script asynchronously. 
 func (c *Client) AsyncScript(args ...interface{}) Future {
 	return c.asyncCommand(script_, args...)
 }
 
+// AsyncSdiff calls Redis sdiff asynchronously. 
 func (c *Client) AsyncSdiff(args ...interface{}) Future {
 	return c.asyncCommand(sdiff_, args...)
 }
 
+// AsyncSdiffstore calls Redis sdiffstore asynchronously. 
 func (c *Client) AsyncSdiffstore(args ...interface{}) Future {
 	return c.asyncCommand(sdiffstore_, args...)
 }
 
+// AsyncSelect calls Redis select asynchronously. 
 func (c *Client) AsyncSelect(args ...interface{}) Future {
 	return c.asyncCommand(select_, args...)
 }
 
+// AsyncSet calls Redis set asynchronously. 
 func (c *Client) AsyncSet(args ...interface{}) Future {
 	return c.asyncCommand(set_, args...)
 }
 
+// AsyncSetbit calls Redis setbit asynchronously. 
 func (c *Client) AsyncSetbit(args ...interface{}) Future {
 	return c.asyncCommand(setbit_, args...)
 }
 
+// AsyncSetex calls Redis setex asynchronously. 
 func (c *Client) AsyncSetex(args ...interface{}) Future {
 	return c.asyncCommand(setex_, args...)
 }
 
+// AsyncSetnx calls Redis setnx asynchronously. 
 func (c *Client) AsyncSetnx(args ...interface{}) Future {
 	return c.asyncCommand(setnx_, args...)
 }
 
+// AsyncSetrange calls Redis setrange asynchronously. 
 func (c *Client) AsyncSetrange(args ...interface{}) Future {
 	return c.asyncCommand(setrange_, args...)
 }
 
+// AsyncShutdown calls Redis shutdown asynchronously. 
 func (c *Client) AsyncShutdown(args ...interface{}) Future {
 	return c.asyncCommand(shutdown_, args...)
 }
 
+// AsyncSinter calls Redis sinter asynchronously. 
 func (c *Client) AsyncSinter(args ...interface{}) Future {
 	return c.asyncCommand(sinter_, args...)
 }
 
+// AsyncSinterstore calls Redis sinterstore asynchronously. 
 func (c *Client) AsyncSinterstore(args ...interface{}) Future {
 	return c.asyncCommand(sinterstore_, args...)
 }
 
+// AsyncSismember calls Redis sismember asynchronously. 
 func (c *Client) AsyncSismember(args ...interface{}) Future {
 	return c.asyncCommand(sismember_, args...)
 }
 
+// AsyncSlaveof calls Redis slaveof asynchronously. 
 func (c *Client) AsyncSlaveof(args ...interface{}) Future {
 	return c.asyncCommand(slaveof_, args...)
 }
 
+// AsyncSmembers calls Redis smembers asynchronously. 
 func (c *Client) AsyncSmembers(args ...interface{}) Future {
 	return c.asyncCommand(smembers_, args...)
 }
 
+// AsyncSmove calls Redis smove asynchronously. 
 func (c *Client) AsyncSmove(args ...interface{}) Future {
 	return c.asyncCommand(smove_, args...)
 }
 
+// AsyncSort calls Redis sort asynchronously. 
 func (c *Client) AsyncSort(args ...interface{}) Future {
 	return c.asyncCommand(sort_, args...)
 }
 
+// AsyncSpop calls Redis spop asynchronously. 
 func (c *Client) AsyncSpop(args ...interface{}) Future {
 	return c.asyncCommand(spop_, args...)
 }
 
+// AsyncSrandmember calls Redis srandmember asynchronously. 
 func (c *Client) AsyncSrandmember(args ...interface{}) Future {
 	return c.asyncCommand(srandmember_, args...)
 }
 
+// AsyncSrem calls Redis srem asynchronously. 
 func (c *Client) AsyncSrem(args ...interface{}) Future {
 	return c.asyncCommand(srem_, args...)
 }
 
+// AsyncStrlen calls Redis strlen asynchronously. 
 func (c *Client) AsyncStrlen(args ...interface{}) Future {
 	return c.asyncCommand(strlen_, args...)
 }
 
+// AsyncSubscribe calls Redis subscribe asynchronously. 
 func (c *Client) AsyncSubscribe(args ...interface{}) Future {
 	return c.asyncCommand(subscribe_, args...)
 }
 
+// AsyncSunion calls Redis sunion asynchronously. 
 func (c *Client) AsyncSunion(args ...interface{}) Future {
 	return c.asyncCommand(sunion_, args...)
 }
 
+// AsyncSunionstore calls Redis sunionstore asynchronously. 
 func (c *Client) AsyncSunionstore(args ...interface{}) Future {
 	return c.asyncCommand(sunionstore_, args...)
 }
 
+// AsyncSync calls Redis sync asynchronously. 
 func (c *Client) AsyncSync(args ...interface{}) Future {
 	return c.asyncCommand(sync_, args...)
 }
 
+// AsyncTime calls Redis time asynchronously. 
 func (c *Client) AsyncTime(args ...interface{}) Future {
 	return c.asyncCommand(time_, args...)
 }
 
+// AsyncTtl calls Redis ttl asynchronously. 
 func (c *Client) AsyncTtl(args ...interface{}) Future {
 	return c.asyncCommand(ttl_, args...)
 }
 
+// AsyncType calls Redis type asynchronously. 
 func (c *Client) AsyncType(args ...interface{}) Future {
 	return c.asyncCommand(type_, args...)
 }
 
+// AsyncUnsubscribe calls Redis unsubscribe asynchronously. 
 func (c *Client) AsyncUnsubscribe(args ...interface{}) Future {
 	return c.asyncCommand(unsubscribe_, args...)
 }
 
+// AsyncUnwatch calls Redis unwatch asynchronously. 
 func (c *Client) AsyncUnwatch(args ...interface{}) Future {
 	return c.asyncCommand(unwatch_, args...)
 }
 
+// AsyncWatch calls Redis watch asynchronously. 
 func (c *Client) AsyncWatch(args ...interface{}) Future {
 	return c.asyncCommand(watch_, args...)
 }
 
+// AsyncZadd calls Redis zadd asynchronously. 
 func (c *Client) AsyncZadd(args ...interface{}) Future {
 	return c.asyncCommand(zadd_, args...)
 }
 
+// AsyncZcard calls Redis zcard asynchronously. 
 func (c *Client) AsyncZcard(args ...interface{}) Future {
 	return c.asyncCommand(zcard_, args...)
 }
 
+// AsyncZcount calls Redis zcount asynchronously. 
 func (c *Client) AsyncZcount(args ...interface{}) Future {
 	return c.asyncCommand(zcount_, args...)
 }
 
+// AsyncZincrby calls Redis zincrby asynchronously. 
 func (c *Client) AsyncZincrby(args ...interface{}) Future {
 	return c.asyncCommand(zincrby_, args...)
 }
 
+// AsyncZinterstore calls Redis zinterstore asynchronously. 
 func (c *Client) AsyncZinterstore(args ...interface{}) Future {
 	return c.asyncCommand(zinterstore_, args...)
 }
 
+// AsyncZrange calls Redis zrange asynchronously. 
 func (c *Client) AsyncZrange(args ...interface{}) Future {
 	return c.asyncCommand(zrange_, args...)
 }
 
+// AsyncZrangebyscore calls Redis zrangebyscore asynchronously. 
 func (c *Client) AsyncZrangebyscore(args ...interface{}) Future {
 	return c.asyncCommand(zrangebyscore_, args...)
 }
 
+// AsyncZrank calls Redis zrank asynchronously. 
 func (c *Client) AsyncZrank(args ...interface{}) Future {
 	return c.asyncCommand(zrank_, args...)
 }
 
+// AsyncZrem calls Redis zrem asynchronously. 
 func (c *Client) AsyncZrem(args ...interface{}) Future {
 	return c.asyncCommand(zrem_, args...)
 }
 
+// AsyncZremrangebyrank calls Redis zremrangebyrank asynchronously. 
 func (c *Client) AsyncZremrangebyrank(args ...interface{}) Future {
 	return c.asyncCommand(zremrangebyrank_, args...)
 }
 
+// AsyncZremrangebyscore calls Redis zremrangebyscore asynchronously. 
 func (c *Client) AsyncZremrangebyscore(args ...interface{}) Future {
 	return c.asyncCommand(zremrangebyscore_, args...)
 }
 
+// AsyncZrevrange calls Redis zrevrange asynchronously. 
 func (c *Client) AsyncZrevrange(args ...interface{}) Future {
 	return c.asyncCommand(zrevrange_, args...)
 }
 
+// AsyncZrevrangebyscore calls Redis zrevrangebyscore asynchronously. 
 func (c *Client) AsyncZrevrangebyscore(args ...interface{}) Future {
 	return c.asyncCommand(zrevrangebyscore_, args...)
 }
 
+// AsyncZrevrank calls Redis zrevrank asynchronously. 
 func (c *Client) AsyncZrevrank(args ...interface{}) Future {
 	return c.asyncCommand(zrevrank_, args...)
 }
 
+// AsyncZscore calls Redis zscore asynchronously. 
 func (c *Client) AsyncZscore(args ...interface{}) Future {
 	return c.asyncCommand(zscore_, args...)
 }
 
+// AsyncZunionstore calls Redis zunionstore asynchronously. 
 func (c *Client) AsyncZunionstore(args ...interface{}) Future {
 	return c.asyncCommand(zunionstore_, args...)
 }
 
+// Append queues a Redis append command for later execution. 
 func (mc *MultiCommand) Append(args ...interface{}) {
 	mc.command(cmdName(append_), args...)
 }
 
+// Asking queues a Redis asking command for later execution. 
 func (mc *MultiCommand) Asking(args ...interface{}) {
 	mc.command(cmdName(asking_), args...)
 }
 
+// Auth queues a Redis auth command for later execution. 
 func (mc *MultiCommand) Auth(args ...interface{}) {
 	mc.command(cmdName(auth_), args...)
 }
 
+// Bgrewriteaof queues a Redis bgrewriteaof command for later execution. 
 func (mc *MultiCommand) Bgrewriteaof(args ...interface{}) {
 	mc.command(cmdName(bgrewriteaof_), args...)
 }
 
+// Bgsave queues a Redis bgsave command for later execution. 
 func (mc *MultiCommand) Bgsave(args ...interface{}) {
 	mc.command(cmdName(bgsave_), args...)
 }
 
+// Blpop queues a Redis blpop command for later execution. 
 func (mc *MultiCommand) Blpop(args ...interface{}) {
 	mc.command(cmdName(blpop_), args...)
 }
 
+// Brpop queues a Redis brpop command for later execution. 
 func (mc *MultiCommand) Brpop(args ...interface{}) {
 	mc.command(cmdName(brpop_), args...)
 }
 
+// Brpoplpush queues a Redis brpoplpush command for later execution. 
 func (mc *MultiCommand) Brpoplpush(args ...interface{}) {
 	mc.command(cmdName(brpoplpush_), args...)
 }
 
+// Client queues a Redis client command for later execution. 
 func (mc *MultiCommand) Client(args ...interface{}) {
 	mc.command(cmdName(client_), args...)
 }
 
+// Cluster queues a Redis cluster command for later execution. 
 func (mc *MultiCommand) Cluster(args ...interface{}) {
 	mc.command(cmdName(cluster_), args...)
 }
 
+// Config queues a Redis config command for later execution. 
 func (mc *MultiCommand) Config(args ...interface{}) {
 	mc.command(cmdName(config_), args...)
 }
 
+// Dbsize queues a Redis dbsize command for later execution. 
 func (mc *MultiCommand) Dbsize(args ...interface{}) {
 	mc.command(cmdName(dbsize_), args...)
 }
 
+// Debug queues a Redis debug command for later execution. 
 func (mc *MultiCommand) Debug(args ...interface{}) {
 	mc.command(cmdName(debug_), args...)
 }
 
+// Decr queues a Redis decr command for later execution. 
 func (mc *MultiCommand) Decr(args ...interface{}) {
 	mc.command(cmdName(decr_), args...)
 }
 
+// Decrby queues a Redis decrby command for later execution. 
 func (mc *MultiCommand) Decrby(args ...interface{}) {
 	mc.command(cmdName(decrby_), args...)
 }
 
+// Del queues a Redis del command for later execution. 
 func (mc *MultiCommand) Del(args ...interface{}) {
 	mc.command(cmdName(del_), args...)
 }
 
+// Discard queues a Redis discard command for later execution. 
 func (mc *MultiCommand) Discard(args ...interface{}) {
 	mc.command(cmdName(discard_), args...)
 }
 
+// Dump queues a Redis dump command for later execution. 
 func (mc *MultiCommand) Dump(args ...interface{}) {
 	mc.command(cmdName(dump_), args...)
 }
 
+// Echo queues a Redis echo command for later execution. 
 func (mc *MultiCommand) Echo(args ...interface{}) {
 	mc.command(cmdName(echo_), args...)
 }
 
+// Eval queues a Redis eval command for later execution. 
 func (mc *MultiCommand) Eval(args ...interface{}) {
 	mc.command(cmdName(eval_), args...)
 }
 
+// Exec queues a Redis exec command for later execution. 
 func (mc *MultiCommand) Exec(args ...interface{}) {
 	mc.command(cmdName(exec_), args...)
 }
 
+// Exists queues a Redis exists command for later execution. 
 func (mc *MultiCommand) Exists(args ...interface{}) {
 	mc.command(cmdName(exists_), args...)
 }
 
+// Expire queues a Redis expire command for later execution. 
 func (mc *MultiCommand) Expire(args ...interface{}) {
 	mc.command(cmdName(expire_), args...)
 }
 
+// Expireat queues a Redis expireat command for later execution. 
 func (mc *MultiCommand) Expireat(args ...interface{}) {
 	mc.command(cmdName(expireat_), args...)
 }
 
+// Flushall queues a Redis flushall command for later execution. 
 func (mc *MultiCommand) Flushall(args ...interface{}) {
 	mc.command(cmdName(flushall_), args...)
 }
 
+// Flushdb queues a Redis flushdb command for later execution. 
 func (mc *MultiCommand) Flushdb(args ...interface{}) {
 	mc.command(cmdName(flushdb_), args...)
 }
 
+// Get queues a Redis get command for later execution. 
 func (mc *MultiCommand) Get(args ...interface{}) {
 	mc.command(cmdName(get_), args...)
 }
 
+// Getbit queues a Redis getbit command for later execution. 
 func (mc *MultiCommand) Getbit(args ...interface{}) {
 	mc.command(cmdName(getbit_), args...)
 }
 
+// Getrange queues a Redis getrange command for later execution. 
 func (mc *MultiCommand) Getrange(args ...interface{}) {
 	mc.command(cmdName(getrange_), args...)
 }
 
+// Getset queues a Redis getset command for later execution. 
 func (mc *MultiCommand) Getset(args ...interface{}) {
 	mc.command(cmdName(getset_), args...)
 }
 
+// Hdel queues a Redis hdel command for later execution. 
 func (mc *MultiCommand) Hdel(args ...interface{}) {
 	mc.command(cmdName(hdel_), args...)
 }
 
+// Hexists queues a Redis hexists command for later execution. 
 func (mc *MultiCommand) Hexists(args ...interface{}) {
 	mc.command(cmdName(hexists_), args...)
 }
 
+// Hget queues a Redis hget command for later execution. 
 func (mc *MultiCommand) Hget(args ...interface{}) {
 	mc.command(cmdName(hget_), args...)
 }
 
+// Hgetall queues a Redis hgetall command for later execution. 
 func (mc *MultiCommand) Hgetall(args ...interface{}) {
 	mc.command(cmdName(hgetall_), args...)
 }
 
+// Hincrby queues a Redis hincrby command for later execution. 
 func (mc *MultiCommand) Hincrby(args ...interface{}) {
 	mc.command(cmdName(hincrby_), args...)
 }
 
+// Hincrbyfloat queues a Redis hincrbyfloat command for later execution. 
 func (mc *MultiCommand) Hincrbyfloat(args ...interface{}) {
 	mc.command(cmdName(hincrbyfloat_), args...)
 }
 
+// Hkeys queues a Redis hkeys command for later execution. 
 func (mc *MultiCommand) Hkeys(args ...interface{}) {
 	mc.command(cmdName(hkeys_), args...)
 }
 
+// Hlen queues a Redis hlen command for later execution. 
 func (mc *MultiCommand) Hlen(args ...interface{}) {
 	mc.command(cmdName(hlen_), args...)
 }
 
+// Hmget queues a Redis hmget command for later execution. 
 func (mc *MultiCommand) Hmget(args ...interface{}) {
 	mc.command(cmdName(hmget_), args...)
 }
 
+// Hmset queues a Redis hmset command for later execution. 
 func (mc *MultiCommand) Hmset(args ...interface{}) {
 	mc.command(cmdName(hmset_), args...)
 }
 
+// Hset queues a Redis hset command for later execution. 
 func (mc *MultiCommand) Hset(args ...interface{}) {
 	mc.command(cmdName(hset_), args...)
 }
 
+// Hsetnx queues a Redis hsetnx command for later execution. 
 func (mc *MultiCommand) Hsetnx(args ...interface{}) {
 	mc.command(cmdName(hsetnx_), args...)
 }
 
+// Hvals queues a Redis hvals command for later execution. 
 func (mc *MultiCommand) Hvals(args ...interface{}) {
 	mc.command(cmdName(hvals_), args...)
 }
 
+// Incr queues a Redis incr command for later execution. 
 func (mc *MultiCommand) Incr(args ...interface{}) {
 	mc.command(cmdName(incr_), args...)
 }
 
+// Incrby queues a Redis incrby command for later execution. 
 func (mc *MultiCommand) Incrby(args ...interface{}) {
 	mc.command(cmdName(incrby_), args...)
 }
 
+// Incrbyfloat queues a Redis incrbyfloat command for later execution. 
 func (mc *MultiCommand) Incrbyfloat(args ...interface{}) {
 	mc.command(cmdName(incrbyfloat_), args...)
 }
 
+// Info queues a Redis info command for later execution. 
 func (mc *MultiCommand) Info(args ...interface{}) {
 	mc.command(cmdName(info_), args...)
 }
 
+// Keys queues a Redis keys command for later execution. 
 func (mc *MultiCommand) Keys(args ...interface{}) {
 	mc.command(cmdName(keys_), args...)
 }
 
+// Lastsave queues a Redis lastsave command for later execution. 
 func (mc *MultiCommand) Lastsave(args ...interface{}) {
 	mc.command(cmdName(lastsave_), args...)
 }
 
+// Lindex queues a Redis lindex command for later execution. 
 func (mc *MultiCommand) Lindex(args ...interface{}) {
 	mc.command(cmdName(lindex_), args...)
 }
 
+// Linsert queues a Redis linsert command for later execution. 
 func (mc *MultiCommand) Linsert(args ...interface{}) {
 	mc.command(cmdName(linsert_), args...)
 }
 
+// Llen queues a Redis llen command for later execution. 
 func (mc *MultiCommand) Llen(args ...interface{}) {
 	mc.command(cmdName(llen_), args...)
 }
 
+// Lpop queues a Redis lpop command for later execution. 
 func (mc *MultiCommand) Lpop(args ...interface{}) {
 	mc.command(cmdName(lpop_), args...)
 }
 
+// Lpush queues a Redis lpush command for later execution. 
 func (mc *MultiCommand) Lpush(args ...interface{}) {
 	mc.command(cmdName(lpush_), args...)
 }
 
+// Lpushx queues a Redis lpushx command for later execution. 
 func (mc *MultiCommand) Lpushx(args ...interface{}) {
 	mc.command(cmdName(lpushx_), args...)
 }
 
+// Lrange queues a Redis lrange command for later execution. 
 func (mc *MultiCommand) Lrange(args ...interface{}) {
 	mc.command(cmdName(lrange_), args...)
 }
 
+// Lrem queues a Redis lrem command for later execution. 
 func (mc *MultiCommand) Lrem(args ...interface{}) {
 	mc.command(cmdName(lrem_), args...)
 }
 
+// Lset queues a Redis lset command for later execution. 
 func (mc *MultiCommand) Lset(args ...interface{}) {
 	mc.command(cmdName(lset_), args...)
 }
 
+// Ltrim queues a Redis ltrim command for later execution. 
 func (mc *MultiCommand) Ltrim(args ...interface{}) {
 	mc.command(cmdName(ltrim_), args...)
 }
 
+// Mget queues a Redis mget command for later execution. 
 func (mc *MultiCommand) Mget(args ...interface{}) {
 	mc.command(cmdName(mget_), args...)
 }
 
+// Migrate queues a Redis migrate command for later execution. 
 func (mc *MultiCommand) Migrate(args ...interface{}) {
 	mc.command(cmdName(migrate_), args...)
 }
 
+// Monitor queues a Redis monitor command for later execution. 
 func (mc *MultiCommand) Monitor(args ...interface{}) {
 	mc.command(cmdName(monitor_), args...)
 }
 
+// Move queues a Redis move command for later execution. 
 func (mc *MultiCommand) Move(args ...interface{}) {
 	mc.command(cmdName(move_), args...)
 }
 
+// Mset queues a Redis mset command for later execution. 
 func (mc *MultiCommand) Mset(args ...interface{}) {
 	mc.command(cmdName(mset_), args...)
 }
 
+// Msetnx queues a Redis msetnx command for later execution. 
 func (mc *MultiCommand) Msetnx(args ...interface{}) {
 	mc.command(cmdName(msetnx_), args...)
 }
 
+// Multi queues a Redis multi command for later execution. 
 func (mc *MultiCommand) Multi(args ...interface{}) {
 	mc.command(cmdName(multi_), args...)
 }
 
+// Object queues a Redis object command for later execution. 
 func (mc *MultiCommand) Object(args ...interface{}) {
 	mc.command(cmdName(object_), args...)
 }
 
+// Persist queues a Redis persist command for later execution. 
 func (mc *MultiCommand) Persist(args ...interface{}) {
 	mc.command(cmdName(persist_), args...)
 }
 
+// Pexpire queues a Redis pexpire command for later execution. 
 func (mc *MultiCommand) Pexpire(args ...interface{}) {
 	mc.command(cmdName(pexpire_), args...)
 }
 
+// Pexpireat queues a Redis pexpireat command for later execution. 
 func (mc *MultiCommand) Pexpireat(args ...interface{}) {
 	mc.command(cmdName(pexpireat_), args...)
 }
 
+// Ping queues a Redis ping command for later execution. 
 func (mc *MultiCommand) Ping(args ...interface{}) {
 	mc.command(cmdName(ping_), args...)
 }
 
+// Psetex queues a Redis psetex command for later execution. 
 func (mc *MultiCommand) Psetex(args ...interface{}) {
 	mc.command(cmdName(psetex_), args...)
 }
 
+// Psubscribe queues a Redis psubscribe command for later execution. 
 func (mc *MultiCommand) Psubscribe(args ...interface{}) {
 	mc.command(cmdName(psubscribe_), args...)
 }
 
+// Pttl queues a Redis pttl command for later execution. 
 func (mc *MultiCommand) Pttl(args ...interface{}) {
 	mc.command(cmdName(pttl_), args...)
 }
 
+// Publish queues a Redis publish command for later execution. 
 func (mc *MultiCommand) Publish(args ...interface{}) {
 	mc.command(cmdName(publish_), args...)
 }
 
+// Punsubscribe queues a Redis punsubscribe command for later execution. 
 func (mc *MultiCommand) Punsubscribe(args ...interface{}) {
 	mc.command(cmdName(punsubscribe_), args...)
 }
 
+// Randomkey queues a Redis randomkey command for later execution. 
 func (mc *MultiCommand) Randomkey(args ...interface{}) {
 	mc.command(cmdName(randomkey_), args...)
 }
 
+// Rename queues a Redis rename command for later execution. 
 func (mc *MultiCommand) Rename(args ...interface{}) {
 	mc.command(cmdName(rename_), args...)
 }
 
+// Renamenx queues a Redis renamenx command for later execution. 
 func (mc *MultiCommand) Renamenx(args ...interface{}) {
 	mc.command(cmdName(renamenx_), args...)
 }
 
+// Restore queues a Redis restore command for later execution. 
 func (mc *MultiCommand) Restore(args ...interface{}) {
 	mc.command(cmdName(restore_), args...)
 }
 
+// Rpop queues a Redis rpop command for later execution. 
 func (mc *MultiCommand) Rpop(args ...interface{}) {
 	mc.command(cmdName(rpop_), args...)
 }
 
+// Rpoplpush queues a Redis rpoplpush command for later execution. 
 func (mc *MultiCommand) Rpoplpush(args ...interface{}) {
 	mc.command(cmdName(rpoplpush_), args...)
 }
 
+// Rpush queues a Redis rpush command for later execution. 
 func (mc *MultiCommand) Rpush(args ...interface{}) {
 	mc.command(cmdName(rpush_), args...)
 }
 
+// Rpushx queues a Redis rpushx command for later execution. 
 func (mc *MultiCommand) Rpushx(args ...interface{}) {
 	mc.command(cmdName(rpushx_), args...)
 }
 
+// Sadd queues a Redis sadd command for later execution. 
 func (mc *MultiCommand) Sadd(args ...interface{}) {
 	mc.command(cmdName(sadd_), args...)
 }
 
+// Save queues a Redis save command for later execution. 
 func (mc *MultiCommand) Save(args ...interface{}) {
 	mc.command(cmdName(save_), args...)
 }
 
+// Scard queues a Redis scard command for later execution. 
 func (mc *MultiCommand) Scard(args ...interface{}) {
 	mc.command(cmdName(scard_), args...)
 }
 
+// Script queues a Redis script command for later execution. 
 func (mc *MultiCommand) Script(args ...interface{}) {
 	mc.command(cmdName(script_), args...)
 }
 
+// Sdiff queues a Redis sdiff command for later execution. 
 func (mc *MultiCommand) Sdiff(args ...interface{}) {
 	mc.command(cmdName(sdiff_), args...)
 }
 
+// Sdiffstore queues a Redis sdiffstore command for later execution. 
 func (mc *MultiCommand) Sdiffstore(args ...interface{}) {
 	mc.command(cmdName(sdiffstore_), args...)
 }
 
+// Select queues a Redis select command for later execution. 
 func (mc *MultiCommand) Select(args ...interface{}) {
 	mc.command(cmdName(select_), args...)
 }
 
+// Set queues a Redis set command for later execution. 
 func (mc *MultiCommand) Set(args ...interface{}) {
 	mc.command(cmdName(set_), args...)
 }
 
+// Setbit queues a Redis setbit command for later execution. 
 func (mc *MultiCommand) Setbit(args ...interface{}) {
 	mc.command(cmdName(setbit_), args...)
 }
 
+// Setex queues a Redis setex command for later execution. 
 func (mc *MultiCommand) Setex(args ...interface{}) {
 	mc.command(cmdName(setex_), args...)
 }
 
+// Setnx queues a Redis setnx command for later execution. 
 func (mc *MultiCommand) Setnx(args ...interface{}) {
 	mc.command(cmdName(setnx_), args...)
 }
 
+// Setrange queues a Redis setrange command for later execution. 
 func (mc *MultiCommand) Setrange(args ...interface{}) {
 	mc.command(cmdName(setrange_), args...)
 }
 
+// Shutdown queues a Redis shutdown command for later execution. 
 func (mc *MultiCommand) Shutdown(args ...interface{}) {
 	mc.command(cmdName(shutdown_), args...)
 }
 
+// Sinter queues a Redis sinter command for later execution. 
 func (mc *MultiCommand) Sinter(args ...interface{}) {
 	mc.command(cmdName(sinter_), args...)
 }
 
+// Sinterstore queues a Redis sinterstore command for later execution. 
 func (mc *MultiCommand) Sinterstore(args ...interface{}) {
 	mc.command(cmdName(sinterstore_), args...)
 }
 
+// Sismember queues a Redis sismember command for later execution. 
 func (mc *MultiCommand) Sismember(args ...interface{}) {
 	mc.command(cmdName(sismember_), args...)
 }
 
+// Slaveof queues a Redis slaveof command for later execution. 
 func (mc *MultiCommand) Slaveof(args ...interface{}) {
 	mc.command(cmdName(slaveof_), args...)
 }
 
+// Smembers queues a Redis smembers command for later execution. 
 func (mc *MultiCommand) Smembers(args ...interface{}) {
 	mc.command(cmdName(smembers_), args...)
 }
 
+// Smove queues a Redis smove command for later execution. 
 func (mc *MultiCommand) Smove(args ...interface{}) {
 	mc.command(cmdName(smove_), args...)
 }
 
+// Sort queues a Redis sort command for later execution. 
 func (mc *MultiCommand) Sort(args ...interface{}) {
 	mc.command(cmdName(sort_), args...)
 }
 
+// Spop queues a Redis spop command for later execution. 
 func (mc *MultiCommand) Spop(args ...interface{}) {
 	mc.command(cmdName(spop_), args...)
 }
 
+// Srandmember queues a Redis srandmember command for later execution. 
 func (mc *MultiCommand) Srandmember(args ...interface{}) {
 	mc.command(cmdName(srandmember_), args...)
 }
 
+// Srem queues a Redis srem command for later execution. 
 func (mc *MultiCommand) Srem(args ...interface{}) {
 	mc.command(cmdName(srem_), args...)
 }
 
+// Strlen queues a Redis strlen command for later execution. 
 func (mc *MultiCommand) Strlen(args ...interface{}) {
 	mc.command(cmdName(strlen_), args...)
 }
 
+// Subscribe queues a Redis subscribe command for later execution. 
 func (mc *MultiCommand) Subscribe(args ...interface{}) {
 	mc.command(cmdName(subscribe_), args...)
 }
 
+// Sunion queues a Redis sunion command for later execution. 
 func (mc *MultiCommand) Sunion(args ...interface{}) {
 	mc.command(cmdName(sunion_), args...)
 }
 
+// Sunionstore queues a Redis sunionstore command for later execution. 
 func (mc *MultiCommand) Sunionstore(args ...interface{}) {
 	mc.command(cmdName(sunionstore_), args...)
 }
 
+// Sync queues a Redis sync command for later execution. 
 func (mc *MultiCommand) Sync(args ...interface{}) {
 	mc.command(cmdName(sync_), args...)
 }
 
+// Time queues a Redis time command for later execution. 
 func (mc *MultiCommand) Time(args ...interface{}) {
 	mc.command(cmdName(time_), args...)
 }
 
+// Ttl queues a Redis ttl command for later execution. 
 func (mc *MultiCommand) Ttl(args ...interface{}) {
 	mc.command(cmdName(ttl_), args...)
 }
 
+// Type queues a Redis type command for later execution. 
 func (mc *MultiCommand) Type(args ...interface{}) {
 	mc.command(cmdName(type_), args...)
 }
 
+// Unsubscribe queues a Redis unsubscribe command for later execution. 
 func (mc *MultiCommand) Unsubscribe(args ...interface{}) {
 	mc.command(cmdName(unsubscribe_), args...)
 }
 
+// Unwatch queues a Redis unwatch command for later execution. 
 func (mc *MultiCommand) Unwatch(args ...interface{}) {
 	mc.command(cmdName(unwatch_), args...)
 }
 
+// Watch queues a Redis watch command for later execution. 
 func (mc *MultiCommand) Watch(args ...interface{}) {
 	mc.command(cmdName(watch_), args...)
 }
 
+// Zadd queues a Redis zadd command for later execution. 
 func (mc *MultiCommand) Zadd(args ...interface{}) {
 	mc.command(cmdName(zadd_), args...)
 }
 
+// Zcard queues a Redis zcard command for later execution. 
 func (mc *MultiCommand) Zcard(args ...interface{}) {
 	mc.command(cmdName(zcard_), args...)
 }
 
+// Zcount queues a Redis zcount command for later execution. 
 func (mc *MultiCommand) Zcount(args ...interface{}) {
 	mc.command(cmdName(zcount_), args...)
 }
 
+// Zincrby queues a Redis zincrby command for later execution. 
 func (mc *MultiCommand) Zincrby(args ...interface{}) {
 	mc.command(cmdName(zincrby_), args...)
 }
 
+// Zinterstore queues a Redis zinterstore command for later execution. 
 func (mc *MultiCommand) Zinterstore(args ...interface{}) {
 	mc.command(cmdName(zinterstore_), args...)
 }
 
+// Zrange queues a Redis zrange command for later execution. 
 func (mc *MultiCommand) Zrange(args ...interface{}) {
 	mc.command(cmdName(zrange_), args...)
 }
 
+// Zrangebyscore queues a Redis zrangebyscore command for later execution. 
 func (mc *MultiCommand) Zrangebyscore(args ...interface{}) {
 	mc.command(cmdName(zrangebyscore_), args...)
 }
 
+// Zrank queues a Redis zrank command for later execution. 
 func (mc *MultiCommand) Zrank(args ...interface{}) {
 	mc.command(cmdName(zrank_), args...)
 }
 
+// Zrem queues a Redis zrem command for later execution. 
 func (mc *MultiCommand) Zrem(args ...interface{}) {
 	mc.command(cmdName(zrem_), args...)
 }
 
+// Zremrangebyrank queues a Redis zremrangebyrank command for later execution. 
 func (mc *MultiCommand) Zremrangebyrank(args ...interface{}) {
 	mc.command(cmdName(zremrangebyrank_), args...)
 }
 
+// Zremrangebyscore queues a Redis zremrangebyscore command for later execution. 
 func (mc *MultiCommand) Zremrangebyscore(args ...interface{}) {
 	mc.command(cmdName(zremrangebyscore_), args...)
 }
 
+// Zrevrange queues a Redis zrevrange command for later execution. 
 func (mc *MultiCommand) Zrevrange(args ...interface{}) {
 	mc.command(cmdName(zrevrange_), args...)
 }
 
+// Zrevrangebyscore queues a Redis zrevrangebyscore command for later execution. 
 func (mc *MultiCommand) Zrevrangebyscore(args ...interface{}) {
 	mc.command(cmdName(zrevrangebyscore_), args...)
 }
 
+// Zrevrank queues a Redis zrevrank command for later execution. 
 func (mc *MultiCommand) Zrevrank(args ...interface{}) {
 	mc.command(cmdName(zrevrank_), args...)
 }
 
+// Zscore queues a Redis zscore command for later execution. 
 func (mc *MultiCommand) Zscore(args ...interface{}) {
 	mc.command(cmdName(zscore_), args...)
 }
 
+// Zunionstore queues a Redis zunionstore command for later execution. 
 func (mc *MultiCommand) Zunionstore(args ...interface{}) {
 	mc.command(cmdName(zunionstore_), args...)
 }
