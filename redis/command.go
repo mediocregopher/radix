@@ -3,141 +3,1749 @@
 
 package redis
 
-type Command string
+type cmdName string
 
 const (
-	Append           Command = "append"
-	Asking           Command = "asking"
-	Auth             Command = "auth"
-	Bgrewriteaof     Command = "bgrewriteaof"
-	Bgsave           Command = "bgsave"
-	Blpop            Command = "blpop"
-	Brpop            Command = "brpop"
-	Brpoplpush       Command = "brpoplpush"
-	ClientCmd        Command = "client"
-	Cluster          Command = "cluster"
-	Config           Command = "config"
-	Dbsize           Command = "dbsize"
-	Debug            Command = "debug"
-	Decr             Command = "decr"
-	Decrby           Command = "decrby"
-	Del              Command = "del"
-	Discard          Command = "discard"
-	Dump             Command = "dump"
-	Echo             Command = "echo"
-	Eval             Command = "eval"
-	Exec             Command = "exec"
-	Exists           Command = "exists"
-	Expire           Command = "expire"
-	Expireat         Command = "expireat"
-	Flushall         Command = "flushall"
-	Flushdb          Command = "flushdb"
-	Get              Command = "get"
-	Getbit           Command = "getbit"
-	Getrange         Command = "getrange"
-	Getset           Command = "getset"
-	Hdel             Command = "hdel"
-	Hexists          Command = "hexists"
-	Hget             Command = "hget"
-	Hgetall          Command = "hgetall"
-	Hincrby          Command = "hincrby"
-	Hincrbyfloat     Command = "hincrbyfloat"
-	Hkeys            Command = "hkeys"
-	Hlen             Command = "hlen"
-	Hmget            Command = "hmget"
-	Hmset            Command = "hmset"
-	Hset             Command = "hset"
-	Hsetnx           Command = "hsetnx"
-	Hvals            Command = "hvals"
-	Incr             Command = "incr"
-	Incrby           Command = "incrby"
-	Incrbyfloat      Command = "incrbyfloat"
-	Info             Command = "info"
-	Keys             Command = "keys"
-	Lastsave         Command = "lastsave"
-	Lindex           Command = "lindex"
-	Linsert          Command = "linsert"
-	Llen             Command = "llen"
-	Lpop             Command = "lpop"
-	Lpush            Command = "lpush"
-	Lpushx           Command = "lpushx"
-	Lrange           Command = "lrange"
-	Lrem             Command = "lrem"
-	Lset             Command = "lset"
-	Ltrim            Command = "ltrim"
-	Mget             Command = "mget"
-	Migrate          Command = "migrate"
-	Monitor          Command = "monitor"
-	Move             Command = "move"
-	Mset             Command = "mset"
-	Msetnx           Command = "msetnx"
-	Multi            Command = "multi"
-	Object           Command = "object"
-	Persist          Command = "persist"
-	Pexpire          Command = "pexpire"
-	Pexpireat        Command = "pexpireat"
-	Ping             Command = "ping"
-	Psetex           Command = "psetex"
-	Psubscribe       Command = "psubscribe"
-	Pttl             Command = "pttl"
-	Publish          Command = "publish"
-	Punsubscribe     Command = "punsubscribe"
-	Randomkey        Command = "randomkey"
-	Rename           Command = "rename"
-	Renamenx         Command = "renamenx"
-	Restore          Command = "restore"
-	Rpop             Command = "rpop"
-	Rpoplpush        Command = "rpoplpush"
-	Rpush            Command = "rpush"
-	Rpushx           Command = "rpushx"
-	Sadd             Command = "sadd"
-	Save             Command = "save"
-	Scard            Command = "scard"
-	Script           Command = "script"
-	Sdiff            Command = "sdiff"
-	Sdiffstore       Command = "sdiffstore"
-	Select           Command = "select"
-	Set              Command = "set"
-	Setbit           Command = "setbit"
-	Setex            Command = "setex"
-	Setnx            Command = "setnx"
-	Setrange         Command = "setrange"
-	Shutdown         Command = "shutdown"
-	Sinter           Command = "sinter"
-	Sinterstore      Command = "sinterstore"
-	Sismember        Command = "sismember"
-	Slaveof          Command = "slaveof"
-	Smove            Command = "smove"
-	Sort             Command = "sort"
-	Spop             Command = "spop"
-	Srandmember      Command = "srandmember"
-	Srem             Command = "srem"
-	Strlen           Command = "strlen"
-	Subscribe        Command = "subscribe"
-	Sunion           Command = "sunion"
-	Sunionstore      Command = "sunionstore"
-	Sync             Command = "sync"
-	Time             Command = "time"
-	Ttl              Command = "ttl"
-	Type             Command = "type"
-	Unsubscribe      Command = "unsubscribe"
-	Unwatch          Command = "unwatch"
-	Watch            Command = "watch"
-	Zadd             Command = "zadd"
-	Zcard            Command = "zcard"
-	Zcount           Command = "zcount"
-	Zincrby          Command = "zincrby"
-	Zinterstore      Command = "zinterstore"
-	Zrange           Command = "zrange"
-	Zrangebyscore    Command = "zrangebyscore"
-	Zrank            Command = "zrank"
-	Zrem             Command = "zrem"
-	Zremrangebyrank  Command = "zremrangebyrank"
-	Zremrangebyscore Command = "zremrangebyscore"
-	Zrevrange        Command = "zrevrange"
-	Zrevrangebyscore Command = "zrevrangebyscore"
-	Zrevrank         Command = "zrevrank"
-	Zscore           Command = "zscore"
-	Zunionstore      Command = "zunionstore"
-	Smembers         Command = "smembers"
+	append_           cmdName = "append"
+	asking_           cmdName = "asking"
+	auth_             cmdName = "auth"
+	bgrewriteaof_     cmdName = "bgrewriteaof"
+	bgsave_           cmdName = "bgsave"
+	blpop_            cmdName = "blpop"
+	brpop_            cmdName = "brpop"
+	brpoplpush_       cmdName = "brpoplpush"
+	client_           cmdName = "client"
+	cluster_          cmdName = "cluster"
+	config_           cmdName = "config"
+	dbsize_           cmdName = "dbsize"
+	debug_            cmdName = "debug"
+	decr_             cmdName = "decr"
+	decrby_           cmdName = "decrby"
+	del_              cmdName = "del"
+	discard_          cmdName = "discard"
+	dump_             cmdName = "dump"
+	echo_             cmdName = "echo"
+	eval_             cmdName = "eval"
+	exec_             cmdName = "exec"
+	exists_           cmdName = "exists"
+	expire_           cmdName = "expire"
+	expireat_         cmdName = "expireat"
+	flushall_         cmdName = "flushall"
+	flushdb_          cmdName = "flushdb"
+	get_              cmdName = "get"
+	getbit_           cmdName = "getbit"
+	getrange_         cmdName = "getrange"
+	getset_           cmdName = "getset"
+	hdel_             cmdName = "hdel"
+	hexists_          cmdName = "hexists"
+	hget_             cmdName = "hget"
+	hgetall_          cmdName = "hgetall"
+	hincrby_          cmdName = "hincrby"
+	hincrbyfloat_     cmdName = "hincrbyfloat"
+	hkeys_            cmdName = "hkeys"
+	hlen_             cmdName = "hlen"
+	hmget_            cmdName = "hmget"
+	hmset_            cmdName = "hmset"
+	hset_             cmdName = "hset"
+	hsetnx_           cmdName = "hsetnx"
+	hvals_            cmdName = "hvals"
+	incr_             cmdName = "incr"
+	incrby_           cmdName = "incrby"
+	incrbyfloat_      cmdName = "incrbyfloat"
+	info_             cmdName = "info"
+	keys_             cmdName = "keys"
+	lastsave_         cmdName = "lastsave"
+	lindex_           cmdName = "lindex"
+	linsert_          cmdName = "linsert"
+	llen_             cmdName = "llen"
+	lpop_             cmdName = "lpop"
+	lpush_            cmdName = "lpush"
+	lpushx_           cmdName = "lpushx"
+	lrange_           cmdName = "lrange"
+	lrem_             cmdName = "lrem"
+	lset_             cmdName = "lset"
+	ltrim_            cmdName = "ltrim"
+	mget_             cmdName = "mget"
+	migrate_          cmdName = "migrate"
+	monitor_          cmdName = "monitor"
+	move_             cmdName = "move"
+	mset_             cmdName = "mset"
+	msetnx_           cmdName = "msetnx"
+	multi_            cmdName = "multi"
+	object_           cmdName = "object"
+	persist_          cmdName = "persist"
+	pexpire_          cmdName = "pexpire"
+	pexpireat_        cmdName = "pexpireat"
+	ping_             cmdName = "ping"
+	psetex_           cmdName = "psetex"
+	psubscribe_       cmdName = "psubscribe"
+	pttl_             cmdName = "pttl"
+	publish_          cmdName = "publish"
+	punsubscribe_     cmdName = "punsubscribe"
+	randomkey_        cmdName = "randomkey"
+	rename_           cmdName = "rename"
+	renamenx_         cmdName = "renamenx"
+	restore_          cmdName = "restore"
+	rpop_             cmdName = "rpop"
+	rpoplpush_        cmdName = "rpoplpush"
+	rpush_            cmdName = "rpush"
+	rpushx_           cmdName = "rpushx"
+	sadd_             cmdName = "sadd"
+	save_             cmdName = "save"
+	scard_            cmdName = "scard"
+	script_           cmdName = "script"
+	sdiff_            cmdName = "sdiff"
+	sdiffstore_       cmdName = "sdiffstore"
+	select_           cmdName = "select"
+	set_              cmdName = "set"
+	setbit_           cmdName = "setbit"
+	setex_            cmdName = "setex"
+	setnx_            cmdName = "setnx"
+	setrange_         cmdName = "setrange"
+	shutdown_         cmdName = "shutdown"
+	sinter_           cmdName = "sinter"
+	sinterstore_      cmdName = "sinterstore"
+	sismember_        cmdName = "sismember"
+	slaveof_          cmdName = "slaveof"
+	smembers_         cmdName = "smembers"
+	smove_            cmdName = "smove"
+	sort_             cmdName = "sort"
+	spop_             cmdName = "spop"
+	srandmember_      cmdName = "srandmember"
+	srem_             cmdName = "srem"
+	strlen_           cmdName = "strlen"
+	subscribe_        cmdName = "subscribe"
+	sunion_           cmdName = "sunion"
+	sunionstore_      cmdName = "sunionstore"
+	sync_             cmdName = "sync"
+	time_             cmdName = "time"
+	ttl_              cmdName = "ttl"
+	type_             cmdName = "type"
+	unsubscribe_      cmdName = "unsubscribe"
+	unwatch_          cmdName = "unwatch"
+	watch_            cmdName = "watch"
+	zadd_             cmdName = "zadd"
+	zcard_            cmdName = "zcard"
+	zcount_           cmdName = "zcount"
+	zincrby_          cmdName = "zincrby"
+	zinterstore_      cmdName = "zinterstore"
+	zrange_           cmdName = "zrange"
+	zrangebyscore_    cmdName = "zrangebyscore"
+	zrank_            cmdName = "zrank"
+	zrem_             cmdName = "zrem"
+	zremrangebyrank_  cmdName = "zremrangebyrank"
+	zremrangebyscore_ cmdName = "zremrangebyscore"
+	zrevrange_        cmdName = "zrevrange"
+	zrevrangebyscore_ cmdName = "zrevrangebyscore"
+	zrevrank_         cmdName = "zrevrank"
+	zscore_           cmdName = "zscore"
+	zunionstore_      cmdName = "zunionstore"
 )
+
+func (c *Client) Append(args ...interface{}) *Reply {
+	return c.command(append_, args...)
+}
+
+func (c *Client) Asking(args ...interface{}) *Reply {
+	return c.command(asking_, args...)
+}
+
+func (c *Client) Auth(args ...interface{}) *Reply {
+	return c.command(auth_, args...)
+}
+
+func (c *Client) Bgrewriteaof(args ...interface{}) *Reply {
+	return c.command(bgrewriteaof_, args...)
+}
+
+func (c *Client) Bgsave(args ...interface{}) *Reply {
+	return c.command(bgsave_, args...)
+}
+
+func (c *Client) Blpop(args ...interface{}) *Reply {
+	return c.command(blpop_, args...)
+}
+
+func (c *Client) Brpop(args ...interface{}) *Reply {
+	return c.command(brpop_, args...)
+}
+
+func (c *Client) Brpoplpush(args ...interface{}) *Reply {
+	return c.command(brpoplpush_, args...)
+}
+
+func (c *Client) Client(args ...interface{}) *Reply {
+	return c.command(client_, args...)
+}
+
+func (c *Client) Cluster(args ...interface{}) *Reply {
+	return c.command(cluster_, args...)
+}
+
+func (c *Client) Config(args ...interface{}) *Reply {
+	return c.command(config_, args...)
+}
+
+func (c *Client) Dbsize(args ...interface{}) *Reply {
+	return c.command(dbsize_, args...)
+}
+
+func (c *Client) Debug(args ...interface{}) *Reply {
+	return c.command(debug_, args...)
+}
+
+func (c *Client) Decr(args ...interface{}) *Reply {
+	return c.command(decr_, args...)
+}
+
+func (c *Client) Decrby(args ...interface{}) *Reply {
+	return c.command(decrby_, args...)
+}
+
+func (c *Client) Del(args ...interface{}) *Reply {
+	return c.command(del_, args...)
+}
+
+func (c *Client) Discard(args ...interface{}) *Reply {
+	return c.command(discard_, args...)
+}
+
+func (c *Client) Dump(args ...interface{}) *Reply {
+	return c.command(dump_, args...)
+}
+
+func (c *Client) Echo(args ...interface{}) *Reply {
+	return c.command(echo_, args...)
+}
+
+func (c *Client) Eval(args ...interface{}) *Reply {
+	return c.command(eval_, args...)
+}
+
+func (c *Client) Exec(args ...interface{}) *Reply {
+	return c.command(exec_, args...)
+}
+
+func (c *Client) Exists(args ...interface{}) *Reply {
+	return c.command(exists_, args...)
+}
+
+func (c *Client) Expire(args ...interface{}) *Reply {
+	return c.command(expire_, args...)
+}
+
+func (c *Client) Expireat(args ...interface{}) *Reply {
+	return c.command(expireat_, args...)
+}
+
+func (c *Client) Flushall(args ...interface{}) *Reply {
+	return c.command(flushall_, args...)
+}
+
+func (c *Client) Flushdb(args ...interface{}) *Reply {
+	return c.command(flushdb_, args...)
+}
+
+func (c *Client) Get(args ...interface{}) *Reply {
+	return c.command(get_, args...)
+}
+
+func (c *Client) Getbit(args ...interface{}) *Reply {
+	return c.command(getbit_, args...)
+}
+
+func (c *Client) Getrange(args ...interface{}) *Reply {
+	return c.command(getrange_, args...)
+}
+
+func (c *Client) Getset(args ...interface{}) *Reply {
+	return c.command(getset_, args...)
+}
+
+func (c *Client) Hdel(args ...interface{}) *Reply {
+	return c.command(hdel_, args...)
+}
+
+func (c *Client) Hexists(args ...interface{}) *Reply {
+	return c.command(hexists_, args...)
+}
+
+func (c *Client) Hget(args ...interface{}) *Reply {
+	return c.command(hget_, args...)
+}
+
+func (c *Client) Hgetall(args ...interface{}) *Reply {
+	return c.command(hgetall_, args...)
+}
+
+func (c *Client) Hincrby(args ...interface{}) *Reply {
+	return c.command(hincrby_, args...)
+}
+
+func (c *Client) Hincrbyfloat(args ...interface{}) *Reply {
+	return c.command(hincrbyfloat_, args...)
+}
+
+func (c *Client) Hkeys(args ...interface{}) *Reply {
+	return c.command(hkeys_, args...)
+}
+
+func (c *Client) Hlen(args ...interface{}) *Reply {
+	return c.command(hlen_, args...)
+}
+
+func (c *Client) Hmget(args ...interface{}) *Reply {
+	return c.command(hmget_, args...)
+}
+
+func (c *Client) Hmset(args ...interface{}) *Reply {
+	return c.command(hmset_, args...)
+}
+
+func (c *Client) Hset(args ...interface{}) *Reply {
+	return c.command(hset_, args...)
+}
+
+func (c *Client) Hsetnx(args ...interface{}) *Reply {
+	return c.command(hsetnx_, args...)
+}
+
+func (c *Client) Hvals(args ...interface{}) *Reply {
+	return c.command(hvals_, args...)
+}
+
+func (c *Client) Incr(args ...interface{}) *Reply {
+	return c.command(incr_, args...)
+}
+
+func (c *Client) Incrby(args ...interface{}) *Reply {
+	return c.command(incrby_, args...)
+}
+
+func (c *Client) Incrbyfloat(args ...interface{}) *Reply {
+	return c.command(incrbyfloat_, args...)
+}
+
+func (c *Client) Info(args ...interface{}) *Reply {
+	return c.command(info_, args...)
+}
+
+func (c *Client) Keys(args ...interface{}) *Reply {
+	return c.command(keys_, args...)
+}
+
+func (c *Client) Lastsave(args ...interface{}) *Reply {
+	return c.command(lastsave_, args...)
+}
+
+func (c *Client) Lindex(args ...interface{}) *Reply {
+	return c.command(lindex_, args...)
+}
+
+func (c *Client) Linsert(args ...interface{}) *Reply {
+	return c.command(linsert_, args...)
+}
+
+func (c *Client) Llen(args ...interface{}) *Reply {
+	return c.command(llen_, args...)
+}
+
+func (c *Client) Lpop(args ...interface{}) *Reply {
+	return c.command(lpop_, args...)
+}
+
+func (c *Client) Lpush(args ...interface{}) *Reply {
+	return c.command(lpush_, args...)
+}
+
+func (c *Client) Lpushx(args ...interface{}) *Reply {
+	return c.command(lpushx_, args...)
+}
+
+func (c *Client) Lrange(args ...interface{}) *Reply {
+	return c.command(lrange_, args...)
+}
+
+func (c *Client) Lrem(args ...interface{}) *Reply {
+	return c.command(lrem_, args...)
+}
+
+func (c *Client) Lset(args ...interface{}) *Reply {
+	return c.command(lset_, args...)
+}
+
+func (c *Client) Ltrim(args ...interface{}) *Reply {
+	return c.command(ltrim_, args...)
+}
+
+func (c *Client) Mget(args ...interface{}) *Reply {
+	return c.command(mget_, args...)
+}
+
+func (c *Client) Migrate(args ...interface{}) *Reply {
+	return c.command(migrate_, args...)
+}
+
+func (c *Client) Monitor(args ...interface{}) *Reply {
+	return c.command(monitor_, args...)
+}
+
+func (c *Client) Move(args ...interface{}) *Reply {
+	return c.command(move_, args...)
+}
+
+func (c *Client) Mset(args ...interface{}) *Reply {
+	return c.command(mset_, args...)
+}
+
+func (c *Client) Msetnx(args ...interface{}) *Reply {
+	return c.command(msetnx_, args...)
+}
+
+func (c *Client) Multi(args ...interface{}) *Reply {
+	return c.command(multi_, args...)
+}
+
+func (c *Client) Object(args ...interface{}) *Reply {
+	return c.command(object_, args...)
+}
+
+func (c *Client) Persist(args ...interface{}) *Reply {
+	return c.command(persist_, args...)
+}
+
+func (c *Client) Pexpire(args ...interface{}) *Reply {
+	return c.command(pexpire_, args...)
+}
+
+func (c *Client) Pexpireat(args ...interface{}) *Reply {
+	return c.command(pexpireat_, args...)
+}
+
+func (c *Client) Ping(args ...interface{}) *Reply {
+	return c.command(ping_, args...)
+}
+
+func (c *Client) Psetex(args ...interface{}) *Reply {
+	return c.command(psetex_, args...)
+}
+
+func (c *Client) Psubscribe(args ...interface{}) *Reply {
+	return c.command(psubscribe_, args...)
+}
+
+func (c *Client) Pttl(args ...interface{}) *Reply {
+	return c.command(pttl_, args...)
+}
+
+func (c *Client) Publish(args ...interface{}) *Reply {
+	return c.command(publish_, args...)
+}
+
+func (c *Client) Punsubscribe(args ...interface{}) *Reply {
+	return c.command(punsubscribe_, args...)
+}
+
+func (c *Client) Randomkey(args ...interface{}) *Reply {
+	return c.command(randomkey_, args...)
+}
+
+func (c *Client) Rename(args ...interface{}) *Reply {
+	return c.command(rename_, args...)
+}
+
+func (c *Client) Renamenx(args ...interface{}) *Reply {
+	return c.command(renamenx_, args...)
+}
+
+func (c *Client) Restore(args ...interface{}) *Reply {
+	return c.command(restore_, args...)
+}
+
+func (c *Client) Rpop(args ...interface{}) *Reply {
+	return c.command(rpop_, args...)
+}
+
+func (c *Client) Rpoplpush(args ...interface{}) *Reply {
+	return c.command(rpoplpush_, args...)
+}
+
+func (c *Client) Rpush(args ...interface{}) *Reply {
+	return c.command(rpush_, args...)
+}
+
+func (c *Client) Rpushx(args ...interface{}) *Reply {
+	return c.command(rpushx_, args...)
+}
+
+func (c *Client) Sadd(args ...interface{}) *Reply {
+	return c.command(sadd_, args...)
+}
+
+func (c *Client) Save(args ...interface{}) *Reply {
+	return c.command(save_, args...)
+}
+
+func (c *Client) Scard(args ...interface{}) *Reply {
+	return c.command(scard_, args...)
+}
+
+func (c *Client) Script(args ...interface{}) *Reply {
+	return c.command(script_, args...)
+}
+
+func (c *Client) Sdiff(args ...interface{}) *Reply {
+	return c.command(sdiff_, args...)
+}
+
+func (c *Client) Sdiffstore(args ...interface{}) *Reply {
+	return c.command(sdiffstore_, args...)
+}
+
+func (c *Client) Select(args ...interface{}) *Reply {
+	return c.command(select_, args...)
+}
+
+func (c *Client) Set(args ...interface{}) *Reply {
+	return c.command(set_, args...)
+}
+
+func (c *Client) Setbit(args ...interface{}) *Reply {
+	return c.command(setbit_, args...)
+}
+
+func (c *Client) Setex(args ...interface{}) *Reply {
+	return c.command(setex_, args...)
+}
+
+func (c *Client) Setnx(args ...interface{}) *Reply {
+	return c.command(setnx_, args...)
+}
+
+func (c *Client) Setrange(args ...interface{}) *Reply {
+	return c.command(setrange_, args...)
+}
+
+func (c *Client) Shutdown(args ...interface{}) *Reply {
+	return c.command(shutdown_, args...)
+}
+
+func (c *Client) Sinter(args ...interface{}) *Reply {
+	return c.command(sinter_, args...)
+}
+
+func (c *Client) Sinterstore(args ...interface{}) *Reply {
+	return c.command(sinterstore_, args...)
+}
+
+func (c *Client) Sismember(args ...interface{}) *Reply {
+	return c.command(sismember_, args...)
+}
+
+func (c *Client) Slaveof(args ...interface{}) *Reply {
+	return c.command(slaveof_, args...)
+}
+
+func (c *Client) Smembers(args ...interface{}) *Reply {
+	return c.command(smembers_, args...)
+}
+
+func (c *Client) Smove(args ...interface{}) *Reply {
+	return c.command(smove_, args...)
+}
+
+func (c *Client) Sort(args ...interface{}) *Reply {
+	return c.command(sort_, args...)
+}
+
+func (c *Client) Spop(args ...interface{}) *Reply {
+	return c.command(spop_, args...)
+}
+
+func (c *Client) Srandmember(args ...interface{}) *Reply {
+	return c.command(srandmember_, args...)
+}
+
+func (c *Client) Srem(args ...interface{}) *Reply {
+	return c.command(srem_, args...)
+}
+
+func (c *Client) Strlen(args ...interface{}) *Reply {
+	return c.command(strlen_, args...)
+}
+
+func (c *Client) Subscribe(args ...interface{}) *Reply {
+	return c.command(subscribe_, args...)
+}
+
+func (c *Client) Sunion(args ...interface{}) *Reply {
+	return c.command(sunion_, args...)
+}
+
+func (c *Client) Sunionstore(args ...interface{}) *Reply {
+	return c.command(sunionstore_, args...)
+}
+
+func (c *Client) Sync(args ...interface{}) *Reply {
+	return c.command(sync_, args...)
+}
+
+func (c *Client) Time(args ...interface{}) *Reply {
+	return c.command(time_, args...)
+}
+
+func (c *Client) Ttl(args ...interface{}) *Reply {
+	return c.command(ttl_, args...)
+}
+
+func (c *Client) Type(args ...interface{}) *Reply {
+	return c.command(type_, args...)
+}
+
+func (c *Client) Unsubscribe(args ...interface{}) *Reply {
+	return c.command(unsubscribe_, args...)
+}
+
+func (c *Client) Unwatch(args ...interface{}) *Reply {
+	return c.command(unwatch_, args...)
+}
+
+func (c *Client) Watch(args ...interface{}) *Reply {
+	return c.command(watch_, args...)
+}
+
+func (c *Client) Zadd(args ...interface{}) *Reply {
+	return c.command(zadd_, args...)
+}
+
+func (c *Client) Zcard(args ...interface{}) *Reply {
+	return c.command(zcard_, args...)
+}
+
+func (c *Client) Zcount(args ...interface{}) *Reply {
+	return c.command(zcount_, args...)
+}
+
+func (c *Client) Zincrby(args ...interface{}) *Reply {
+	return c.command(zincrby_, args...)
+}
+
+func (c *Client) Zinterstore(args ...interface{}) *Reply {
+	return c.command(zinterstore_, args...)
+}
+
+func (c *Client) Zrange(args ...interface{}) *Reply {
+	return c.command(zrange_, args...)
+}
+
+func (c *Client) Zrangebyscore(args ...interface{}) *Reply {
+	return c.command(zrangebyscore_, args...)
+}
+
+func (c *Client) Zrank(args ...interface{}) *Reply {
+	return c.command(zrank_, args...)
+}
+
+func (c *Client) Zrem(args ...interface{}) *Reply {
+	return c.command(zrem_, args...)
+}
+
+func (c *Client) Zremrangebyrank(args ...interface{}) *Reply {
+	return c.command(zremrangebyrank_, args...)
+}
+
+func (c *Client) Zremrangebyscore(args ...interface{}) *Reply {
+	return c.command(zremrangebyscore_, args...)
+}
+
+func (c *Client) Zrevrange(args ...interface{}) *Reply {
+	return c.command(zrevrange_, args...)
+}
+
+func (c *Client) Zrevrangebyscore(args ...interface{}) *Reply {
+	return c.command(zrevrangebyscore_, args...)
+}
+
+func (c *Client) Zrevrank(args ...interface{}) *Reply {
+	return c.command(zrevrank_, args...)
+}
+
+func (c *Client) Zscore(args ...interface{}) *Reply {
+	return c.command(zscore_, args...)
+}
+
+func (c *Client) Zunionstore(args ...interface{}) *Reply {
+	return c.command(zunionstore_, args...)
+}
+
+func (c *Client) AsyncAppend(args ...interface{}) Future {
+	return c.asyncCommand(append_, args...)
+}
+
+func (c *Client) AsyncAsking(args ...interface{}) Future {
+	return c.asyncCommand(asking_, args...)
+}
+
+func (c *Client) AsyncAuth(args ...interface{}) Future {
+	return c.asyncCommand(auth_, args...)
+}
+
+func (c *Client) AsyncBgrewriteaof(args ...interface{}) Future {
+	return c.asyncCommand(bgrewriteaof_, args...)
+}
+
+func (c *Client) AsyncBgsave(args ...interface{}) Future {
+	return c.asyncCommand(bgsave_, args...)
+}
+
+func (c *Client) AsyncBlpop(args ...interface{}) Future {
+	return c.asyncCommand(blpop_, args...)
+}
+
+func (c *Client) AsyncBrpop(args ...interface{}) Future {
+	return c.asyncCommand(brpop_, args...)
+}
+
+func (c *Client) AsyncBrpoplpush(args ...interface{}) Future {
+	return c.asyncCommand(brpoplpush_, args...)
+}
+
+func (c *Client) AsyncClient(args ...interface{}) Future {
+	return c.asyncCommand(client_, args...)
+}
+
+func (c *Client) AsyncCluster(args ...interface{}) Future {
+	return c.asyncCommand(cluster_, args...)
+}
+
+func (c *Client) AsyncConfig(args ...interface{}) Future {
+	return c.asyncCommand(config_, args...)
+}
+
+func (c *Client) AsyncDbsize(args ...interface{}) Future {
+	return c.asyncCommand(dbsize_, args...)
+}
+
+func (c *Client) AsyncDebug(args ...interface{}) Future {
+	return c.asyncCommand(debug_, args...)
+}
+
+func (c *Client) AsyncDecr(args ...interface{}) Future {
+	return c.asyncCommand(decr_, args...)
+}
+
+func (c *Client) AsyncDecrby(args ...interface{}) Future {
+	return c.asyncCommand(decrby_, args...)
+}
+
+func (c *Client) AsyncDel(args ...interface{}) Future {
+	return c.asyncCommand(del_, args...)
+}
+
+func (c *Client) AsyncDiscard(args ...interface{}) Future {
+	return c.asyncCommand(discard_, args...)
+}
+
+func (c *Client) AsyncDump(args ...interface{}) Future {
+	return c.asyncCommand(dump_, args...)
+}
+
+func (c *Client) AsyncEcho(args ...interface{}) Future {
+	return c.asyncCommand(echo_, args...)
+}
+
+func (c *Client) AsyncEval(args ...interface{}) Future {
+	return c.asyncCommand(eval_, args...)
+}
+
+func (c *Client) AsyncExec(args ...interface{}) Future {
+	return c.asyncCommand(exec_, args...)
+}
+
+func (c *Client) AsyncExists(args ...interface{}) Future {
+	return c.asyncCommand(exists_, args...)
+}
+
+func (c *Client) AsyncExpire(args ...interface{}) Future {
+	return c.asyncCommand(expire_, args...)
+}
+
+func (c *Client) AsyncExpireat(args ...interface{}) Future {
+	return c.asyncCommand(expireat_, args...)
+}
+
+func (c *Client) AsyncFlushall(args ...interface{}) Future {
+	return c.asyncCommand(flushall_, args...)
+}
+
+func (c *Client) AsyncFlushdb(args ...interface{}) Future {
+	return c.asyncCommand(flushdb_, args...)
+}
+
+func (c *Client) AsyncGet(args ...interface{}) Future {
+	return c.asyncCommand(get_, args...)
+}
+
+func (c *Client) AsyncGetbit(args ...interface{}) Future {
+	return c.asyncCommand(getbit_, args...)
+}
+
+func (c *Client) AsyncGetrange(args ...interface{}) Future {
+	return c.asyncCommand(getrange_, args...)
+}
+
+func (c *Client) AsyncGetset(args ...interface{}) Future {
+	return c.asyncCommand(getset_, args...)
+}
+
+func (c *Client) AsyncHdel(args ...interface{}) Future {
+	return c.asyncCommand(hdel_, args...)
+}
+
+func (c *Client) AsyncHexists(args ...interface{}) Future {
+	return c.asyncCommand(hexists_, args...)
+}
+
+func (c *Client) AsyncHget(args ...interface{}) Future {
+	return c.asyncCommand(hget_, args...)
+}
+
+func (c *Client) AsyncHgetall(args ...interface{}) Future {
+	return c.asyncCommand(hgetall_, args...)
+}
+
+func (c *Client) AsyncHincrby(args ...interface{}) Future {
+	return c.asyncCommand(hincrby_, args...)
+}
+
+func (c *Client) AsyncHincrbyfloat(args ...interface{}) Future {
+	return c.asyncCommand(hincrbyfloat_, args...)
+}
+
+func (c *Client) AsyncHkeys(args ...interface{}) Future {
+	return c.asyncCommand(hkeys_, args...)
+}
+
+func (c *Client) AsyncHlen(args ...interface{}) Future {
+	return c.asyncCommand(hlen_, args...)
+}
+
+func (c *Client) AsyncHmget(args ...interface{}) Future {
+	return c.asyncCommand(hmget_, args...)
+}
+
+func (c *Client) AsyncHmset(args ...interface{}) Future {
+	return c.asyncCommand(hmset_, args...)
+}
+
+func (c *Client) AsyncHset(args ...interface{}) Future {
+	return c.asyncCommand(hset_, args...)
+}
+
+func (c *Client) AsyncHsetnx(args ...interface{}) Future {
+	return c.asyncCommand(hsetnx_, args...)
+}
+
+func (c *Client) AsyncHvals(args ...interface{}) Future {
+	return c.asyncCommand(hvals_, args...)
+}
+
+func (c *Client) AsyncIncr(args ...interface{}) Future {
+	return c.asyncCommand(incr_, args...)
+}
+
+func (c *Client) AsyncIncrby(args ...interface{}) Future {
+	return c.asyncCommand(incrby_, args...)
+}
+
+func (c *Client) AsyncIncrbyfloat(args ...interface{}) Future {
+	return c.asyncCommand(incrbyfloat_, args...)
+}
+
+func (c *Client) AsyncInfo(args ...interface{}) Future {
+	return c.asyncCommand(info_, args...)
+}
+
+func (c *Client) AsyncKeys(args ...interface{}) Future {
+	return c.asyncCommand(keys_, args...)
+}
+
+func (c *Client) AsyncLastsave(args ...interface{}) Future {
+	return c.asyncCommand(lastsave_, args...)
+}
+
+func (c *Client) AsyncLindex(args ...interface{}) Future {
+	return c.asyncCommand(lindex_, args...)
+}
+
+func (c *Client) AsyncLinsert(args ...interface{}) Future {
+	return c.asyncCommand(linsert_, args...)
+}
+
+func (c *Client) AsyncLlen(args ...interface{}) Future {
+	return c.asyncCommand(llen_, args...)
+}
+
+func (c *Client) AsyncLpop(args ...interface{}) Future {
+	return c.asyncCommand(lpop_, args...)
+}
+
+func (c *Client) AsyncLpush(args ...interface{}) Future {
+	return c.asyncCommand(lpush_, args...)
+}
+
+func (c *Client) AsyncLpushx(args ...interface{}) Future {
+	return c.asyncCommand(lpushx_, args...)
+}
+
+func (c *Client) AsyncLrange(args ...interface{}) Future {
+	return c.asyncCommand(lrange_, args...)
+}
+
+func (c *Client) AsyncLrem(args ...interface{}) Future {
+	return c.asyncCommand(lrem_, args...)
+}
+
+func (c *Client) AsyncLset(args ...interface{}) Future {
+	return c.asyncCommand(lset_, args...)
+}
+
+func (c *Client) AsyncLtrim(args ...interface{}) Future {
+	return c.asyncCommand(ltrim_, args...)
+}
+
+func (c *Client) AsyncMget(args ...interface{}) Future {
+	return c.asyncCommand(mget_, args...)
+}
+
+func (c *Client) AsyncMigrate(args ...interface{}) Future {
+	return c.asyncCommand(migrate_, args...)
+}
+
+func (c *Client) AsyncMonitor(args ...interface{}) Future {
+	return c.asyncCommand(monitor_, args...)
+}
+
+func (c *Client) AsyncMove(args ...interface{}) Future {
+	return c.asyncCommand(move_, args...)
+}
+
+func (c *Client) AsyncMset(args ...interface{}) Future {
+	return c.asyncCommand(mset_, args...)
+}
+
+func (c *Client) AsyncMsetnx(args ...interface{}) Future {
+	return c.asyncCommand(msetnx_, args...)
+}
+
+func (c *Client) AsyncMulti(args ...interface{}) Future {
+	return c.asyncCommand(multi_, args...)
+}
+
+func (c *Client) AsyncObject(args ...interface{}) Future {
+	return c.asyncCommand(object_, args...)
+}
+
+func (c *Client) AsyncPersist(args ...interface{}) Future {
+	return c.asyncCommand(persist_, args...)
+}
+
+func (c *Client) AsyncPexpire(args ...interface{}) Future {
+	return c.asyncCommand(pexpire_, args...)
+}
+
+func (c *Client) AsyncPexpireat(args ...interface{}) Future {
+	return c.asyncCommand(pexpireat_, args...)
+}
+
+func (c *Client) AsyncPing(args ...interface{}) Future {
+	return c.asyncCommand(ping_, args...)
+}
+
+func (c *Client) AsyncPsetex(args ...interface{}) Future {
+	return c.asyncCommand(psetex_, args...)
+}
+
+func (c *Client) AsyncPsubscribe(args ...interface{}) Future {
+	return c.asyncCommand(psubscribe_, args...)
+}
+
+func (c *Client) AsyncPttl(args ...interface{}) Future {
+	return c.asyncCommand(pttl_, args...)
+}
+
+func (c *Client) AsyncPublish(args ...interface{}) Future {
+	return c.asyncCommand(publish_, args...)
+}
+
+func (c *Client) AsyncPunsubscribe(args ...interface{}) Future {
+	return c.asyncCommand(punsubscribe_, args...)
+}
+
+func (c *Client) AsyncRandomkey(args ...interface{}) Future {
+	return c.asyncCommand(randomkey_, args...)
+}
+
+func (c *Client) AsyncRename(args ...interface{}) Future {
+	return c.asyncCommand(rename_, args...)
+}
+
+func (c *Client) AsyncRenamenx(args ...interface{}) Future {
+	return c.asyncCommand(renamenx_, args...)
+}
+
+func (c *Client) AsyncRestore(args ...interface{}) Future {
+	return c.asyncCommand(restore_, args...)
+}
+
+func (c *Client) AsyncRpop(args ...interface{}) Future {
+	return c.asyncCommand(rpop_, args...)
+}
+
+func (c *Client) AsyncRpoplpush(args ...interface{}) Future {
+	return c.asyncCommand(rpoplpush_, args...)
+}
+
+func (c *Client) AsyncRpush(args ...interface{}) Future {
+	return c.asyncCommand(rpush_, args...)
+}
+
+func (c *Client) AsyncRpushx(args ...interface{}) Future {
+	return c.asyncCommand(rpushx_, args...)
+}
+
+func (c *Client) AsyncSadd(args ...interface{}) Future {
+	return c.asyncCommand(sadd_, args...)
+}
+
+func (c *Client) AsyncSave(args ...interface{}) Future {
+	return c.asyncCommand(save_, args...)
+}
+
+func (c *Client) AsyncScard(args ...interface{}) Future {
+	return c.asyncCommand(scard_, args...)
+}
+
+func (c *Client) AsyncScript(args ...interface{}) Future {
+	return c.asyncCommand(script_, args...)
+}
+
+func (c *Client) AsyncSdiff(args ...interface{}) Future {
+	return c.asyncCommand(sdiff_, args...)
+}
+
+func (c *Client) AsyncSdiffstore(args ...interface{}) Future {
+	return c.asyncCommand(sdiffstore_, args...)
+}
+
+func (c *Client) AsyncSelect(args ...interface{}) Future {
+	return c.asyncCommand(select_, args...)
+}
+
+func (c *Client) AsyncSet(args ...interface{}) Future {
+	return c.asyncCommand(set_, args...)
+}
+
+func (c *Client) AsyncSetbit(args ...interface{}) Future {
+	return c.asyncCommand(setbit_, args...)
+}
+
+func (c *Client) AsyncSetex(args ...interface{}) Future {
+	return c.asyncCommand(setex_, args...)
+}
+
+func (c *Client) AsyncSetnx(args ...interface{}) Future {
+	return c.asyncCommand(setnx_, args...)
+}
+
+func (c *Client) AsyncSetrange(args ...interface{}) Future {
+	return c.asyncCommand(setrange_, args...)
+}
+
+func (c *Client) AsyncShutdown(args ...interface{}) Future {
+	return c.asyncCommand(shutdown_, args...)
+}
+
+func (c *Client) AsyncSinter(args ...interface{}) Future {
+	return c.asyncCommand(sinter_, args...)
+}
+
+func (c *Client) AsyncSinterstore(args ...interface{}) Future {
+	return c.asyncCommand(sinterstore_, args...)
+}
+
+func (c *Client) AsyncSismember(args ...interface{}) Future {
+	return c.asyncCommand(sismember_, args...)
+}
+
+func (c *Client) AsyncSlaveof(args ...interface{}) Future {
+	return c.asyncCommand(slaveof_, args...)
+}
+
+func (c *Client) AsyncSmembers(args ...interface{}) Future {
+	return c.asyncCommand(smembers_, args...)
+}
+
+func (c *Client) AsyncSmove(args ...interface{}) Future {
+	return c.asyncCommand(smove_, args...)
+}
+
+func (c *Client) AsyncSort(args ...interface{}) Future {
+	return c.asyncCommand(sort_, args...)
+}
+
+func (c *Client) AsyncSpop(args ...interface{}) Future {
+	return c.asyncCommand(spop_, args...)
+}
+
+func (c *Client) AsyncSrandmember(args ...interface{}) Future {
+	return c.asyncCommand(srandmember_, args...)
+}
+
+func (c *Client) AsyncSrem(args ...interface{}) Future {
+	return c.asyncCommand(srem_, args...)
+}
+
+func (c *Client) AsyncStrlen(args ...interface{}) Future {
+	return c.asyncCommand(strlen_, args...)
+}
+
+func (c *Client) AsyncSubscribe(args ...interface{}) Future {
+	return c.asyncCommand(subscribe_, args...)
+}
+
+func (c *Client) AsyncSunion(args ...interface{}) Future {
+	return c.asyncCommand(sunion_, args...)
+}
+
+func (c *Client) AsyncSunionstore(args ...interface{}) Future {
+	return c.asyncCommand(sunionstore_, args...)
+}
+
+func (c *Client) AsyncSync(args ...interface{}) Future {
+	return c.asyncCommand(sync_, args...)
+}
+
+func (c *Client) AsyncTime(args ...interface{}) Future {
+	return c.asyncCommand(time_, args...)
+}
+
+func (c *Client) AsyncTtl(args ...interface{}) Future {
+	return c.asyncCommand(ttl_, args...)
+}
+
+func (c *Client) AsyncType(args ...interface{}) Future {
+	return c.asyncCommand(type_, args...)
+}
+
+func (c *Client) AsyncUnsubscribe(args ...interface{}) Future {
+	return c.asyncCommand(unsubscribe_, args...)
+}
+
+func (c *Client) AsyncUnwatch(args ...interface{}) Future {
+	return c.asyncCommand(unwatch_, args...)
+}
+
+func (c *Client) AsyncWatch(args ...interface{}) Future {
+	return c.asyncCommand(watch_, args...)
+}
+
+func (c *Client) AsyncZadd(args ...interface{}) Future {
+	return c.asyncCommand(zadd_, args...)
+}
+
+func (c *Client) AsyncZcard(args ...interface{}) Future {
+	return c.asyncCommand(zcard_, args...)
+}
+
+func (c *Client) AsyncZcount(args ...interface{}) Future {
+	return c.asyncCommand(zcount_, args...)
+}
+
+func (c *Client) AsyncZincrby(args ...interface{}) Future {
+	return c.asyncCommand(zincrby_, args...)
+}
+
+func (c *Client) AsyncZinterstore(args ...interface{}) Future {
+	return c.asyncCommand(zinterstore_, args...)
+}
+
+func (c *Client) AsyncZrange(args ...interface{}) Future {
+	return c.asyncCommand(zrange_, args...)
+}
+
+func (c *Client) AsyncZrangebyscore(args ...interface{}) Future {
+	return c.asyncCommand(zrangebyscore_, args...)
+}
+
+func (c *Client) AsyncZrank(args ...interface{}) Future {
+	return c.asyncCommand(zrank_, args...)
+}
+
+func (c *Client) AsyncZrem(args ...interface{}) Future {
+	return c.asyncCommand(zrem_, args...)
+}
+
+func (c *Client) AsyncZremrangebyrank(args ...interface{}) Future {
+	return c.asyncCommand(zremrangebyrank_, args...)
+}
+
+func (c *Client) AsyncZremrangebyscore(args ...interface{}) Future {
+	return c.asyncCommand(zremrangebyscore_, args...)
+}
+
+func (c *Client) AsyncZrevrange(args ...interface{}) Future {
+	return c.asyncCommand(zrevrange_, args...)
+}
+
+func (c *Client) AsyncZrevrangebyscore(args ...interface{}) Future {
+	return c.asyncCommand(zrevrangebyscore_, args...)
+}
+
+func (c *Client) AsyncZrevrank(args ...interface{}) Future {
+	return c.asyncCommand(zrevrank_, args...)
+}
+
+func (c *Client) AsyncZscore(args ...interface{}) Future {
+	return c.asyncCommand(zscore_, args...)
+}
+
+func (c *Client) AsyncZunionstore(args ...interface{}) Future {
+	return c.asyncCommand(zunionstore_, args...)
+}
+
+func (mc *MultiCommand) Append(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{append_, args})
+}
+
+func (mc *MultiCommand) Asking(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{asking_, args})
+}
+
+func (mc *MultiCommand) Auth(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{auth_, args})
+}
+
+func (mc *MultiCommand) Bgrewriteaof(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{bgrewriteaof_, args})
+}
+
+func (mc *MultiCommand) Bgsave(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{bgsave_, args})
+}
+
+func (mc *MultiCommand) Blpop(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{blpop_, args})
+}
+
+func (mc *MultiCommand) Brpop(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{brpop_, args})
+}
+
+func (mc *MultiCommand) Brpoplpush(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{brpoplpush_, args})
+}
+
+func (mc *MultiCommand) Client(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{client_, args})
+}
+
+func (mc *MultiCommand) Cluster(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{cluster_, args})
+}
+
+func (mc *MultiCommand) Config(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{config_, args})
+}
+
+func (mc *MultiCommand) Dbsize(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{dbsize_, args})
+}
+
+func (mc *MultiCommand) Debug(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{debug_, args})
+}
+
+func (mc *MultiCommand) Decr(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{decr_, args})
+}
+
+func (mc *MultiCommand) Decrby(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{decrby_, args})
+}
+
+func (mc *MultiCommand) Del(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{del_, args})
+}
+
+func (mc *MultiCommand) Discard(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{discard_, args})
+}
+
+func (mc *MultiCommand) Dump(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{dump_, args})
+}
+
+func (mc *MultiCommand) Echo(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{echo_, args})
+}
+
+func (mc *MultiCommand) Eval(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{eval_, args})
+}
+
+func (mc *MultiCommand) Exec(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{exec_, args})
+}
+
+func (mc *MultiCommand) Exists(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{exists_, args})
+}
+
+func (mc *MultiCommand) Expire(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{expire_, args})
+}
+
+func (mc *MultiCommand) Expireat(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{expireat_, args})
+}
+
+func (mc *MultiCommand) Flushall(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{flushall_, args})
+}
+
+func (mc *MultiCommand) Flushdb(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{flushdb_, args})
+}
+
+func (mc *MultiCommand) Get(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{get_, args})
+}
+
+func (mc *MultiCommand) Getbit(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{getbit_, args})
+}
+
+func (mc *MultiCommand) Getrange(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{getrange_, args})
+}
+
+func (mc *MultiCommand) Getset(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{getset_, args})
+}
+
+func (mc *MultiCommand) Hdel(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hdel_, args})
+}
+
+func (mc *MultiCommand) Hexists(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hexists_, args})
+}
+
+func (mc *MultiCommand) Hget(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hget_, args})
+}
+
+func (mc *MultiCommand) Hgetall(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hgetall_, args})
+}
+
+func (mc *MultiCommand) Hincrby(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hincrby_, args})
+}
+
+func (mc *MultiCommand) Hincrbyfloat(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hincrbyfloat_, args})
+}
+
+func (mc *MultiCommand) Hkeys(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hkeys_, args})
+}
+
+func (mc *MultiCommand) Hlen(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hlen_, args})
+}
+
+func (mc *MultiCommand) Hmget(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hmget_, args})
+}
+
+func (mc *MultiCommand) Hmset(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hmset_, args})
+}
+
+func (mc *MultiCommand) Hset(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hset_, args})
+}
+
+func (mc *MultiCommand) Hsetnx(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hsetnx_, args})
+}
+
+func (mc *MultiCommand) Hvals(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{hvals_, args})
+}
+
+func (mc *MultiCommand) Incr(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{incr_, args})
+}
+
+func (mc *MultiCommand) Incrby(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{incrby_, args})
+}
+
+func (mc *MultiCommand) Incrbyfloat(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{incrbyfloat_, args})
+}
+
+func (mc *MultiCommand) Info(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{info_, args})
+}
+
+func (mc *MultiCommand) Keys(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{keys_, args})
+}
+
+func (mc *MultiCommand) Lastsave(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{lastsave_, args})
+}
+
+func (mc *MultiCommand) Lindex(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{lindex_, args})
+}
+
+func (mc *MultiCommand) Linsert(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{linsert_, args})
+}
+
+func (mc *MultiCommand) Llen(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{llen_, args})
+}
+
+func (mc *MultiCommand) Lpop(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{lpop_, args})
+}
+
+func (mc *MultiCommand) Lpush(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{lpush_, args})
+}
+
+func (mc *MultiCommand) Lpushx(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{lpushx_, args})
+}
+
+func (mc *MultiCommand) Lrange(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{lrange_, args})
+}
+
+func (mc *MultiCommand) Lrem(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{lrem_, args})
+}
+
+func (mc *MultiCommand) Lset(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{lset_, args})
+}
+
+func (mc *MultiCommand) Ltrim(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{ltrim_, args})
+}
+
+func (mc *MultiCommand) Mget(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{mget_, args})
+}
+
+func (mc *MultiCommand) Migrate(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{migrate_, args})
+}
+
+func (mc *MultiCommand) Monitor(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{monitor_, args})
+}
+
+func (mc *MultiCommand) Move(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{move_, args})
+}
+
+func (mc *MultiCommand) Mset(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{mset_, args})
+}
+
+func (mc *MultiCommand) Msetnx(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{msetnx_, args})
+}
+
+func (mc *MultiCommand) Multi(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{multi_, args})
+}
+
+func (mc *MultiCommand) Object(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{object_, args})
+}
+
+func (mc *MultiCommand) Persist(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{persist_, args})
+}
+
+func (mc *MultiCommand) Pexpire(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{pexpire_, args})
+}
+
+func (mc *MultiCommand) Pexpireat(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{pexpireat_, args})
+}
+
+func (mc *MultiCommand) Ping(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{ping_, args})
+}
+
+func (mc *MultiCommand) Psetex(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{psetex_, args})
+}
+
+func (mc *MultiCommand) Psubscribe(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{psubscribe_, args})
+}
+
+func (mc *MultiCommand) Pttl(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{pttl_, args})
+}
+
+func (mc *MultiCommand) Publish(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{publish_, args})
+}
+
+func (mc *MultiCommand) Punsubscribe(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{punsubscribe_, args})
+}
+
+func (mc *MultiCommand) Randomkey(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{randomkey_, args})
+}
+
+func (mc *MultiCommand) Rename(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{rename_, args})
+}
+
+func (mc *MultiCommand) Renamenx(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{renamenx_, args})
+}
+
+func (mc *MultiCommand) Restore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{restore_, args})
+}
+
+func (mc *MultiCommand) Rpop(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{rpop_, args})
+}
+
+func (mc *MultiCommand) Rpoplpush(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{rpoplpush_, args})
+}
+
+func (mc *MultiCommand) Rpush(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{rpush_, args})
+}
+
+func (mc *MultiCommand) Rpushx(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{rpushx_, args})
+}
+
+func (mc *MultiCommand) Sadd(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sadd_, args})
+}
+
+func (mc *MultiCommand) Save(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{save_, args})
+}
+
+func (mc *MultiCommand) Scard(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{scard_, args})
+}
+
+func (mc *MultiCommand) Script(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{script_, args})
+}
+
+func (mc *MultiCommand) Sdiff(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sdiff_, args})
+}
+
+func (mc *MultiCommand) Sdiffstore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sdiffstore_, args})
+}
+
+func (mc *MultiCommand) Select(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{select_, args})
+}
+
+func (mc *MultiCommand) Set(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{set_, args})
+}
+
+func (mc *MultiCommand) Setbit(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{setbit_, args})
+}
+
+func (mc *MultiCommand) Setex(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{setex_, args})
+}
+
+func (mc *MultiCommand) Setnx(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{setnx_, args})
+}
+
+func (mc *MultiCommand) Setrange(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{setrange_, args})
+}
+
+func (mc *MultiCommand) Shutdown(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{shutdown_, args})
+}
+
+func (mc *MultiCommand) Sinter(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sinter_, args})
+}
+
+func (mc *MultiCommand) Sinterstore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sinterstore_, args})
+}
+
+func (mc *MultiCommand) Sismember(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sismember_, args})
+}
+
+func (mc *MultiCommand) Slaveof(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{slaveof_, args})
+}
+
+func (mc *MultiCommand) Smembers(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{smembers_, args})
+}
+
+func (mc *MultiCommand) Smove(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{smove_, args})
+}
+
+func (mc *MultiCommand) Sort(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sort_, args})
+}
+
+func (mc *MultiCommand) Spop(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{spop_, args})
+}
+
+func (mc *MultiCommand) Srandmember(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{srandmember_, args})
+}
+
+func (mc *MultiCommand) Srem(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{srem_, args})
+}
+
+func (mc *MultiCommand) Strlen(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{strlen_, args})
+}
+
+func (mc *MultiCommand) Subscribe(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{subscribe_, args})
+}
+
+func (mc *MultiCommand) Sunion(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sunion_, args})
+}
+
+func (mc *MultiCommand) Sunionstore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sunionstore_, args})
+}
+
+func (mc *MultiCommand) Sync(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{sync_, args})
+}
+
+func (mc *MultiCommand) Time(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{time_, args})
+}
+
+func (mc *MultiCommand) Ttl(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{ttl_, args})
+}
+
+func (mc *MultiCommand) Type(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{type_, args})
+}
+
+func (mc *MultiCommand) Unsubscribe(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{unsubscribe_, args})
+}
+
+func (mc *MultiCommand) Unwatch(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{unwatch_, args})
+}
+
+func (mc *MultiCommand) Watch(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{watch_, args})
+}
+
+func (mc *MultiCommand) Zadd(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zadd_, args})
+}
+
+func (mc *MultiCommand) Zcard(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zcard_, args})
+}
+
+func (mc *MultiCommand) Zcount(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zcount_, args})
+}
+
+func (mc *MultiCommand) Zincrby(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zincrby_, args})
+}
+
+func (mc *MultiCommand) Zinterstore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zinterstore_, args})
+}
+
+func (mc *MultiCommand) Zrange(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zrange_, args})
+}
+
+func (mc *MultiCommand) Zrangebyscore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zrangebyscore_, args})
+}
+
+func (mc *MultiCommand) Zrank(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zrank_, args})
+}
+
+func (mc *MultiCommand) Zrem(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zrem_, args})
+}
+
+func (mc *MultiCommand) Zremrangebyrank(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zremrangebyrank_, args})
+}
+
+func (mc *MultiCommand) Zremrangebyscore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zremrangebyscore_, args})
+}
+
+func (mc *MultiCommand) Zrevrange(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zrevrange_, args})
+}
+
+func (mc *MultiCommand) Zrevrangebyscore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zrevrangebyscore_, args})
+}
+
+func (mc *MultiCommand) Zrevrank(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zrevrank_, args})
+}
+
+func (mc *MultiCommand) Zscore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zscore_, args})
+}
+
+func (mc *MultiCommand) Zunionstore(args ...interface{}) {
+	mc.cmds = append(mc.cmds, command{zunionstore_, args})
+}

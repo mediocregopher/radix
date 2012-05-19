@@ -28,7 +28,7 @@ const (
 )
 
 type command struct {
-	cmd  Command
+	cmd  cmdName
 	args []interface{}
 }
 
@@ -151,18 +151,18 @@ func (c *connection) init() *Error {
 	go c.receiver()
 
 	// Select database.
-	r := c.command(Select, c.config.Database)
+	r := c.command("select", c.config.Database)
 	if r.Error != nil {
 		if !c.config.NoLoadingRetry && r.Error.Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
-			r = c.command(Select, c.config.Database)
+			r = c.command("select", c.config.Database)
 			for r.Error != nil {
 				if !r.Error.Test(ErrorLoading) {
 					c.close()
 					return newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
 				}
 				time.Sleep(time.Second)
-				r = c.command(Select, c.config.Database)
+				r = c.command("select", c.config.Database)
 			}
 		} else {
 			c.close()
@@ -172,7 +172,7 @@ func (c *connection) init() *Error {
 
 	// Authenticate if needed.
 	if c.config.Auth != "" {
-		r = c.command(Auth, c.config.Auth)
+		r = c.command("auth", c.config.Auth)
 		if r.Error != nil {
 			c.close()
 			return newErrorExt("failed to authenticate", r.Error, ErrorAuth, ErrorConnection)
@@ -182,7 +182,7 @@ func (c *connection) init() *Error {
 }
 
 // command calls a Redis command.
-func (c *connection) command(cmd Command, args ...interface{}) *Reply {
+func (c *connection) command(cmd cmdName, args ...interface{}) *Reply {
 	if c.closed == 1 {
 		c.init()
 	}
@@ -541,17 +541,17 @@ Invalid:
 
 func (c *connection) handleSubscription(es *envSubscription) {
 	// Prepare command.
-	var cmd Command
+	var cmd cmdName
 
 	switch es.subType {
 	case subSubscribe:
-		cmd = Subscribe
+		cmd = subscribe_
 	case subUnsubscribe:
-		cmd = Unsubscribe
+		cmd = unsubscribe_
 	case subPSubscribe:
-		cmd = Psubscribe
+		cmd = psubscribe_
 	case subPUnsubscribe:
-		cmd = Punsubscribe
+		cmd = punsubscribe_
 	}
 
 	// Send the subscription request.

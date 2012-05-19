@@ -42,9 +42,7 @@ func (c *Client) Close() {
 	c.pool.close()
 }
 
-// Command calls a Redis command.
-func (c *Client) Command(cmd Command, args ...interface{}) *Reply {
-
+func (c *Client) command(cmd cmdName, args ...interface{}) *Reply {
 	// Connection handling
 	conn, err := c.pool.pull()
 	if err != nil {
@@ -52,18 +50,27 @@ func (c *Client) Command(cmd Command, args ...interface{}) *Reply {
 	}
 
 	defer c.pool.push(conn)
-	return conn.command(cmd, args...)
+	return conn.command(cmdName(cmd), args...)
 }
 
-// AsyncCommand calls a Redis command asynchronously.
-func (c *Client) AsyncCommand(cmd Command, args ...interface{}) Future {
+// Command calls a Redis command.
+func (c *Client) Command(cmd string, args ...interface{}) *Reply {
+	return c.command(cmdName(cmd), args...)
+}
+
+func (c *Client) asyncCommand(cmd cmdName, args ...interface{}) Future {
 	f := newFuture()
 
 	go func() {
-		f <- c.Command(cmd, args...)
+		f <- c.command(cmd, args...)
 	}()
 
 	return f
+}
+
+// AsyncCommand calls a Redis command asynchronously.
+func (c *Client) AsyncCommand(cmd cmdName, args ...interface{}) Future {
+	return c.asyncCommand(cmdName(cmd), args...)
 }
 
 func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {

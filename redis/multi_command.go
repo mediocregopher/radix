@@ -18,14 +18,14 @@ func newMultiCommand(transaction bool, c *connection) *MultiCommand {
 // commands, and returns the returned Reply.
 func (mc *MultiCommand) process(userCommands func(*MultiCommand)) *Reply {
 	if mc.transaction {
-		mc.Command(Multi)
+		mc.Multi()
 	}
 	userCommands(mc)
 	var r *Reply
 	if !mc.transaction {
 		r = mc.c.multiCommand(mc.cmds)
 	} else {
-		mc.Command(Exec)
+		mc.Exec()
 		r = mc.c.multiCommand(mc.cmds)
 
 		execReply := r.At(len(r.elems) - 1)
@@ -44,7 +44,7 @@ func (mc *MultiCommand) process(userCommands func(*MultiCommand)) *Reply {
 }
 
 // Command queues a command for later execution.
-func (mc *MultiCommand) Command(cmd Command, args ...interface{}) {
+func (mc *MultiCommand) Command(cmd cmdName, args ...interface{}) {
 	mc.cmds = append(mc.cmds, command{cmd, args})
 }
 
