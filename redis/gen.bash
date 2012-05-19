@@ -34,7 +34,7 @@ EOF
 
 # command names
 for cmd in ${cmds[@]}; do
-	echo "	${cmd}_ cmdName = \"$cmd\"" >>$command
+	echo "	${cmd}_ cmdName = \"${cmd^^}\"" >>$command
 done
 echo -e ")
 " >>$command
@@ -43,7 +43,7 @@ echo -e ")
 for cmd in ${cmds[@]}; do
 	keyword="${cmd~}"
     echo "
-// $keyword calls Redis ${cmd,,} command. 
+// $keyword calls Redis ${cmd^^} command. 
 func (c *Client) $keyword(args ...interface{}) *Reply {
 	return c.command(${cmd}_, args...)
 }" >>$command
@@ -53,7 +53,7 @@ done
 for cmd in ${cmds[@]}; do
 	keyword="${cmd~}"
     echo "
-// Async$keyword calls Redis ${cmd,,} asynchronously. 
+// Async$keyword calls Redis ${cmd^^} asynchronously. 
 func (c *Client) Async$keyword(args ...interface{}) Future {
 	return c.asyncCommand(${cmd}_, args...)
 }" >>$command
@@ -63,7 +63,7 @@ done
 for cmd in ${cmds[@]}; do
 	keyword="${cmd~}"
     echo "
-// $keyword queues a Redis ${cmd,,} command for later execution. 
+// $keyword queues a Redis ${cmd^^} command for later execution. 
 func (mc *MultiCommand) $keyword(args ...interface{}) {
 	mc.command(cmdName(${cmd}_), args...)
 }" >>$command
