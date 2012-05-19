@@ -430,7 +430,7 @@ func (s *S) TestSubscription(c *C) {
 }
 
 // Test pattern subscriptions.
-func (s *S) TestPSubscribe(c *C) {
+func (s *S) TestPsubscribe(c *C) {
 	var messages []*Message
 	msgHdlr := func(msg *Message) {
 		c.Log(msg)
@@ -443,23 +443,23 @@ func (s *S) TestPSubscribe(c *C) {
 		return
 	}
 
-	sub.PSubscribe("foo.*")
+	sub.Psubscribe("foo.*")
 
 	c.Check(rd.Publish("foo.foo", "foo").Int(), Equals, 1)
-	sub.PUnsubscribe("foo.*")
+	sub.Punsubscribe("foo.*")
 	c.Check(rd.Publish("foo.bar", "bar").Int(), Equals, 0)
 	sub.Close()
 
 	time.Sleep(time.Second)
 	c.Assert(len(messages), Equals, 3)
-	c.Check(messages[0].Type, Equals, MessagePSubscribe)
+	c.Check(messages[0].Type, Equals, MessagePsubscribe)
 	c.Check(messages[0].Pattern, Equals, "foo.*")
 	c.Check(messages[0].Subscriptions, Equals, 1)
-	c.Check(messages[1].Type, Equals, MessagePMessage)
+	c.Check(messages[1].Type, Equals, MessagePmessage)
 	c.Check(messages[1].Channel, Equals, "foo.foo")
 	c.Check(messages[1].Payload, Equals, "foo")
 	c.Check(messages[1].Pattern, Equals, "foo.*")
-	c.Check(messages[2].Type, Equals, MessagePUnsubscribe)
+	c.Check(messages[2].Type, Equals, MessagePunsubscribe)
 	c.Check(messages[2].Pattern, Equals, "foo.*")
 }
 

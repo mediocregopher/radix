@@ -23,8 +23,8 @@ const (
 
 	subSubscribe subType = iota
 	subUnsubscribe
-	subPSubscribe
-	subPUnsubscribe
+	subPsubscribe
+	subPunsubscribe
 )
 
 type command struct {
@@ -219,14 +219,14 @@ func (c *connection) unsubscribe(channels ...string) *Error {
 // psubscribe seds a subscription request to the given patterns and returns an error, if any.
 func (c *connection) psubscribe(patterns ...string) *Error {
 	errChan := make(chan *Error)
-	c.subscriptionChan <- &envSubscription{subPSubscribe, patterns, errChan}
+	c.subscriptionChan <- &envSubscription{subPsubscribe, patterns, errChan}
 	return <-errChan
 }
 
 // punsubscribe sends an unsubscription request to the given patterns and returns an error, if any.
 func (c *connection) punsubscribe(patterns ...string) *Error {
 	errChan := make(chan *Error)
-	c.subscriptionChan <- &envSubscription{subPUnsubscribe, patterns, errChan}
+	c.subscriptionChan <- &envSubscription{subPunsubscribe, patterns, errChan}
 	return <-errChan
 }
 
@@ -460,13 +460,13 @@ func (c *connection) handlePublishing(ed *envData) {
 	case "unsubscribe":
 		m.Type = MessageUnsubscribe
 	case "psubscribe":
-		m.Type = MessagePSubscribe
+		m.Type = MessagePsubscribe
 	case "punsubscribe":
-		m.Type = MessagePUnsubscribe
+		m.Type = MessagePunsubscribe
 	case "message":
 		m.Type = MessageMessage
 	case "pmessage":
-		m.Type = MessagePMessage
+		m.Type = MessagePmessage
 	default:
 		goto Invalid
 	}
@@ -488,7 +488,7 @@ func (c *connection) handlePublishing(ed *envData) {
 		}
 
 		m.Subscriptions = r2.Int()
-	case m.Type == MessagePSubscribe || m.Type == MessagePUnsubscribe:
+	case m.Type == MessagePsubscribe || m.Type == MessagePunsubscribe:
 		m.Pattern = r1.Str()
 
 		// number of subscriptions
@@ -508,7 +508,7 @@ func (c *connection) handlePublishing(ed *envData) {
 		}
 
 		m.Payload = r2.Str()
-	case m.Type == MessagePMessage:
+	case m.Type == MessagePmessage:
 		m.Pattern = r1.Str()
 
 		// name of the originating channel
@@ -548,9 +548,9 @@ func (c *connection) handleSubscription(es *envSubscription) {
 		cmd = subscribe_
 	case subUnsubscribe:
 		cmd = unsubscribe_
-	case subPSubscribe:
+	case subPsubscribe:
 		cmd = psubscribe_
-	case subPUnsubscribe:
+	case subPunsubscribe:
 		cmd = punsubscribe_
 	}
 

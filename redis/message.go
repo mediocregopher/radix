@@ -9,10 +9,10 @@ type MessageType int
 const (
 	MessageSubscribe MessageType = iota
 	MessageUnsubscribe
-	MessagePSubscribe
-	MessagePUnsubscribe
+	MessagePsubscribe
+	MessagePunsubscribe
 	MessageMessage
-	MessagePMessage
+	MessagePmessage
 	MessageError
 )
 
@@ -35,13 +35,13 @@ func (m *Message) String() string {
 		mtype = "subscribe"
 	case MessageUnsubscribe:
 		mtype = "unsubscribe"
-	case MessagePSubscribe:
+	case MessagePsubscribe:
 		mtype = "psubscribe"
-	case MessagePUnsubscribe:
+	case MessagePunsubscribe:
 		mtype = "punsubscribe"
 	case MessageMessage:
 		mtype = "message"
-	case MessagePMessage:
+	case MessagePmessage:
 		mtype = "pmessage"
 	case MessageError:
 		mtype = "error"

@@ -47,13 +47,13 @@ func (s *Subscription) Unsubscribe(channels ...string) *Error {
 	return s.conn.unsubscribe(channels...)
 }
 
-// PSubscribe subscribes to given patterns or returns an error.
-func (s *Subscription) PSubscribe(patterns ...string) *Error {
+// Psubscribe subscribes to given patterns or returns an error.
+func (s *Subscription) Psubscribe(patterns ...string) *Error {
 	return s.conn.psubscribe(patterns...)
 }
 
-// PUnsubscribe unsubscribes from given patterns or returns an error.
-func (s *Subscription) PUnsubscribe(patterns ...string) *Error {
+// Punsubscribe unsubscribes from given patterns or returns an error.
+func (s *Subscription) Punsubscribe(patterns ...string) *Error {
 	return s.conn.punsubscribe(patterns...)
 }
 
