@@ -1215,537 +1215,537 @@ func (c *Client) AsyncZunionstore(args ...interface{}) Future {
 }
 
 func (mc *MultiCommand) Append(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{append_, args})
+	mc.command(cmdName(append_), args...)
 }
 
 func (mc *MultiCommand) Asking(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{asking_, args})
+	mc.command(cmdName(asking_), args...)
 }
 
 func (mc *MultiCommand) Auth(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{auth_, args})
+	mc.command(cmdName(auth_), args...)
 }
 
 func (mc *MultiCommand) Bgrewriteaof(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{bgrewriteaof_, args})
+	mc.command(cmdName(bgrewriteaof_), args...)
 }
 
 func (mc *MultiCommand) Bgsave(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{bgsave_, args})
+	mc.command(cmdName(bgsave_), args...)
 }
 
 func (mc *MultiCommand) Blpop(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{blpop_, args})
+	mc.command(cmdName(blpop_), args...)
 }
 
 func (mc *MultiCommand) Brpop(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{brpop_, args})
+	mc.command(cmdName(brpop_), args...)
 }
 
 func (mc *MultiCommand) Brpoplpush(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{brpoplpush_, args})
+	mc.command(cmdName(brpoplpush_), args...)
 }
 
 func (mc *MultiCommand) Client(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{client_, args})
+	mc.command(cmdName(client_), args...)
 }
 
 func (mc *MultiCommand) Cluster(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{cluster_, args})
+	mc.command(cmdName(cluster_), args...)
 }
 
 func (mc *MultiCommand) Config(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{config_, args})
+	mc.command(cmdName(config_), args...)
 }
 
 func (mc *MultiCommand) Dbsize(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{dbsize_, args})
+	mc.command(cmdName(dbsize_), args...)
 }
 
 func (mc *MultiCommand) Debug(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{debug_, args})
+	mc.command(cmdName(debug_), args...)
 }
 
 func (mc *MultiCommand) Decr(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{decr_, args})
+	mc.command(cmdName(decr_), args...)
 }
 
 func (mc *MultiCommand) Decrby(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{decrby_, args})
+	mc.command(cmdName(decrby_), args...)
 }
 
 func (mc *MultiCommand) Del(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{del_, args})
+	mc.command(cmdName(del_), args...)
 }
 
 func (mc *MultiCommand) Discard(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{discard_, args})
+	mc.command(cmdName(discard_), args...)
 }
 
 func (mc *MultiCommand) Dump(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{dump_, args})
+	mc.command(cmdName(dump_), args...)
 }
 
 func (mc *MultiCommand) Echo(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{echo_, args})
+	mc.command(cmdName(echo_), args...)
 }
 
 func (mc *MultiCommand) Eval(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{eval_, args})
+	mc.command(cmdName(eval_), args...)
 }
 
 func (mc *MultiCommand) Exec(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{exec_, args})
+	mc.command(cmdName(exec_), args...)
 }
 
 func (mc *MultiCommand) Exists(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{exists_, args})
+	mc.command(cmdName(exists_), args...)
 }
 
 func (mc *MultiCommand) Expire(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{expire_, args})
+	mc.command(cmdName(expire_), args...)
 }
 
 func (mc *MultiCommand) Expireat(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{expireat_, args})
+	mc.command(cmdName(expireat_), args...)
 }
 
 func (mc *MultiCommand) Flushall(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{flushall_, args})
+	mc.command(cmdName(flushall_), args...)
 }
 
 func (mc *MultiCommand) Flushdb(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{flushdb_, args})
+	mc.command(cmdName(flushdb_), args...)
 }
 
 func (mc *MultiCommand) Get(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{get_, args})
+	mc.command(cmdName(get_), args...)
 }
 
 func (mc *MultiCommand) Getbit(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{getbit_, args})
+	mc.command(cmdName(getbit_), args...)
 }
 
 func (mc *MultiCommand) Getrange(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{getrange_, args})
+	mc.command(cmdName(getrange_), args...)
 }
 
 func (mc *MultiCommand) Getset(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{getset_, args})
+	mc.command(cmdName(getset_), args...)
 }
 
 func (mc *MultiCommand) Hdel(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hdel_, args})
+	mc.command(cmdName(hdel_), args...)
 }
 
 func (mc *MultiCommand) Hexists(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hexists_, args})
+	mc.command(cmdName(hexists_), args...)
 }
 
 func (mc *MultiCommand) Hget(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hget_, args})
+	mc.command(cmdName(hget_), args...)
 }
 
 func (mc *MultiCommand) Hgetall(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hgetall_, args})
+	mc.command(cmdName(hgetall_), args...)
 }
 
 func (mc *MultiCommand) Hincrby(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hincrby_, args})
+	mc.command(cmdName(hincrby_), args...)
 }
 
 func (mc *MultiCommand) Hincrbyfloat(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hincrbyfloat_, args})
+	mc.command(cmdName(hincrbyfloat_), args...)
 }
 
 func (mc *MultiCommand) Hkeys(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hkeys_, args})
+	mc.command(cmdName(hkeys_), args...)
 }
 
 func (mc *MultiCommand) Hlen(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hlen_, args})
+	mc.command(cmdName(hlen_), args...)
 }
 
 func (mc *MultiCommand) Hmget(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hmget_, args})
+	mc.command(cmdName(hmget_), args...)
 }
 
 func (mc *MultiCommand) Hmset(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hmset_, args})
+	mc.command(cmdName(hmset_), args...)
 }
 
 func (mc *MultiCommand) Hset(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hset_, args})
+	mc.command(cmdName(hset_), args...)
 }
 
 func (mc *MultiCommand) Hsetnx(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hsetnx_, args})
+	mc.command(cmdName(hsetnx_), args...)
 }
 
 func (mc *MultiCommand) Hvals(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{hvals_, args})
+	mc.command(cmdName(hvals_), args...)
 }
 
 func (mc *MultiCommand) Incr(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{incr_, args})
+	mc.command(cmdName(incr_), args...)
 }
 
 func (mc *MultiCommand) Incrby(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{incrby_, args})
+	mc.command(cmdName(incrby_), args...)
 }
 
 func (mc *MultiCommand) Incrbyfloat(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{incrbyfloat_, args})
+	mc.command(cmdName(incrbyfloat_), args...)
 }
 
 func (mc *MultiCommand) Info(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{info_, args})
+	mc.command(cmdName(info_), args...)
 }
 
 func (mc *MultiCommand) Keys(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{keys_, args})
+	mc.command(cmdName(keys_), args...)
 }
 
 func (mc *MultiCommand) Lastsave(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{lastsave_, args})
+	mc.command(cmdName(lastsave_), args...)
 }
 
 func (mc *MultiCommand) Lindex(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{lindex_, args})
+	mc.command(cmdName(lindex_), args...)
 }
 
 func (mc *MultiCommand) Linsert(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{linsert_, args})
+	mc.command(cmdName(linsert_), args...)
 }
 
 func (mc *MultiCommand) Llen(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{llen_, args})
+	mc.command(cmdName(llen_), args...)
 }
 
 func (mc *MultiCommand) Lpop(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{lpop_, args})
+	mc.command(cmdName(lpop_), args...)
 }
 
 func (mc *MultiCommand) Lpush(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{lpush_, args})
+	mc.command(cmdName(lpush_), args...)
 }
 
 func (mc *MultiCommand) Lpushx(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{lpushx_, args})
+	mc.command(cmdName(lpushx_), args...)
 }
 
 func (mc *MultiCommand) Lrange(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{lrange_, args})
+	mc.command(cmdName(lrange_), args...)
 }
 
 func (mc *MultiCommand) Lrem(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{lrem_, args})
+	mc.command(cmdName(lrem_), args...)
 }
 
 func (mc *MultiCommand) Lset(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{lset_, args})
+	mc.command(cmdName(lset_), args...)
 }
 
 func (mc *MultiCommand) Ltrim(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{ltrim_, args})
+	mc.command(cmdName(ltrim_), args...)
 }
 
 func (mc *MultiCommand) Mget(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{mget_, args})
+	mc.command(cmdName(mget_), args...)
 }
 
 func (mc *MultiCommand) Migrate(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{migrate_, args})
+	mc.command(cmdName(migrate_), args...)
 }
 
 func (mc *MultiCommand) Monitor(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{monitor_, args})
+	mc.command(cmdName(monitor_), args...)
 }
 
 func (mc *MultiCommand) Move(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{move_, args})
+	mc.command(cmdName(move_), args...)
 }
 
 func (mc *MultiCommand) Mset(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{mset_, args})
+	mc.command(cmdName(mset_), args...)
 }
 
 func (mc *MultiCommand) Msetnx(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{msetnx_, args})
+	mc.command(cmdName(msetnx_), args...)
 }
 
 func (mc *MultiCommand) Multi(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{multi_, args})
+	mc.command(cmdName(multi_), args...)
 }
 
 func (mc *MultiCommand) Object(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{object_, args})
+	mc.command(cmdName(object_), args...)
 }
 
 func (mc *MultiCommand) Persist(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{persist_, args})
+	mc.command(cmdName(persist_), args...)
 }
 
 func (mc *MultiCommand) Pexpire(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{pexpire_, args})
+	mc.command(cmdName(pexpire_), args...)
 }
 
 func (mc *MultiCommand) Pexpireat(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{pexpireat_, args})
+	mc.command(cmdName(pexpireat_), args...)
 }
 
 func (mc *MultiCommand) Ping(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{ping_, args})
+	mc.command(cmdName(ping_), args...)
 }
 
 func (mc *MultiCommand) Psetex(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{psetex_, args})
+	mc.command(cmdName(psetex_), args...)
 }
 
 func (mc *MultiCommand) Psubscribe(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{psubscribe_, args})
+	mc.command(cmdName(psubscribe_), args...)
 }
 
 func (mc *MultiCommand) Pttl(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{pttl_, args})
+	mc.command(cmdName(pttl_), args...)
 }
 
 func (mc *MultiCommand) Publish(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{publish_, args})
+	mc.command(cmdName(publish_), args...)
 }
 
 func (mc *MultiCommand) Punsubscribe(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{punsubscribe_, args})
+	mc.command(cmdName(punsubscribe_), args...)
 }
 
 func (mc *MultiCommand) Randomkey(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{randomkey_, args})
+	mc.command(cmdName(randomkey_), args...)
 }
 
 func (mc *MultiCommand) Rename(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{rename_, args})
+	mc.command(cmdName(rename_), args...)
 }
 
 func (mc *MultiCommand) Renamenx(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{renamenx_, args})
+	mc.command(cmdName(renamenx_), args...)
 }
 
 func (mc *MultiCommand) Restore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{restore_, args})
+	mc.command(cmdName(restore_), args...)
 }
 
 func (mc *MultiCommand) Rpop(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{rpop_, args})
+	mc.command(cmdName(rpop_), args...)
 }
 
 func (mc *MultiCommand) Rpoplpush(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{rpoplpush_, args})
+	mc.command(cmdName(rpoplpush_), args...)
 }
 
 func (mc *MultiCommand) Rpush(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{rpush_, args})
+	mc.command(cmdName(rpush_), args...)
 }
 
 func (mc *MultiCommand) Rpushx(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{rpushx_, args})
+	mc.command(cmdName(rpushx_), args...)
 }
 
 func (mc *MultiCommand) Sadd(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sadd_, args})
+	mc.command(cmdName(sadd_), args...)
 }
 
 func (mc *MultiCommand) Save(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{save_, args})
+	mc.command(cmdName(save_), args...)
 }
 
 func (mc *MultiCommand) Scard(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{scard_, args})
+	mc.command(cmdName(scard_), args...)
 }
 
 func (mc *MultiCommand) Script(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{script_, args})
+	mc.command(cmdName(script_), args...)
 }
 
 func (mc *MultiCommand) Sdiff(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sdiff_, args})
+	mc.command(cmdName(sdiff_), args...)
 }
 
 func (mc *MultiCommand) Sdiffstore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sdiffstore_, args})
+	mc.command(cmdName(sdiffstore_), args...)
 }
 
 func (mc *MultiCommand) Select(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{select_, args})
+	mc.command(cmdName(select_), args...)
 }
 
 func (mc *MultiCommand) Set(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{set_, args})
+	mc.command(cmdName(set_), args...)
 }
 
 func (mc *MultiCommand) Setbit(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{setbit_, args})
+	mc.command(cmdName(setbit_), args...)
 }
 
 func (mc *MultiCommand) Setex(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{setex_, args})
+	mc.command(cmdName(setex_), args...)
 }
 
 func (mc *MultiCommand) Setnx(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{setnx_, args})
+	mc.command(cmdName(setnx_), args...)
 }
 
 func (mc *MultiCommand) Setrange(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{setrange_, args})
+	mc.command(cmdName(setrange_), args...)
 }
 
 func (mc *MultiCommand) Shutdown(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{shutdown_, args})
+	mc.command(cmdName(shutdown_), args...)
 }
 
 func (mc *MultiCommand) Sinter(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sinter_, args})
+	mc.command(cmdName(sinter_), args...)
 }
 
 func (mc *MultiCommand) Sinterstore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sinterstore_, args})
+	mc.command(cmdName(sinterstore_), args...)
 }
 
 func (mc *MultiCommand) Sismember(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sismember_, args})
+	mc.command(cmdName(sismember_), args...)
 }
 
 func (mc *MultiCommand) Slaveof(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{slaveof_, args})
+	mc.command(cmdName(slaveof_), args...)
 }
 
 func (mc *MultiCommand) Smembers(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{smembers_, args})
+	mc.command(cmdName(smembers_), args...)
 }
 
 func (mc *MultiCommand) Smove(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{smove_, args})
+	mc.command(cmdName(smove_), args...)
 }
 
 func (mc *MultiCommand) Sort(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sort_, args})
+	mc.command(cmdName(sort_), args...)
 }
 
 func (mc *MultiCommand) Spop(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{spop_, args})
+	mc.command(cmdName(spop_), args...)
 }
 
 func (mc *MultiCommand) Srandmember(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{srandmember_, args})
+	mc.command(cmdName(srandmember_), args...)
 }
 
 func (mc *MultiCommand) Srem(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{srem_, args})
+	mc.command(cmdName(srem_), args...)
 }
 
 func (mc *MultiCommand) Strlen(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{strlen_, args})
+	mc.command(cmdName(strlen_), args...)
 }
 
 func (mc *MultiCommand) Subscribe(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{subscribe_, args})
+	mc.command(cmdName(subscribe_), args...)
 }
 
 func (mc *MultiCommand) Sunion(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sunion_, args})
+	mc.command(cmdName(sunion_), args...)
 }
 
 func (mc *MultiCommand) Sunionstore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sunionstore_, args})
+	mc.command(cmdName(sunionstore_), args...)
 }
 
 func (mc *MultiCommand) Sync(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{sync_, args})
+	mc.command(cmdName(sync_), args...)
 }
 
 func (mc *MultiCommand) Time(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{time_, args})
+	mc.command(cmdName(time_), args...)
 }
 
 func (mc *MultiCommand) Ttl(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{ttl_, args})
+	mc.command(cmdName(ttl_), args...)
 }
 
 func (mc *MultiCommand) Type(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{type_, args})
+	mc.command(cmdName(type_), args...)
 }
 
 func (mc *MultiCommand) Unsubscribe(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{unsubscribe_, args})
+	mc.command(cmdName(unsubscribe_), args...)
 }
 
 func (mc *MultiCommand) Unwatch(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{unwatch_, args})
+	mc.command(cmdName(unwatch_), args...)
 }
 
 func (mc *MultiCommand) Watch(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{watch_, args})
+	mc.command(cmdName(watch_), args...)
 }
 
 func (mc *MultiCommand) Zadd(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zadd_, args})
+	mc.command(cmdName(zadd_), args...)
 }
 
 func (mc *MultiCommand) Zcard(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zcard_, args})
+	mc.command(cmdName(zcard_), args...)
 }
 
 func (mc *MultiCommand) Zcount(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zcount_, args})
+	mc.command(cmdName(zcount_), args...)
 }
 
 func (mc *MultiCommand) Zincrby(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zincrby_, args})
+	mc.command(cmdName(zincrby_), args...)
 }
 
 func (mc *MultiCommand) Zinterstore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zinterstore_, args})
+	mc.command(cmdName(zinterstore_), args...)
 }
 
 func (mc *MultiCommand) Zrange(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zrange_, args})
+	mc.command(cmdName(zrange_), args...)
 }
 
 func (mc *MultiCommand) Zrangebyscore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zrangebyscore_, args})
+	mc.command(cmdName(zrangebyscore_), args...)
 }
 
 func (mc *MultiCommand) Zrank(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zrank_, args})
+	mc.command(cmdName(zrank_), args...)
 }
 
 func (mc *MultiCommand) Zrem(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zrem_, args})
+	mc.command(cmdName(zrem_), args...)
 }
 
 func (mc *MultiCommand) Zremrangebyrank(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zremrangebyrank_, args})
+	mc.command(cmdName(zremrangebyrank_), args...)
 }
 
 func (mc *MultiCommand) Zremrangebyscore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zremrangebyscore_, args})
+	mc.command(cmdName(zremrangebyscore_), args...)
 }
 
 func (mc *MultiCommand) Zrevrange(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zrevrange_, args})
+	mc.command(cmdName(zrevrange_), args...)
 }
 
 func (mc *MultiCommand) Zrevrangebyscore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zrevrangebyscore_, args})
+	mc.command(cmdName(zrevrangebyscore_), args...)
 }
 
 func (mc *MultiCommand) Zrevrank(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zrevrank_, args})
+	mc.command(cmdName(zrevrank_), args...)
 }
 
 func (mc *MultiCommand) Zscore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zscore_, args})
+	mc.command(cmdName(zscore_), args...)
 }
 
 func (mc *MultiCommand) Zunionstore(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{zunionstore_, args})
+	mc.command(cmdName(zunionstore_), args...)
 }
