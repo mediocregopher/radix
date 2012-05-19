@@ -21,11 +21,11 @@ To run the tests:
 Creating a Client instance is done as follows:
 
 ```go
-	. import "github.com/fzzbt/radix/redis"
+	import "github.com/fzzbt/radix/redis"
 
 	...
 
-	c, err := NewClient(Configuration{
+	c, err := redis.NewClient(redis.Configuration{
 		Database: 0, // (default: 0)
 		// Timeout in seconds
 		Timeout: 10, // (default: 10)
@@ -59,30 +59,29 @@ Sometimes Redis may give a LOADING error when it is loading keys from the disk.
 The default behaviour of Radix is to retry connecting until Redis is done with it, 
 but you may wish to override this behaviour with the NoLoadingRetry parameter.
 
-Simple blocking commands are executed using Client.Command and Client.AsyncCommand methods.
+Below is an example how to call simple blocking commands.
 Executing multiple commands at once (pipelining) can be done with Client.MultiCommand or 
-Client.Transaction methods. All of these methods return a Reply instance which contains the reply. 
-
-Here's a simple example how to call single commands:
+Client.Transaction methods. These methods return a Reply instance which contains the reply. 
+Asynchronous command method names are prefixed with "Async" and they return a Future instance 
+instead of Reply.
 
 ```go
-reply := c.Command(Set, "mykey", "myvalue")
-if reply.Error() != nil {
-	fmt.Printf("set failed: %s\n", reply.Error())
+reply := c.Set("mykey", "myvalue")
+if reply.Error != nil {
+	fmt.Printf("set failed: %s\n", reply.Error)
 	return
 }
 
-reply = c.Command(Get, "mykey")
-if reply.Type() != ReplyString {
-	fmt.Printf("get failed: %s\n", reply.Error())
+reply = c.Get("mykey")
+if reply.Type != redis.ReplyString {
+	fmt.Printf("get failed: %s\n", reply.Error)
 	return
 }
 
 fmt.Printf("mykey: %s\n", rep.Str())
 ```
 
-The Client.Command method and alike take the command name as their first parameter, 
-followed by variadic length ...interface{} parameter.
+Command calling methods take a variadic ...interface{} as their parameter.
 The interface{} parameters are converted into byte strings as follows:
 
 * s []byte -> s
