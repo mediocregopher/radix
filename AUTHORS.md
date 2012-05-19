@@ -11,5 +11,5 @@ Please keep the list sorted.
 
 * * *
 
-* Juhani Åhman <juhanipm@gmail.com>
+* Juhani Ahman <juhanipm@gmail.com>
 * Bobby Powers <bobbypowers@gmail.com>
