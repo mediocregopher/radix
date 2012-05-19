@@ -117,7 +117,7 @@ and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/redis
 
 If you make contributions to the project, please follow the guidelines below:
 
-*  Maximum line-width is 110 characters.
+*  Maximum line-width is 100 characters.
 *  Run "gofmt -tabs=true -tabwidth=4 -w redis/" before pushing your code from your repository. 
 *  Any copyright notices, etc. should not be put in any files containing program code to avoid clutter. 
    Place them in separate files instead. 

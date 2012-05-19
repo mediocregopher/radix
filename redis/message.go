@@ -49,6 +49,6 @@ func (m *Message) String() string {
 		mtype = "unknown"
 	}
 
-	return fmt.Sprintf("Message{Type: %s, Channel: %v, Pattern: %v, Subscriptions: %v, Payload: %v, "+
-		"Error: %v}", mtype, m.Channel, m.Pattern, m.Subscriptions, m.Payload, m.Error)
+	return fmt.Sprintf("Message{Type: %s, Channel: %v, Pattern: %v, Subscriptions: %v, "+
+		"Payload: %v, Error: %v}", mtype, m.Channel, m.Pattern, m.Subscriptions, m.Payload, m.Error)
 }
