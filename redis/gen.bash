@@ -62,7 +62,7 @@ for cmd in ${cmds[@]}; do
 	keyword="${cmd~}"
     echo "
 func (mc *MultiCommand) $keyword(args ...interface{}) {
-	mc.cmds = append(mc.cmds, command{${cmd}_, args})
+	mc.command(cmdName(${cmd}_), args...)
 }" >>$command
 done
 

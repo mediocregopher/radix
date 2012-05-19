@@ -43,9 +43,13 @@ func (mc *MultiCommand) process(userCommands func(*MultiCommand)) *Reply {
 	return r
 }
 
-// Command queues a command for later execution.
-func (mc *MultiCommand) Command(cmd cmdName, args ...interface{}) {
+func (mc *MultiCommand) command(cmd cmdName, args ...interface{}) {
 	mc.cmds = append(mc.cmds, command{cmd, args})
+}
+
+// Command queues a command for later execution.
+func (mc *MultiCommand) Command(cmd string, args ...interface{}) {
+	mc.command(cmdName(cmd), args...)
 }
 
 // Flush sends queued commands to the Redis server for execution and
