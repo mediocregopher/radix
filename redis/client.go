@@ -69,7 +69,7 @@ func (c *Client) asyncCommand(cmd cmdName, args ...interface{}) Future {
 }
 
 // AsyncCommand calls a Redis command asynchronously.
-func (c *Client) AsyncCommand(cmd cmdName, args ...interface{}) Future {
+func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
 	return c.asyncCommand(cmdName(cmd), args...)
 }
 
