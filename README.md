@@ -63,7 +63,7 @@ Below is an example how to call simple blocking commands.
 Executing multiple commands at once (pipelining) can be done with Client.MultiCommand or 
 Client.Transaction methods. These methods return a Reply instance which contains the reply. 
 Asynchronous command method names are prefixed with "Async" and they return a Future instance 
-instead of Reply.
+instead of a Reply.
 
 ```go
 reply := c.Set("mykey", "myvalue")
