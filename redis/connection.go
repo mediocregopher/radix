@@ -393,7 +393,6 @@ func (c *connection) receiveEnvData() *envData {
 }
 
 func (c *connection) handleCommand(ec *envCommand) {
-	// FIXME
 	r := new(Reply)
 	if err := c.writeRequest(ec.cmd); err != nil {
 		r.Error = newError(err.Error())
