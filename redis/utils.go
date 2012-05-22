@@ -8,10 +8,8 @@ import (
 
 //* Useful helpers
 
-// argToRedis formats an argument value into a Redis styled byte slice argument.
-func argToRedis(v interface{}) []byte {
-	var bs []byte
-
+// argToRedis formats an argument value into a Redis styled byte string.
+func argToRedis(v interface{}) (bs []byte) {
 	switch vt := v.(type) {
 	case string:
 		bs = []byte(fmt.Sprintf("$%d\r\n%s\r\n", len([]byte(vt)), []byte(vt)))
@@ -56,3 +54,4 @@ func argToRedis(v interface{}) []byte {
 
 	return bs
 }
+

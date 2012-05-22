@@ -571,6 +571,8 @@ func (c *connection) handleSubscription(es *envSubscription) {
 
 func (c *connection) writeRequest(cmds ...command) error {
 	for _, cmd := range cmds {
+		var req []byte
+		
 		// Calculate number of arguments.
 		argsLen := 1
 		for _, arg := range cmd.args {
@@ -591,23 +593,22 @@ func (c *connection) writeRequest(cmds ...command) error {
 			}
 		}
 
-		// Write number of arguments.
-		if _, err := c.rwc.Write([]byte(fmt.Sprintf("*%d\r\n", argsLen))); err != nil {
-			return err
+		// number of arguments.
+		req = append(req, []byte(fmt.Sprintf("*%d\r\n", argsLen))...)
+
+		// command name
+		req = append(req, []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(cmd.cmd), cmd.cmd))...)
+
+		// arguments
+		for _, arg := range cmd.args {
+			req = append(req, argToRedis(arg)...)
 		}
 
-		// Write the command.
-		b := []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(cmd.cmd), cmd.cmd))
-		if _, err := c.rwc.Write(b); err != nil {
+		if _, err := c.rwc.Write(req); err != nil {
 			return err
 		}
-		// Write arguments.
-		for _, arg := range cmd.args {
-			if _, err := c.rwc.Write(argToRedis(arg)); err != nil {
-				return err
-			}
-		}
 	}
+
 
 	return c.rwc.Flush()
 }
