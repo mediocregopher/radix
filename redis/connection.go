@@ -41,7 +41,7 @@ type envCommand struct {
 // Envelope type for a multi command
 type envMultiCommand struct {
 	cmds     []command
-	doneChan chan *Reply
+	replyChan chan *Reply
 }
 
 // Envelope type for read data
@@ -197,9 +197,9 @@ func (c *connection) command(cmd cmdName, args ...interface{}) *Reply {
 
 // multicommand calls a Redis multi-command.
 func (c *connection) multiCommand(cmds []command) *Reply {
-	doneChan := make(chan *Reply)
-	c.multiCommandChan <- &envMultiCommand{cmds, doneChan}
-	return <-doneChan
+	replyChan := make(chan *Reply)
+	c.multiCommandChan <- &envMultiCommand{cmds, replyChan}
+	return <-replyChan
 }
 
 // subscribes sends a subscription request to the given channels and returns an error, if any.
@@ -426,7 +426,7 @@ func (c *connection) handleMultiCommand(ec *envMultiCommand) {
 		r.Error = newError(err.Error())
 	}
 
-	ec.doneChan <- r
+	ec.replyChan <- r
 }
 
 func (c *connection) handlePublishing(ed *envData) {

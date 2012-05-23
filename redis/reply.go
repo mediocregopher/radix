@@ -8,7 +8,7 @@ import (
 //* Reply
 
 /*
-ReplyType describes the type of reply.
+ReplyType describes type of a reply.
 
 Possbile values are:
 
