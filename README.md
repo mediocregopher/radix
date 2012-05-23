@@ -60,6 +60,7 @@ The default behaviour of Radix is to retry connecting until Redis is done with i
 but you may wish to override this behaviour with the NoLoadingRetry parameter.
 
 Below is an example how to call simple blocking commands.
+Commands can be called with the generic Command() method or with any of the shortcut methods (Set(), Get(), ...).
 Executing multiple commands at once (pipelining) can be done with Client.MultiCommand or 
 Client.Transaction methods. These methods return a Reply instance which contains the reply. 
 Asynchronous command method names are prefixed with "Async" and they return a Future instance 
@@ -67,6 +68,7 @@ instead of a Reply.
 
 ```go
 reply := c.Set("mykey", "myvalue")
+// equivalent to: reply := c.Command("set", "mykey", "myvalue")
 if reply.Error != nil {
 	fmt.Printf("set failed: %s\n", reply.Error)
 	return
