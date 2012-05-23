@@ -569,42 +569,46 @@ func (c *connection) handleSubscription(es *envSubscription) {
 	// subscribe/etc. return their replies in pub/sub messages
 }
 
-func (c *connection) writeRequest(cmds ...command) error {
-	for _, cmd := range cmds {
-		var req []byte
-		
-		// Calculate number of arguments.
-		argsLen := 1
-		for _, arg := range cmd.args {
-			switch arg.(type) {
-			case []byte:
-				argsLen++
+func (c *connection) createRequest(cmd command) []byte {
+	var req []byte
+	
+	// Calculate number of arguments.
+	argsLen := 1
+	for _, arg := range cmd.args {
+		switch arg.(type) {
+		case []byte:
+			argsLen++
+		default:
+			// Fallback to reflect-based.
+			kind := reflect.TypeOf(arg).Kind()
+			switch kind {
+			case reflect.Slice:
+				argsLen += reflect.ValueOf(arg).Len()
+			case reflect.Map:
+				argsLen += reflect.ValueOf(arg).Len() * 2
 			default:
-				// Fallback to reflect-based.
-				kind := reflect.TypeOf(arg).Kind()
-				switch kind {
-				case reflect.Slice:
-					argsLen += reflect.ValueOf(arg).Len()
-				case reflect.Map:
-					argsLen += reflect.ValueOf(arg).Len() * 2
-				default:
-					argsLen++
-				}
+				argsLen++
 			}
 		}
+	}
 
-		// number of arguments.
-		req = append(req, []byte(fmt.Sprintf("*%d\r\n", argsLen))...)
+	// number of arguments.
+	req = append(req, []byte(fmt.Sprintf("*%d\r\n", argsLen))...)
 
-		// command name
-		req = append(req, []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(cmd.cmd), cmd.cmd))...)
+	// command name
+	req = append(req, []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(cmd.cmd), cmd.cmd))...)
 
-		// arguments
-		for _, arg := range cmd.args {
-			req = append(req, argToRedis(arg)...)
-		}
+	// arguments
+	for _, arg := range cmd.args {
+		req = append(req, argToRedis(arg)...)
+	}
 
-		if _, err := c.rwc.Write(req); err != nil {
+	return req
+}
+
+func (c *connection) writeRequest(cmds ...command) error {
+	for _, cmd := range cmds {
+		if _, err := c.rwc.Write(c.createRequest(cmd)); err != nil {
 			return err
 		}
 	}
