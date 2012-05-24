@@ -392,7 +392,10 @@ func (c *connection) receiveEnvData() *envData {
 func (c *connection) handleCall(ec *envCall) {
 	var r *Reply
 	if err := c.writeRequest(ec.cmd); err != nil {
-		r = &Reply{Error: newError(err.Error())}
+		err := newError(err.Error())
+		// add command for debugging
+		err.Cmd = ec.cmd.cmd
+		r = &Reply{Error: err}
 	} else {
 		ed := c.receiveEnvData()
 		if ed == nil {
@@ -400,10 +403,13 @@ func (c *connection) handleCall(ec *envCall) {
 			r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
 		} else {
 			r = c.receiveReply(ed)
+			// add command for debugging
+			if r.Error != nil {
+				r.Error.Cmd = ec.cmd.cmd
+			}
 		}
 	}
 
-	r.Cmd = ec.cmd.cmd
 	ec.replyChan <- r
 }
 
@@ -418,7 +424,11 @@ func (c *connection) handleMultiCall(ec *envMultiCall) {
 				break
 			} else {
 				reply := c.receiveReply(ed)
-				reply.Cmd = cmd.cmd
+				// add command in the error
+				if reply.Error != nil {
+					reply.Error.Cmd = cmd.cmd
+				}
+
 				r.elems = append(r.elems, reply)
 			}
 		}

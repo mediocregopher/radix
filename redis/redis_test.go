@@ -465,7 +465,7 @@ func (s *S) TestPsubscribe(c *C) {
 	c.Check(messages[2].Pattern, Equals, "foo.*")
 }
 
-// Test errors.
+// Test Error.
 func (s *S) TestError(c *C) {
 	err := newError("foo", ErrorConnection)
 	c.Check(err.Error(), Equals, "foo")
@@ -502,43 +502,31 @@ func (s *S) TestUnix(c *C) {
 	c.Check(rep.Str(), Equals, "Hello, World!")
 }
 
-// Test that Reply.Cmd is set properly.
+// Test that command name is added to errors.
 func (s *S) TestReplyCmd(c *C) {
-	// simple call
-	r := rd.Set("mykey", "foo")
-	c.Check(r.Cmd, Equals, CmdSet)
-
 	// failing call
-	r = rd.Get("non:existent:key")
-	c.Check(r.Cmd, Equals, CmdGet)
-
-	// multicall
-	r = rd.MultiCall(func(mc *MultiCall) {
-		mc.Set("foo", "bar")
-		mc.Get("foo")
-	})
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Cmd, Equals, CmdSet)
-	c.Check(r.At(1).Cmd, Equals, CmdGet)
+	r := rd.Set()
+	c.Check(r.Error, NotNil)
+	c.Check(r.Error.Cmd, Equals, CmdSet)
 
 	// failing multicall
 	r = rd.MultiCall(func(mc *MultiCall) {
 		mc.Set("foo", "bar")
-		mc.Get("non:existent:key")
+		mc.Set()
 		mc.Set("foo", "baz")
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Cmd, Equals, CmdSet)
-	c.Check(r.At(1).Cmd, Equals, CmdGet)
-	c.Check(r.At(2).Cmd, Equals, CmdSet)
+	c.Check(r.At(1).Error, NotNil)
+	c.Check(r.At(1).Error.Cmd, Equals, CmdSet)
 
 	// connection failure
 	conf2 := conf
 	conf2.Path = ""
 	conf2.Address = "fdslkfjfklflsjf4536.com:12345"
 	rdB, _ := NewClient(conf2)
-	r = rdB.Set("mykey", "foo")
-	c.Check(r.Cmd, Equals, CmdSet)
+	r = rdB.Set()
+	c.Check(r.Error, NotNil)
+	c.Check(r.Error.Cmd, Equals, CmdSet)
 }
 
 //* Long tests
