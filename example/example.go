@@ -9,13 +9,13 @@ import (
 	"time"
 )
 
-// Return a string representation of the error in the given reply or an empty string, 
-// if it is not an error reply.
-func ErrorString(rep *redis.Reply) string {
+// handleReplyError prints an error message for the given reply.
+func handleReplyError(rep *redis.Reply) {
 	if rep.Error != nil {
-		return rep.Error.Error()
+		fmt.Println("redis: " + rep.Error.Error())
+	} else {
+		fmt.Println("redis: unexpected reply type")
 	}
-	return ""
 }
 
 func main() {
@@ -38,10 +38,10 @@ func main() {
 
 	defer c.Close()
 
-	//** Blocking cavlls
+	//** Blocking calls
 	rep := c.Flushdb()
 	if rep.Error != nil {
-		fmt.Printf("flushdb failed: %s\n", rep.Error)
+		fmt.Printf("redis: %s\n", rep.Error)
 		return
 	}
 
@@ -55,8 +55,8 @@ func main() {
 	// Alternatively:
 	// rep = c.Command("mset", "mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
 
-	if rep.Error != nil {
-		fmt.Printf("mset failed: %s\n", rep.Error)
+	if rep.Error != nil {	
+		fmt.Printf("redis: %s\n", rep.Error)
 		return
 	}
 
@@ -68,38 +68,22 @@ func main() {
 		fmt.Println("mykey1 does not exist")
 		return
 	case redis.ReplyError:
-		fmt.Printf("get failed: %s\n", rep.Error)
+		fmt.Printf("redis: get failed: %s\n", rep.Error)
 		return
 	default:
 		// Shouldn't generally happen
-		fmt.Println("Redis returned unexpected reply type")
+		fmt.Println("redis: unexpected reply type")
 		return
 	}
 
-	//* Another error handling pattern
+	//* Simplified error handling pattern
 	rep = c.Get("mykey2")
 	if rep.Type != redis.ReplyString {
-		if rep.Error != nil {
-			fmt.Printf("get failed: %s\n", rep.Error)
-		} else {
-			fmt.Println("unexpected reply type")
-		}
+		handleReplyError(rep)
 		return
 	}
 
 	fmt.Printf("mykey2: %s\n", rep.Str())
-
-	//* Simplified error handling pattern
-	//  ErrorString returns "", if the reply type is not ReplyError.
-	//  eg. if mykey3 would not exist, the reply would have type ReplyNil, and "" would be returned,
-	//  not ReplyError.
-	rep = c.Get("mykey3")
-	if rep.Type != redis.ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
-		return
-	}
-
-	fmt.Printf("mykey3: %s\n", rep.Str())
 
 	//* List handling
 	mylist := []string{"foo", "bar", "qux"}
@@ -107,19 +91,19 @@ func main() {
 	// Alternativaly:
 	// rep = c.Rpush("mylist", "foo", "bar", "qux")
 	if rep.Error != nil {
-		fmt.Printf("rpush failed: %s\n", rep.Error)
+		handleReplyError(rep)
 		return
 	}
 
 	rep = c.Lrange("mylist", 0, -1)
 	if rep.Error != nil {
-		fmt.Printf("lrange failed: %s\n", rep.Error)
+		handleReplyError(rep)
 		return
 	}
 
 	mylist, err = rep.Strings()
 	if err != nil {
-		fmt.Printf("Strings failed: %s\n", err.Error())
+		handleReplyError(rep)
 		return
 	}
 
@@ -130,56 +114,57 @@ func main() {
 	// Alternatively:
 	// rep = c.Hmset("myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
 	if rep.Error != nil {
-		fmt.Printf("hmset failed: %s\n", rep.Error)
+		handleReplyError(rep)
 		return
 	}
 
 	rep = c.Hgetall("myhash")
 	if rep.Error != nil {
-		fmt.Printf("hgetall failed: %s\n", rep.Error)
+		handleReplyError(rep)
 		return
 	}
 
 	myhash, err := rep.StringMap()
 	if err != nil {
-		fmt.Printf("StringMap failed: %s\n", err.Error())
+		handleReplyError(rep)
 		return
 	}
 
 	fmt.Printf("myhash: %v\n", myhash)
 
-	//* MultiCommands
-	rep = c.MultiCommand(func(mc *redis.MultiCommand) {
+	//* Multicalls
+	rep = c.MultiCall(func(mc *redis.MultiCall) {
 		mc.Set("multikey", "multival")
 		mc.Get("multikey")
 	})
 
-	if rep.Error != nil {
-		fmt.Printf("MultiCommand failed: %s\n", err.Error())
+	if rep.Type != redis.ReplyMulti {
+		handleReplyError(rep)
 		return
 	}
 
-	// Note that you can now assume that rep.Len() == 2 regardless whether all of the commands succeeded
+	// Note that you can now assume that rep.Len() == 2.
+	// Thus, rep.At(1) will not panic regardless whether all of the commands succeeded.
 	if rep.At(1).Type != redis.ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
+		handleReplyError(rep)
 		return
 	}
 
 	fmt.Printf("multikey: %s\n", rep.At(1).Str())
 
 	//* Transactions
-	rep = c.Transaction(func(mc *redis.MultiCommand) {
+	rep = c.Transaction(func(mc *redis.MultiCall) {
 		mc.Set("trankey", "tranval")
 		mc.Get("trankey")
 	})
 
 	if rep.Error != nil {
-		fmt.Printf("Transaction failed: %s\n", err.Error())
+		handleReplyError(rep)
 		return
 	}
 
 	if rep.At(1).Type != redis.ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
+		handleReplyError(rep)
 		return
 	}
 
@@ -188,7 +173,7 @@ func main() {
 	//* Complex transactions
 	//  Atomic INCR replacement with transactions
 	myIncr := func(key string) *redis.Reply {
-		return c.MultiCommand(func(mc *redis.MultiCommand) {
+		return c.MultiCall(func(mc *redis.MultiCall) {
 			var curval int
 
 			mc.Watch(key)
@@ -220,7 +205,7 @@ func main() {
 
 	rep = c.Get("ctrankey")
 	if rep.Type != redis.ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
+		handleReplyError(rep)
 		return
 	}
 
@@ -229,7 +214,7 @@ func main() {
 	//** Asynchronous calls
 	rep = c.Set("asynckey", "asyncval")
 	if rep.Error != nil {
-		fmt.Printf("set failed: %s\n", rep.Error)
+		handleReplyError(rep)
 		return
 	}
 
@@ -240,7 +225,7 @@ func main() {
 	// block until reply is available
 	rep = fut.Reply()
 	if rep.Type != redis.ReplyString {
-		fmt.Printf("get did not return a string reply (%s)\n", ErrorString(rep))
+		handleReplyError(rep)
 		return
 	}
 
@@ -251,7 +236,7 @@ func main() {
 		switch msg.Type {
 		case redis.MessageMessage:
 			fmt.Printf("Received message \"%s\" from channel \"%s\".\n", msg.Payload, msg.Channel)
-		case redis.MessagePMessage:
+		case redis.MessagePmessage:
 			fmt.Printf("Received pattern message \"%s\" from channel \"%s\" with pattern "+
 				"\"%s\".\n", msg.Payload, msg.Channel, msg.Pattern)
 		default:
@@ -268,7 +253,7 @@ func main() {
 	defer sub.Close()
 
 	sub.Subscribe("chan1", "chan2")
-	sub.PSubscribe("chan*")
+	sub.Psubscribe("chan*")
 
 	c.Publish("chan1", "foo")
 	sub.Unsubscribe("chan1")
