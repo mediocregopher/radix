@@ -555,6 +555,29 @@ func (s *Long) TestIllegalDatabase(c *C) {
 
 //* Utils tests
 
+// Test argToRedis().
+func (s *Utils) TestArgToRedis(c *C) {
+	c.Check(argToRedis("foo"), DeepEquals, []byte("$3\r\nfoo\r\n"))
+	c.Check(argToRedis("世界"), DeepEquals, []byte("$6\r\n\xe4\xb8\x96\xe7\x95\x8c\r\n"))
+	c.Check(argToRedis(int(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(int8(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(int16(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(int32(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(int64(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(uint(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(uint8(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(uint16(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(uint32(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(uint64(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+    c.Check(argToRedis(true), DeepEquals, []byte("$1\r\n1\r\n"))
+    c.Check(argToRedis(false), DeepEquals, []byte("$1\r\n0\r\n"))
+    c.Check(argToRedis([]interface{}{"foo", 5, true}), DeepEquals, 
+		[]byte("$3\r\nfoo\r\n$1\r\n5\r\n$1\r\n1\r\n"))
+    c.Check(argToRedis(map[interface{}]interface{}{1:"foo", "bar":2}), DeepEquals,
+        []byte("$1\r\n1\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$1\r\n2\r\n"))
+    c.Check(argToRedis(1.5), DeepEquals, []byte("$3\r\n1.5\r\n"))
+}
+
 // Test createRequest().
 func (s *Utils) TestCreateRequest(c *C) {
 	c.Check(createRequest(command{cmd: "PING"}), DeepEquals, []byte("*1\r\n$4\r\nPING\r\n"))
