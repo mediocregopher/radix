@@ -503,7 +503,7 @@ func (s *S) TestUnix(c *C) {
 }
 
 // Test that command name is added to errors.
-func (s *S) TestReplyCmd(c *C) {
+func (s *S) TestErrorCmd(c *C) {
 	// failing call
 	r := rd.Set()
 	c.Check(r.Error, NotNil)
