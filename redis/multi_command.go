@@ -14,7 +14,7 @@ func newMultiCommand(transaction bool, c *connection) *MultiCommand {
 	}
 }
 
-// Calls the given multi command function, flushes the
+// process calls the given multi command function, flushes the
 // commands, and returns the returned Reply.
 func (mc *MultiCommand) process(userCommands func(*MultiCommand)) *Reply {
 	if mc.transaction {

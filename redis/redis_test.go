@@ -49,12 +49,14 @@ func tearDownTest(c TI) {
 //* Tests
 type S struct{}
 type Long struct{}
+type Utils struct{}
 
 var long = flag.Bool("long", false, "Include long running tests")
 
 func init() {
 	Suite(&S{})
 	Suite(&Long{})
+	Suite(&Utils{})
 }
 
 func (s *Long) SetUpSuite(c *C) {
@@ -207,7 +209,7 @@ func (s *S) TestSets(c *C) {
 }
 
 // Test argument formatting.
-func (s *S) TestArgToRedis(c *C) {
+func (s *S) TestFormatting(c *C) {
 	// string
 	rd.Set("foo", "bar")
 	c.Check(
@@ -549,6 +551,18 @@ func (s *Long) TestIllegalDatabase(c *C) {
 	c.Assert(errA, IsNil)
 	rA := rdA.Ping()
 	c.Check(rA.Error, NotNil)
+}
+
+//* Utils tests
+
+// Test createRequest().
+func (s *Utils) TestCreateRequest(c *C) {
+	c.Check(createRequest(command{cmd: "PING"}), DeepEquals, []byte("*1\r\n$4\r\nPING\r\n"))
+	c.Check(createRequest(command{
+		cmd:  "SET",
+		args: []interface{}{"key", 5},
+	}),
+		DeepEquals, []byte("*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$1\r\n5\r\n"))
 }
 
 //* Benchmarks
