@@ -138,7 +138,7 @@ func main() {
 		mc.Get("multikey")
 	})
 
-	if rep.Type != redis.ReplyMulti {
+	if rep.Error != nil {
 		handleReplyError(rep)
 		return
 	}
