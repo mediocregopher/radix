@@ -42,7 +42,7 @@ func (c *Client) Close() {
 	c.pool.close()
 }
 
-func (c *Client) command(cmd cmdName, args ...interface{}) *Reply {
+func (c *Client) call(cmd Cmd, args ...interface{}) *Reply {
 	// Connection handling
 	conn, err := c.pool.pull()
 	if err != nil {
@@ -50,30 +50,30 @@ func (c *Client) command(cmd cmdName, args ...interface{}) *Reply {
 	}
 
 	defer c.pool.push(conn)
-	return conn.command(cmdName(cmd), args...)
+	return conn.call(Cmd(cmd), args...)
 }
 
-// Command calls the given Redis command.
-func (c *Client) Command(cmd string, args ...interface{}) *Reply {
-	return c.command(cmdName(cmd), args...)
+// Call calls the given Redis command.
+func (c *Client) Call(cmd string, args ...interface{}) *Reply {
+	return c.call(Cmd(cmd), args...)
 }
 
-func (c *Client) asyncCommand(cmd cmdName, args ...interface{}) Future {
+func (c *Client) asyncCall(cmd Cmd, args ...interface{}) Future {
 	f := newFuture()
 
 	go func() {
-		f <- c.command(cmd, args...)
+		f <- c.call(cmd, args...)
 	}()
 
 	return f
 }
 
-// AsyncCommand calls the given Redis command asynchronously.
-func (c *Client) AsyncCommand(cmd string, args ...interface{}) Future {
-	return c.asyncCommand(cmdName(cmd), args...)
+// AsyncCall calls the given Redis command asynchronously.
+func (c *Client) AsyncCall(cmd string, args ...interface{}) Future {
+	return c.asyncCall(Cmd(cmd), args...)
 }
 
-func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
+func (c *Client) multiCall(transaction bool, f func(*MultiCall)) *Reply {
 	// Connection handling
 	conn, err := c.pool.pull()
 
@@ -82,34 +82,34 @@ func (c *Client) multiCommand(transaction bool, f func(*MultiCommand)) *Reply {
 	}
 
 	defer c.pool.push(conn)
-	return newMultiCommand(transaction, conn).process(f)
+	return newMultiCall(transaction, conn).process(f)
 }
 
-// MultiCommand executes the given multi-command.
-func (c *Client) MultiCommand(f func(*MultiCommand)) *Reply {
-	return c.multiCommand(false, f)
+// MultiCall executes the given MultiCall.
+func (c *Client) MultiCall(f func(*MultiCall)) *Reply {
+	return c.multiCall(false, f)
 }
 
 // Transaction performs a simple transaction.
 // Simple transaction is a multi command that is wrapped in a MULTI-EXEC block.
-// For complex transactions with WATCH, UNWATCH or DISCARD commands use MultiCommand.
-func (c *Client) Transaction(f func(*MultiCommand)) *Reply {
-	return c.multiCommand(true, f)
+// For complex transactions with WATCH, UNWATCH or DISCARD commands use MultiCall.
+func (c *Client) Transaction(f func(*MultiCall)) *Reply {
+	return c.multiCall(true, f)
 }
 
-// AsyncMultiCommand calls an asynchronous multi-command.
-func (c *Client) AsyncMultiCommand(mc func(*MultiCommand)) Future {
+// AsyncMultiCall calls an asynchronous MultiCall.
+func (c *Client) AsyncMultiCall(mc func(*MultiCall)) Future {
 	f := newFuture()
 
 	go func() {
-		f <- c.MultiCommand(mc)
+		f <- c.MultiCall(mc)
 	}()
 
 	return f
 }
 
 // AsyncTransaction performs a simple asynchronous transaction.
-func (c *Client) AsyncTransaction(mc func(*MultiCommand)) Future {
+func (c *Client) AsyncTransaction(mc func(*MultiCall)) Future {
 	f := newFuture()
 
 	go func() {

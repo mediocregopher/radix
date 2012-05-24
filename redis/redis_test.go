@@ -81,15 +81,15 @@ func (s *Long) TearDownTest(c *C) {
 	tearDownTest(c)
 }
 
-// Test connection commands.
+// Test connection calls.
 func (s *S) TestConnection(c *C) {
 	c.Check(rd.Echo("Hello, World!").Str(), Equals, "Hello, World!")
 	c.Check(rd.Ping().Str(), Equals, "PONG")
 }
 
-// Test single return value commands.
+// Test single return value calls.
 func (s *S) TestSimpleValue(c *C) {
-	// Simple value commands.
+	// Simple value calls.
 	rd.Set("simple:string", "Hello,")
 	rd.Append("simple:string", " World!")
 	c.Check(rd.Get("simple:string").Str(), Equals, "Hello, World!")
@@ -108,7 +108,7 @@ func (s *S) TestSimpleValue(c *C) {
 	c.Check(rd.Setnx("simple:nx", "Test").Bool(), Equals, false)
 }
 
-// Test multi return value commands.
+// Test calls that return multiple values.
 func (s *S) TestMultiple(c *C) {
 	// Set values first.
 	rd.Set("multiple:a", "a")
@@ -126,7 +126,7 @@ func (s *S) TestMultiple(c *C) {
 
 // Test hash accessing.
 func (s *S) TestHash(c *C) {
-	//* Single  return value commands.
+	//* Single  return value calls.
 	rd.Hset("hash:bool", "true:1", 1)
 	rd.Hset("hash:bool", "true:2", true)
 	rd.Hset("hash:bool", "true:3", "1")
@@ -150,7 +150,7 @@ func (s *S) TestHash(c *C) {
 	c.Check(ha["false:3"].Bool(), Equals, false)
 }
 
-// Test list commands.
+// Test list calls.
 func (s *S) TestList(c *C) {
 	rd.Rpush("list:a", "one")
 	rd.Rpush("list:a", "two")
@@ -195,7 +195,7 @@ func (s *S) TestList(c *C) {
 	c.Check(lrangenil, DeepEquals, []string{})
 }
 
-// Test set commands.
+// Test set calls.
 func (s *S) TestSets(c *C) {
 	rd.Sadd("set:a", 1)
 	rd.Sadd("set:a", 2)
@@ -264,14 +264,14 @@ func (s *S) TestFormatting(c *C) {
 		})
 }
 
-// Test asynchronous commands.
+// Test asynchronous calls.
 func (s *S) TestAsync(c *C) {
 	fut := rd.AsyncPing()
 	r := fut.Reply()
 	c.Check(r.Str(), Equals, "PONG")
 }
 
-// Test multi-value commands.
+// Test multi-value calls.
 func (s *S) TestMulti(c *C) {
 	rd.Sadd("multi:set", "one")
 	rd.Sadd("multi:set", "two")
@@ -280,9 +280,9 @@ func (s *S) TestMulti(c *C) {
 	c.Check(rd.Smembers("multi:set").Len(), Equals, 3)
 }
 
-// Test multi commands.
-func (s *S) TestMultiCommand(c *C) {
-	r := rd.MultiCommand(func(mc *MultiCommand) {
+// Test multicalls.
+func (s *S) TestMultiCall(c *C) {
+	r := rd.MultiCall(func(mc *MultiCall) {
 		mc.Set("foo", "bar")
 		mc.Get("foo")
 	})
@@ -290,7 +290,7 @@ func (s *S) TestMultiCommand(c *C) {
 	c.Check(r.At(0).Error, IsNil)
 	c.Check(r.At(1).Str(), Equals, "bar")
 
-	r = rd.MultiCommand(func(mc *MultiCommand) {
+	r = rd.MultiCall(func(mc *MultiCall) {
 		mc.Set("foo2", "baz")
 		mc.Get("foo2")
 		rmc := mc.Flush()
@@ -306,7 +306,7 @@ func (s *S) TestMultiCommand(c *C) {
 
 // Test simple transactions.
 func (s *S) TestTransaction(c *C) {
-	r := rd.Transaction(func(mc *MultiCommand) {
+	r := rd.Transaction(func(mc *MultiCall) {
 		mc.Set("foo", "bar")
 		mc.Get("foo")
 	})
@@ -315,7 +315,7 @@ func (s *S) TestTransaction(c *C) {
 	c.Check(r.At(1).Str(), Equals, "bar")
 
 	// Flushing transaction
-	r = rd.Transaction(func(mc *MultiCommand) {
+	r = rd.Transaction(func(mc *MultiCall) {
 		mc.Set("foo", "bar")
 		mc.Flush()
 		mc.Get("foo")
@@ -329,7 +329,7 @@ func (s *S) TestTransaction(c *C) {
 // Test succesful complex tranactions.
 func (s *S) TestComplexTransaction(c *C) {
 	// Succesful transaction.
-	r := rd.MultiCommand(func(mc *MultiCommand) {
+	r := rd.MultiCall(func(mc *MultiCall) {
 		mc.Set("foo", "bar")
 		mc.Watch("foo")
 		rmc := mc.Flush()
@@ -341,7 +341,7 @@ func (s *S) TestComplexTransaction(c *C) {
 		mc.Multi()
 		mc.Set("foo", "baz")
 		mc.Get("foo")
-		mc.Command("brokenfunc")
+		mc.Call("brokenfunc")
 		mc.Exec()
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
@@ -356,7 +356,7 @@ func (s *S) TestComplexTransaction(c *C) {
 	c.Check(r.At(4).At(1).Str(), Equals, "baz")
 
 	// Discarding transaction
-	r = rd.MultiCommand(func(mc *MultiCommand) {
+	r = rd.MultiCall(func(mc *MultiCall) {
 		mc.Set("foo", "bar")
 		mc.Multi()
 		mc.Set("foo", "baz")
@@ -373,9 +373,9 @@ func (s *S) TestComplexTransaction(c *C) {
 	c.Check(r.At(4).Str(), Equals, "bar")
 }
 
-// Test asynchronous multi commands.
-func (s *S) TestAsyncMultiCommand(c *C) {
-	r := rd.AsyncMultiCommand(func(mc *MultiCommand) {
+// Test asynchronous multicalls.
+func (s *S) TestAsyncMultiCall(c *C) {
+	r := rd.AsyncMultiCall(func(mc *MultiCall) {
 		mc.Set("foo", "bar")
 		mc.Get("foo")
 	}).Reply()
@@ -386,7 +386,7 @@ func (s *S) TestAsyncMultiCommand(c *C) {
 
 // Test simple asynchronous transactions.
 func (s *S) TestAsyncTransaction(c *C) {
-	r := rd.AsyncTransaction(func(mc *MultiCommand) {
+	r := rd.AsyncTransaction(func(mc *MultiCall) {
 		mc.Set("foo", "bar")
 		mc.Get("foo")
 	}).Reply()
@@ -502,6 +502,37 @@ func (s *S) TestUnix(c *C) {
 	c.Check(rep.Str(), Equals, "Hello, World!")
 }
 
+// Test that Reply.Cmd is set properly.
+func (s *S) TestReplyCmd(c *C) {
+	// simple call
+	r := rd.Set("mykey", "foo")
+	c.Check(r.Cmd, Equals, CmdSet)
+
+	// failing call
+	r = rd.Get("non:existent:key")
+	c.Check(r.Cmd, Equals, CmdGet)
+
+	// multicall
+	r = rd.MultiCall(func(mc *MultiCall) {
+		mc.Set("foo", "bar")
+		mc.Get("foo")
+	})
+	c.Assert(r.Type, Equals, ReplyMulti)
+	c.Check(r.At(0).Cmd, Equals, CmdSet)
+	c.Check(r.At(1).Cmd, Equals, CmdGet)
+
+	// failing multicall
+	r = rd.MultiCall(func(mc *MultiCall) {
+		mc.Set("foo", "bar")
+		mc.Get("non:existent:key")
+		mc.Set("foo", "baz")
+	})
+	c.Assert(r.Type, Equals, ReplyMulti)
+	c.Check(r.At(0).Cmd, Equals, CmdSet)
+	c.Check(r.At(1).Cmd, Equals, CmdGet)
+	c.Check(r.At(2).Cmd, Equals, CmdSet)
+}
+
 //* Long tests
 
 // Test aborting complex tranactions.
@@ -511,7 +542,7 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 		rd.Set("foo", 9)
 	}()
 
-	r := rd.MultiCommand(func(mc *MultiCommand) {
+	r := rd.MultiCall(func(mc *MultiCall) {
 		mc.Set("foo", 1)
 		mc.Watch("foo")
 		mc.Multi()
@@ -560,28 +591,28 @@ func (s *Utils) TestArgToRedis(c *C) {
 	c.Check(argToRedis("foo"), DeepEquals, []byte("$3\r\nfoo\r\n"))
 	c.Check(argToRedis("世界"), DeepEquals, []byte("$6\r\n\xe4\xb8\x96\xe7\x95\x8c\r\n"))
 	c.Check(argToRedis(int(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(int8(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(int16(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(int32(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(int64(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(uint(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(uint8(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(uint16(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(uint32(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(uint64(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-    c.Check(argToRedis(true), DeepEquals, []byte("$1\r\n1\r\n"))
-    c.Check(argToRedis(false), DeepEquals, []byte("$1\r\n0\r\n"))
-    c.Check(argToRedis([]interface{}{"foo", 5, true}), DeepEquals, 
+	c.Check(argToRedis(int8(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(int16(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(int32(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(int64(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(uint(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(uint8(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(uint16(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(uint32(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(uint64(5)), DeepEquals, []byte("$1\r\n5\r\n"))
+	c.Check(argToRedis(true), DeepEquals, []byte("$1\r\n1\r\n"))
+	c.Check(argToRedis(false), DeepEquals, []byte("$1\r\n0\r\n"))
+	c.Check(argToRedis([]interface{}{"foo", 5, true}), DeepEquals,
 		[]byte("$3\r\nfoo\r\n$1\r\n5\r\n$1\r\n1\r\n"))
-    c.Check(argToRedis(map[interface{}]interface{}{1:"foo", "bar":2}), DeepEquals,
-        []byte("$1\r\n1\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$1\r\n2\r\n"))
-    c.Check(argToRedis(1.5), DeepEquals, []byte("$3\r\n1.5\r\n"))
+	c.Check(argToRedis(map[interface{}]interface{}{1: "foo", "bar": 2}), DeepEquals,
+		[]byte("$1\r\n1\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$1\r\n2\r\n"))
+	c.Check(argToRedis(1.5), DeepEquals, []byte("$3\r\n1.5\r\n"))
 }
 
 // Test createRequest().
 func (s *Utils) TestCreateRequest(c *C) {
-	c.Check(createRequest(command{cmd: "PING"}), DeepEquals, []byte("*1\r\n$4\r\nPING\r\n"))
-	c.Check(createRequest(command{
+	c.Check(createRequest(call{cmd: "PING"}), DeepEquals, []byte("*1\r\n$4\r\nPING\r\n"))
+	c.Check(createRequest(call{
 		cmd:  "SET",
 		args: []interface{}{"key", 5},
 	}),

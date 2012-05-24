@@ -25,20 +25,20 @@ const (
 	subPunsubscribe
 )
 
-type command struct {
-	cmd  cmdName
+type call struct {
+	cmd  Cmd
 	args []interface{}
 }
 
-// Envelope type for a command
-type envCommand struct {
-	cmd       command
+// Envelope type for a call
+type envCall struct {
+	cmd       call
 	replyChan chan *Reply
 }
 
-// Envelope type for a multi command
-type envMultiCommand struct {
-	cmds      []command
+// Envelope type for a multicall
+type envMultiCall struct {
+	cmds      []call
 	replyChan chan *Reply
 }
 
@@ -68,8 +68,8 @@ type bufioReadWriteCloser struct {
 // connection describes a Redis connection.
 type connection struct {
 	rwc              *bufioReadWriteCloser
-	commandChan      chan *envCommand
-	multiCommandChan chan *envMultiCommand
+	callChan         chan *envCall
+	multiCallChan    chan *envMultiCall
 	dataChan         chan *envData
 	subscriptionChan chan *envSubscription
 	messageChan      chan *Message
@@ -83,8 +83,8 @@ type connection struct {
 
 func newConnection(config *Configuration) (conn *connection, err *Error) {
 	conn = &connection{
-		commandChan:      make(chan *envCommand, 1),
-		multiCommandChan: make(chan *envMultiCommand, 1),
+		callChan:         make(chan *envCall, 1),
+		multiCallChan:    make(chan *envMultiCall, 1),
 		subscriptionChan: make(chan *envSubscription, 1),
 		dataChan:         make(chan *envData, connectionChanBufSize),
 		messageChan:      make(chan *Message, connectionChanBufSize),
@@ -149,18 +149,18 @@ func (c *connection) init() *Error {
 	go c.receiver()
 
 	// Select database.
-	r := c.command("select", c.config.Database)
+	r := c.call(CmdSelect, c.config.Database)
 	if r.Error != nil {
 		if !c.config.NoLoadingRetry && r.Error.Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
-			r = c.command("select", c.config.Database)
+			r = c.call("select", c.config.Database)
 			for r.Error != nil {
 				if !r.Error.Test(ErrorLoading) {
 					c.close()
 					return newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
 				}
 				time.Sleep(time.Second)
-				r = c.command("select", c.config.Database)
+				r = c.call(CmdSelect, c.config.Database)
 			}
 		} else {
 			c.close()
@@ -170,7 +170,7 @@ func (c *connection) init() *Error {
 
 	// Authenticate if needed.
 	if c.config.Auth != "" {
-		r = c.command("auth", c.config.Auth)
+		r = c.call(CmdAuth, c.config.Auth)
 		if r.Error != nil {
 			c.close()
 			return newErrorExt("failed to authenticate", r.Error, ErrorAuth, ErrorConnection)
@@ -179,24 +179,24 @@ func (c *connection) init() *Error {
 	return nil
 }
 
-// command calls a Redis command.
-func (c *connection) command(cmd cmdName, args ...interface{}) *Reply {
+// call calls a Redis command.
+func (c *connection) call(cmd Cmd, args ...interface{}) *Reply {
 	if c.closed == 1 {
 		c.init()
 	}
 
 	replyChan := make(chan *Reply)
-	c.commandChan <- &envCommand{
-		cmd:       command{cmd, args},
+	c.callChan <- &envCall{
+		cmd:       call{cmd, args},
 		replyChan: replyChan,
 	}
 	return <-replyChan
 }
 
-// multicommand calls a Redis multi-command.
-func (c *connection) multiCommand(cmds []command) *Reply {
+// multiCall calls multiple Redis commands.
+func (c *connection) multiCall(cmds []call) *Reply {
 	replyChan := make(chan *Reply)
-	c.multiCommandChan <- &envMultiCommand{cmds, replyChan}
+	c.multiCallChan <- &envMultiCall{cmds, replyChan}
 	return <-replyChan
 }
 
@@ -346,7 +346,6 @@ func (c *connection) receiver() {
 }
 
 func (c *connection) backend() {
-	// Receive commands and data.
 	for {
 		select {
 		case <-c.closerChan:
@@ -357,12 +356,12 @@ func (c *connection) backend() {
 
 			atomic.CompareAndSwapInt32(&c.closed, 0, 1)
 			return
-		case ec := <-c.commandChan:
-			// Received a command.
-			c.handleCommand(ec)
-		case emc := <-c.multiCommandChan:
-			// Received a multi command.
-			c.handleMultiCommand(emc)
+		case ec := <-c.callChan:
+			// Received a call.
+			c.handleCall(ec)
+		case emc := <-c.multiCallChan:
+			// Received a multicall.
+			c.handleMultiCall(emc)
 		case es := <-c.subscriptionChan:
 			// Received a subscription.
 			c.handleSubscription(es)
@@ -390,33 +389,39 @@ func (c *connection) receiveEnvData() *envData {
 	return <-c.dataChan
 }
 
-func (c *connection) handleCommand(ec *envCommand) {
-	r := new(Reply)
+func (c *connection) handleCall(ec *envCall) {
+	var r *Reply
 	if err := c.writeRequest(ec.cmd); err != nil {
-		r.Error = newError(err.Error())
+		r = &Reply{
+			Cmd:   ec.cmd.cmd,
+			Error: newError(err.Error()),
+		}
 	} else {
 		ed := c.receiveEnvData()
 		if ed == nil {
+			r = new(Reply)
 			r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
 		} else {
 			r = c.receiveReply(ed)
+			r.Cmd = ec.cmd.cmd
 		}
 	}
 
 	ec.replyChan <- r
 }
 
-func (c *connection) handleMultiCommand(ec *envMultiCommand) {
+func (c *connection) handleMultiCall(ec *envMultiCall) {
 	r := new(Reply)
 	if err := c.writeRequest(ec.cmds...); err == nil {
 		r.Type = ReplyMulti
-		for i := 0; i < len(ec.cmds); i++ {
+		for _, cmd := range ec.cmds {
 			ed := c.receiveEnvData()
 			if ed == nil {
 				r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
 				break
 			} else {
 				reply := c.receiveReply(ed)
+				reply.Cmd = cmd.cmd
 				r.elems = append(r.elems, reply)
 			}
 		}
@@ -538,17 +543,17 @@ Invalid:
 
 func (c *connection) handleSubscription(es *envSubscription) {
 	// Prepare command.
-	var cmd cmdName
+	var cmd Cmd
 
 	switch es.subType {
 	case subSubscribe:
-		cmd = subscribe_
+		cmd = CmdSubscribe
 	case subUnsubscribe:
-		cmd = unsubscribe_
+		cmd = CmdUnsubscribe
 	case subPsubscribe:
-		cmd = psubscribe_
+		cmd = CmdPsubscribe
 	case subPunsubscribe:
-		cmd = punsubscribe_
+		cmd = CmdPunsubscribe
 	}
 
 	// Send the subscription request.
@@ -557,7 +562,7 @@ func (c *connection) handleSubscription(es *envSubscription) {
 		channels[i] = v
 	}
 
-	err := c.writeRequest(command{cmd, channels})
+	err := c.writeRequest(call{cmd, channels})
 
 	if err == nil {
 		es.errChan <- nil
@@ -567,7 +572,7 @@ func (c *connection) handleSubscription(es *envSubscription) {
 	// subscribe/etc. return their replies in pub/sub messages
 }
 
-func (c *connection) writeRequest(cmds ...command) error {
+func (c *connection) writeRequest(cmds ...call) error {
 	for _, cmd := range cmds {
 		if _, err := c.rwc.Write(createRequest(cmd)); err != nil {
 			return err

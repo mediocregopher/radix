@@ -17,7 +17,7 @@ ReplyError -- error reply
 ReplyInteger -- integer reply
 ReplyNil -- nil reply
 ReplyString -- string reply
-ReplyMulti -- multi-bulk or multi-command reply
+ReplyMulti -- multi-bulk or multicall reply
 */
 type ReplyType uint8
 
@@ -32,6 +32,7 @@ const (
 
 // Reply holds a Redis reply.
 type Reply struct {
+	Cmd   Cmd
 	Type  ReplyType
 	str   *string
 	int   *int64
@@ -234,7 +235,7 @@ func (r *Reply) String() string {
 
 //* Future
 
-// Future is a channel for fetching the reply of an asynchronous command.
+// Future is a channel for fetching the reply of an asynchronous call.
 type Future chan *Reply
 
 func newFuture() Future {

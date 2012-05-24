@@ -65,8 +65,8 @@ func argToRedis(v interface{}) (bs []byte) {
 	return bs
 }
 
-// createRequest creates a Redis request for the given command and its arguments.
-func createRequest(cmd command) []byte {
+// createRequest creates a Redis request for the given call and its arguments.
+func createRequest(cmd call) []byte {
 	var req []byte
 
 	// Calculate number of arguments.
@@ -89,10 +89,10 @@ func createRequest(cmd command) []byte {
 		}
 	}
 
-	// number of arguments.
+	// number of arguments
 	req = append(req, []byte(fmt.Sprintf("*%d\r\n", argsLen))...)
 
-	// command name
+	// command
 	req = append(req, []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(cmd.cmd), cmd.cmd))...)
 
 	// arguments
