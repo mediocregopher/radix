@@ -46,7 +46,10 @@ func (c *Client) call(cmd Cmd, args ...interface{}) *Reply {
 	// Connection handling
 	conn, err := c.pool.pull()
 	if err != nil {
-		return &Reply{Error: err}
+		return &Reply{
+			Cmd: cmd,
+			Error: err,
+		}
 	}
 
 	defer c.pool.push(conn)

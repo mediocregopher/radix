@@ -106,7 +106,7 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 
 func (c *connection) init() *Error {
 	if !atomic.CompareAndSwapInt32(&c.closed, 1, 0) {
-		log.Printf(radixError("tried to init a connection when not closed, ignoring"))
+		log.Printf(redisError("tried to init a connection when not closed, ignoring"))
 		return nil
 	}
 
@@ -392,10 +392,7 @@ func (c *connection) receiveEnvData() *envData {
 func (c *connection) handleCall(ec *envCall) {
 	var r *Reply
 	if err := c.writeRequest(ec.cmd); err != nil {
-		r = &Reply{
-			Cmd:   ec.cmd.cmd,
-			Error: newError(err.Error()),
-		}
+		r = &Reply{Error: newError(err.Error())}
 	} else {
 		ed := c.receiveEnvData()
 		if ed == nil {
@@ -403,10 +400,10 @@ func (c *connection) handleCall(ec *envCall) {
 			r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
 		} else {
 			r = c.receiveReply(ed)
-			r.Cmd = ec.cmd.cmd
 		}
 	}
 
+	r.Cmd = ec.cmd.cmd
 	ec.replyChan <- r
 }
 

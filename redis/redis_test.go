@@ -468,12 +468,12 @@ func (s *S) TestPsubscribe(c *C) {
 // Test errors.
 func (s *S) TestError(c *C) {
 	err := newError("foo", ErrorConnection)
-	c.Check(err.Error(), Equals, "redis: foo")
+	c.Check(err.Error(), Equals, "foo")
 	c.Check(err.Test(ErrorConnection), Equals, true)
 	c.Check(err.Test(ErrorRedis), Equals, false)
 
 	errext := newErrorExt("bar", err, ErrorLoading)
-	c.Check(errext.Error(), Equals, "redis: bar")
+	c.Check(errext.Error(), Equals, "bar")
 	c.Check(errext.Test(ErrorConnection), Equals, true)
 	c.Check(errext.Test(ErrorLoading), Equals, true)
 }
@@ -531,6 +531,14 @@ func (s *S) TestReplyCmd(c *C) {
 	c.Check(r.At(0).Cmd, Equals, CmdSet)
 	c.Check(r.At(1).Cmd, Equals, CmdGet)
 	c.Check(r.At(2).Cmd, Equals, CmdSet)
+
+	// connection failure
+	conf2 := conf
+	conf2.Path = ""
+	conf2.Address = "fdslkfjfklflsjf4536.com:12345"
+	rdB, _ := NewClient(conf2)
+	r = rdB.Set("mykey", "foo")
+	c.Check(r.Cmd, Equals, CmdSet)
 }
 
 //* Long tests
