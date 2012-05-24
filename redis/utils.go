@@ -25,6 +25,16 @@ func argToRedis(v interface{}) (bs []byte) {
 		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatInt(int64(vt), 10))), vt))
 	case int64:
 		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatInt(vt, 10))), vt))
+	case uint:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatUint(uint64(vt), 10))), vt))
+	case uint8:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatUint(uint64(vt), 10))), vt))
+	case uint16:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatUint(uint64(vt), 10))), vt))
+	case uint32:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatUint(uint64(vt), 10))), vt))
+	case uint64:
+		bs = []byte(fmt.Sprintf("$%d\r\n%d\r\n", len([]byte(strconv.FormatUint(vt, 10))), vt))
 	case bool:
 		if vt {
 			bs = []byte("$1\r\n1\r\n")
@@ -43,7 +53,7 @@ func argToRedis(v interface{}) (bs []byte) {
 			rv := reflect.ValueOf(vt)
 			keys := rv.MapKeys()
 			for _, k := range keys {
-				bs = append(bs, argToRedis(k)...)
+				bs = append(bs, argToRedis(k.Interface())...)
 				bs = append(bs, argToRedis(rv.MapIndex(k).Interface())...)
 			}
 		default:
