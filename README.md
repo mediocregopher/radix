@@ -70,13 +70,13 @@ instead of a Reply.
 reply := c.Set("mykey", "myvalue")
 // equivalent to: reply := c.Command("set", "mykey", "myvalue")
 if reply.Error != nil {
-	fmt.Printf("set failed: %s\n", reply.Error)
+	fmt.Printf("redis: %s\n", reply.Error)
 	return
 }
 
 reply = c.Get("mykey")
 if reply.Type != redis.ReplyString {
-	fmt.Printf("get failed: %s\n", reply.Error)
+	fmt.Printf("redis: %s\n", reply.Error)
 	return
 }
 
