@@ -8,21 +8,20 @@ import (
 	"os"
 	"strings"
 	"runtime/pprof"
+	"log"
 )
 
 var connections *int = flag.Int("c", 50, "number of connections")
 var requests *int = flag.Int("n", 10000, "number of request")
 var dsize *int = flag.Int("d", 3, "data size")
 var cpuprof *string = flag.String("cpuprof", "", "filename for cpuprof")
-//var memprof *string = flag.String("memprof", "", "filename for memprof")
-
 
 // handleReplyError prints an error message for the given reply.
 func handleReplyError(rep *redis.Reply) {
 	if rep.Error != nil {
-		fmt.Println("redis: " + rep.Error.Error())
+		log.Println("redis: " + rep.Error.Error())
 	} else {
-		fmt.Println("redis: unexpected reply type")
+		log.Println("redis: unexpected reply type")
 	}
 }
 
@@ -35,8 +34,7 @@ func benchmark(data string, handle func(string, *redis.Client, chan struct{})) t
 	})
 
 	if err != nil {
-		fmt.Printf("NewClient failed: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("NewClient failed: %s\n", err)
 	}
 
 	rep := c.Flushdb()
@@ -78,7 +76,7 @@ func main() {
     if *cpuprof != "" {
         f, err := os.Create(*cpuprof)
         if err != nil {
-            fmt.Println(err)
+            log.Fatalln(err)
         }
 
         pprof.StartCPUProfile(f)
