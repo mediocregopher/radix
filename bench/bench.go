@@ -88,7 +88,7 @@ func main() {
 	}
 
     fmt.Printf(
-		"Connections: %d, Requests: %d Payload size: %d\n\n", 
+		"Connections: %d, Requests: %d, Payload: %d bytes\n\n", 
 		*connections, 
 		*requests, 
 		*dsize)
