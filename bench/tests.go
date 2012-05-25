@@ -5,12 +5,18 @@ import (
 )
 
 var key string = "foo:rand:000000000000"
-var tests = make(map[string]func(string, *redis.Client, chan struct{}))
+var testNames = []string{}
+var testHandles = []func(string, *redis.Client, chan struct{}){}
 
 func init() {
-    tests["ping"] = pingHandle
-    tests["set"] = setHandle
-	tests["get"] = getHandle
+	testNames = append(testNames, "ping")
+	testHandles = append(testHandles, pingHandle)
+
+	testNames = append(testNames, "set")
+	testHandles = append(testHandles, setHandle)
+
+	testNames = append(testNames, "get")
+	testHandles = append(testHandles, getHandle)
 }
 
 func pingHandle(data string, c *redis.Client, ch chan struct{}) {

@@ -60,16 +60,9 @@ func benchmark(data string, handle func(string, *redis.Client, chan struct{})) t
 	return dur
 }
 
-func run(name string, data string) {
-    test, ok := tests[name]
-
-    if !ok {
-        fmt.Fprintf(os.Stderr, "test: `%s` does not exists\n", name)
-        os.Exit(1)
-    }
-
+func run(name string, handle func(string, *redis.Client, chan struct{}), data string) {
     fmt.Printf("===== %s =====\n", strings.ToUpper(name))
-	duration := benchmark(data, test)
+	duration := benchmark(data, handle)
 	rps := float64(*requests) / duration.Seconds()
 	fmt.Println("Requests per second: ", rps)
 	fmt.Println("Duration: ", duration)
@@ -94,12 +87,16 @@ func main() {
 	args := flag.Args()
 	if len(args) == 0 {
 		// run all tests by default
-		for k, _ := range tests {
-			run(k, data)
+		for i, name := range testNames {
+			run(name, testHandles[i], data)
 		}
 	} else {
-		for _, name := range flag.Args() {
-			run(name, data)
+		for i, name := range testNames {
+			for _, arg := range args {
+				if arg == name {
+					run(name, testHandles[i], data)
+				}
+			}
 		}
 	}
 }
