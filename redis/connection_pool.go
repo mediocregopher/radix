@@ -39,7 +39,9 @@ func (cp *connPool) push(conn *connection) {
 	if conn.closed == 0 {
 		cp.free.PushBack(conn)
 	} else {
-		delete(cp.all, conn)
+		if _, exists := cp.all[conn]; exists {
+			delete(cp.all, conn)
+		}
 	}
 
 	cp.available++
