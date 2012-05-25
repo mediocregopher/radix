@@ -68,7 +68,7 @@ instead of a Reply.
 
 ```go
 reply := c.Set("mykey", "myvalue")
-// equivalent to: reply := c.Command("set", "mykey", "myvalue")
+// equivalent to: reply := c.Command("SET", "mykey", "myvalue")
 if reply.Error != nil {
 	fmt.Printf("redis: %s\n", reply.Error)
 	return
@@ -93,12 +93,19 @@ The interface{} parameters are converted into byte strings as follows:
 * s int16 -> strconv.FormatInt(int64(s), 10)
 * s int32 -> strconv.FormatInt(int64(s), 10)
 * s int64 -> strconv.FormatInt(s, 10)
+* s uint -> strconv.FormatUint(uint64(s), 10)
+* s uint8 -> strconv.FormatUint(uint64(s), 10)
+* s uint16 -> strconv.FormatUint(uint64(s), 10)
+* s uint32 -> strconv.FormatUint(uint64(s), 10)
+* s uint64 -> strconv.FormatUint(s, 10)
 * s bool -> "1", if true, otherwise "0"
 
 Furthermore, there is special handling for slices and maps, eg.
 
 * []int{1,2,3} is the same as giving parameters: "1", "2", "3"
 * map[string]int{"foo":1, "bar":2} is the same as giving parameters: "foo", 1, "bar", 2
+
+Other types use reflect-based default string values.
 
 For more examples on how to use multi-commands, transactions, subscriptions and more,
 take a look at the example program in `example/example.go`.

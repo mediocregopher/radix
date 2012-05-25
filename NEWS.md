@@ -11,6 +11,13 @@
 
 * * *
 
+### 2012-05-25 Release v0.2.1
+
++ Fixed a race condition in connection pool that caused panic when GOMAXPROCS>1.
++ Fixed a bug where map arguments where not formatted always right.
++ Reply error messages now include the command that caused the error.
++ Added a rudimentary benchmark tool (WIP).
+
 ### 2012-05-19 Release v0.2.0
 
 + New API for Client/MultiCommand commands.
