@@ -68,7 +68,7 @@ func main() {
 		fmt.Println("mykey1 does not exist")
 		return
 	case redis.ReplyError:
-		fmt.Printf("redis: get failed: %s\n", rep.Error)
+		fmt.Printf("redis: %s\n", rep.Error)
 		return
 	default:
 		// Shouldn't generally happen
