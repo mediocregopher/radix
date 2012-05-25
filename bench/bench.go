@@ -1,20 +1,22 @@
 package main
 
 import (
-    "github.com/fzzbt/radix/redis"
 	"flag"
 	"fmt"
-	"time"
-	"os"
-	"strings"
-	"runtime/pprof"
+	"github.com/fzzbt/radix/redis"
 	"log"
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"strings"
+	"time"
 )
 
 var connections *int = flag.Int("c", 50, "number of connections")
 var requests *int = flag.Int("n", 10000, "number of request")
 var dsize *int = flag.Int("d", 3, "data size")
 var cpuprof *string = flag.String("cpuprof", "", "filename for cpuprof")
+var gomaxprocs *int = flag.Int("p", 8, "GOMAXPROCS value")
 
 // handleReplyError prints an error message for the given reply.
 func handleReplyError(rep *redis.Reply) {
@@ -29,7 +31,7 @@ func handleReplyError(rep *redis.Reply) {
 func benchmark(data string, handle func(string, *redis.Client, chan struct{})) time.Duration {
 	c, err := redis.NewClient(redis.Configuration{
 		Database: 8,
-		Path: "/tmp/redis.sock",
+		Path:     "/tmp/redis.sock",
 		PoolSize: *connections,
 	})
 
@@ -45,14 +47,14 @@ func benchmark(data string, handle func(string, *redis.Client, chan struct{})) t
 
 	ch := make(chan struct{})
 	start := time.Now()
-	
-    for i := 0; i < *connections; i++ {
-        go handle(data, c, ch)
-    }
 
-    for i := 0; i < *requests; i++ {
-        ch <- struct{}{}
-    }
+	for i := 0; i < *connections; i++ {
+		go handle(data, c, ch)
+	}
+
+	for i := 0; i < *requests; i++ {
+		ch <- struct{}{}
+	}
 
 	dur := time.Now().Sub(start)
 	c.Close()
@@ -60,7 +62,7 @@ func benchmark(data string, handle func(string, *redis.Client, chan struct{})) t
 }
 
 func run(name string, handle func(string, *redis.Client, chan struct{}), data string) {
-    fmt.Printf("===== %s =====\n", strings.ToUpper(name))
+	fmt.Printf("===== %s =====\n", strings.ToUpper(name))
 	duration := benchmark(data, handle)
 	rps := float64(*requests) / duration.Seconds()
 	fmt.Println("Requests per second: ", rps)
@@ -71,27 +73,30 @@ func run(name string, handle func(string, *redis.Client, chan struct{}), data st
 func main() {
 	var data string
 
-    flag.Parse()
+	flag.Parse()
+	runtime.GOMAXPROCS(*gomaxprocs)
 
-    if *cpuprof != "" {
-        f, err := os.Create(*cpuprof)
-        if err != nil {
-            log.Fatalln(err)
-        }
+	if *cpuprof != "" {
+		f, err := os.Create(*cpuprof)
+		if err != nil {
+			log.Fatalln(err)
+		}
 
-        pprof.StartCPUProfile(f)
-        defer pprof.StopCPUProfile()
-    }
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	for i := 0; i < *dsize; i++ {
 		data += "x"
 	}
 
-    fmt.Printf(
-		"Connections: %d, Requests: %d, Payload: %d bytes\n\n", 
-		*connections, 
-		*requests, 
-		*dsize)
+	fmt.Printf(
+		"Connections: %d, Requests: %d, Payload: %d bytes, GOMAXPROCS: %d\n\n",
+		*connections,
+		*requests,
+		*dsize,
+		*gomaxprocs)
+
 
 	args := flag.Args()
 	if len(args) == 0 {

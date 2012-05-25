@@ -1,7 +1,7 @@
 package main
 
 import (
-    "github.com/fzzbt/radix/redis"
+	"github.com/fzzbt/radix/redis"
 )
 
 var key string = "foo:rand:000000000000"
@@ -20,19 +20,19 @@ func init() {
 }
 
 func pingHandle(data string, c *redis.Client, ch chan struct{}) {
-    for _ = range ch {
-        c.Ping()
-    }
+	for _ = range ch {
+		c.Ping()
+	}
 }
 
 func setHandle(data string, c *redis.Client, ch chan struct{}) {
-    for _ = range ch {
-        c.Set(key, data)
-    }
+	for _ = range ch {
+		c.Set(key, data)
+	}
 }
 
 func getHandle(data string, c *redis.Client, ch chan struct{}) {
-    for _ = range ch {
-        c.Get(key)
-    }
+	for _ = range ch {
+		c.Get(key)
+	}
 }
