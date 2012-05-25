@@ -65,6 +65,7 @@ func (cp *connPool) pull() (conn *connection, err *Error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// make sure to keep track of it, so that we can close it later.
 		cp.all[conn] = struct{}{}
 	}

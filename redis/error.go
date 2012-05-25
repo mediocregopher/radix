@@ -13,7 +13,7 @@ const (
 )
 
 type Error struct {
-	Cmd Cmd // command that caused the error, if any
+	Cmd   Cmd // command that caused the error, if any
 	msg   string
 	flags ErrorFlag
 }
