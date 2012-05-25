@@ -7,12 +7,13 @@ import (
 	"time"
 	"os"
 	"strings"
+	"runtime/pprof"
 )
 
 var connections *int = flag.Int("c", 50, "number of connections")
 var requests *int = flag.Int("n", 10000, "number of request")
 var dsize *int = flag.Int("d", 3, "data size")
-//var cpuprof *string = flag.String("cpuprof", "", "filename for cpuprof")
+var cpuprof *string = flag.String("cpuprof", "", "filename for cpuprof")
 //var memprof *string = flag.String("memprof", "", "filename for memprof")
 
 
@@ -73,6 +74,16 @@ func main() {
 	var data string
 
     flag.Parse()
+
+    if *cpuprof != "" {
+        f, err := os.Create(*cpuprof)
+        if err != nil {
+            fmt.Println(err)
+        }
+
+        pprof.StartCPUProfile(f)
+        defer pprof.StopCPUProfile()
+    }
 
 	for i := 0; i < *dsize; i++ {
 		data += "x"
