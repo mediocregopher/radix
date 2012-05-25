@@ -82,7 +82,7 @@ func main() {
     flag.Parse()
 
 	for i := 0; i < *dsize; i++ {
-		data += "0"
+		data += "x"
 	}
 
     fmt.Printf(
