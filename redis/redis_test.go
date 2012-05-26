@@ -600,8 +600,8 @@ func (s *Utils) TestArgToRedis(c *C) {
 	c.Check(argToRedis(false), DeepEquals, []byte("$1\r\n0\r\n"))
 	c.Check(argToRedis([]interface{}{"foo", 5, true}), DeepEquals,
 		[]byte("$3\r\nfoo\r\n$1\r\n5\r\n$1\r\n1\r\n"))
-	c.Check(argToRedis(map[interface{}]interface{}{1: "foo", "bar": 2}), DeepEquals,
-		[]byte("$1\r\n1\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$1\r\n2\r\n"))
+	c.Check(argToRedis(map[interface{}]interface{}{1: "foo"}), DeepEquals,
+		[]byte("$1\r\n1\r\n$3\r\nfoo\r\n"))
 	c.Check(argToRedis(1.5), DeepEquals, []byte("$3\r\n1.5\r\n"))
 }
 
