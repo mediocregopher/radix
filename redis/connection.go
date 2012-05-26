@@ -16,9 +16,6 @@ import (
 type subType uint8
 
 const (
-	// Buffer size for some channels holding connection data
-	connectionChanBufSize = 10
-
 	subSubscribe subType = iota
 	subUnsubscribe
 	subPsubscribe
@@ -87,7 +84,7 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 		multiCallChan:    make(chan *envMultiCall),
 		subscriptionChan: make(chan *envSubscription),
 		dataChan:         make(chan *envData),
-		messageChan:      make(chan *Message, connectionChanBufSize),
+		messageChan:      make(chan *Message, 10),
 		closerChan:       make(chan struct{}),
 		database:         config.Database,
 		multiCounter:     -1,
