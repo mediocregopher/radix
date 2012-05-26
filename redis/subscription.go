@@ -9,7 +9,6 @@ type Subscription struct {
 	client      *Client
 	conn        *connection
 	closerChan  chan struct{}
-	messageChan chan *Message
 	msgHdlr     func(msg *Message)
 }
 
@@ -20,7 +19,6 @@ func newSubscription(client *Client, msgHdlr func(msg *Message)) (*Subscription,
 	sub := &Subscription{
 		client:      client,
 		closerChan:  make(chan struct{}),
-		messageChan: make(chan *Message, 1),
 		msgHdlr:     msgHdlr,
 	}
 
