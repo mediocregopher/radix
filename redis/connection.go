@@ -86,7 +86,7 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 		callChan:         make(chan *envCall),
 		multiCallChan:    make(chan *envMultiCall),
 		subscriptionChan: make(chan *envSubscription),
-		dataChan:         make(chan *envData, connectionChanBufSize),
+		dataChan:         make(chan *envData),
 		messageChan:      make(chan *Message, connectionChanBufSize),
 		closerChan:       make(chan struct{}),
 		database:         config.Database,
