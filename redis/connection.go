@@ -169,7 +169,7 @@ func (c *connection) init() *Error {
 		}
 	}
 
-	c.closed = 1
+	c.closed = 0
 	return nil
 }
 
