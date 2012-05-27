@@ -414,9 +414,9 @@ func (s *S) TestSubscription(c *C) {
 	c.Check(rd.Publish("chan1", "foo").Int(), Equals, 1)
 	sub.Unsubscribe("chan1")
 	c.Check(rd.Publish("chan1", "bar").Int(), Equals, 0)
-	sub.Close()
 
 	time.Sleep(time.Second)
+	sub.Close()
 	c.Assert(len(messages), Equals, 4)
 	c.Check(messages[0].Type, Equals, MessageSubscribe)
 	c.Check(messages[0].Channel, Equals, "chan1")

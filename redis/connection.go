@@ -69,8 +69,9 @@ type connection struct {
 	multiCallChan    chan *envMultiCall
 	dataChan         chan *envData
 	subscriptionChan chan *envSubscription
-	messageChan      chan *Message
 	closerChan       chan struct{}
+	msgHdlrChan      chan func(*Message)
+	msgHdlr          func(*Message)
 	database         int
 	multiCounter     int
 	timeout          time.Duration
@@ -84,8 +85,8 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 		multiCallChan:    make(chan *envMultiCall),
 		subscriptionChan: make(chan *envSubscription),
 		dataChan:         make(chan *envData),
-		messageChan:      make(chan *Message, 1),
 		closerChan:       make(chan struct{}),
+		msgHdlrChan:      make(chan func(*Message)),
 		database:         config.Database,
 		multiCounter:     -1,
 		timeout:          time.Duration(config.Timeout),
@@ -195,6 +196,11 @@ func (c *connection) multiCall(cmds []call) *Reply {
 	replyChan := make(chan *Reply)
 	c.multiCallChan <- &envMultiCall{cmds, replyChan}
 	return <-replyChan
+}
+
+// setMsgHdlr sets the pubsub message handler.
+func (c *connection) setMsgHdlr(msgHdlr func(msg *Message)) {
+	c.msgHdlrChan <- msgHdlr
 }
 
 // subscribes sends a subscription request to the given channels and returns an error, if any.
@@ -362,10 +368,14 @@ func (c *connection) backend() {
 		case es := <-c.subscriptionChan:
 			// Received a subscription.
 			c.handleSubscription(es)
+		case c.msgHdlr = <-c.msgHdlrChan:
+			// Set the message handler.
 		case ed := <-c.dataChan:
-			// Received data w/o command, so published data
-			// after a subscription.
-			c.handlePublishing(ed)
+			// Received data without a command, 
+			// so it's published data.
+			if c.msgHdlr != nil {
+				c.handleMessages(ed)
+			}
 		}
 	}
 }
@@ -436,14 +446,45 @@ func (c *connection) handleMultiCall(ec *envMultiCall) {
 	ec.replyChan <- r
 }
 
-func (c *connection) handlePublishing(ed *envData) {
+func (c *connection) handleSubscription(es *envSubscription) {
+	// Prepare command.
+	var cmd Cmd
+
+	switch es.subType {
+	case subSubscribe:
+		cmd = CmdSubscribe
+	case subUnsubscribe:
+		cmd = CmdUnsubscribe
+	case subPsubscribe:
+		cmd = CmdPsubscribe
+	case subPunsubscribe:
+		cmd = CmdPunsubscribe
+	}
+
+	// Send the subscription request.
+	channels := make([]interface{}, len(es.data))
+	for i, v := range es.data {
+		channels[i] = v
+	}
+
+	err := c.writeRequest(call{cmd, channels})
+
+	if err == nil {
+		es.errChan <- nil
+	} else {
+		es.errChan <- newError(err.Error())
+	}
+	// subscribe/etc. return their replies in pub/sub messages
+}
+
+func (c *connection) handleMessages(ed *envData) {
 	r := c.receiveReply(ed)
 
 	if r.Type == ReplyError {
 		// Error reply
 		// NOTE: Redis SHOULD NOT send error replies while the connection is in pub/sub mode.
 		// These errors must always originate from radix itself.
-		c.messageChan <- &Message{Type: MessageError, Error: r.Error}
+		c.msgHdlr(&Message{Type: MessageError, Error: r.Error})
 		return
 	}
 
@@ -536,44 +577,13 @@ func (c *connection) handlePublishing(ed *envData) {
 		goto Invalid
 	}
 
-	c.messageChan <- m
+	c.msgHdlr(m)
 	return
 
 Invalid:
 	// Invalid reply
-	c.messageChan <- &Message{Type: MessageError, Error: newError("received invalid pub/sub reply",
-		ErrorInvalidReply)}
-}
-
-func (c *connection) handleSubscription(es *envSubscription) {
-	// Prepare command.
-	var cmd Cmd
-
-	switch es.subType {
-	case subSubscribe:
-		cmd = CmdSubscribe
-	case subUnsubscribe:
-		cmd = CmdUnsubscribe
-	case subPsubscribe:
-		cmd = CmdPsubscribe
-	case subPunsubscribe:
-		cmd = CmdPunsubscribe
-	}
-
-	// Send the subscription request.
-	channels := make([]interface{}, len(es.data))
-	for i, v := range es.data {
-		channels[i] = v
-	}
-
-	err := c.writeRequest(call{cmd, channels})
-
-	if err == nil {
-		es.errChan <- nil
-	} else {
-		es.errChan <- newError(err.Error())
-	}
-	// subscribe/etc. return their replies in pub/sub messages
+	c.msgHdlr(&Message{Type: MessageError, Error: newError("received invalid pub/sub reply",
+			ErrorInvalidReply)})
 }
 
 func (c *connection) writeRequest(cmds ...call) error {

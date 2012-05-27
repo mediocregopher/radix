@@ -131,7 +131,7 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 		panic("redis: message handler must not be nil")
 	}
 
-	sub, err := newSubscription(c, msgHdlr)
+	sub, err := newSubscription(c.pool, msgHdlr)
 	if err != nil {
 		return nil, err
 	}

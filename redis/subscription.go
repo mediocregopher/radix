@@ -1,37 +1,29 @@
 package redis
 
-import "runtime"
-
 //* Subscription
 
 // Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
-	client      *Client
 	conn        *connection
-	closerChan  chan struct{}
-	msgHdlr     func(msg *Message)
+	pool        *connPool
 }
 
 // newSubscription returns a new Subscription or an error.
-func newSubscription(client *Client, msgHdlr func(msg *Message)) (*Subscription, *Error) {
+func newSubscription(pool *connPool, msgHdlr func(msg *Message)) (*Subscription, *Error) {
 	var err *Error
 
 	sub := &Subscription{
-		client:      client,
-		closerChan:  make(chan struct{}),
-		msgHdlr:     msgHdlr,
+		pool: pool,
 	}
 
 	// Connection handling
-	sub.conn, err = sub.client.pool.pull()
+	sub.conn, err = sub.pool.pull()
 
 	if err != nil {
 		return nil, err
 	}
 
-	runtime.SetFinalizer(sub, (*Subscription).Close)
-	go sub.backend()
-
+	sub.conn.setMsgHdlr(msgHdlr)
 	return sub, nil
 }
 
@@ -57,25 +49,13 @@ func (s *Subscription) Punsubscribe(patterns ...string) *Error {
 
 // Close closes the Subscription and returns its connection to the connection pool.
 func (s *Subscription) Close() {
-	runtime.SetFinalizer(s, nil)
-	s.closerChan <- struct{}{}
+	s.conn.setMsgHdlr(nil)
 	// Try to unsubscribe from all channels to reset the connection state back to normal
 	err := s.conn.unsubscribe()
 	if err != nil {
 		s.conn.close()
 		s.conn = nil
-	}
-
-	s.client.pool.push(s.conn)
-}
-
-func (s *Subscription) backend() {
-	for {
-		select {
-		case <-s.closerChan:
-			return
-		case msg := <-s.conn.messageChan:
-			s.msgHdlr(msg)
-		}
+	} else {
+		s.pool.push(s.conn)
 	}
 }
