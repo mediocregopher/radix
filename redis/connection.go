@@ -90,10 +90,8 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 		multiCounter:     -1,
 		timeout:          time.Duration(config.Timeout),
 		config:           config,
+		closed: 1, // closed by default
 	}
-
-	// closed at start
-	atomic.StoreInt32(&conn.closed, 1)
 
 	if err = conn.init(); err != nil {
 		conn.close()
@@ -171,7 +169,7 @@ func (c *connection) init() *Error {
 		}
 	}
 
-	atomic.StoreInt32(&c.closed, 0)
+	c.closed = 1
 	return nil
 }
 
