@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-	"log"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -90,9 +89,11 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 		database:         config.Database,
 		multiCounter:     -1,
 		timeout:          time.Duration(config.Timeout),
-		closed:           1,
 		config:           config,
 	}
+
+	// closed at start
+	atomic.StoreInt32(&conn.closed, 1)
 
 	if err = conn.init(); err != nil {
 		conn.close()
@@ -103,11 +104,6 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 }
 
 func (c *connection) init() *Error {
-	if !atomic.CompareAndSwapInt32(&c.closed, 1, 0) {
-		log.Printf(redisError("tried to init a connection when not closed, ignoring"))
-		return nil
-	}
-
 	// Backend must be started before connecting for closing purposes, in case of error.
 	go c.backend()
 
@@ -174,15 +170,13 @@ func (c *connection) init() *Error {
 			return newErrorExt("failed to authenticate", r.Error, ErrorAuth, ErrorConnection)
 		}
 	}
+
+	atomic.StoreInt32(&c.closed, 0)
 	return nil
 }
 
 // call calls a Redis command.
 func (c *connection) call(cmd Cmd, args ...interface{}) *Reply {
-	if c.closed == 1 {
-		c.init()
-	}
-
 	replyChan := make(chan *Reply)
 	c.callChan <- &envCall{
 		cmd:       call{cmd, args},

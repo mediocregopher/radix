@@ -3,6 +3,7 @@ package redis
 import (
 	"container/list"
 	"sync"
+	"sync/atomic"
 )
 
 // connPool is a stack-like structure that holds the connections of a Client.
@@ -36,7 +37,7 @@ func (cp *connPool) push(conn *connection) {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 
-	if conn.closed == 0 {
+	if atomic.LoadInt32(&conn.closed) == 0 {
 		cp.free.PushBack(conn)
 	} else {
 		if _, exists := cp.all[conn]; exists {
@@ -59,14 +60,14 @@ func (cp *connPool) pull() (conn *connection, err *Error) {
 	if cp.free.Len() > 0 {
 		conn, _ = cp.free.Remove(cp.free.Back()).(*connection)
 	} else {
-		// Lazy init of a connection
+		// Lazy creation of a connection
 		conn, err = newConnection(cp.config)
 
 		if err != nil {
 			return nil, err
 		}
 
-		// make sure to keep track of it, so that we can close it later.
+		// keep track of it, so that we can close it later.
 		cp.all[conn] = struct{}{}
 	}
 
