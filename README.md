@@ -10,6 +10,7 @@ Radix is an asynchronous Redis client for Go.
 
 To run the tests:
 
+    go get -u launchpad.net/gocheck
     cd $GOROOT/src/pkg/github.com/fzzbt/radix/redis
     go test -v -bench=".*"
 
