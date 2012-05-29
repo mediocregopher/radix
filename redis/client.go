@@ -3,6 +3,7 @@ package redis
 import (
 	"errors"
 	"sync"
+	"time"
 )
 
 // Configuration of a database client.
@@ -12,7 +13,7 @@ type Configuration struct {
 	Database       int
 	Auth           string
 	PoolSize       int
-	Timeout        int
+	Timeout        time.Duration
 	NoLoadingRetry bool
 }
 

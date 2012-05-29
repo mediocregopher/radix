@@ -3,7 +3,6 @@ package redis
 import (
 	"bufio"
 	"bytes"
-	"io"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -53,17 +52,12 @@ type envSubscription struct {
 	errChan chan *Error
 }
 
-type bufioReadWriteCloser struct {
-	*bufio.Reader
-	*bufio.Writer
-	io.Closer // the underlying conn
-}
-
 //* connection
 
 // connection describes a Redis connection.
 type connection struct {
-	rwc              *bufioReadWriteCloser
+	conn             net.Conn
+	rw              *bufio.ReadWriter
 	callChan         chan *envCall
 	multiCallChan    chan *envMultiCall
 	dataChan         chan *envData
@@ -71,8 +65,6 @@ type connection struct {
 	closerChan       chan struct{}
 	msgHdlrChan      chan func(*Message)
 	msgHdlr          func(*Message)
-	database         int
-	multiCounter     int
 	timeout          time.Duration
 	closed           int32 // manipulated with atomic primitives
 	config           *Configuration
@@ -86,9 +78,6 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 		dataChan:         make(chan *envData),
 		closerChan:       make(chan struct{}),
 		msgHdlrChan:      make(chan func(*Message)),
-		database:         config.Database,
-		multiCounter:     -1,
-		timeout:          time.Duration(config.Timeout),
 		config:           config,
 		closed: 1, // closed by default
 	}
@@ -101,43 +90,47 @@ func newConnection(config *Configuration) (conn *connection, err *Error) {
 	return
 }
 
+// init is helper function for newConnection
 func (c *connection) init() *Error {
+	var err error
+
 	// Backend must be started before connecting for closing purposes, in case of error.
 	go c.backend()
 
 	// Establish a connection.
 	if c.config.Address != "" {
 		// tcp connection
-		tcpAddr, err := net.ResolveTCPAddr("tcp", c.config.Address)
+		var addr *net.TCPAddr
+
+		addr, err = net.ResolveTCPAddr("tcp", c.config.Address)
 		if err != nil {
 			c.close()
 			return newError(err.Error(), ErrorConnection)
 		}
 
-		conn, err := net.DialTCP("tcp", nil, tcpAddr)
+		c.conn, err = net.DialTCP("tcp", nil, addr)
 		if err != nil {
 			c.close()
 			return newError(err.Error(), ErrorConnection)
 		}
-
-		c.rwc = &bufioReadWriteCloser{bufio.NewReader(conn), bufio.NewWriter(conn), conn}
 	} else {
 		// unix connection
-		unixAddr, err := net.ResolveUnixAddr("unix", c.config.Path)
+		var addr *net.UnixAddr
+
+		addr, err = net.ResolveUnixAddr("unix", c.config.Path)
 		if err != nil {
 			c.close()
 			return newError(err.Error(), ErrorConnection)
 		}
 
-		conn, err := net.DialUnix("unix", nil, unixAddr)
+		c.conn, err = net.DialUnix("unix", nil, addr)
 		if err != nil {
 			c.close()
 			return newError(err.Error(), ErrorConnection)
 		}
-
-		c.rwc = &bufioReadWriteCloser{bufio.NewReader(conn), bufio.NewWriter(conn), conn}
 	}
 
+	c.rw = bufio.NewReadWriter(bufio.NewReader(c.conn), bufio.NewWriter(c.conn))
 	go c.receiver()
 
 	// Select database.
@@ -228,7 +221,7 @@ func (c *connection) close() {
 	case c.closerChan <- struct{}{}:
 	default:
 		// don't block if close has been called before, and
-		// the receiver has already shut down
+		// the backend has already shut down
 	}
 }
 
@@ -240,7 +233,8 @@ func (c *connection) receiver() {
 
 	// Read until the connection is closed or timeouts.
 	for {
-		b, err = c.rwc.ReadBytes('\n')
+		c.setTimeout()
+		b, err = c.rw.ReadBytes('\n')
 
 		if err != nil {
 			if err.Error() == "EOF" {
@@ -301,7 +295,8 @@ func (c *connection) receiver() {
 				r := 0
 
 				for r < ir {
-					n, err := c.rwc.Read(br[r:])
+					c.setTimeout()
+					n, err := c.rw.Read(br[r:])
 
 					if err != nil {
 						c.close()
@@ -345,8 +340,8 @@ func (c *connection) backend() {
 		select {
 		case <-c.closerChan:
 			// Close the connection.
-			if c.rwc != nil {
-				c.rwc.Close()
+			if c.conn != nil {
+				c.conn.Close()
 			}
 
 			atomic.CompareAndSwapInt32(&c.closed, 0, 1)
@@ -372,31 +367,16 @@ func (c *connection) backend() {
 	}
 }
 
-func (c *connection) receiveEnvData() *envData {
-	if c.timeout > 0 {
-		select {
-		case ed := <-c.dataChan:
-			// OK
-			return ed
-		case <-time.After(c.timeout * time.Second):
-			// timeout error
-			c.close()
-			return nil
-		}
-	}
-
-	return <-c.dataChan
-}
-
 func (c *connection) handleCall(ec *envCall) {
 	var r *Reply
+
 	if err := c.writeRequest(ec.cmd); err != nil {
 		err := newError(err.Error())
 		// add command for debugging
 		err.Cmd = ec.cmd.cmd
 		r = &Reply{Error: err}
 	} else {
-		ed := c.receiveEnvData()
+		ed := <-c.dataChan
 		if ed == nil {
 			r = new(Reply)
 			r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
@@ -417,7 +397,7 @@ func (c *connection) handleMultiCall(ec *envMultiCall) {
 	if err := c.writeRequest(ec.cmds...); err == nil {
 		r.Type = ReplyMulti
 		for _, cmd := range ec.cmds {
-			ed := c.receiveEnvData()
+			ed := <-c.dataChan
 			if ed == nil {
 				r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
 				break
@@ -580,12 +560,14 @@ Invalid:
 
 func (c *connection) writeRequest(cmds ...call) error {
 	for _, cmd := range cmds {
-		if _, err := c.rwc.Write(createRequest(cmd)); err != nil {
+		c.setTimeout()
+		if _, err := c.rw.Write(createRequest(cmd)); err != nil {
 			return err
 		}
 	}
 
-	return c.rwc.Flush()
+	c.setTimeout()
+	return c.rw.Flush()
 }
 
 func (c *connection) receiveReply(ed *envData) *Reply {
@@ -611,7 +593,7 @@ func (c *connection) receiveReply(ed *envData) *Reply {
 			r.elems = []*Reply{}
 		} else {
 			for i := 0; i < ed.length; i++ {
-				ed := c.receiveEnvData()
+				ed := <-c.dataChan
 				if ed == nil {
 					// Timeout error
 					r.Type = ReplyError
@@ -632,4 +614,11 @@ func (c *connection) receiveReply(ed *envData) *Reply {
 		r.Error = newError("invalid reply", ErrorInvalidReply)
 	}
 	return r
+}
+
+
+func (c *connection) setTimeout() {
+	if c.config.Timeout != 0  {
+		c.conn.SetDeadline(time.Now().Add(c.config.Timeout * time.Second))
+	}
 }
