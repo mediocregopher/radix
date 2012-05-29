@@ -39,6 +39,8 @@ func benchmark(data string, handle func(string, *redis.Client, chan struct{})) t
 		log.Fatalf("NewClient failed: %s\n", err)
 	}
 
+	defer c.Close()
+
 	rep := c.Flushdb()
 	if rep.Error != nil {
 		handleReplyError(rep)
@@ -57,7 +59,6 @@ func benchmark(data string, handle func(string, *redis.Client, chan struct{})) t
 	}
 
 	dur := time.Now().Sub(start)
-	c.Close()
 	return dur
 }
 
