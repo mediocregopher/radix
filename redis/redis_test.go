@@ -15,7 +15,6 @@ func Test(t *testing.T) {
 var rd *Client
 var conf Configuration = Configuration{
 	Database: 8,
-	Path:     "/tmp/redis.sock",
 	Timeout:  10,
 }
 
@@ -556,18 +555,6 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 	c.Assert(r.Type, Equals, ReplyMulti)
 	c.Assert(r.Len(), Equals, 2)
 	c.Check(r.At(1).Nil(), Equals, true)
-}
-
-// Test timeout.
-func (s *Long) TestTimeout(c *C) {
-	conf2 := conf
-	conf2.Path = ""
-	conf2.Address = "127.0.0.1:12345"
-	rdB, errB := NewClient(conf2)
-	c.Assert(errB, IsNil)
-	rB := rdB.Ping()
-	c.Log(rB.Error)
-	c.Check(rB.Error, NotNil)
 }
 
 // Test illegal database.

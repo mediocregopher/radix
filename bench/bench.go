@@ -32,7 +32,7 @@ func benchmark(data string, handle func(string, *redis.Client, chan struct{})) t
 	c, err := redis.NewClient(redis.Configuration{
 		Database: 8,
 		Path:     "/tmp/redis.sock",
-		PoolSize: *connections,
+		PoolCapacity: *connections,
 	})
 
 	if err != nil {

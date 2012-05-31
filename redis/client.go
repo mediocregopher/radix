@@ -12,7 +12,7 @@ type Configuration struct {
 	Path           string
 	Database       int
 	Auth           string
-	PoolSize       int
+	PoolCapacity       int
 	Timeout        time.Duration
 	NoLoadingRetry bool
 }
@@ -125,8 +125,8 @@ func (c *Client) AsyncTransaction(mc func(*MultiCall)) Future {
 
 //* PubSub
 
-// Subscription subscribes to given channels and return a Subscription or an error.
-// The msgHdlr function is called whenever a new message arrives.
+// Subscription returns a new Subscription instance with the given message handler callback or
+// an error. The message handler is called whenever a new message arrives.
 func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error) {
 	if msgHdlr == nil {
 		panic("redis: message handler must not be nil")
@@ -151,11 +151,11 @@ func checkConfig(c *Configuration) error {
 	if c.Address == "" && c.Path == "" {
 		c.Address = "127.0.0.1:6379"
 	}
-	if c.Database < 0 {
+	if c.Database <= 0 {
 		c.Database = 0
 	}
-	if c.PoolSize <= 0 {
-		c.PoolSize = 10
+	if c.PoolCapacity <= 0 {
+		c.PoolCapacity = 50
 	}
 
 	return nil

@@ -4,7 +4,7 @@ package redis
 type MultiCall struct {
 	transaction bool
 	c           *connection
-	cmds        []call
+	calls        []call
 }
 
 func newMultiCall(transaction bool, c *connection) *MultiCall {
@@ -23,10 +23,10 @@ func (mc *MultiCall) process(userCalls func(*MultiCall)) *Reply {
 	userCalls(mc)
 	var r *Reply
 	if !mc.transaction {
-		r = mc.c.multiCall(mc.cmds)
+		r = mc.c.multiCall(mc.calls)
 	} else {
 		mc.Exec()
-		r = mc.c.multiCall(mc.cmds)
+		r = mc.c.multiCall(mc.calls)
 
 		execReply := r.At(len(r.elems) - 1)
 		if execReply.Error == nil {
@@ -44,7 +44,7 @@ func (mc *MultiCall) process(userCalls func(*MultiCall)) *Reply {
 }
 
 func (mc *MultiCall) call(cmd Cmd, args ...interface{}) {
-	mc.cmds = append(mc.cmds, call{cmd, args})
+	mc.calls = append(mc.calls, call{cmd, args})
 }
 
 // Call queues a Redis command call for later execution.
@@ -55,7 +55,7 @@ func (mc *MultiCall) Call(cmd string, args ...interface{}) {
 // Flush sends queued command calls to the Redis server for execution and
 // returns the returned Reply.
 func (mc *MultiCall) Flush() (r *Reply) {
-	r = mc.c.multiCall(mc.cmds)
-	mc.cmds = nil
+	r = mc.c.multiCall(mc.calls)
+	mc.calls = nil
 	return
 }

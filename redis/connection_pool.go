@@ -3,13 +3,11 @@ package redis
 import (
 	"container/list"
 	"sync"
-	"sync/atomic"
 )
 
 // connPool is a stack-like structure that holds the connections of a Client.
 type connPool struct {
 	available int
-	capacity  int
 	all       map[*connection]struct{} // connection set
 	free      list.List
 	lock      sync.Mutex
@@ -19,8 +17,7 @@ type connPool struct {
 
 func newConnPool(config *Configuration) *connPool {
 	cp := &connPool{
-		available: config.PoolSize,
-		capacity:  config.PoolSize,
+		available: config.PoolCapacity,
 		all:       map[*connection]struct{}{},
 		config:    config,
 	}
@@ -30,18 +27,16 @@ func newConnPool(config *Configuration) *connPool {
 }
 
 func (cp *connPool) push(conn *connection) {
-	if conn == nil {
-		return
-	}
-
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 
-	if atomic.LoadInt32(&conn.closed) == 0 {
-		cp.free.PushBack(conn)
-	} else {
-		if _, exists := cp.all[conn]; exists {
-			delete(cp.all, conn)
+	if conn != nil {
+		if conn.closed == 1 {
+			if _, exists := cp.all[conn]; exists {
+				delete(cp.all, conn)
+			}
+		} else {
+			cp.free.PushBack(conn)
 		}
 	}
 
