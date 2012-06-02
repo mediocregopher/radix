@@ -14,8 +14,10 @@ func Test(t *testing.T) {
 
 var rd *Client
 var conf Configuration = Configuration{
+	Address: "127.0.0.1:6379",
 	Database: 8,
 	Timeout:  10,
+	PoolCapacity: 50,
 }
 
 type TI interface {
@@ -585,15 +587,4 @@ func (s *Utils) TestCreateRequest(c *C) {
 		args: []interface{}{"key", 5},
 	}),
 		DeepEquals, []byte("*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$1\r\n5\r\n"))
-}
-
-func BenchmarkConnPool(b *testing.B) {
-	setUpTest(b)
-
-	for i := 0; i < b.N; i++ {
-		fut := rd.AsyncGet("foo", "bar")
-		fut.Reply()
-	}
-
-	tearDownTest(b)
 }
