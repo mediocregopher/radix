@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"net"
 	"strconv"
-	"time"
 	"sync/atomic"
+	"time"
 )
 
 //* Misc
@@ -31,18 +31,18 @@ type readData struct {
 
 // connection describes a Redis connection.
 type connection struct {
-	conn             net.Conn
-	reader *bufio.Reader
-	writer *bufio.Writer
-	closed int32 // manipulated with atomic primitives
-	noRTimeout        bool // toggle disabling of read timeout
-	config           *Configuration
+	conn       net.Conn
+	reader     *bufio.Reader
+	writer     *bufio.Writer
+	closed     int32 // manipulated with atomic primitives
+	noRTimeout bool  // toggle disabling of read timeout
+	config     *Configuration
 }
 
 func newConnection(config *Configuration) (conn *connection, err *Error) {
 	conn = &connection{
 		closed: 1, // closed by default
-		config:           config,
+		config: config,
 	}
 
 	if err = conn.init(); err != nil {
@@ -107,7 +107,7 @@ func (c *connection) init() *Error {
 				r = c.call(CmdSelect, c.config.Database)
 			}
 		}
- 
+
 	Selectfail:
 		c.close()
 		return newErrorExt("selecting database failed", r.Error)
@@ -193,7 +193,7 @@ func (c *connection) subscription(subType subType, data []string) *Error {
 	if err == nil {
 		return nil
 	}
-	
+
 	return newError(err.Error())
 	// subscribe/etc. return their replies as pubsub messages
 }
@@ -202,7 +202,7 @@ func (c *connection) close() {
 	if c.conn != nil {
 		c.conn.Close()
 	}
-	
+
 	atomic.StoreInt32(&c.closed, 1)
 }
 
@@ -211,11 +211,11 @@ func (c *connection) readErrHdlr(err error) (rd *readData) {
 		c.close()
 		err_, ok := err.(net.Error)
 		if ok && err_.Timeout() {
-			return &readData{0, nil, nil, newError("read failed, timeout error: " + err.Error(), 
-					ErrorConnection, ErrorTimeout)}
+			return &readData{0, nil, nil, newError("read failed, timeout error: "+err.Error(),
+				ErrorConnection, ErrorTimeout)}
 		}
 
-		return &readData{0, nil, nil, newError("write failed: " + err.Error(), ErrorConnection)}
+		return &readData{0, nil, nil, newError("write failed: "+err.Error(), ErrorConnection)}
 	}
 
 	return nil
@@ -245,7 +245,7 @@ func (c *connection) read() (rd *readData) {
 			rd = &readData{0, nil, nil, newError(string(b[4:]), ErrorRedis)}
 		case bytes.HasPrefix(b, []byte("LOADING")):
 			rd = &readData{0, nil, nil, newError("Redis is loading data into memory",
-					ErrorRedis, ErrorLoading)}
+				ErrorRedis, ErrorLoading)}
 		default:
 			// this should never execute
 			rd = &readData{0, nil, nil, newError(string(b), ErrorRedis)}
@@ -323,11 +323,11 @@ func (c *connection) writeErrHdlr(err error) *Error {
 	c.close()
 	err_, ok := err.(net.Error)
 	if ok && err_.Timeout() {
-		return newError("write failed, timeout error: " + err.Error(), 
+		return newError("write failed, timeout error: "+err.Error(),
 			ErrorConnection, ErrorTimeout)
 	}
-	
-	return newError("write failed: " + err.Error(), ErrorConnection)
+
+	return newError("write failed: "+err.Error(), ErrorConnection)
 }
 
 func (c *connection) writeRequest(calls ...call) *Error {
@@ -385,14 +385,13 @@ func (c *connection) receiveReply(rd *readData) *Reply {
 }
 
 func (c *connection) setReadTimeout() {
-	if c.config.Timeout != 0  {
+	if c.config.Timeout != 0 {
 		c.conn.SetReadDeadline(time.Now().Add(c.config.Timeout * time.Second))
 	}
 }
 
-
 func (c *connection) setWriteTimeout() {
-	if c.config.Timeout != 0  {
+	if c.config.Timeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.config.Timeout * time.Second))
 	}
 }

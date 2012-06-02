@@ -12,7 +12,7 @@ type Configuration struct {
 	Path           string
 	Database       int
 	Auth           string
-	PoolCapacity       int
+	PoolCapacity   int
 	Timeout        time.Duration
 	NoLoadingRetry bool
 }
@@ -127,12 +127,14 @@ func (c *Client) AsyncTransaction(mc func(*MultiCall)) Future {
 
 // Subscription returns a new Subscription instance with the given message handler callback or
 // an error. The message handler is called whenever a new message arrives.
+// Subscriptions create their own dedicated connections,
+// they do not pull connections from the connection pool.
 func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error) {
 	if msgHdlr == nil {
-		panic("redis: message handler must not be nil")
+		panic(errmsg("message handler must not be nil"))
 	}
 
-	sub, err := newSubscription(c.pool, msgHdlr)
+	sub, err := newSubscription(&c.config, msgHdlr)
 	if err != nil {
 		return nil, err
 	}

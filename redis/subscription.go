@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"log"
 	"sync"
 )
 
@@ -15,24 +16,22 @@ const (
 
 // Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
-	conn        *connection
-	pool        *connPool
-	msgHdlr func(msg *Message)
+	conn      *connection
+	msgHdlr   func(msg *Message)
+	lock      sync.Mutex
 	listening bool
-	lock sync.Mutex // lock for handling listening
 }
 
 // newSubscription returns a new Subscription or an error.
-func newSubscription(pool *connPool, msgHdlr func(msg *Message)) (*Subscription, *Error) {
+func newSubscription(config *Configuration, msgHdlr func(msg *Message)) (*Subscription, *Error) {
 	var err *Error
 
 	s := &Subscription{
-		pool: pool,
 		msgHdlr: msgHdlr,
 	}
 
 	// Connection handling
-	s.conn, err = s.pool.pull()
+	s.conn, err = newConnection(config)
 	if err != nil {
 		return nil, err
 	}
@@ -83,132 +82,119 @@ func (s *Subscription) Punsubscribe(patterns ...string) (err *Error) {
 }
 
 // Close closes the subscription.
-// Subscription's connection will be returned to the connection pool, 
-// if there are no active subscriptions in it.
-// Otherwise, the connection is sacked.
 func (s *Subscription) Close() {
-	s.lock.Lock()
-	listening := s.listening
-	s.lock.Unlock()
-
-	if listening {
-		s.conn.close()
-		s.pool.push(nil)
-	} else {
-		s.conn.noRTimeout = true
-		s.pool.push(s.conn)
-	}
+	// just sack the connection, listener will close down eventually.
+	s.conn.close()
 }
 
-// parseResponse parses the given pubsub message data and returns it as a Message.
-func (s *Subscription) parseResponse(rd *readData) *Message {
+// parseResponse parses the given pubsub message data and returns it as a message.
+func (s *Subscription) parseResponse(rd *readData) *message {
 	r := s.conn.receiveReply(rd)
+	var r0, r1 *Reply
+	m := &message{}
 
 	if r.Type == ReplyError {
-		// Error reply
-		return &Message{Type: MessageError, Error: r.Error}
+		goto Errmsg
 	}
 
-	var r0, r1 *Reply
-	m := &Message{}
-
 	if r.Type != ReplyMulti || r.Len() < 3 {
-		goto Invalid
+		goto Errmsg
 	}
 
 	r0 = r.At(0)
 	if r0.Type != ReplyString {
-		goto Invalid
+		goto Errmsg
 	}
 
 	// first argument is the message type
 	switch r0.Str() {
 	case "subscribe":
-		m.Type = MessageSubscribe
+		m.type_ = messageSubscribe
 	case "unsubscribe":
-		m.Type = MessageUnsubscribe
+		m.type_ = messageUnsubscribe
 	case "psubscribe":
-		m.Type = MessagePsubscribe
+		m.type_ = messagePsubscribe
 	case "punsubscribe":
-		m.Type = MessagePunsubscribe
+		m.type_ = messagePunsubscribe
 	case "message":
-		m.Type = MessageMessage
+		m.type_ = messageMessage
 	case "pmessage":
-		m.Type = MessagePmessage
+		m.type_ = messagePmessage
 	default:
-		goto Invalid
+		goto Errmsg
 	}
 
 	// second argument
 	r1 = r.At(1)
 	if r1.Type != ReplyString {
-		goto Invalid
+		goto Errmsg
 	}
 
 	switch {
-	case m.Type == MessageSubscribe || m.Type == MessageUnsubscribe:
-		m.Channel = r1.Str()
+	case m.type_ == messageSubscribe || m.type_ == messageUnsubscribe:
+		m.channel = r1.Str()
 
 		// number of subscriptions
 		r2 := r.At(2)
 		if r2.Type != ReplyInteger {
-			goto Invalid
+			goto Errmsg
 		}
 
-		m.Subscriptions = r2.Int()
-	case m.Type == MessagePsubscribe || m.Type == MessagePunsubscribe:
-		m.Pattern = r1.Str()
+		m.subscriptions = r2.Int()
+	case m.type_ == messagePsubscribe || m.type_ == messagePunsubscribe:
+		m.pattern = r1.Str()
 
 		// number of subscriptions
 		r2 := r.At(2)
 		if r2.Type != ReplyInteger {
-			goto Invalid
+			goto Errmsg
 		}
 
-		m.Subscriptions = r2.Int()
-	case m.Type == MessageMessage:
-		m.Channel = r1.Str()
+		m.subscriptions = r2.Int()
+	case m.type_ == messageMessage:
+		m.channel = r1.Str()
 
 		// payload
 		r2 := r.At(2)
 		if r2.Type != ReplyString {
-			goto Invalid
+			goto Errmsg
 		}
 
-		m.Payload = r2.Str()
-	case m.Type == MessagePmessage:
-		m.Pattern = r1.Str()
+		m.payload = r2.Str()
+	case m.type_ == messagePmessage:
+		m.pattern = r1.Str()
 
 		// name of the originating channel
 		r2 := r.At(2)
 		if r2.Type != ReplyString {
-			goto Invalid
+			goto Errmsg
 		}
 
-		m.Channel = r2.Str()
+		m.channel = r2.Str()
 
 		// payload
 		r3 := r.At(3)
 		if r3.Type != ReplyString {
-			goto Invalid
+			goto Errmsg
 		}
 
-		m.Payload = r3.Str()
+		m.payload = r3.Str()
 	default:
-		goto Invalid
+		goto Errmsg
 	}
 
 	return m
 
-Invalid:
-	// Invalid reply
-	return &Message{Type: MessageError, Error: newError("received invalid pubsub reply",
-			ErrorInvalidReply)}
+Errmsg:
+	// Error/Invalid message reply
+	// we shouldn't generally get these, unless there's a bug.
+	log.Println("received errorneous/invalid reply while in pubsub mode! ignoring...")
+	return nil
 }
 
 // listener is a goroutine for reading and handling pubsub messages.
 func (s *Subscription) listener() {
-	var m *Message
+	var m *message
 
 	// read until connection is closed or
 	// when subscription count reaches zero
@@ -217,21 +203,25 @@ func (s *Subscription) listener() {
 		s.lock.Lock()
 		if rd.error != nil && rd.error.Test(ErrorConnection) {
 			// connection closed
-			return
-		}
-
-		m = s.parseResponse(rd)
-		if (m.Type == MessageSubscribe ||
-			m.Type == MessageUnsubscribe ||
-			m.Type == MessagePsubscribe ||
-			m.Type == MessagePunsubscribe) &&
-			m.Subscriptions == 0 {
 			s.listening = false
 			s.lock.Unlock()
 			return
 		}
 
+		m = s.parseResponse(rd)
+		if (m.type_ == messageSubscribe ||
+			m.type_ == messageUnsubscribe ||
+			m.type_ == messagePsubscribe ||
+			m.type_ == messagePunsubscribe) && m.subscriptions == 0 {
+			s.listening = false
+			s.lock.Unlock()
+			return
+		}
 		s.lock.Unlock()
-		s.msgHdlr(m)
+
+		if m.type_ == messageMessage || m.type_ == messagePmessage {
+			go s.msgHdlr(newMessage(m))
+		}
+
 	}
 }

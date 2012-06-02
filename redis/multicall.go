@@ -4,7 +4,7 @@ package redis
 type MultiCall struct {
 	transaction bool
 	c           *connection
-	calls        []call
+	calls       []call
 }
 
 func newMultiCall(transaction bool, c *connection) *MultiCall {

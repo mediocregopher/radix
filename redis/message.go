@@ -4,51 +4,52 @@ import (
 	"fmt"
 )
 
-type MessageType int
+//* Public message
 
-const (
-	MessageSubscribe MessageType = iota
-	MessageUnsubscribe
-	MessagePsubscribe
-	MessagePunsubscribe
-	MessageMessage
-	MessagePmessage
-	MessageError
-)
+func newMessage(msg *message) *Message {
+	return &Message{
+		Pattern: msg.pattern,
+		Channel: msg.channel,
+		Payload: msg.payload,
+	}
+}
 
-// Message describes a pub/sub message
+// Message describes a pubsub "message" or "pmessage" message
 type Message struct {
-	Type          MessageType
-	Channel       string
-	Pattern       string
-	Subscriptions int
-	Payload       string
-	Error         error
+	Pattern string
+	Channel string
+	Payload string
 }
 
 // String returns a string representation of the message.
 func (m *Message) String() string {
-	var mtype string
-
-	switch m.Type {
-	case MessageSubscribe:
-		mtype = "subscribe"
-	case MessageUnsubscribe:
-		mtype = "unsubscribe"
-	case MessagePsubscribe:
-		mtype = "psubscribe"
-	case MessagePunsubscribe:
-		mtype = "punsubscribe"
-	case MessageMessage:
-		mtype = "message"
-	case MessagePmessage:
-		mtype = "pmessage"
-	case MessageError:
-		mtype = "error"
-	default:
-		mtype = "unknown"
+	if m.Pattern != "" {
+		return fmt.Sprintf("Message{Pattern: %s, Channel: %s, Payload: %s}",
+			m.Pattern, m.Channel, m.Payload)
 	}
 
-	return fmt.Sprintf("Message{Type: %s, Channel: %v, Pattern: %v, Subscriptions: %v, "+
-		"Payload: %v, Error: %v}", mtype, m.Channel, m.Pattern, m.Subscriptions, m.Payload, m.Error)
+	return fmt.Sprintf("Message{Channel: %s, Payload: %s}", m.Channel, m.Payload)
+}
+
+//* Private message
+
+type messageType int
+
+const (
+	messageSubscribe messageType = iota
+	messageUnsubscribe
+	messagePsubscribe
+	messagePunsubscribe
+	messageMessage
+	messagePmessage
+	messageError
+)
+
+// message describes a pubsub message
+type message struct {
+	type_         messageType
+	pattern       string
+	channel       string
+	subscriptions int
+	payload       string
 }

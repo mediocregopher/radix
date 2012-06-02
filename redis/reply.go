@@ -53,7 +53,7 @@ func (r *Reply) Nil() bool {
 // It panics, if the reply type is not ReplyNil, ReplyStatus or ReplyString.
 func (r *Reply) Str() string {
 	if !(r.Type == ReplyNil || r.Type == ReplyStatus || r.Type == ReplyString) {
-		panic("redis: string value is not available for this reply type")
+		panic(errmsg("string value is not available for this reply type"))
 	}
 
 	return *r.str
@@ -68,7 +68,7 @@ func (r *Reply) Bytes() []byte {
 // It panics, if the reply type is not ReplyInteger.
 func (r *Reply) Int64() int64 {
 	if r.Type != ReplyInteger {
-		panic("redis: integer value is not available for this reply type")
+		panic(errmsg("integer value is not available for this reply type"))
 	}
 	return *r.int
 }
@@ -96,7 +96,7 @@ func (r *Reply) Bool() bool {
 		return false
 	}
 
-	panic("redis: boolean value is not available for this reply type")
+	panic(errmsg("boolean value is not available for this reply type"))
 }
 
 // Len returns the number of elements in a multi reply.
@@ -109,7 +109,7 @@ func (r *Reply) Len() int {
 // It panics, if the reply type is not ReplyMulti.
 func (r *Reply) Elems() []*Reply {
 	if r.Type != ReplyMulti {
-		panic("redis: reply type is not ReplyMulti")
+		panic(errmsg("reply type is not ReplyMulti"))
 	}
 
 	return r.elems
@@ -119,11 +119,11 @@ func (r *Reply) Elems() []*Reply {
 // It panics, if the reply type is not ReplyMulti or if the index is out of range.
 func (r *Reply) At(i int) *Reply {
 	if r.Type != ReplyMulti {
-		panic("redis: reply type is not ReplyMulti")
+		panic(errmsg("reply type is not ReplyMulti"))
 	}
 
 	if i < 0 || i >= len(r.elems) {
-		panic("redis: reply index out of range")
+		panic(errmsg("reply index out of range"))
 	}
 
 	return r.elems[i]

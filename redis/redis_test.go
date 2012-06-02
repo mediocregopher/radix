@@ -416,18 +416,9 @@ func (s *S) TestSubscription(c *C) {
 
 	time.Sleep(time.Second)
 	sub.Close()
-	c.Assert(len(messages), Equals, 4)
-	c.Check(messages[0].Type, Equals, MessageSubscribe)
+	c.Assert(len(messages), Equals, 1)
 	c.Check(messages[0].Channel, Equals, "chan1")
-	c.Check(messages[0].Subscriptions, Equals, 1)
-	c.Check(messages[1].Type, Equals, MessageSubscribe)
-	c.Check(messages[1].Channel, Equals, "chan2")
-	c.Check(messages[1].Subscriptions, Equals, 2)
-	c.Check(messages[2].Type, Equals, MessageMessage)
-	c.Check(messages[2].Channel, Equals, "chan1")
-	c.Check(messages[2].Payload, Equals, "foo")
-	c.Check(messages[3].Type, Equals, MessageUnsubscribe)
-	c.Check(messages[3].Channel, Equals, "chan1")
+	c.Check(messages[0].Payload, Equals, "foo")
 }
 
 // Test pattern subscriptions.
@@ -452,16 +443,10 @@ func (s *S) TestPsubscribe(c *C) {
 	sub.Close()
 
 	time.Sleep(time.Second)
-	c.Assert(len(messages), Equals, 3)
-	c.Check(messages[0].Type, Equals, MessagePsubscribe)
+	c.Assert(len(messages), Equals, 1)
+	c.Check(messages[0].Channel, Equals, "foo.foo")
+	c.Check(messages[0].Payload, Equals, "foo")
 	c.Check(messages[0].Pattern, Equals, "foo.*")
-	c.Check(messages[0].Subscriptions, Equals, 1)
-	c.Check(messages[1].Type, Equals, MessagePmessage)
-	c.Check(messages[1].Channel, Equals, "foo.foo")
-	c.Check(messages[1].Payload, Equals, "foo")
-	c.Check(messages[1].Pattern, Equals, "foo.*")
-	c.Check(messages[2].Type, Equals, MessagePunsubscribe)
-	c.Check(messages[2].Pattern, Equals, "foo.*")
 }
 
 // Test Error.

@@ -31,7 +31,7 @@ func newError(msg string, flags ...ErrorFlag) *Error {
 // newErrorExt creates a new Error with flags of the given error and
 // appends the error message from the given error to the end of the new one.
 func newErrorExt(msg string, err *Error, flags ...ErrorFlag) *Error {
-	return newError(msg + ": " + err.Error(), append(flags, err.flags)...)
+	return newError(msg+": "+err.Error(), append(flags, err.flags)...)
 }
 
 // Error returns a string representation of the error.
@@ -53,7 +53,7 @@ func (e *Error) Test(flags ...ErrorFlag) bool {
 	return false
 }
 
-// redisError is a helper function for panic messages.
-func redisError(msg string) string {
+// errmsg is a helper function for (panic) error messages.
+func errmsg(msg string) string {
 	return "redis: " + msg
 }
