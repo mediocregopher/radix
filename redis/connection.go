@@ -219,10 +219,11 @@ func (c *connection) readErrHdlr(err error) (rd *readData) {
 		c.close()
 		err_, ok := err.(net.Error)
 		if ok && err_.Timeout() {
-			return &readData{0, nil, nil, newError("read failed: timeout error", ErrorConnection, ErrorTimeout)}
+			return &readData{0, nil, nil, newError("read failed, timeout error: " + err.Error(), 
+					ErrorConnection, ErrorTimeout)}
 		}
 
-		return &readData{0, nil, nil, newError("read failed: connection error", ErrorConnection)}
+		return &readData{0, nil, nil, newError("write failed: " + err.Error(), ErrorConnection)}
 	}
 
 	return nil
@@ -330,10 +331,11 @@ func (c *connection) writeErrHdlr(err error) *Error {
 	c.close()
 	err_, ok := err.(net.Error)
 	if ok && err_.Timeout() {
-		return newError("write failed: timeout error", ErrorConnection, ErrorTimeout)
+		return newError("write failed, timeout error: " + err.Error(), 
+			ErrorConnection, ErrorTimeout)
 	}
 	
-	return newError("write failed: connection error", ErrorConnection)
+	return newError("write failed: " + err.Error(), ErrorConnection)
 }
 
 func (c *connection) writeRequest(calls ...call) *Error {
@@ -407,6 +409,6 @@ func (c *connection) setReadTimeout() {
 
 func (c *connection) setWriteTimeout() {
 	if c.config.Timeout != 0  {
-		c.conn.SetDeadline(time.Now().Add(c.config.Timeout * time.Second))
+		c.conn.SetWriteDeadline(time.Now().Add(c.config.Timeout * time.Second))
 	}
 }
