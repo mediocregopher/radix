@@ -27,7 +27,8 @@ type readData struct {
 //
 // connection is not thread-safe.
 // Caller must be careful when dealing with connection from multiple goroutines.
-// It is safe to call reader and writer at the same time from two different goroutines.
+// It is safe to call reader and writer at the same time from two different goroutines,
+// but it is not safe to call reader or writer at the same time from more than one goroutine.
 
 // connection describes a Redis connection.
 type connection struct {
