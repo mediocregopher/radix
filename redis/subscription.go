@@ -2,7 +2,6 @@ package redis
 
 import (
 	"sync"
-	"fmt"
 )
 
 type subType uint8
@@ -219,12 +218,6 @@ func (s *Subscription) listener() {
 	for {
 		rd := s.conn.read()
 		s.lock.Lock()
-		if rd.Error != nil {
-			s.listening = false
-			s.lock.Unlock()
-			return
-		}
-
 		m = s.parseResponse(rd)
 		if (m.Type == MessageSubscribe ||
 			m.Type == MessageUnsubscribe ||
@@ -237,7 +230,6 @@ func (s *Subscription) listener() {
 		}
 
 		s.lock.Unlock()
-		fmt.Print("")
 		s.msgHdlr(m)
 	}
 }

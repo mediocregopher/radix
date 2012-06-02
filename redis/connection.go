@@ -6,7 +6,6 @@ import (
 	"net"
 	"strconv"
 	"time"
-	"io"
 	"sync/atomic"
 )
 
@@ -128,7 +127,6 @@ func (c *connection) init() *Error {
 // call calls a Redis command.
 func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
 	if err := c.writeRequest(call{cmd, args}); err != nil {
-		err := newError(err.Error())
 		// add command for debugging
 		err.Cmd = cmd
 		r = &Reply{Error: err}
@@ -216,6 +214,20 @@ func (c *connection) close() {
 	atomic.StoreInt32(&c.closed, 1)
 }
 
+func (c *connection) readErrHdlr(err error) (rd *readData) {
+	if err != nil {
+		c.close()
+		err_, ok := err.(net.Error)
+		if ok && err_.Timeout() {
+			return &readData{0, nil, nil, newError("read failed: timeout error", ErrorConnection, ErrorTimeout)}
+		}
+
+		return &readData{0, nil, nil, newError("read failed: connection error", ErrorConnection)}
+	}
+
+	return nil
+}
+
 // read reads data from the connection.
 func (c *connection) read() (rd *readData) {
 	var err error
@@ -225,23 +237,8 @@ func (c *connection) read() (rd *readData) {
 		c.setReadTimeout()
 	}
 	b, err = c.reader.ReadBytes('\n')
-
-	if err != nil {
-
-			
-		err_, ok := err.(net.Error)
-		if ok {
-			switch {
-			case err_.Timeout():
-				return &readData{0, nil, nil, newError(err.Error(), ErrorConnection, ErrorTimeout)}
-			case err_.Temporary():
-				// attempt rereading
-				return c.read()
-			}
-		}
-
-		c.close()
-		return &readData{0, nil, nil, newError(err.Error(), ErrorConnection)}
+	if rd = c.readErrHdlr(err); rd != nil {
+		return rd
 	}
 
 	// Analyze the first byte.
@@ -296,10 +293,8 @@ func (c *connection) read() (rd *readData) {
 					c.setReadTimeout()
 				}
 				n, err := c.reader.Read(br[r:])
-
-				if err != nil {
-					c.close()
-					return &readData{0, nil, nil, newError("bulk reply read error", ErrorConnection)}
+				if rd = c.readErrHdlr(err); rd != nil {
+					return rd
 				}
 
 				r += n
@@ -331,45 +326,30 @@ func (c *connection) read() (rd *readData) {
 	return rd
 }
 
-func (c *connection) writeRequest(calls ...call) error {
+func (c *connection) writeErrHdlr(err error) *Error {
+	c.close()
+	err_, ok := err.(net.Error)
+	if ok && err_.Timeout() {
+		return newError("write failed: timeout error", ErrorConnection, ErrorTimeout)
+	}
+	
+	return newError("write failed: connection error", ErrorConnection)
+}
+
+func (c *connection) writeRequest(calls ...call) *Error {
 	for _, call := range calls {
 		c.setWriteTimeout()
 		if _, err := c.writer.Write(createRequest(call)); err != nil {
-		c.close()
-			
-		err_, ok := err.(net.Error)
-		if ok {
-			switch {
-			case err_.Timeout():
-				return &readData{0, nil, nil, newError(err.Error(), ErrorConnection, ErrorTimeout)}
-			case err_.Temporary():
-				// attempt rereading
-				return c.read()
-			}
-		}
-
-		return &readData{0, nil, nil, newError(err.Error(), ErrorConnection)}
-
-
-
-	if err != nil {
-		c.close()
-			
-		// check for timeout error
-		err_, ok := err.(net.Error)
-		if ok && err_.Timeout() {
-			return &readData{0, nil, nil, newError(err.Error(), ErrorConnection, ErrorTimeout)}
-		}
-
-		return &readData{0, nil, nil, newError(err.Error(), ErrorConnection)}
-	}
-
-			return err
+			return c.writeErrHdlr(err)
 		}
 	}
 
 	c.setWriteTimeout()
-	return c.writer.Flush()
+	if err := c.writer.Flush(); err != nil {
+		return c.writeErrHdlr(err)
+	}
+
+	return nil
 }
 
 func (c *connection) receiveReply(rd *readData) *Reply {
