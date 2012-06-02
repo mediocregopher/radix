@@ -26,6 +26,8 @@ type readData struct {
 //* connection
 //
 // connection is not thread-safe.
+// Caller must be careful when dealing with connection from multiple goroutines.
+// It is safe to call reader and writer at the same time from two different goroutines.
 
 // connection describes a Redis connection.
 type connection struct {
@@ -96,19 +98,19 @@ func (c *connection) init() *Error {
 	if r.Error != nil {
 		if !c.config.NoLoadingRetry && r.Error.Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
-			r = c.call("select", c.config.Database)
+			r = c.call(CmdSelect, c.config.Database)
 			for r.Error != nil {
 				if !r.Error.Test(ErrorLoading) {
-					c.close()
-					return newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
+					goto Selectfail
 				}
 				time.Sleep(time.Second)
 				r = c.call(CmdSelect, c.config.Database)
 			}
-		} else {
-			c.close()
-			return newErrorExt(r.Error.Error(), r.Error, ErrorConnection)
 		}
+ 
+	Selectfail:
+		c.close()
+		return newErrorExt("selecting database failed", r.Error)
 	}
 
 	// Authenticate if needed.
@@ -116,7 +118,7 @@ func (c *connection) init() *Error {
 		r = c.call(CmdAuth, c.config.Auth)
 		if r.Error != nil {
 			c.close()
-			return newErrorExt("failed to authenticate", r.Error, ErrorAuth, ErrorConnection)
+			return newErrorExt("authentication failed", r.Error, ErrorAuth)
 		}
 	}
 
@@ -127,20 +129,15 @@ func (c *connection) init() *Error {
 // call calls a Redis command.
 func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
 	if err := c.writeRequest(call{cmd, args}); err != nil {
-		// add command for debugging
+		// add command in the error
 		err.Cmd = cmd
 		r = &Reply{Error: err}
 	} else {
 		rd := c.read()
-		if rd == nil {
-			r = new(Reply)
-			r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
-		} else {
-			r = c.receiveReply(rd)
-			// add command for debugging
-			if r.Error != nil {
-				r.Error.Cmd = cmd
-			}
+		r = c.receiveReply(rd)
+		if r.Error != nil {
+			// add command in the error
+			r.Error.Cmd = cmd
 		}
 	}
 
@@ -152,20 +149,16 @@ func (c *connection) multiCall(cmds []call) (r *Reply) {
 	r = new(Reply)
 	if err := c.writeRequest(cmds...); err == nil {
 		r.Type = ReplyMulti
-		for _, cmd := range cmds {
+		r.elems = make([]*Reply, len(cmds))
+		for i, cmd := range cmds {
 			rd := c.read()
-			if rd == nil {
-				r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
-				break
-			} else {
-				reply := c.receiveReply(rd)
+			reply := c.receiveReply(rd)
+			if reply.Error != nil {
 				// add command in the error
-				if reply.Error != nil {
-					reply.Error.Cmd = cmd.cmd
-				}
-
-				r.elems = append(r.elems, reply)
+				reply.Error.Cmd = cmd.cmd
 			}
+
+			r.elems[i] = reply
 		}
 	} else {
 		r.Error = newError(err.Error())
@@ -197,7 +190,6 @@ func (c *connection) subscription(subType subType, data []string) *Error {
 	}
 
 	err := c.writeRequest(call{cmd, channels})
-
 	if err == nil {
 		return nil
 	}
@@ -255,7 +247,7 @@ func (c *connection) read() (rd *readData) {
 			rd = &readData{0, nil, nil, newError("Redis is loading data into memory",
 					ErrorRedis, ErrorLoading)}
 		default:
-			// this should not execute
+			// this should never execute
 			rd = &readData{0, nil, nil, newError(string(b), ErrorRedis)}
 		}
 	case '+':
@@ -376,17 +368,9 @@ func (c *connection) receiveReply(rd *readData) *Reply {
 			// Empty multi-bulk
 			r.elems = []*Reply{}
 		} else {
-			for i := 0; i < rd.length; i++ {
-				rd := c.read()
-				if rd == nil {
-					// Timeout error
-					r.Type = ReplyError
-					r.Error = newError("timeout error", ErrorTimeout, ErrorConnection)
-					break
-				} else {
-					reply := c.receiveReply(rd)
-					r.elems = append(r.elems, reply)
-				}
+			r.elems = make([]*Reply, rd.length)
+			for i, _ := range r.elems {
+				r.elems[i] = c.receiveReply(c.read())
 			}
 		}
 	case rd.length == -1:

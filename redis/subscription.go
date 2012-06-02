@@ -33,7 +33,6 @@ func newSubscription(pool *connPool, msgHdlr func(msg *Message)) (*Subscription,
 
 	// Connection handling
 	s.conn, err = s.pool.pull()
-
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +217,11 @@ func (s *Subscription) listener() {
 	for {
 		rd := s.conn.read()
 		s.lock.Lock()
+		if rd.error != nil && rd.error.Test(ErrorConnection) {
+			// connection closed
+			return
+		}
+
 		m = s.parseResponse(rd)
 		if (m.Type == MessageSubscribe ||
 			m.Type == MessageUnsubscribe ||

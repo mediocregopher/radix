@@ -472,7 +472,7 @@ func (s *S) TestError(c *C) {
 	c.Check(err.Test(ErrorRedis), Equals, false)
 
 	errext := newErrorExt("bar", err, ErrorLoading)
-	c.Check(errext.Error(), Equals, "bar")
+	c.Check(errext.Error(), Equals, "bar: foo")
 	c.Check(errext.Test(ErrorConnection), Equals, true)
 	c.Check(errext.Test(ErrorLoading), Equals, true)
 }
