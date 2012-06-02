@@ -587,72 +587,7 @@ func (s *Utils) TestCreateRequest(c *C) {
 		DeepEquals, []byte("*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$1\r\n5\r\n"))
 }
 
-//* Benchmarks
-
-func BenchmarkBlockingPing(b *testing.B) {
-	setUpTest(b)
-
-	for i := 0; i < b.N; i++ {
-		rd.Ping()
-	}
-
-	tearDownTest(b)
-}
-
-func BenchmarkBlockingSet(b *testing.B) {
-	setUpTest(b)
-
-	for i := 0; i < b.N; i++ {
-		rd.Set("foo", "bar")
-	}
-
-	tearDownTest(b)
-}
-
-func BenchmarkBlockingGet(b *testing.B) {
-	setUpTest(b)
-
-	for i := 0; i < b.N; i++ {
-		rd.Get("foo", "bar")
-	}
-
-	tearDownTest(b)
-}
-
-func BenchmarkAsyncPing(b *testing.B) {
-	setUpTest(b)
-
-	for i := 0; i < b.N; i++ {
-		fut := rd.AsyncPing()
-		fut.Reply()
-	}
-
-	tearDownTest(b)
-}
-
-func BenchmarkAsyncSet(b *testing.B) {
-	setUpTest(b)
-
-	for i := 0; i < b.N; i++ {
-		fut := rd.AsyncSet("foo", "bar")
-		fut.Reply()
-	}
-
-	tearDownTest(b)
-}
-
-func BenchmarkAsyncGet(b *testing.B) {
-	setUpTest(b)
-
-	for i := 0; i < b.N; i++ {
-		fut := rd.AsyncGet("foo", "bar")
-		fut.Reply()
-	}
-
-	tearDownTest(b)
-}
-
-func BenchmarkConnectionPool(b *testing.B) {
+func BenchmarkConnPool(b *testing.B) {
 	setUpTest(b)
 
 	for i := 0; i < b.N; i++ {
