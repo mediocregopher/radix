@@ -364,14 +364,9 @@ func (c *connection) receiveReply(rd *readData) *Reply {
 	case rd.length >= 0:
 		// Multi-bulk reply
 		r.Type = ReplyMulti
-		if rd.length == 0 {
-			// Empty multi-bulk
-			r.elems = []*Reply{}
-		} else {
-			r.elems = make([]*Reply, rd.length)
-			for i, _ := range r.elems {
-				r.elems[i] = c.receiveReply(c.read())
-			}
+		r.elems = make([]*Reply, rd.length)
+		for i, _ := range r.elems {
+			r.elems[i] = c.receiveReply(c.read())
 		}
 	case rd.length == -1:
 		// nil reply
