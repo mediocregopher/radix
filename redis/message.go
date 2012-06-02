@@ -6,19 +6,28 @@ import (
 
 //* Public message
 
+type MessageType int
+
+const (
+	MessageMessage MessageType = iota
+	MessagePmessage
+)
+
+// Message describes a pubsub "message" or "pmessage" message
+type Message struct {
+	Type MessageType
+	Pattern string
+	Channel string
+	Payload string
+}
+
 func newMessage(msg *message) *Message {
 	return &Message{
+		Type: MessageType(msg.type_),
 		Pattern: msg.pattern,
 		Channel: msg.channel,
 		Payload: msg.payload,
 	}
-}
-
-// Message describes a pubsub "message" or "pmessage" message
-type Message struct {
-	Pattern string
-	Channel string
-	Payload string
 }
 
 // String returns a string representation of the message.
