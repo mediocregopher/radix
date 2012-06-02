@@ -8,7 +8,6 @@ import (
 // connPool is a stack-like structure that holds the connections of a Client.
 type connPool struct {
 	available int
-	all       map[*connection]struct{} // connection set
 	free      list.List
 	lock      sync.Mutex
 	emptyCond *sync.Cond
@@ -18,7 +17,6 @@ type connPool struct {
 func newConnPool(config *Configuration) *connPool {
 	cp := &connPool{
 		available: config.PoolCapacity,
-		all:       map[*connection]struct{}{},
 		config:    config,
 	}
 
@@ -31,12 +29,8 @@ func (cp *connPool) push(conn *connection) {
 	defer cp.lock.Unlock()
 
 	if conn != nil {
-		if conn.closed == 1 {
-			if _, exists := cp.all[conn]; exists {
-				delete(cp.all, conn)
-			}
-		} else {
-			cp.free.PushBack(conn)
+		if conn.closed == 0 {
+			cp.free.PushFront(conn)
 		}
 	}
 
@@ -61,9 +55,6 @@ func (cp *connPool) pull() (conn *connection, err *Error) {
 		if err != nil {
 			return nil, err
 		}
-
-		// keep track of it, so that we can close it later.
-		cp.all[conn] = struct{}{}
 	}
 
 	cp.available--
@@ -73,9 +64,8 @@ func (cp *connPool) pull() (conn *connection, err *Error) {
 func (cp *connPool) close() {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
-	for conn, _ := range cp.all {
+	for e := cp.free.Front(); e != nil; e = e.Next() {
+		conn, _ := e.Value.(*connection)
 		conn.close()
 	}
-
-	cp.all = nil
 }
