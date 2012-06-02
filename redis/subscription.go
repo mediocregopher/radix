@@ -106,8 +106,6 @@ func (s *Subscription) parseResponse(rd *readData) *Message {
 
 	if r.Type == ReplyError {
 		// Error reply
-		// NOTE: Redis SHOULD NOT send error replies while the connection is in subscribed mode.
-		// These errors must always originate from radix itself.
 		return &Message{Type: MessageError, Error: r.Error}
 	}
 
