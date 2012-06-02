@@ -36,8 +36,8 @@ Creating a Client instance is done as follows:
 		//* Optional parameters
 		// Password for authenticating (default: "")
 		// Auth: "my_password", 
-		// Size of the connection pool (default: 50)
-		// PoolSize: 50, 
+		// Capacity of the connection pool (default: 50)
+		// PoolCapacity: 50, 
 		// Don't try to retry on LOADING error? (default: false)
 		// NoLoadingRetry: false, 
 	})
@@ -49,9 +49,9 @@ Creating a Client instance is done as follows:
 	defer c.Close()
 ```
 
-As Redis is mostly a single threaded database, increasing the PoolSize parameter does not usually make
+As Redis is mostly a single threaded database, increasing the PoolCapacity parameter does not usually make
 much difference unless the latency to your server is very high. 
-The default is set to 50 connections which should be fine for around 99% of cases.
+The default is set to 50 connections which should be fine for most cases.
 However, note that Subscription instances create their own connections outside the connection pool,
 so try to reuse them.
 
