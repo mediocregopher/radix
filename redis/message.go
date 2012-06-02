@@ -15,7 +15,7 @@ const (
 
 // Message describes a pubsub "message" or "pmessage" message
 type Message struct {
-	Type MessageType
+	Type    MessageType
 	Pattern string
 	Channel string
 	Payload string
@@ -23,7 +23,7 @@ type Message struct {
 
 func newMessage(msg *message) *Message {
 	return &Message{
-		Type: MessageType(msg.type_),
+		Type:    MessageType(msg.type_),
 		Pattern: msg.pattern,
 		Channel: msg.channel,
 		Payload: msg.payload,
