@@ -36,8 +36,8 @@ Creating a Client instance is done as follows:
 		//* Optional parameters
 		// Password for authenticating (default: "")
 		// Auth: "my_password", 
-		// Size of the connection pool (default: 10)
-		// PoolSize: 10, 
+		// Size of the connection pool (default: 50)
+		// PoolSize: 50, 
 		// Don't try to retry on LOADING error? (default: false)
 		// NoLoadingRetry: false, 
 	})
@@ -51,8 +51,9 @@ Creating a Client instance is done as follows:
 
 As Redis is mostly a single threaded database, increasing the PoolSize parameter does not usually make
 much difference unless the latency to your server is very high. 
-The default is set to 10 connections which should be fine for around 99% of cases.
-However, note that each Subscription instance requires its own connection until it's closed.
+The default is set to 50 connections which should be fine for around 99% of cases.
+However, note that Subscription instances create their own connections outside the connection pool,
+so try to reuse them.
 
 Sometimes Redis may give a LOADING error when it is loading keys from the disk.
 The default behaviour of Radix is to retry connecting until Redis is done with it, 
