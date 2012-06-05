@@ -16,7 +16,7 @@ ReplyStatus --  status reply
 ReplyError -- error reply
 ReplyInteger -- integer reply
 ReplyNil -- nil reply
-ReplyString -- string reply
+ReplyString -- string reply (bulk reply)
 ReplyMulti -- multi-bulk or multicall reply
 */
 type ReplyType uint8
@@ -34,8 +34,8 @@ const (
 type Reply struct {
 	Cmd   Cmd
 	Type  ReplyType
-	str   *string
-	int   *int64
+	str   string
+	int   int64
 	elems []*Reply
 	Error *Error
 }
@@ -56,7 +56,7 @@ func (r *Reply) Str() string {
 		panic(errmsg("string value is not available for this reply type"))
 	}
 
-	return *r.str
+	return r.str
 }
 
 // Bytes is a convenience method for []byte(Reply.String()).
@@ -70,7 +70,7 @@ func (r *Reply) Int64() int64 {
 	if r.Type != ReplyInteger {
 		panic(errmsg("integer value is not available for this reply type"))
 	}
-	return *r.int
+	return r.int
 }
 
 // Int is a convenience method for int(Reply.Int64()).

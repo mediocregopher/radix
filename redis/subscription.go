@@ -3,6 +3,7 @@ package redis
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 )
 
 type subType uint8
@@ -87,11 +88,11 @@ func (s *Subscription) Close() {
 	s.conn.close()
 }
 
-// parseResponse parses the given pubsub message data and returns it as a message.
-func (s *Subscription) parseResponse(rd *readData) *Message {
-	r := s.conn.receiveReply(rd)
+// readMessage reads and parses pubsub message data from the connection and returns it as a message.
+func (s *Subscription) readMessage() *Message {
 	var r0, r1 *Reply
 	m := new(Message)
+	r := s.conn.read()
 
 	if r.Type == ReplyError {
 		goto Errmsg
@@ -188,7 +189,8 @@ func (s *Subscription) parseResponse(rd *readData) *Message {
 Errmsg:
 	// Error/Invalid message reply
 	// we shouldn't generally get these, unless there's a bug.
-	log.Println("received errorneous/invalid reply while in pubsub mode! ignoring...")
+	log.Printf("received error reply while in pubsub mode: %s.\n ignoring...\n",
+		r.Error)
 	return nil
 }
 
@@ -199,16 +201,15 @@ func (s *Subscription) listener() {
 	// read until connection is closed or
 	// when subscription count reaches zero
 	for {
-		rd := s.conn.read()
 		s.lock.Lock()
-		if rd.error != nil && rd.error.Test(ErrorConnection) {
+		m = s.readMessage()
+		if atomic.LoadInt32(&s.conn.closed) == 1 {
 			// connection closed
 			s.listening = false
 			s.lock.Unlock()
 			return
 		}
 
-		m = s.parseResponse(rd)
 		if m != nil {
 			go s.msgHdlr(m)
 			if (m.Type == MessageSubscribe ||

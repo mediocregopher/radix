@@ -8,7 +8,7 @@ const (
 	ErrorLoading
 	ErrorAuth
 	ErrorParse
-	ErrorInvalidReply
+	ErrorInvalid
 	ErrorTimeout
 )
 

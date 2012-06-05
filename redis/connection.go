@@ -16,13 +16,6 @@ type call struct {
 	args []interface{}
 }
 
-type readData struct {
-	length int
-	str    *string
-	int    *int64
-	error  *Error
-}
-
 //* connection
 //
 // connection is not thread-safe.
@@ -36,7 +29,7 @@ type connection struct {
 	reader     *bufio.Reader
 	writer     *bufio.Writer
 	closed     int32 // manipulated with atomic primitives
-	noRTimeout bool  // toggle disabling of read timeout
+	noReadTimeout bool  // toggle disabling of read timeout
 	config     *Configuration
 }
 
@@ -134,8 +127,7 @@ func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
 		err.Cmd = cmd
 		r = &Reply{Error: err}
 	} else {
-		rd := c.read()
-		r = c.receiveReply(rd)
+		r = c.read()
 		if r.Error != nil {
 			// add command in the error
 			r.Error.Cmd = cmd
@@ -152,8 +144,7 @@ func (c *connection) multiCall(cmds []call) (r *Reply) {
 		r.Type = ReplyMulti
 		r.elems = make([]*Reply, len(cmds))
 		for i, cmd := range cmds {
-			rd := c.read()
-			reply := c.receiveReply(rd)
+			reply := c.read()
 			if reply.Error != nil {
 				// add command in the error
 				reply.Error.Cmd = cmd.cmd
@@ -200,39 +191,47 @@ func (c *connection) subscription(subType subType, data []string) *Error {
 }
 
 func (c *connection) close() {
+	atomic.StoreInt32(&c.closed, 1)
+
 	if c.conn != nil {
 		c.conn.Close()
 	}
-
-	atomic.StoreInt32(&c.closed, 1)
 }
 
-func (c *connection) readErrHdlr(err error) (rd *readData) {
+// helper for read()
+func (c *connection) readErrHdlr(err error) (r *Reply) {
 	if err != nil {
 		c.close()
 		err_, ok := err.(net.Error)
 		if ok && err_.Timeout() {
-			return &readData{0, nil, nil, newError("read failed, timeout error: "+err.Error(),
-				ErrorConnection, ErrorTimeout)}
+			return &Reply{
+				Type: ReplyError, 
+				Error: newError("read failed, timeout error: "+err.Error(), ErrorConnection, 
+					ErrorTimeout),
+			}
 		}
 
-		return &readData{0, nil, nil, newError("write failed: "+err.Error(), ErrorConnection)}
+		return &Reply{
+			Type: ReplyError, 
+			Error: newError("write failed: "+err.Error(), ErrorConnection),
+		}
 	}
 
 	return nil
 }
 
-// read reads data from the connection.
-func (c *connection) read() (rd *readData) {
+// read reads data from the connection and returns a Reply.
+func (c *connection) read() (r *Reply) {
 	var err error
 	var b []byte
+	r = new(Reply)
 
-	if !c.noRTimeout {
+	if !c.noReadTimeout {
 		c.setReadTimeout()
 	}
 	b, err = c.reader.ReadBytes('\n')
-	if rd = c.readErrHdlr(err); rd != nil {
-		return rd
+	if re := c.readErrHdlr(err); re != nil {
+		return re
 	}
 
 	// Analyze the first byte.
@@ -241,60 +240,63 @@ func (c *connection) read() (rd *readData) {
 	switch fb {
 	case '-':
 		// Error reply.
+		r.Type = ReplyError
 		switch {
 		case bytes.HasPrefix(b, []byte("ERR")):
-			rd = &readData{0, nil, nil, newError(string(b[4:]), ErrorRedis)}
+			r.Error = newError(string(b[4:]), ErrorRedis)
 		case bytes.HasPrefix(b, []byte("LOADING")):
-			rd = &readData{0, nil, nil, newError("Redis is loading data into memory",
-				ErrorRedis, ErrorLoading)}
+			r.Error = newError("Redis is loading data into memory", ErrorRedis, ErrorLoading)
 		default:
-			// this should never execute
-			rd = &readData{0, nil, nil, newError(string(b), ErrorRedis)}
+			// this shouldn't really ever execute
+			r.Error = newError(string(b), ErrorRedis)
 		}
 	case '+':
 		// Status reply.
-		s := string(b)
-		rd = &readData{0, &s, nil, nil}
+		r.Type = ReplyStatus
+		r.str = string(b)
 	case ':':
 		// Integer reply.
 		var i int64
 		i, err = strconv.ParseInt(string(b), 10, 64)
 		if err != nil {
-			rd = &readData{0, nil, nil, newError("integer reply parse error", ErrorParse)}
-			break
+			r.Type = ReplyError
+			r.Error = newError("integer reply parse error", ErrorParse)
+		} else {
+			r.Type = ReplyInteger
+			r.int = i
 		}
-		rd = &readData{0, nil, &i, nil}
 	case '$':
 		// Bulk reply, or key not found.
 		var i int
 		i, err = strconv.Atoi(string(b))
 		if err != nil {
-			rd = &readData{0, nil, nil, newError("bulk reply parse error", ErrorParse)}
-			break
-		}
-
-		if i == -1 {
-			// Key not found
-			rd = &readData{-1, nil, nil, nil}
+			r.Type = ReplyError
+			r.Error = newError("bulk reply parse error", ErrorParse)
 		} else {
-			// Reading the data.
-			ir := i + 2
-			br := make([]byte, ir)
-			r := 0
-
-			for r < ir {
-				if !c.noRTimeout {
-					c.setReadTimeout()
+			if i == -1 {
+				// Key not found
+				r.Type = ReplyNil
+			} else {
+				// Reading the data.
+				ir := i + 2
+				br := make([]byte, ir)
+				rc := 0
+				
+				for rc < ir {
+					if !c.noReadTimeout {
+						c.setReadTimeout()
+					}
+					n, err := c.reader.Read(br[rc:])
+					if re := c.readErrHdlr(err); re != nil {
+						return re
+					}
+					
+					rc += n
 				}
-				n, err := c.reader.Read(br[r:])
-				if rd = c.readErrHdlr(err); rd != nil {
-					return rd
-				}
-
-				r += n
+				s := string(br[0:i])
+				r.Type = ReplyString
+				r.str = s
 			}
-			s := string(br[0:i])
-			rd = &readData{0, &s, nil, nil}
 		}
 	case '*':
 		// Multi-bulk reply. Just return the count
@@ -303,21 +305,32 @@ func (c *connection) read() (rd *readData) {
 		var i int
 		i, err = strconv.Atoi(string(b))
 		if err != nil {
-			rd = &readData{0, nil, nil, newError("multi-bulk reply parse error", ErrorParse)}
-		}
-		if i == -1 {
-			// nil multi-bulk
-			rd = &readData{-1, nil, nil, nil}
+			r.Type = ReplyError
+			r.Error = newError("multi-bulk reply parse error", ErrorParse)
 		} else {
-			rd = &readData{i, nil, nil, nil}
+			switch {
+			case i == -1:
+				// nil multi-bulk
+				r.Type = ReplyNil
+			case i >= 0:
+				r.Type = ReplyMulti
+				r.elems = make([]*Reply, i)
+				for i, _ := range r.elems {
+					r.elems[i] = c.read()
+				}
+			default:
+				// invalid reply
+				r.Type = ReplyError
+				r.Error = newError("received invalid reply", ErrorInvalid)
+			}
 		}
 	default:
-		// Invalid reply
-		rd = &readData{0, nil, nil, newError("received invalid reply", ErrorInvalidReply)}
+		// invalid reply
+		r.Type = ReplyError
+		r.Error = newError("received invalid reply", ErrorInvalid)
 	}
 
-	// Send result.
-	return rd
+	return r
 }
 
 func (c *connection) writeErrHdlr(err error) *Error {
@@ -345,39 +358,6 @@ func (c *connection) writeRequest(calls ...call) *Error {
 	}
 
 	return nil
-}
-
-func (c *connection) receiveReply(rd *readData) *Reply {
-	r := new(Reply)
-	switch {
-	case rd.error != nil:
-		// Error reply
-		r.Type = ReplyError
-		r.Error = rd.error
-	case rd.str != nil:
-		// Status or bulk reply
-		r.Type = ReplyString
-		r.str = rd.str
-	case rd.int != nil:
-		// Integer reply
-		r.Type = ReplyInteger
-		r.int = rd.int
-	case rd.length >= 0:
-		// Multi-bulk reply
-		r.Type = ReplyMulti
-		r.elems = make([]*Reply, rd.length)
-		for i, _ := range r.elems {
-			r.elems[i] = c.receiveReply(c.read())
-		}
-	case rd.length == -1:
-		// nil reply
-		r.Type = ReplyNil
-	default:
-		// Invalid reply
-		r.Type = ReplyError
-		r.Error = newError("invalid reply", ErrorInvalidReply)
-	}
-	return r
 }
 
 func (c *connection) setReadTimeout() {
