@@ -14,9 +14,9 @@ func Test(t *testing.T) {
 
 var rd *Client
 var conf Configuration = Configuration{
-	Address: "127.0.0.1:6379",
-	Database: 8,
-	Timeout:  10,
+	Address:      "127.0.0.1:6379",
+	Database:     8,
+	Timeout:      10,
 	PoolCapacity: 50,
 }
 
