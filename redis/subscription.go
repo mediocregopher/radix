@@ -2,7 +2,6 @@ package redis
 
 import (
 	"log"
-	"sync"
 	"sync/atomic"
 )
 
@@ -19,8 +18,7 @@ const (
 type Subscription struct {
 	conn      *connection
 	msgHdlr   func(msg *Message)
-	lock      sync.Mutex
-	listening bool
+
 }
 
 // newSubscription returns a new Subscription or an error.
@@ -37,49 +35,29 @@ func newSubscription(config *Configuration, msgHdlr func(msg *Message)) (*Subscr
 		return nil, err
 	}
 
-	s.conn.noRTimeout = true // disable read timeout during pubsub mode
+	s.conn.noReadTimeout = true // disable read timeout during pubsub mode
+	go s.listener()
 	return s, nil
-}
-
-// listen starts the listener goroutine, if it's not running already.
-func (s *Subscription) listen() {
-	s.lock.Lock()
-	if !s.listening {
-		s.listening = true
-		go s.listener()
-	}
 }
 
 // Subscribe subscribes to given channels or returns an error.
 func (s *Subscription) Subscribe(channels ...string) (err *Error) {
-	s.listen()
-	err = s.conn.subscription(subSubscribe, channels)
-	s.lock.Unlock()
-	return err
+	return s.conn.subscription(subSubscribe, channels)
 }
 
 // Unsubscribe unsubscribes from given channels or returns an error.
 func (s *Subscription) Unsubscribe(channels ...string) (err *Error) {
-	s.listen()
-	err = s.conn.subscription(subUnsubscribe, channels)
-	s.lock.Unlock()
-	return err
+	return s.conn.subscription(subUnsubscribe, channels)
 }
 
 // Psubscribe subscribes to given patterns or returns an error.
 func (s *Subscription) Psubscribe(patterns ...string) (err *Error) {
-	s.listen()
-	err = s.conn.subscription(subPsubscribe, patterns)
-	s.lock.Unlock()
-	return err
+	return s.conn.subscription(subPsubscribe, patterns)
 }
 
 // Punsubscribe unsubscribes from given patterns or returns an error.
 func (s *Subscription) Punsubscribe(patterns ...string) (err *Error) {
-	s.listen()
-	err = s.conn.subscription(subPunsubscribe, patterns)
-	s.lock.Unlock()
-	return err
+	return s.conn.subscription(subPunsubscribe, patterns)
 }
 
 // Close closes the subscription.
@@ -188,9 +166,12 @@ func (s *Subscription) readMessage() *Message {
 
 Errmsg:
 	// Error/Invalid message reply
-	// we shouldn't generally get these, unless there's a bug.
-	log.Printf("received error reply while in pubsub mode: %s.\n ignoring...\n",
-		r.Error)
+	// we shouldn't generally get these, except when closing.
+	if !r.Error.Test(ErrorConnection) {
+		log.Printf("received an unexpected error reply while in pubsub mode: %s.\n ignoring...",
+			r.Error)
+	}
+
 	return nil
 }
 
@@ -198,30 +179,13 @@ Errmsg:
 func (s *Subscription) listener() {
 	var m *Message
 
-	// read until connection is closed or
-	// when subscription count reaches zero
+	// read until connection is closed
 	for {
-		s.lock.Lock()
 		m = s.readMessage()
-		if atomic.LoadInt32(&s.conn.closed) == 1 {
-			// connection closed
-			s.listening = false
-			s.lock.Unlock()
+		if m == nil && atomic.LoadInt32(&s.conn.closed) == 1 {
 			return
 		}
 
-		if m != nil {
-			go s.msgHdlr(m)
-			if (m.Type == MessageSubscribe ||
-				m.Type == MessageUnsubscribe ||
-				m.Type == MessagePsubscribe ||
-				m.Type == MessagePunsubscribe) && m.Subscriptions == 0 {
-				s.listening = false
-				s.lock.Unlock()
-				return
-			}
-		}
-
-		s.lock.Unlock()
+		go s.msgHdlr(m)
 	}
 }

@@ -213,7 +213,7 @@ func (c *connection) readErrHdlr(err error) (r *Reply) {
 
 		return &Reply{
 			Type: ReplyError, 
-			Error: newError("write failed: "+err.Error(), ErrorConnection),
+			Error: newError("read failed: "+err.Error(), ErrorConnection),
 		}
 	}
 
