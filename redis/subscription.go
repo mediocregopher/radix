@@ -91,7 +91,7 @@ func (s *Subscription) Close() {
 func (s *Subscription) parseResponse(rd *readData) *Message {
 	r := s.conn.receiveReply(rd)
 	var r0, r1 *Reply
-	m := &Message{}
+	m := new(Message)
 
 	if r.Type == ReplyError {
 		goto Errmsg
