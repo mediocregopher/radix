@@ -409,6 +409,7 @@ func (s *S) TestSubscription(c *C) {
 		c.Errorf("Failed to subscribe: '%v'!", err)
 		return
 	}
+	defer sub.Close()
 
 	sub.Subscribe("chan1", "chan2")
 
@@ -417,10 +418,19 @@ func (s *S) TestSubscription(c *C) {
 	c.Check(rd.Publish("chan1", "bar").Int(), Equals, 0)
 
 	time.Sleep(time.Second)
-	sub.Close()
-	c.Assert(len(messages), Equals, 1)
+	c.Assert(len(messages), Equals, 4)
+	c.Check(messages[0].Type, Equals, MessageSubscribe)
 	c.Check(messages[0].Channel, Equals, "chan1")
-	c.Check(messages[0].Payload, Equals, "foo")
+	c.Check(messages[0].Subscriptions, Equals, 1)
+	c.Check(messages[1].Type, Equals, MessageSubscribe)
+	c.Check(messages[1].Channel, Equals, "chan2")
+	c.Check(messages[1].Subscriptions, Equals, 2)
+	c.Check(messages[2].Type, Equals, MessageMessage)
+	c.Check(messages[2].Channel, Equals, "chan1")
+	c.Check(messages[2].Payload, Equals, "foo")
+	c.Check(messages[3].Type, Equals, MessageUnsubscribe)
+	c.Check(messages[3].Channel, Equals, "chan1")
+	c.Check(messages[3].Subscriptions, Equals, 1)
 }
 
 // Test pattern subscriptions.
@@ -436,19 +446,26 @@ func (s *S) TestPsubscribe(c *C) {
 		c.Errorf("Failed to subscribe: '%v'!", err)
 		return
 	}
+	defer sub.Close()
 
 	sub.Psubscribe("foo.*")
 
 	c.Check(rd.Publish("foo.foo", "foo").Int(), Equals, 1)
 	sub.Punsubscribe("foo.*")
 	c.Check(rd.Publish("foo.bar", "bar").Int(), Equals, 0)
-	sub.Close()
 
 	time.Sleep(time.Second)
-	c.Assert(len(messages), Equals, 1)
-	c.Check(messages[0].Channel, Equals, "foo.foo")
-	c.Check(messages[0].Payload, Equals, "foo")
+	c.Assert(len(messages), Equals, 3)
+	c.Check(messages[0].Type, Equals, MessagePsubscribe)
 	c.Check(messages[0].Pattern, Equals, "foo.*")
+	c.Check(messages[0].Subscriptions, Equals, 1)
+	c.Check(messages[1].Type, Equals, MessagePmessage)
+	c.Check(messages[1].Pattern, Equals, "foo.*")
+	c.Check(messages[1].Channel, Equals, "foo.foo")
+	c.Check(messages[1].Payload, Equals, "foo")
+	c.Check(messages[2].Type, Equals, MessagePunsubscribe)
+	c.Check(messages[2].Pattern, Equals, "foo.*")
+	c.Check(messages[2].Subscriptions, Equals, 0)
 }
 
 // Test Error.
