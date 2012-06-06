@@ -27,7 +27,6 @@ type call struct {
 type connection struct {
 	conn       net.Conn
 	reader     *bufio.Reader
-	writer     *bufio.Writer
 	closed     int32 // manipulated with atomic primitives
 	noReadTimeout bool  // toggle disabling of read timeout
 	config     *Configuration
@@ -85,7 +84,6 @@ func (c *connection) init() *Error {
 	}
 
 	c.reader = bufio.NewReader(c.conn)
-	c.writer = bufio.NewWriter(c.conn)
 
 	// Select database.
 	r := c.call(CmdSelect, c.config.Database)
@@ -122,7 +120,7 @@ func (c *connection) init() *Error {
 
 // call calls a Redis command.
 func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
-	if err := c.writeRequests(call{cmd, args}); err != nil {
+	if err := c.writeRequest(call{cmd, args}); err != nil {
 		// add command in the error
 		err.Cmd = cmd
 		r = &Reply{Error: err}
@@ -140,7 +138,7 @@ func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
 // multiCall calls multiple Redis commands.
 func (c *connection) multiCall(cmds []call) (r *Reply) {
 	r = new(Reply)
-	if err := c.writeRequests(cmds...); err == nil {
+	if err := c.writeRequest(cmds...); err == nil {
 		r.Type = ReplyMulti
 		r.elems = make([]*Reply, len(cmds))
 		for i, cmd := range cmds {
@@ -181,7 +179,7 @@ func (c *connection) subscription(subType subType, data []string) *Error {
 		channels[i] = v
 	}
 
-	err := c.writeRequests(call{cmd, channels})
+	err := c.writeRequest(call{cmd, channels})
 	if err == nil {
 		return nil
 	}
@@ -333,28 +331,17 @@ func (c *connection) read() (r *Reply) {
 	return r
 }
 
-func (c *connection) writeErrHdlr(err error) *Error {
-	c.close()
-	err_, ok := err.(net.Error)
-	if ok && err_.Timeout() {
-		return newError("write failed, timeout error: "+err.Error(),
-			ErrorConnection, ErrorTimeout)
-	}
-
-	return newError("write failed: "+err.Error(), ErrorConnection)
-}
-
-func (c *connection) writeRequests(calls ...call) *Error {
-	for _, call := range calls {
-		c.setWriteTimeout()
-		if _, err := c.writer.Write(createRequest(call)); err != nil {
-			return c.writeErrHdlr(err)
-		}
-	}
-
+func (c *connection) writeRequest(calls ...call) *Error {
 	c.setWriteTimeout()
-	if err := c.writer.Flush(); err != nil {
-		return c.writeErrHdlr(err)
+	if _, err := c.conn.Write(createRequest(calls...)); err != nil {
+		c.close()
+		err_, ok := err.(net.Error)
+		if ok && err_.Timeout() {
+			return newError("write failed, timeout error: "+err.Error(),
+				ErrorConnection, ErrorTimeout)
+		}
+		
+		return newError("write failed: "+err.Error(), ErrorConnection)
 	}
 
 	return nil

@@ -95,45 +95,51 @@ func formatArg(v interface{}) []byte {
 
 
 // createRequest creates a Redis request for the given call and its arguments.
-func createRequest(call call) []byte {
-	var req []byte
+func createRequest(calls ...call) []byte {
+	var total []byte
 
-	// Calculate number of arguments.
-	argsLen := 1
-	for _, arg := range call.args {
-		switch arg.(type) {
-		case []byte:
-			argsLen++
-		default:
-			// Fallback to reflect-based.
-			kind := reflect.TypeOf(arg).Kind()
-			switch kind {
-			case reflect.Slice:
-				argsLen += reflect.ValueOf(arg).Len()
-			case reflect.Map:
-				argsLen += reflect.ValueOf(arg).Len() * 2
-			default:
+	for _, call := range calls {
+		var req []byte
+
+		// Calculate number of arguments.
+		argsLen := 1
+		for _, arg := range call.args {
+			switch arg.(type) {
+			case []byte:
 				argsLen++
+			default:
+				// Fallback to reflect-based.
+				kind := reflect.TypeOf(arg).Kind()
+				switch kind {
+				case reflect.Slice:
+					argsLen += reflect.ValueOf(arg).Len()
+				case reflect.Map:
+					argsLen += reflect.ValueOf(arg).Len() * 2
+				default:
+					argsLen++
+				}
 			}
 		}
+
+		// number of arguments
+		req = append(req, star)
+		req = append(req, []byte(strconv.Itoa(argsLen))...)
+		req = append(req, delim...)
+
+		// command
+		req = append(req, dollar)
+		req = append(req, []byte(strconv.Itoa(len(call.cmd)))...)
+		req = append(req, delim...)
+		req = append(req, []byte(call.cmd)...)
+		req = append(req, delim...)
+
+		// arguments
+		for _, arg := range call.args {
+			req = append(req, formatArg(arg)...)
+		}
+
+		total = append(total, req...)
 	}
 
-	// number of arguments
-	req = append(req, star)
-	req = append(req, []byte(strconv.Itoa(argsLen))...)
-	req = append(req, delim...)
-
-	// command
-	req = append(req, dollar)
-	req = append(req, []byte(strconv.Itoa(len(call.cmd)))...)
-	req = append(req, delim...)
-	req = append(req, []byte(call.cmd)...)
-	req = append(req, delim...)
-
-	// arguments
-	for _, arg := range call.args {
-		req = append(req, formatArg(arg)...)
-	}
-
-	return req
+	return total
 }
