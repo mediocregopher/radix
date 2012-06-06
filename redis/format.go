@@ -20,7 +20,6 @@ var delim []byte = []byte{13, 10}
 // formatArg formats the given argument to a Redis-styled argument byte slice.
 func formatArg(v interface{}) []byte {
 	var b, bs []byte
-	recursion := false // recursive return values are appended directly
 
 	switch vt := v.(type) {
 	case []byte:
@@ -59,19 +58,21 @@ func formatArg(v interface{}) []byte {
 		// Fallback to reflect-based.
 		switch reflect.TypeOf(vt).Kind() {
 		case reflect.Slice:
-			recursion = true
 			rv := reflect.ValueOf(vt)
 			for i := 0; i < rv.Len(); i++ {
 				bs = append(bs, formatArg(rv.Index(i).Interface())...)
 			}
+
+			return bs
 		case reflect.Map:
-			recursion = true
 			rv := reflect.ValueOf(vt)
 			keys := rv.MapKeys()
 			for _, k := range keys {
 				bs = append(bs, formatArg(k.Interface())...)
 				bs = append(bs, formatArg(rv.MapIndex(k).Interface())...)
 			}
+
+			return bs
 		default:
 			var buf bytes.Buffer
 
@@ -80,16 +81,11 @@ func formatArg(v interface{}) []byte {
 		}
 	}
 
-	if recursion {
-		b = append(b, bs...)
-	} else {
-		b = append(b, dollar)
-		b = append(b, []byte(strconv.Itoa(len(bs)))...)
-		b = append(b, delim...)
-		b = append(b, bs...)
-		b = append(b, delim...)
-	}
-
+	b = append(b, dollar)
+	b = append(b, []byte(strconv.Itoa(len(bs)))...)
+	b = append(b, delim...)
+	b = append(b, bs...)
+	b = append(b, delim...)
 	return b
 }
 
