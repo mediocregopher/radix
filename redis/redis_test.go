@@ -609,9 +609,8 @@ func (s *Utils) TestCreateRequest(c *C) {
 func BenchmarkCreateRequest(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		createRequest(call{
-			cmd: CmdSet,
+			cmd:  CmdSet,
 			args: []interface{}{"foo", "bar"},
 		})
 	}
 }
-

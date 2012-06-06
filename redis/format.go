@@ -1,18 +1,18 @@
 package redis
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"strconv"
-	"bytes"
 )
 
 const (
-    dollar byte = 36
-    colon byte = 58
-    minus byte = 45
-    plus byte = 43
-    star byte = 42
+	dollar byte = 36
+	colon  byte = 58
+	minus  byte = 45
+	plus   byte = 43
+	star   byte = 42
 )
 
 var delim []byte = []byte{13, 10}
@@ -73,10 +73,10 @@ func formatArg(v interface{}) []byte {
 				bs = append(bs, formatArg(rv.MapIndex(k).Interface())...)
 			}
 		default:
-            var buf bytes.Buffer
+			var buf bytes.Buffer
 
-            fmt.Fprint(&buf, v)
-            bs = buf.Bytes()
+			fmt.Fprint(&buf, v)
+			bs = buf.Bytes()
 		}
 	}
 
@@ -92,7 +92,6 @@ func formatArg(v interface{}) []byte {
 
 	return b
 }
-
 
 // createRequest creates a Redis request for the given call and its arguments.
 func createRequest(calls ...call) []byte {

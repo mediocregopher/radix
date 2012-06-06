@@ -16,9 +16,8 @@ const (
 
 // Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
-	conn      *connection
-	msgHdlr   func(msg *Message)
-
+	conn    *connection
+	msgHdlr func(msg *Message)
 }
 
 // newSubscription returns a new Subscription or an error.

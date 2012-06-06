@@ -25,11 +25,11 @@ type call struct {
 
 // connection describes a Redis connection.
 type connection struct {
-	conn       net.Conn
-	reader     *bufio.Reader
-	closed     int32 // manipulated with atomic primitives
+	conn          net.Conn
+	reader        *bufio.Reader
+	closed        int32 // manipulated with atomic primitives
 	noReadTimeout bool  // toggle disabling of read timeout
-	config     *Configuration
+	config        *Configuration
 }
 
 func newConnection(config *Configuration) (conn *connection, err *Error) {
@@ -203,14 +203,14 @@ func (c *connection) readErrHdlr(err error) (r *Reply) {
 		err_, ok := err.(net.Error)
 		if ok && err_.Timeout() {
 			return &Reply{
-				Type: ReplyError, 
-				Error: newError("read failed, timeout error: "+err.Error(), ErrorConnection, 
+				Type: ReplyError,
+				Error: newError("read failed, timeout error: "+err.Error(), ErrorConnection,
 					ErrorTimeout),
 			}
 		}
 
 		return &Reply{
-			Type: ReplyError, 
+			Type:  ReplyError,
 			Error: newError("read failed: "+err.Error(), ErrorConnection),
 		}
 	}
@@ -279,7 +279,7 @@ func (c *connection) read() (r *Reply) {
 				ir := i + 2
 				br := make([]byte, ir)
 				rc := 0
-				
+
 				for rc < ir {
 					if !c.noReadTimeout {
 						c.setReadTimeout()
@@ -288,7 +288,7 @@ func (c *connection) read() (r *Reply) {
 					if re := c.readErrHdlr(err); re != nil {
 						return re
 					}
-					
+
 					rc += n
 				}
 				s := string(br[0:i])
@@ -340,7 +340,7 @@ func (c *connection) writeRequest(calls ...call) *Error {
 			return newError("write failed, timeout error: "+err.Error(),
 				ErrorConnection, ErrorTimeout)
 		}
-		
+
 		return newError("write failed: "+err.Error(), ErrorConnection)
 	}
 
