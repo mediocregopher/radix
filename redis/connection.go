@@ -122,7 +122,7 @@ func (c *connection) init() *Error {
 
 // call calls a Redis command.
 func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
-	if err := c.writeRequest(call{cmd, args}); err != nil {
+	if err := c.writeRequests(call{cmd, args}); err != nil {
 		// add command in the error
 		err.Cmd = cmd
 		r = &Reply{Error: err}
@@ -140,7 +140,7 @@ func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
 // multiCall calls multiple Redis commands.
 func (c *connection) multiCall(cmds []call) (r *Reply) {
 	r = new(Reply)
-	if err := c.writeRequest(cmds...); err == nil {
+	if err := c.writeRequests(cmds...); err == nil {
 		r.Type = ReplyMulti
 		r.elems = make([]*Reply, len(cmds))
 		for i, cmd := range cmds {
@@ -181,7 +181,7 @@ func (c *connection) subscription(subType subType, data []string) *Error {
 		channels[i] = v
 	}
 
-	err := c.writeRequest(call{cmd, channels})
+	err := c.writeRequests(call{cmd, channels})
 	if err == nil {
 		return nil
 	}
@@ -344,7 +344,7 @@ func (c *connection) writeErrHdlr(err error) *Error {
 	return newError("write failed: "+err.Error(), ErrorConnection)
 }
 
-func (c *connection) writeRequest(calls ...call) *Error {
+func (c *connection) writeRequests(calls ...call) *Error {
 	for _, call := range calls {
 		c.setWriteTimeout()
 		if _, err := c.writer.Write(createRequest(call)); err != nil {
