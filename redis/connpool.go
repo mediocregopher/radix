@@ -29,10 +29,8 @@ func (cp *connPool) push(conn *connection) {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 
-	if conn != nil {
-		if atomic.LoadInt32(&conn.closed) == 0 {
-			cp.free.PushFront(conn)
-		}
+	if atomic.LoadInt32(&conn.closed) == 0 {
+		cp.free.PushFront(conn)
 	}
 
 	cp.available++
