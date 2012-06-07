@@ -13,12 +13,14 @@ type connPool struct {
 	lock      sync.Mutex
 	emptyCond *sync.Cond
 	config    *Configuration
+	closed    bool
 }
 
 func newConnPool(config *Configuration) *connPool {
 	cp := &connPool{
 		available: config.PoolCapacity,
 		config:    config,
+		closed:    false,
 	}
 
 	cp.emptyCond = sync.NewCond(&cp.lock)
@@ -28,6 +30,9 @@ func newConnPool(config *Configuration) *connPool {
 func (cp *connPool) push(conn *connection) {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
+	if cp.closed {
+		return
+	}
 
 	if atomic.LoadInt32(&conn.closed) == 0 {
 		cp.free.PushFront(conn)
@@ -40,6 +45,9 @@ func (cp *connPool) push(conn *connection) {
 func (cp *connPool) pull() (conn *connection, err *Error) {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
+	if cp.closed {
+		return nil, newError("connection pool is closed", ErrorConnection)
+	}
 
 	for cp.available == 0 {
 		cp.emptyCond.Wait()
@@ -67,4 +75,7 @@ func (cp *connPool) close() {
 		conn, _ := e.Value.(*connection)
 		conn.close()
 	}
+
+	cp.free.Init()
+	cp.closed = true
 }
