@@ -40,6 +40,15 @@ type Reply struct {
 	Error *Error
 }
 
+// Nil returns true, if the reply is a nil reply, otherwise false.
+func (r *Reply) Nil() bool {
+	if r.Type == ReplyNil {
+		return true
+	}
+	
+	return false
+}
+
 // Str returns the reply value as a string or
 // an error, if the reply type is not ReplyStatus or ReplyString.
 func (r *Reply) Str() (string, error) {
@@ -78,6 +87,30 @@ func (r *Reply) Int() (int, error) {
 	}
 
 	return int(i64), nil
+}
+
+// Bool returns true, if the reply value equals to 1 or "1", otherwise false; or
+// an error, if the reply type is not ReplyInteger or ReplyString.
+func (r *Reply) Bool() (bool, error) {
+	i, err := r.Int()
+	if err != nil {
+		if i == 1 {
+			return true, nil
+		}
+
+		return false, nil
+	}
+
+	s, err := r.Str()
+	if err != nil {
+		if s == "1" {
+			return true, nil
+		}
+		
+		return false, nil
+	}
+
+	return false, errors.New("boolean value is not available for this reply type")
 }
 
 // Len returns the number of elements in a multi reply.

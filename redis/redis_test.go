@@ -84,8 +84,10 @@ func (s *Long) TearDownTest(c *C) {
 
 // Test connection calls.
 func (s *S) TestConnection(c *C) {
-	c.Check(rd.Echo("Hello, World!").Str(), Equals, "Hello, World!")
-	c.Check(rd.Ping().Str(), Equals, "PONG")
+	v, err := rd.Echo("Hello, World!").Str()
+	c.Check(v, Equals, "Hello, World!")
+	v, err = rd.Ping().Str()
+	c.Check(v, Equals, "PONG")
 }
 
 // Test single return value calls.
@@ -93,15 +95,20 @@ func (s *S) TestSimpleValue(c *C) {
 	// Simple value calls.
 	rd.Set("simple:string", "Hello,")
 	rd.Append("simple:string", " World!")
-	c.Check(rd.Get("simple:string").Str(), Equals, "Hello, World!")
+	vs, err := rd.Get("simple:string").Str()
+	c.Check(vs, Equals, "Hello, World!")
 
 	rd.Set("simple:int", 10)
-	c.Check(rd.Incr("simple:int").Int(), Equals, 11)
+	vy, err := rd.Incr("simple:int").Int()
+	c.Check(vy, Equals, 11)
 
 	rd.Setbit("simple:bit", 0, true)
 	rd.Setbit("simple:bit", 1, true)
-	c.Check(rd.Getbit("simple:bit", 0).Bool(), Equals, true)
-	c.Check(rd.Getbit("simple:bit", 1).Bool(), Equals, true)
+
+	vb, err := rd.Getbit("simple:bit", 0).Bool()
+	c.Check(vb, Equals, true)
+	vb, err := rd.Getbit("simple:bit", 1).Bool()
+	c.Check(vb, Equals, true)
 
 	c.Check(rd.Get("non:existing:key").Nil(), Equals, true)
 	c.Check(rd.Exists("non:existing:key").Bool(), Equals, false)
