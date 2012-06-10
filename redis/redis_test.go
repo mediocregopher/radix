@@ -241,7 +241,7 @@ func (s *S) TestFormatting(c *C) {
 
 	// slice
 	rd.Rpush("foo5", []int{1, 2, 3})
-	foo5strings, err := rd.Lrange("foo5", 0, -1).Strings()
+	foo5strings, err := rd.Lrange("foo5", 0, -1).List()
 	c.Assert(err, IsNil)
 	c.Check(
 		foo5strings,
@@ -253,7 +253,7 @@ func (s *S) TestFormatting(c *C) {
 	rd.Hset("foo6", "k2", "v2")
 	rd.Hset("foo6", "k3", "v3")
 
-	foo6map, err := rd.Hgetall("foo6").StringMap()
+	foo6map, err := rd.Hgetall("foo6").Hash()
 	c.Assert(err, IsNil)
 	c.Check(
 		foo6map,

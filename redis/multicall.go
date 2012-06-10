@@ -28,8 +28,8 @@ func (mc *MultiCall) process(userCalls func(*MultiCall)) *Reply {
 		mc.Exec()
 		r = mc.c.multiCall(mc.calls)
 
-		execReply := r.At(len(r.elems) - 1)
-		if execReply.Error == nil {
+		execReply, err := r.At(len(r.elems) - 1)
+		if err == nil {
 			r.elems = execReply.elems
 		} else {
 			if execReply.Error != nil {

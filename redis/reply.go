@@ -40,63 +40,44 @@ type Reply struct {
 	Error *Error
 }
 
-// Nil returns true, if the reply is a nil reply, otherwise false.
-func (r *Reply) Nil() bool {
-	if r.Type == ReplyNil {
-		return true
+// Str returns the reply value as a string or
+// an error, if the reply type is not ReplyStatus or ReplyString.
+func (r *Reply) Str() (string, error) {
+	if !(r.Type == ReplyStatus || r.Type == ReplyString) {
+		return "", errors.New("string value is not available for this reply type")
 	}
 
-	return false
+	return r.str, nil
 }
 
-// Str returns the reply value as a string or a nil, if the reply type is ReplyNil.
-// It panics, if the reply type is not ReplyNil, ReplyStatus or ReplyString.
-func (r *Reply) Str() string {
-	if !(r.Type == ReplyNil || r.Type == ReplyStatus || r.Type == ReplyString) {
-		panic(errmsg("string value is not available for this reply type"))
+// Bytes is a convenience method for calling Reply.Str() and converting it to []byte.
+func (r *Reply) Bytes() ([]byte, error) {
+	s, err := r.Str()
+	if err != nil {
+		return nil, err
 	}
 
-	return r.str
+	return []byte(s), nil
 }
 
-// Bytes is a convenience method for []byte(Reply.String()).
-func (r *Reply) Bytes() []byte {
-	return []byte(r.Str())
-}
-
-// Int64 returns the reply value as a int64.
-// It panics, if the reply type is not ReplyInteger.
-func (r *Reply) Int64() int64 {
+// Int64 returns the reply value as a int64 or
+// an error, if the reply type is not ReplyInteger.
+func (r *Reply) Int64() (int64, error) {
 	if r.Type != ReplyInteger {
-		panic(errmsg("integer value is not available for this reply type"))
-	}
-	return r.int
-}
-
-// Int is a convenience method for int(Reply.Int64()).
-func (r *Reply) Int() int {
-	return int(r.Int64())
-}
-
-// Bool returns true, if the reply value equals to 1 or "1", otherwise false.
-// It panics, if the reply type is not ReplyInteger or ReplyString.
-func (r *Reply) Bool() bool {
-	switch r.Type {
-	case ReplyInteger:
-		if r.Int() == 1 {
-			return true
-		}
-
-		return false
-	case ReplyString:
-		if r.Str() == "1" {
-			return true
-		}
-
-		return false
+		return 0, errors.New("integer value is not available for this reply type")
 	}
 
-	panic(errmsg("boolean value is not available for this reply type"))
+	return r.int, nil
+}
+
+// Int is a convenience method for calling Reply.Int64() and converting it to int.
+func (r *Reply) Int() (int, error) {
+	i64, err := r.Int64()
+	if err != nil {
+		return 0, err
+	}
+
+	return int(i64), nil
 }
 
 // Len returns the number of elements in a multi reply.
@@ -105,33 +86,34 @@ func (r *Reply) Len() int {
 	return len(r.elems)
 }
 
-// Elems returns the elements (sub-replies) of a multi reply.
-// It panics, if the reply type is not ReplyMulti.
-func (r *Reply) Elems() []*Reply {
+// Elems returns the elements (sub-replies) of a multi reply or
+// an error, if the reply type is not ReplyMulti.
+func (r *Reply) Elems() ([]*Reply, error) {
 	if r.Type != ReplyMulti {
-		panic(errmsg("reply type is not ReplyMulti"))
+		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
-	return r.elems
+	return r.elems, nil
 }
 
-// At returns a Reply of a multi reply by its index.
-// It panics, if the reply type is not ReplyMulti or if the index is out of range.
-func (r *Reply) At(i int) *Reply {
+// At returns a Reply of a multi reply by its index or
+// an error, if the reply type is not ReplyMulti or if the index is out of range.
+func (r *Reply) At(i int) (*Reply, error) {
 	if r.Type != ReplyMulti {
-		panic(errmsg("reply type is not ReplyMulti"))
+		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
 	if i < 0 || i >= len(r.elems) {
-		panic(errmsg("reply index out of range"))
+		return nil, errors.New("reply index out of range")
 	}
 
-	return r.elems[i]
+	return r.elems[i], nil
 }
 
-// Strings returns a multi-bulk reply as a slice of strings or an error.
+// List returns a multi-bulk reply as a slice of strings or an error.
 // The reply type must be ReplyMulti and its elements must be ReplyString.
-func (r *Reply) Strings() ([]string, error) {
+// Useful for list commands.
+func (r *Reply) List() ([]string, error) {
 	if r.Type != ReplyMulti {
 		return nil, errors.New("reply type is not ReplyMulti")
 	}
@@ -148,35 +130,11 @@ func (r *Reply) Strings() ([]string, error) {
 	return strings, nil
 }
 
-// Map returns a multi-bulk reply as a map[string]*Reply or an error.
-// The reply elements must be in a "key value key value..."-style order.
-func (r *Reply) Map() (map[string]*Reply, error) {
-	rmap := map[string]*Reply{}
-
-	if r.Type != ReplyMulti {
-		return nil, errors.New("reply type is not ReplyMulti")
-	}
-
-	if r.Len()%2 != 0 {
-		return nil, errors.New("reply has odd number of elements")
-	}
-
-	for i := 0; i < r.Len()/2; i++ {
-		rkey := r.At(i * 2)
-		if rkey.Type != ReplyString {
-			return nil, errors.New("key element is not a string reply")
-		}
-		key := rkey.Str()
-
-		rmap[key] = r.At(i*2 + 1)
-	}
-
-	return rmap, nil
-}
-
-// StringMap returns a multi-bulk reply as a map[string]string or an error.
-// The reply elements must be in a "key value key value..."-style order.
-func (r *Reply) StringMap() (map[string]string, error) {
+// Map returns a multi-bulk reply as a map[string]string or an error.
+// The reply must have even number of elements and they must be in a 
+// "key value key value..." order.
+// Useful for hash commands.
+func (r *Reply) Hash() (map[string]string, error) {
 	rmap := map[string]string{}
 
 	if r.Type != ReplyMulti {
@@ -188,17 +146,17 @@ func (r *Reply) StringMap() (map[string]string, error) {
 	}
 
 	for i := 0; i < r.Len()/2; i++ {
-		rkey := r.At(i * 2)
-		if rkey.Type != ReplyString {
-			return nil, errors.New("key element is not a string reply")
+		reply, _ := r.At(i * 2)
+		key, err := reply.Str()
+		if err != nil {
+			return nil, errors.New("key element has no string reply")
 		}
-		key := rkey.Str()
 
-		rval := r.At(i*2 + 1)
-		if rval.Type != ReplyString {
-			return nil, errors.New("value element is not a string reply")
+		reply, _ = r.At(i*2 + 1)
+		val, err := reply.Str()
+		if err != nil {
+			return nil, errors.New("value element has no string reply")
 		}
-		val := rval.Str()
 
 		rmap[key] = val
 	}
@@ -216,9 +174,11 @@ func (r *Reply) String() string {
 	case ReplyStatus:
 		fallthrough
 	case ReplyString:
-		return r.Str()
+		s, _ := r.Str()
+		return s
 	case ReplyInteger:
-		return strconv.Itoa(r.Int())
+		i, _ := r.Int()
+		return strconv.Itoa(i)
 	case ReplyNil:
 		return "<nil>"
 	case ReplyMulti:

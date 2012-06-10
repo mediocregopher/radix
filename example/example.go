@@ -9,15 +9,6 @@ import (
 	"time"
 )
 
-// handleReplyError prints an error message for the given reply.
-func handleReplyError(rep *redis.Reply) {
-	if rep.Error != nil {
-		fmt.Println("redis: " + rep.Error.Error())
-	} else {
-		fmt.Println("redis: unexpected reply type")
-	}
-}
-
 func main() {
 	var c *redis.Client
 	var err error
@@ -33,7 +24,7 @@ func main() {
 	})
 
 	if err != nil {
-		fmt.Printf("NewClient failed: %s\n", err)
+		fmt.Println("NewClient failed:", err)
 	}
 
 	defer c.Close()
@@ -41,96 +32,71 @@ func main() {
 	//** Blocking calls
 	rep := c.Flushdb()
 	if rep.Error != nil {
-		fmt.Printf("redis: %s\n", rep.Error)
+		fmt.Println("redis:", rep.Error)
 		return
 	}
 
-	mykeys := map[string]string{
+	//* Strings
+
+	// It's generally good idea to check for errors like this,
+	// but for the sake of keeping this example short we'll omit these from now on.
+    if rep = c.Set("mykey0", "myval0"); rep.Error != nil {
+		fmt.Println("redis:", rep.Error)
+		return
+	}
+
+	s, err := c.Get("mykey0").Str()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println("mykey0:", s)
+
+	myhash := map[string]string{
 		"mykey1": "myval1",
 		"mykey2": "myval2",
 		"mykey3": "myval3",
 	}
 
-	rep = c.Mset(mykeys)
 	// Alternatively:
-	// rep = c.Command("mset", "mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
+	// c.Mset("mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
+	c.Mset(myhash)
 
-	if rep.Error != nil {	
-		fmt.Printf("redis: %s\n", rep.Error)
+	ls, err := c.Mget("mykey1", "mykey2", "mykey3").List()
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	rep = c.Get("mykey1")
-	switch rep.Type {
-	case redis.ReplyString:
-		fmt.Printf("mykey1: %s\n", rep.Str())
-	case redis.ReplyNil:
-		fmt.Println("mykey1 does not exist")
-		return
-	case redis.ReplyError:
-		fmt.Printf("redis: %s\n", rep.Error)
-		return
-	default:
-		// Shouldn't generally happen
-		fmt.Println("redis: unexpected reply type")
-		return
-	}
-
-	//* Simplified error handling pattern
-	rep = c.Get("mykey2")
-	if rep.Type != redis.ReplyString {
-		handleReplyError(rep)
-		return
-	}
-
-	fmt.Printf("mykey2: %s\n", rep.Str())
+	fmt.Println("mykeys values:", ls)
 
 	//* List handling
 	mylist := []string{"foo", "bar", "qux"}
-	rep = c.Rpush("mylist", mylist)
+
 	// Alternativaly:
-	// rep = c.Rpush("mylist", "foo", "bar", "qux")
-	if rep.Error != nil {
-		handleReplyError(rep)
+	// c.Rpush("mylist", "foo", "bar", "qux")
+	c.Rpush("mylist", mylist)
+
+	if mylist, err = c.Lrange("mylist", 0, -1).List(); err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	rep = c.Lrange("mylist", 0, -1)
-	if rep.Error != nil {
-		handleReplyError(rep)
-		return
-	}
-
-	mylist, err = rep.Strings()
-	if err != nil {
-		handleReplyError(rep)
-		return
-	}
-
-	fmt.Printf("mylist: %v\n", mylist)
+	fmt.Println("mylist:", mylist)
 
 	//* Hash handling
-	rep = c.Hmset("myhash", mykeys)
+
 	// Alternatively:
-	// rep = c.Hmset("myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
-	if rep.Error != nil {
-		handleReplyError(rep)
+	// c.Hmset("myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
+	c.Hmset("myhash", myhash)
+
+	if myhash, err = c.Hgetall("myhash").Hash(); err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	rep = c.Hgetall("myhash")
-	if rep.Error != nil {
-		handleReplyError(rep)
-		return
-	}
-
-	myhash, err := rep.StringMap()
-	if err != nil {
-		handleReplyError(rep)
-		return
-	}
-
-	fmt.Printf("myhash: %v\n", myhash)
+	fmt.Println("myhash:", myhash)
 
 	//* Multicalls
 	rep = c.MultiCall(func(mc *redis.MultiCall) {
@@ -138,19 +104,19 @@ func main() {
 		mc.Get("multikey")
 	})
 
-	if rep.Error != nil {
-		handleReplyError(rep)
+	r1, err := rep.At(1)
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	// Note that you can now assume that rep.Len() == 2.
-	// Thus, rep.At(1) will not panic regardless whether all of the commands succeeded.
-	if rep.At(1).Type != redis.ReplyString {
-		handleReplyError(rep)
+	s, err = r1.Str()
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	fmt.Printf("multikey: %s\n", rep.At(1).Str())
+	fmt.Println("multikey:", s)
 
 	//* Transactions
 	rep = c.Transaction(func(mc *redis.MultiCall) {
@@ -158,17 +124,19 @@ func main() {
 		mc.Get("trankey")
 	})
 
-	if rep.Error != nil {
-		handleReplyError(rep)
+	r1, err = rep.At(1)	
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	if rep.At(1).Type != redis.ReplyString {
-		handleReplyError(rep)
+	s, err = r1.Str()
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	fmt.Printf("trankey: %s\n", rep.At(1).Str())
+	fmt.Println("trankey:", s)
 
 	//* Complex transactions
 	//  Atomic INCR replacement with transactions
@@ -179,17 +147,14 @@ func main() {
 			mc.Watch(key)
 			mc.Get(key)
 			rep := mc.Flush()
-
-			if rep.Error != nil {
+			r1, err := rep.At(1)	
+			if err != nil {
 				return
 			}
 
-			if rep.At(1).Type == redis.ReplyString {
-				var err error
-				curval, err = strconv.Atoi(rep.At(1).Str())
-				if err != nil {
-					return
-				}
+			s, err := r1.Str()
+			if err == nil {
+				curval, err = strconv.Atoi(s)
 			}
 			nextval := curval + 1
 
@@ -203,33 +168,29 @@ func main() {
 	myIncr("ctrankey")
 	myIncr("ctrankey")
 
-	rep = c.Get("ctrankey")
-	if rep.Type != redis.ReplyString {
-		handleReplyError(rep)
-		return
-	}
+	fmt.Println(c.Get("ctrankey"))
+//	s, err = c.Get("ctrankey").Str()
+//	if err != nil {
+//		fmt.Println(err)
+//		return
+//	}
 
-	fmt.Printf("ctrankey: %s\n", rep.Str())
+//	fmt.Println("ctrankey:", s)
 
 	//** Asynchronous calls
-	rep = c.Set("asynckey", "asyncval")
-	if rep.Error != nil {
-		handleReplyError(rep)
-		return
-	}
-
+	c.Set("asynckey", "asyncval")
 	fut := c.AsyncGet("asynckey")
 
 	// do something here
 
 	// block until reply is available
-	rep = fut.Reply()
-	if rep.Type != redis.ReplyString {
-		handleReplyError(rep)
+	s, err = fut.Reply().Str()
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	fmt.Printf("asynckey: %s\n", rep.Str())
+	fmt.Println("asynckey:", s)
 
 	//* Pub/sub
 	msgHdlr := func(msg *redis.Message) {

@@ -67,25 +67,26 @@ func (s *Subscription) Close() {
 
 // readMessage reads and parses pubsub message data from the connection and returns it as a message.
 func (s *Subscription) readMessage() *Message {
-	var r0, r1 *Reply
+	var err error
+	var r, mr *Reply
+	var rs string
 	m := new(Message)
-	r := s.conn.read()
+	mr = s.conn.read()
 
-	if r.Type == ReplyError {
-		goto Errmsg
-	}
-
-	if r.Type != ReplyMulti || r.Len() < 3 {
-		goto Errmsg
-	}
-
-	r0 = r.At(0)
-	if r0.Type != ReplyString {
+	if mr.Error != nil {
 		goto Errmsg
 	}
 
 	// first argument is the message type
-	switch r0.Str() {
+	if r, err = mr.At(0); err != nil {
+		goto Errmsg
+	}
+
+	if rs, err = r.Str(); err != nil {
+		goto Errmsg
+	}
+
+	switch rs {
 	case "subscribe":
 		m.Type = MessageSubscribe
 	case "unsubscribe":
@@ -103,60 +104,62 @@ func (s *Subscription) readMessage() *Message {
 	}
 
 	// second argument
-	r1 = r.At(1)
-	if r1.Type != ReplyString {
+	if r, err = mr.At(1); err != nil {
+		goto Errmsg
+	}
+	if rs, err = r.Str(); err != nil {
 		goto Errmsg
 	}
 
 	switch {
 	case m.Type == MessageSubscribe || m.Type == MessageUnsubscribe:
-		m.Channel = r1.Str()
+		m.Channel = rs
 
 		// number of subscriptions
-		r2 := r.At(2)
-		if r2.Type != ReplyInteger {
+		if r, err = mr.At(2); err != nil {
 			goto Errmsg
 		}
-
-		m.Subscriptions = r2.Int()
+		if m.Subscriptions, err = r.Int(); err != nil {
+			goto Errmsg
+		}
 	case m.Type == MessagePsubscribe || m.Type == MessagePunsubscribe:
-		m.Pattern = r1.Str()
+		m.Pattern = rs
 
 		// number of subscriptions
-		r2 := r.At(2)
-		if r2.Type != ReplyInteger {
+		if r, err = mr.At(2); err != nil {
 			goto Errmsg
 		}
-
-		m.Subscriptions = r2.Int()
+		if m.Subscriptions, err = r.Int(); err != nil {
+			goto Errmsg
+		}
 	case m.Type == MessageMessage:
-		m.Channel = r1.Str()
+		m.Channel = rs
 
 		// payload
-		r2 := r.At(2)
-		if r2.Type != ReplyString {
+		if r, err = mr.At(2); err != nil {
 			goto Errmsg
 		}
-
-		m.Payload = r2.Str()
+		if m.Payload, err = r.Str(); err != nil {
+			goto Errmsg
+		}
 	case m.Type == MessagePmessage:
-		m.Pattern = r1.Str()
+		m.Pattern = rs
 
 		// name of the originating channel
-		r2 := r.At(2)
-		if r2.Type != ReplyString {
+		if r, err = mr.At(2); err != nil {
 			goto Errmsg
 		}
-
-		m.Channel = r2.Str()
+		if m.Channel, err = r.Str(); err != nil {
+			goto Errmsg
+		}
 
 		// payload
-		r3 := r.At(3)
-		if r3.Type != ReplyString {
+		if r, err = mr.At(3); err != nil {
 			goto Errmsg
 		}
-
-		m.Payload = r3.Str()
+		if m.Payload, err = r.Str(); err != nil {
+			goto Errmsg
+		}
 	default:
 		goto Errmsg
 	}
@@ -166,7 +169,7 @@ func (s *Subscription) readMessage() *Message {
 Errmsg:
 	// Error/Invalid message reply
 	// we shouldn't generally get these, except when closing.
-	if !r.Error.Test(ErrorConnection) {
+	if r.Error != nil && !r.Error.Test(ErrorConnection) {
 		log.Printf("received an unexpected error reply while in pubsub mode: %s.\n ignoring...",
 			r.Error)
 	}
