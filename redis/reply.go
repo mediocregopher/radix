@@ -113,7 +113,7 @@ func (r *Reply) Bool() (bool, error) {
 }
 
 // List returns a multi-bulk reply as a slice of strings or an error.
-// The reply type must be ReplyMulti and its elements must be ReplyString.
+// The reply type must be ReplyMulti and its elements must all be ReplyString.
 // Useful for list commands.
 func (r *Reply) List() ([]string, error) {
 	if r.Type != ReplyMulti {

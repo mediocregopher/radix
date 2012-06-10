@@ -2,7 +2,6 @@ package redis
 
 import (
 	"errors"
-	"sync"
 	"time"
 )
 
@@ -23,7 +22,6 @@ type Configuration struct {
 type Client struct {
 	config Configuration
 	pool   *connPool
-	lock   sync.Mutex
 }
 
 // NewClient creates a new accessor.
