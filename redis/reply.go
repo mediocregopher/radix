@@ -93,7 +93,7 @@ func (r *Reply) Int() (int, error) {
 // an error, if the reply type is not ReplyInteger or ReplyString.
 func (r *Reply) Bool() (bool, error) {
 	i, err := r.Int()
-	if err != nil {
+	if err == nil {
 		if i == 1 {
 			return true, nil
 		}
@@ -102,7 +102,7 @@ func (r *Reply) Bool() (bool, error) {
 	}
 
 	s, err := r.Str()
-	if err != nil {
+	if err == nil {
 		if s == "1" {
 			return true, nil
 		}
