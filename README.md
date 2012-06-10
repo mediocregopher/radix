@@ -68,8 +68,8 @@ instead of a Reply.
 
 ```go
 reply := c.Set("mykey", "myvalue")
-if reply.Error != nil {
-	fmt.Println("redis:", reply.Error)
+if reply.Err != nil {
+	fmt.Println("redis:", reply.Err)
 	return
 }
 

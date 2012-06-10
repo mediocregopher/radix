@@ -203,9 +203,9 @@ func main() {
 		}
 	}
 
-	sub, errr := c.Subscription(msgHdlr)
-	if errr != nil {
-		fmt.Printf("Failed to subscribe: '%s'!\n", errr)
+	sub, err_ := c.Subscription(msgHdlr)
+	if err_ != nil {
+		fmt.Printf("Failed to subscribe: '%s'!\n", err_)
 		return
 	}
 
