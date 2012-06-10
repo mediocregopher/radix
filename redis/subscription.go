@@ -150,9 +150,9 @@ func (s *Subscription) readMessage() *Message {
 Err:
 	// Error/Invalid message reply
 	// we shouldn't generally get these, except when closing.
-	if r.Error != nil && !r.Error.Test(ErrorConnection) {
+	if r.Err != nil && !r.Err.Test(ErrorConnection) {
 		log.Printf("received an unexpected error reply while in pubsub mode: %s.\n ignoring...",
-			r.Error)
+			r.Err)
 	}
 
 	return nil

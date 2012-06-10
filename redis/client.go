@@ -48,7 +48,7 @@ func (c *Client) call(cmd Cmd, args ...interface{}) *Reply {
 		// add command name for debugging
 		err.Cmd = cmd
 
-		return &Reply{Error: err}
+		return &Reply{Err: err}
 	}
 
 	defer c.pool.push(conn)
@@ -80,7 +80,7 @@ func (c *Client) multiCall(transaction bool, f func(*MultiCall)) *Reply {
 	conn, err := c.pool.pull()
 
 	if err != nil {
-		return &Reply{Error: err}
+		return &Reply{Err: err}
 	}
 
 	defer c.pool.push(conn)

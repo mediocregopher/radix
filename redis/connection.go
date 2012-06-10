@@ -87,12 +87,12 @@ func (c *connection) init() *Error {
 
 	// Select database.
 	r := c.call(CmdSelect, c.config.Database)
-	if r.Error != nil {
-		if !c.config.NoLoadingRetry && r.Error.Test(ErrorLoading) {
+	if r.Err != nil {
+		if !c.config.NoLoadingRetry && r.Err.Test(ErrorLoading) {
 			// Keep retrying SELECT until it succeeds or we got some other error.
 			r = c.call(CmdSelect, c.config.Database)
-			for r.Error != nil {
-				if !r.Error.Test(ErrorLoading) {
+			for r.Err != nil {
+				if !r.Err.Test(ErrorLoading) {
 					goto Selectfail
 				}
 				time.Sleep(time.Second)
@@ -102,15 +102,15 @@ func (c *connection) init() *Error {
 
 	Selectfail:
 		c.close()
-		return newErrorExt("selecting database failed", r.Error)
+		return newErrorExt("selecting database failed", r.Err)
 	}
 
 	// Authenticate if needed.
 	if c.config.Auth != "" {
 		r = c.call(CmdAuth, c.config.Auth)
-		if r.Error != nil {
+		if r.Err != nil {
 			c.close()
-			return newErrorExt("authentication failed", r.Error, ErrorAuth)
+			return newErrorExt("authentication failed", r.Err, ErrorAuth)
 		}
 	}
 
@@ -121,7 +121,7 @@ func (c *connection) init() *Error {
 // call calls a Redis command.
 func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
 	if err := c.writeRequest(call{cmd, args}); err != nil {
-		r = &Reply{Error: err}
+		r = &Reply{Err: err}
 	} else {
 		r = c.read()
 	}
@@ -140,7 +140,7 @@ func (c *connection) multiCall(cmds []call) (r *Reply) {
 			r.Elems[i] = reply
 		}
 	} else {
-		r.Error = newError(err.Error())
+		r.Err = newError(err.Error())
 	}
 
 	return r
@@ -193,14 +193,14 @@ func (c *connection) readErrHdlr(err error) (r *Reply) {
 		if ok && err_.Timeout() {
 			return &Reply{
 				Type: ReplyError,
-				Error: newError("read failed, timeout error: "+err.Error(), ErrorConnection,
+				Err: newError("read failed, timeout error: "+err.Error(), ErrorConnection,
 					ErrorTimeout),
 			}
 		}
 
 		return &Reply{
 			Type:  ReplyError,
-			Error: newError("read failed: "+err.Error(), ErrorConnection),
+			Err: newError("read failed: "+err.Error(), ErrorConnection),
 		}
 	}
 
@@ -230,12 +230,12 @@ func (c *connection) read() (r *Reply) {
 		r.Type = ReplyError
 		switch {
 		case bytes.HasPrefix(b, []byte("ERR")):
-			r.Error = newError(string(b[4:]), ErrorRedis)
+			r.Err = newError(string(b[4:]), ErrorRedis)
 		case bytes.HasPrefix(b, []byte("LOADING")):
-			r.Error = newError("Redis is loading data into memory", ErrorRedis, ErrorLoading)
+			r.Err = newError("Redis is loading data into memory", ErrorRedis, ErrorLoading)
 		default:
 			// this shouldn't really ever execute
-			r.Error = newError(string(b), ErrorRedis)
+			r.Err = newError(string(b), ErrorRedis)
 		}
 	case '+':
 		// Status reply.
@@ -247,7 +247,7 @@ func (c *connection) read() (r *Reply) {
 		i, err = strconv.ParseInt(string(b), 10, 64)
 		if err != nil {
 			r.Type = ReplyError
-			r.Error = newError("integer reply parse error", ErrorParse)
+			r.Err = newError("integer reply parse error", ErrorParse)
 		} else {
 			r.Type = ReplyInteger
 			r.int = i
@@ -258,7 +258,7 @@ func (c *connection) read() (r *Reply) {
 		i, err = strconv.Atoi(string(b))
 		if err != nil {
 			r.Type = ReplyError
-			r.Error = newError("bulk reply parse error", ErrorParse)
+			r.Err = newError("bulk reply parse error", ErrorParse)
 		} else {
 			if i == -1 {
 				// Key not found
@@ -293,7 +293,7 @@ func (c *connection) read() (r *Reply) {
 		i, err = strconv.Atoi(string(b))
 		if err != nil {
 			r.Type = ReplyError
-			r.Error = newError("multi-bulk reply parse error", ErrorParse)
+			r.Err = newError("multi-bulk reply parse error", ErrorParse)
 		} else {
 			switch {
 			case i == -1:
@@ -308,13 +308,13 @@ func (c *connection) read() (r *Reply) {
 			default:
 				// invalid reply
 				r.Type = ReplyError
-				r.Error = newError("received invalid reply", ErrorInvalid)
+				r.Err = newError("received invalid reply", ErrorInvalid)
 			}
 		}
 	default:
 		// invalid reply
 		r.Type = ReplyError
-		r.Error = newError("received invalid reply", ErrorInvalid)
+		r.Err = newError("received invalid reply", ErrorInvalid)
 	}
 
 	return r

@@ -34,7 +34,7 @@ const (
 type Reply struct {
 	Type  ReplyType
 	Elems []*Reply // Sub-replies
-	Error *Error
+	Err *Error
 	str   string
 	int   int64
 }
@@ -170,7 +170,7 @@ func (r *Reply) Hash() (map[string]string, error) {
 func (r *Reply) String() string {
 	switch r.Type {
 	case ReplyError:
-		return r.Error.Error()
+		return r.Err.Error()
 	case ReplyStatus:
 		fallthrough
 	case ReplyString:

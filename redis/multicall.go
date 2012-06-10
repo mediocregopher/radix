@@ -29,13 +29,13 @@ func (mc *MultiCall) process(userCalls func(*MultiCall)) *Reply {
 		r = mc.c.multiCall(mc.calls)
 
 		execReply := r.Elems[len(r.Elems) - 1]
-		if execReply.Error == nil {
+		if execReply.Err == nil {
 			r.Elems = execReply.Elems
 		} else {
-			if execReply.Error != nil {
-				r.Error = execReply.Error
+			if execReply.Err != nil {
+				r.Err = execReply.Err
 			} else {
-				r.Error = newError("unknown transaction error")
+				r.Err = newError("unknown transaction error")
 			}
 		}
 	}

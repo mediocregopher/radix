@@ -31,8 +31,8 @@ func main() {
 
 	//** Blocking calls
 	rep := c.Flushdb()
-	if rep.Error != nil {
-		fmt.Println("redis:", rep.Error)
+	if rep.Err != nil {
+		fmt.Println("redis:", rep.Err)
 		return
 	}
 
@@ -40,8 +40,8 @@ func main() {
 
 	// It's generally good idea to check for errors like this,
 	// but for the sake of keeping this example short we'll omit these from now on.
-    if rep = c.Set("mykey0", "myval0"); rep.Error != nil {
-		fmt.Println("redis:", rep.Error)
+    if rep = c.Set("mykey0", "myval0"); rep.Err != nil {
+		fmt.Println("redis:", rep.Err)
 		return
 	}
 
@@ -107,8 +107,8 @@ func main() {
 	})
 	// Multicall reply is guaranteed to have the same number of sub-replies as calls,
 	// if it succeeds. They can be accessed through Reply.Elems.
-	if rep.Error != nil {
-			fmt.Println(rep.Error)
+	if rep.Err != nil {
+			fmt.Println(rep.Err)
 			return
 	}
 	
@@ -125,8 +125,8 @@ func main() {
 		mc.Set("trankey", "tranval")
 		mc.Get("trankey")
 	})
-	if rep.Error != nil {
-			fmt.Println(rep.Error)
+	if rep.Err != nil {
+			fmt.Println(rep.Err)
 			return
 	}
 	
@@ -147,7 +147,7 @@ func main() {
 			mc.Watch(key)
 			mc.Get(key)
 			rep := mc.Flush()
-			if rep.Error != nil {
+			if rep.Err != nil {
 				return
 			}
 	

@@ -33,15 +33,15 @@ func setUpTest(c TI) {
 	}
 
 	r := rd.Flushall()
-	if r.Error != nil {
-		c.Fatalf("setUp FLUSHALL failed: %s", r.Error)
+	if r.Err != nil {
+		c.Fatalf("setUp FLUSHALL failed: %s", r.Err)
 	}
 }
 
 func tearDownTest(c TI) {
 	r := rd.Flushall()
-	if r.Error != nil {
-		c.Fatalf("tearDown FLUSHALL failed: %s", r.Error)
+	if r.Err != nil {
+		c.Fatalf("tearDown FLUSHALL failed: %s", r.Err)
 	}
 
 	rd.Close()
@@ -287,7 +287,7 @@ func (s *S) TestMultiCall(c *C) {
 		mc.Get("foo")
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.Elems[0].Error, IsNil)
+	c.Check(r.Elems[0].Err, IsNil)
 	vs, _ := r.Elems[1].Str()
 	c.Check(vs, Equals, "bar")
 
@@ -295,15 +295,15 @@ func (s *S) TestMultiCall(c *C) {
 		mc.Set("foo2", "baz")
 		mc.Get("foo2")
 		rmc := mc.Flush()
-		c.Check(rmc.Elems[0].Error, IsNil)
+		c.Check(rmc.Elems[0].Err, IsNil)
 		vs, _ = rmc.Elems[1].Str()
 		c.Check(vs, Equals, "baz")
 		mc.Set("foo2", "qux")
 		mc.Get("foo2")
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.Elems[0].Error, IsNil)
-	c.Check(r.Elems[1].Error, IsNil)
+	c.Check(r.Elems[0].Err, IsNil)
+	c.Check(r.Elems[1].Err, IsNil)
 	vs, _ = r.Elems[1].Str()
 	c.Check(vs, Equals, "qux")
 }
@@ -341,8 +341,8 @@ func (s *S) TestComplexTransaction(c *C) {
 		mc.Watch("foo")
 		rmc := mc.Flush()
 		c.Assert(rmc.Type, Equals, ReplyMulti)
-		c.Assert(rmc.Elems[0].Error, IsNil)
-		c.Assert(rmc.Elems[1].Error, IsNil)
+		c.Assert(rmc.Elems[0].Err, IsNil)
+		c.Assert(rmc.Elems[1].Err, IsNil)
 
 		mc.Multi()
 		mc.Set("foo", "baz")
@@ -351,13 +351,13 @@ func (s *S) TestComplexTransaction(c *C) {
 		mc.Exec()
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.Elems[0].Error, IsNil)
-	c.Check(r.Elems[1].Error, IsNil)
-	c.Check(r.Elems[2].Error, IsNil)
-	c.Check(r.Elems[3].Error, NotNil)
+	c.Check(r.Elems[0].Err, IsNil)
+	c.Check(r.Elems[1].Err, IsNil)
+	c.Check(r.Elems[2].Err, IsNil)
+	c.Check(r.Elems[3].Err, NotNil)
 	c.Check(r.Elems[4].Type, Equals, ReplyMulti)
 	c.Check(len(r.Elems[4].Elems), Equals, 2)
-	c.Check(r.Elems[4].Elems[0].Error, IsNil)
+	c.Check(r.Elems[4].Elems[0].Err, IsNil)
 	vs, _ := r.Elems[4].Elems[1].Str()
 	c.Check(vs, Equals, "baz")
 
@@ -370,11 +370,11 @@ func (s *S) TestComplexTransaction(c *C) {
 		mc.Get("foo")
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.Elems[0].Error, IsNil)
-	c.Check(r.Elems[1].Error, IsNil)
-	c.Check(r.Elems[2].Error, IsNil)
-	c.Check(r.Elems[3].Error, IsNil)
-	c.Check(r.Elems[4].Error, IsNil)
+	c.Check(r.Elems[0].Err, IsNil)
+	c.Check(r.Elems[1].Err, IsNil)
+	c.Check(r.Elems[2].Err, IsNil)
+	c.Check(r.Elems[3].Err, IsNil)
+	c.Check(r.Elems[4].Err, IsNil)
 	vs, _ = r.Elems[4].Str()
 	c.Check(vs, Equals, "bar")
 }
@@ -500,7 +500,7 @@ func (s *S) TestTCP(c *C) {
 	rdA, errA := NewClient(conf2)
 	c.Assert(errA, IsNil)
 	rep := rdA.Echo("Hello, World!")
-	c.Assert(rep.Error, IsNil)
+	c.Assert(rep.Err, IsNil)
 	vs, _ := rep.Str()
 	c.Check(vs, Equals, "Hello, World!")
 }
@@ -533,7 +533,7 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 		mc.Multi()
 		rmc := mc.Flush()
 		c.Assert(rmc.Type, Equals, ReplyMulti)
-		c.Check(rmc.Elems[0].Error, IsNil)
+		c.Check(rmc.Elems[0].Err, IsNil)
 		c.Check(rmc.Elems[1], IsNil)
 		c.Check(rmc.Elems[2], IsNil)
 
@@ -552,7 +552,7 @@ func (s *Long) TestIllegalDatabase(c *C) {
 	rdA, errA := NewClient(conf2)
 	c.Assert(errA, IsNil)
 	rA := rdA.Ping()
-	c.Check(rA.Error, NotNil)
+	c.Check(rA.Err, NotNil)
 }
 
 //* Utils tests
