@@ -90,6 +90,7 @@ func (c *Client) multiCall(transaction bool, f func(*MultiCall)) *Reply {
 }
 
 // MultiCall executes the given MultiCall.
+// Multicall reply is guaranteed to have the same number of sub-replies as calls, if it succeeds.
 func (c *Client) MultiCall(f func(*MultiCall)) *Reply {
 	return c.multiCall(false, f)
 }
@@ -97,6 +98,7 @@ func (c *Client) MultiCall(f func(*MultiCall)) *Reply {
 // Transaction performs a simple transaction.
 // Simple transaction is a multi command that is wrapped in a MULTI-EXEC block.
 // For complex transactions with WATCH, UNWATCH or DISCARD commands use MultiCall.
+// Transaction reply is guaranteed to have the same number of sub-replies as calls, if it succeeds.
 func (c *Client) Transaction(f func(*MultiCall)) *Reply {
 	return c.multiCall(true, f)
 }

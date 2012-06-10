@@ -105,9 +105,13 @@ func main() {
 		mc.Set("multikey", "multival")
 		mc.Get("multikey")
 	})
-
-	// Multicall replies are guaranteed to have the same number of elements as in the call.
-	// They can be accessed through Reply.Elems.
+	// Multicall reply is guaranteed to have the same number of sub-replies as calls,
+	// if it succeeds. They can be accessed through Reply.Elems.
+	if rep.Error != nil {
+			fmt.Println(rep.Error)
+			return
+	}
+	
 	s, err = rep.Elems[1].Str()
 	if err != nil {
 		fmt.Println(err)
@@ -121,7 +125,11 @@ func main() {
 		mc.Set("trankey", "tranval")
 		mc.Get("trankey")
 	})
-
+	if rep.Error != nil {
+			fmt.Println(rep.Error)
+			return
+	}
+	
 	s, err = rep.Elems[1].Str()
 	if err != nil {
 		fmt.Println(err)
@@ -139,6 +147,10 @@ func main() {
 			mc.Watch(key)
 			mc.Get(key)
 			rep := mc.Flush()
+			if rep.Error != nil {
+				return
+			}
+	
 			s, err := rep.Elems[1].Str()
 			if err == nil {
 				curval, err = strconv.Atoi(s)

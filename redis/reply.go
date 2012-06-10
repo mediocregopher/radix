@@ -34,10 +34,10 @@ const (
 type Reply struct {
 	Cmd   Cmd
 	Type  ReplyType
+	Elems []*Reply // Sub-replies
+	Error *Error
 	str   string
 	int   int64
-	Elems []*Reply
-	Error *Error
 }
 
 // Nil returns true, if the reply is a nil reply, otherwise false.
