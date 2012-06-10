@@ -121,15 +121,9 @@ func (c *connection) init() *Error {
 // call calls a Redis command.
 func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
 	if err := c.writeRequest(call{cmd, args}); err != nil {
-		// add command in the error
-		err.Cmd = cmd
 		r = &Reply{Error: err}
 	} else {
 		r = c.read()
-		if r.Error != nil {
-			// add command in the error
-			r.Error.Cmd = cmd
-		}
 	}
 
 	return r
@@ -141,13 +135,8 @@ func (c *connection) multiCall(cmds []call) (r *Reply) {
 	if err := c.writeRequest(cmds...); err == nil {
 		r.Type = ReplyMulti
 		r.Elems = make([]*Reply, len(cmds))
-		for i, cmd := range cmds {
+		for i, _ := range cmds {
 			reply := c.read()
-			if reply.Error != nil {
-				// add command in the error
-				reply.Error.Cmd = cmd.cmd
-			}
-
 			r.Elems[i] = reply
 		}
 	} else {

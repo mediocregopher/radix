@@ -32,7 +32,6 @@ const (
 
 // Reply holds a Redis reply.
 type Reply struct {
-	Cmd   Cmd
 	Type  ReplyType
 	Elems []*Reply // Sub-replies
 	Error *Error

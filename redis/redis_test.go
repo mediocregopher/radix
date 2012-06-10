@@ -518,32 +518,6 @@ func (s *S) TestUnix(c *C) {
 	c.Check(vs, Equals, "Hello, World!")
 }
 
-// Test that command name is added to errors.
-func (s *S) TestErrorCmd(c *C) {
-	// failing call
-	r := rd.Set()
-	c.Check(r.Error, NotNil)
-	c.Check(r.Error.Cmd, Equals, CmdSet)
-
-	// failing multicall
-	r = rd.MultiCall(func(mc *MultiCall) {
-		mc.Set("foo", "bar")
-		mc.Set()
-		mc.Set("foo", "baz")
-	})
-	c.Assert(r.Elems[1].Error, NotNil)
-	c.Check(r.Elems[1].Error.Cmd, Equals, CmdSet)
-
-	// connection failure
-	conf2 := conf
-	conf2.Path = ""
-	conf2.Address = "fdslkfjfklflsjf4536.com:12345"
-	rdB, _ := NewClient(conf2)
-	r = rdB.Set()
-	c.Assert(r.Error, NotNil)
-	c.Check(r.Error.Cmd, Equals, CmdSet)
-}
-
 //* Long tests
 
 // Test aborting complex tranactions.
