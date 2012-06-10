@@ -168,14 +168,13 @@ func main() {
 	myIncr("ctrankey")
 	myIncr("ctrankey")
 
-	fmt.Println(c.Get("ctrankey"))
-//	s, err = c.Get("ctrankey").Str()
-//	if err != nil {
-//		fmt.Println(err)
-//		return
-//	}
+	s, err = c.Get("ctrankey").Str()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
-//	fmt.Println("ctrankey:", s)
+	fmt.Println("ctrankey:", s)
 
 	//** Asynchronous calls
 	c.Set("asynckey", "asyncval")
