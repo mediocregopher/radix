@@ -89,8 +89,8 @@ func (r *Reply) Int() (int, error) {
 	return int(i64), nil
 }
 
-// Bool returns true, if the reply value equals to 1 or "1", otherwise false; or
-// an error, if the reply type is not ReplyInteger or ReplyString.
+// Bool returns true, if the reply value equals to 1, otherwise false; or
+// an error, if the reply type is not ReplyInteger.
 func (r *Reply) Bool() (bool, error) {
 	i, err := r.Int()
 	if err != nil {
@@ -98,15 +98,6 @@ func (r *Reply) Bool() (bool, error) {
 			return true, nil
 		}
 
-		return false, nil
-	}
-
-	s, err := r.Str()
-	if err != nil {
-		if s == "1" {
-			return true, nil
-		}
-		
 		return false, nil
 	}
 

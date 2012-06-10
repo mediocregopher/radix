@@ -84,9 +84,9 @@ func (s *Long) TearDownTest(c *C) {
 
 // Test connection calls.
 func (s *S) TestConnection(c *C) {
-	v, err := rd.Echo("Hello, World!").Str()
+	v, _ := rd.Echo("Hello, World!").Str()
 	c.Check(v, Equals, "Hello, World!")
-	v, err = rd.Ping().Str()
+	v, _ = rd.Ping().Str()
 	c.Check(v, Equals, "PONG")
 }
 
@@ -95,25 +95,28 @@ func (s *S) TestSimpleValue(c *C) {
 	// Simple value calls.
 	rd.Set("simple:string", "Hello,")
 	rd.Append("simple:string", " World!")
-	vs, err := rd.Get("simple:string").Str()
+	vs, _ := rd.Get("simple:string").Str()
 	c.Check(vs, Equals, "Hello, World!")
 
 	rd.Set("simple:int", 10)
-	vy, err := rd.Incr("simple:int").Int()
+	vy, _ := rd.Incr("simple:int").Int()
 	c.Check(vy, Equals, 11)
 
 	rd.Setbit("simple:bit", 0, true)
 	rd.Setbit("simple:bit", 1, true)
 
-	vb, err := rd.Getbit("simple:bit", 0).Bool()
+	vb, _ := rd.Getbit("simple:bit", 0).Bool()
 	c.Check(vb, Equals, true)
-	vb, err := rd.Getbit("simple:bit", 1).Bool()
+	vb, _ = rd.Getbit("simple:bit", 1).Bool()
 	c.Check(vb, Equals, true)
 
 	c.Check(rd.Get("non:existing:key").Nil(), Equals, true)
-	c.Check(rd.Exists("non:existing:key").Bool(), Equals, false)
-	c.Check(rd.Setnx("simple:nx", "Test").Bool(), Equals, true)
-	c.Check(rd.Setnx("simple:nx", "Test").Bool(), Equals, false)
+	vb, _ = rd.Exists("non:existing:key").Bool()
+	c.Check(vb, Equals, false)
+	vb, _ = rd.Setnx("simple:nx", "Test").Bool()
+	c.Check(vb, Equals, true)
+	vb, _ = rd.Setnx("simple:nx", "Test").Bool()
+	c.Check(vb, Equals, false)
 }
 
 // Test calls that return multiple values.
@@ -123,39 +126,13 @@ func (s *S) TestMultiple(c *C) {
 	rd.Set("multiple:b", "b")
 	rd.Set("multiple:c", "c")
 
-	mulstr, err := rd.Mget("multiple:a", "multiple:b", "multiple:c").Strings()
+	mulstr, err := rd.Mget("multiple:a", "multiple:b", "multiple:c").List()
 	c.Assert(err, IsNil)
 	c.Check(
 		mulstr,
 		DeepEquals,
 		[]string{"a", "b", "c"},
 	)
-}
-
-// Test hash accessing.
-func (s *S) TestHash(c *C) {
-	//* Single  return value calls.
-	rd.Hset("hash:bool", "true:1", 1)
-	rd.Hset("hash:bool", "true:2", true)
-	rd.Hset("hash:bool", "true:3", "1")
-	rd.Hset("hash:bool", "false:1", 0)
-	rd.Hset("hash:bool", "false:2", false)
-	rd.Hset("hash:bool", "false:3", "0")
-	c.Check(rd.Hget("hash:bool", "true:1").Bool(), Equals, true)
-	c.Check(rd.Hget("hash:bool", "true:2").Bool(), Equals, true)
-	c.Check(rd.Hget("hash:bool", "true:3").Bool(), Equals, true)
-	c.Check(rd.Hget("hash:bool", "false:1").Bool(), Equals, false)
-	c.Check(rd.Hget("hash:bool", "false:2").Bool(), Equals, false)
-	c.Check(rd.Hget("hash:bool", "false:3").Bool(), Equals, false)
-
-	ha, err := rd.Hgetall("hash:bool").Map()
-	c.Assert(err, IsNil)
-	c.Check(ha["true:1"].Bool(), Equals, true)
-	c.Check(ha["true:2"].Bool(), Equals, true)
-	c.Check(ha["true:3"].Bool(), Equals, true)
-	c.Check(ha["false:1"].Bool(), Equals, false)
-	c.Check(ha["false:2"].Bool(), Equals, false)
-	c.Check(ha["false:3"].Bool(), Equals, false)
 }
 
 // Test list calls.
@@ -169,15 +146,16 @@ func (s *S) TestList(c *C) {
 	rd.Rpush("list:a", "seven")
 	rd.Rpush("list:a", "eight")
 	rd.Rpush("list:a", "nine")
-	lranges, err := rd.Lrange("list:a", 0, -1).Strings()
+	lranges, err := rd.Lrange("list:a", 0, -1).List()
 	c.Assert(err, IsNil)
 	c.Check(
 		lranges,
 		DeepEquals,
 		[]string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"})
-	c.Check(rd.Lpop("list:a").Str(), Equals, "one")
+	s, _ := rd.Lpop("list:a").Str()
+	c.Check(s, Equals, "one")
 
-	elems := rd.Lrange("list:a", 3, 6).Elems()
+	elems, err := rd.Lrange("list:a", 3, 6).Elems()
 	c.Assert(len(elems), Equals, 4)
 	c.Check(elems[0].Str(), Equals, "five")
 	c.Check(elems[1].Str(), Equals, "six")
