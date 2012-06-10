@@ -45,7 +45,7 @@ func (r *Reply) Nil() bool {
 	if r.Type == ReplyNil {
 		return true
 	}
-	
+
 	return false
 }
 

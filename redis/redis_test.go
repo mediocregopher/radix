@@ -453,7 +453,7 @@ func (s *S) TestSubscription(c *C) {
 
 	sub.Subscribe("chan1", "chan2")
 
-	vi, _ := rd.Publish("chan1", "foo").Int() 
+	vi, _ := rd.Publish("chan1", "foo").Int()
 	c.Check(vi, Equals, 1)
 	sub.Unsubscribe("chan1")
 	vi, _ = rd.Publish("chan1", "bar").Int()
