@@ -78,7 +78,8 @@ func main() {
 	// c.Rpush("mylist", "foo", "bar", "qux")
 	c.Rpush("mylist", mylist)
 
-	if mylist, err = c.Lrange("mylist", 0, -1).List(); err != nil {
+	mylist, err = c.Lrange("mylist", 0, -1).List()
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -91,7 +92,8 @@ func main() {
 	// c.Hmset("myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
 	c.Hmset("myhash", myhash)
 
-	if myhash, err = c.Hgetall("myhash").Hash(); err != nil {
+	myhash, err = c.Hgetall("myhash").Hash()
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
