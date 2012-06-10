@@ -68,22 +68,17 @@ func (s *Subscription) Close() {
 // readMessage reads and parses pubsub message data from the connection and returns it as a message.
 func (s *Subscription) readMessage() *Message {
 	var err error
-	var r, mr *Reply
 	var rs string
 	m := new(Message)
-	mr = s.conn.read()
+	r := s.conn.read()
 
-	if mr.Error != nil {
-		goto Errmsg
+	if r.Type != ReplyMulti || len(r.Elems) < 3 {
+		goto Err
 	}
 
 	// first argument is the message type
-	if r, err = mr.At(0); err != nil {
-		goto Errmsg
-	}
-
-	if rs, err = r.Str(); err != nil {
-		goto Errmsg
+	if rs, err = r.Elems[0].Str(); err != nil {
+		goto Err
 	}
 
 	switch rs {
@@ -100,15 +95,12 @@ func (s *Subscription) readMessage() *Message {
 	case "pmessage":
 		m.Type = MessagePmessage
 	default:
-		goto Errmsg
+		goto Err
 	}
 
 	// second argument
-	if r, err = mr.At(1); err != nil {
-		goto Errmsg
-	}
-	if rs, err = r.Str(); err != nil {
-		goto Errmsg
+	if rs, err = r.Elems[1].Str(); err != nil {
+		goto Err
 	}
 
 	switch {
@@ -116,60 +108,49 @@ func (s *Subscription) readMessage() *Message {
 		m.Channel = rs
 
 		// number of subscriptions
-		if r, err = mr.At(2); err != nil {
-			goto Errmsg
-		}
-		if m.Subscriptions, err = r.Int(); err != nil {
-			goto Errmsg
+		if m.Subscriptions, err = r.Elems[2].Int(); err != nil {
+			goto Err
 		}
 	case m.Type == MessagePsubscribe || m.Type == MessagePunsubscribe:
 		m.Pattern = rs
 
 		// number of subscriptions
-		if r, err = mr.At(2); err != nil {
-			goto Errmsg
-		}
-		if m.Subscriptions, err = r.Int(); err != nil {
-			goto Errmsg
+		if m.Subscriptions, err = r.Elems[2].Int(); err != nil {
+			goto Err
 		}
 	case m.Type == MessageMessage:
 		m.Channel = rs
 
 		// payload
-		if r, err = mr.At(2); err != nil {
-			goto Errmsg
-		}
-		if m.Payload, err = r.Str(); err != nil {
-			goto Errmsg
+		if m.Payload, err = r.Elems[2].Str(); err != nil {
+			goto Err
 		}
 	case m.Type == MessagePmessage:
 		m.Pattern = rs
 
 		// name of the originating channel
-		if r, err = mr.At(2); err != nil {
-			goto Errmsg
+		if m.Channel, err = r.Elems[2].Str(); err != nil {
+			goto Err
 		}
-		if m.Channel, err = r.Str(); err != nil {
-			goto Errmsg
+
+		if len(r.Elems) < 4 {
+			goto Err
 		}
 
 		// payload
-		if r, err = mr.At(3); err != nil {
-			goto Errmsg
-		}
-		if m.Payload, err = r.Str(); err != nil {
-			goto Errmsg
+		if m.Payload, err = r.Elems[3].Str(); err != nil {
+			goto Err
 		}
 	default:
-		goto Errmsg
+		goto Err
 	}
 
 	return m
 
-Errmsg:
+Err:
 	// Error/Invalid message reply
 	// we shouldn't generally get these, except when closing.
-	if mr.Error != nil && !mr.Error.Test(ErrorConnection) {
+	if r.Error != nil && !r.Error.Test(ErrorConnection) {
 		log.Printf("received an unexpected error reply while in pubsub mode: %s.\n ignoring...",
 			r.Error)
 	}

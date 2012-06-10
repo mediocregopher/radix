@@ -140,7 +140,7 @@ func (c *connection) multiCall(cmds []call) (r *Reply) {
 	r = new(Reply)
 	if err := c.writeRequest(cmds...); err == nil {
 		r.Type = ReplyMulti
-		r.elems = make([]*Reply, len(cmds))
+		r.Elems = make([]*Reply, len(cmds))
 		for i, cmd := range cmds {
 			reply := c.read()
 			if reply.Error != nil {
@@ -148,7 +148,7 @@ func (c *connection) multiCall(cmds []call) (r *Reply) {
 				reply.Error.Cmd = cmd.cmd
 			}
 
-			r.elems[i] = reply
+			r.Elems[i] = reply
 		}
 	} else {
 		r.Error = newError(err.Error())
@@ -312,9 +312,9 @@ func (c *connection) read() (r *Reply) {
 				r.Type = ReplyNil
 			case i >= 0:
 				r.Type = ReplyMulti
-				r.elems = make([]*Reply, i)
-				for i, _ := range r.elems {
-					r.elems[i] = c.read()
+				r.Elems = make([]*Reply, i)
+				for i, _ := range r.Elems {
+					r.Elems[i] = c.read()
 				}
 			default:
 				// invalid reply

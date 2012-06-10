@@ -36,7 +36,7 @@ type Reply struct {
 	Type  ReplyType
 	str   string
 	int   int64
-	elems []*Reply
+	Elems []*Reply
 	Error *Error
 }
 
@@ -113,36 +113,6 @@ func (r *Reply) Bool() (bool, error) {
 	return false, errors.New("boolean value is not available for this reply type")
 }
 
-// Len returns the number of elements in a multi reply.
-// Zero is returned when reply type is not ReplyMulti.
-func (r *Reply) Len() int {
-	return len(r.elems)
-}
-
-// Elems returns the sub-replies of a multi reply or
-// an error, if the reply type is not ReplyMulti.
-func (r *Reply) Elems() ([]*Reply, error) {
-	if r.Type != ReplyMulti {
-		return nil, errors.New("reply type is not ReplyMulti")
-	}
-
-	return r.elems, nil
-}
-
-// At returns a Reply of a multi reply by its index or
-// an error, if the reply type is not ReplyMulti or if the index is out of range.
-func (r *Reply) At(i int) (*Reply, error) {
-	if r.Type != ReplyMulti {
-		return nil, errors.New("reply type is not ReplyMulti")
-	}
-
-	if i < 0 || i >= len(r.elems) {
-		return nil, errors.New("reply index out of range")
-	}
-
-	return r.elems[i], nil
-}
-
 // List returns a multi-bulk reply as a slice of strings or an error.
 // The reply type must be ReplyMulti and its elements must be ReplyString.
 // Useful for list commands.
@@ -151,8 +121,8 @@ func (r *Reply) List() ([]string, error) {
 		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
-	strings := make([]string, len(r.elems))
-	for i, v := range r.elems {
+	strings := make([]string, len(r.Elems))
+	for i, v := range r.Elems {
 		if v.Type != ReplyString {
 			return nil, errors.New("sub-reply type is not ReplyString")
 		}
@@ -174,19 +144,17 @@ func (r *Reply) Hash() (map[string]string, error) {
 		return nil, errors.New("reply type is not ReplyMulti")
 	}
 
-	if r.Len()%2 != 0 {
+	if len(r.Elems)%2 != 0 {
 		return nil, errors.New("reply has odd number of elements")
 	}
 
-	for i := 0; i < r.Len()/2; i++ {
-		reply, _ := r.At(i * 2)
-		key, err := reply.Str()
+	for i := 0; i < len(r.Elems)/2; i++ {
+		key, err := r.Elems[i*2].Str()
 		if err != nil {
 			return nil, errors.New("key element has no string reply")
 		}
 
-		reply, _ = r.At(i*2 + 1)
-		val, err := reply.Str()
+		val, err := r.Elems[i*2+1].Str()
 		if err != nil {
 			return nil, errors.New("value element has no string reply")
 		}
@@ -216,7 +184,7 @@ func (r *Reply) String() string {
 		return "<nil>"
 	case ReplyMulti:
 		s := "[ "
-		for _, e := range r.elems {
+		for _, e := range r.Elems {
 			s = s + e.String() + " "
 		}
 		return s + "]"
