@@ -152,31 +152,38 @@ func (s *S) TestList(c *C) {
 		lranges,
 		DeepEquals,
 		[]string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"})
-	s, _ := rd.Lpop("list:a").Str()
-	c.Check(s, Equals, "one")
+	vs, _ := rd.Lpop("list:a").Str()
+	c.Check(vs, Equals, "one")
 
 	elems, err := rd.Lrange("list:a", 3, 6).Elems()
 	c.Assert(len(elems), Equals, 4)
-	c.Check(elems[0].Str(), Equals, "five")
-	c.Check(elems[1].Str(), Equals, "six")
-	c.Check(elems[2].Str(), Equals, "seven")
-	c.Check(elems[3].Str(), Equals, "eight")
+	vs, _ = elems[0].Str()
+	c.Check(vs, Equals, "five")
+	vs, _ = elems[1].Str()
+	c.Check(vs, Equals, "six")
+	vs, _ = elems[2].Str()
+	c.Check(vs, Equals, "seven")
+	vs, _ = elems[3].Str()
+	c.Check(vs, Equals, "eight")
 
 	rd.Ltrim("list:a", 0, 3)
-	c.Check(rd.Llen("list:a").Int(), Equals, 4)
+	vi, _ := rd.Llen("list:a").Int()
+	c.Check(vi, Equals, 4)
 
 	rd.Rpoplpush("list:a", "list:b")
 	c.Check(rd.Lindex("list:b", 4711).Nil(), Equals, true)
-	c.Check(rd.Lindex("list:b", 0).Str(), Equals, "five")
+	vs, _ = rd.Lindex("list:b", 0).Str()
+	c.Check(vs, Equals, "five")
 
 	rd.Rpush("list:c", 1)
 	rd.Rpush("list:c", 2)
 	rd.Rpush("list:c", 3)
 	rd.Rpush("list:c", 4)
 	rd.Rpush("list:c", 5)
-	c.Check(rd.Lpop("list:c").Str(), Equals, "1")
+	vs, _ = rd.Lpop("list:c").Str()
+	c.Check(vs, Equals, "1")
 
-	lrangenil, err := rd.Lrange("non-existent-list", 0, -1).Strings()
+	lrangenil, err := rd.Lrange("non-existent-list", 0, -1).List()
 	c.Assert(err, IsNil)
 	c.Check(lrangenil, DeepEquals, []string{})
 }
@@ -190,37 +197,43 @@ func (s *S) TestSets(c *C) {
 	rd.Sadd("set:a", 5)
 	rd.Sadd("set:a", 4)
 	rd.Sadd("set:a", 3)
-	c.Check(rd.Scard("set:a").Int(), Equals, 5)
-	c.Check(rd.Sismember("set:a", "4").Bool(), Equals, true)
+	vi, _ := rd.Scard("set:a").Int()
+	c.Check(vi, Equals, 5)
+	vb, _ := rd.Sismember("set:a", "4").Bool()
+	c.Check(vb, Equals, true)
 }
 
 // Test argument formatting.
 func (s *S) TestFormatting(c *C) {
 	// string
 	rd.Set("foo", "bar")
+	vs, _ := rd.Get("foo").Str()
 	c.Check(
-		rd.Get("foo").Str(),
+		vs,
 		Equals,
 		"bar")
 
 	// []byte
 	rd.Set("foo2", []byte{'b', 'a', 'r'})
+	vbs, _ := rd.Get("foo2").Bytes()
 	c.Check(
-		rd.Get("foo2").Bytes(),
+		vbs,
 		DeepEquals,
 		[]byte{'b', 'a', 'r'})
 
 	// bool
 	rd.Set("foo3", true)
+	vb, _ := rd.Get("foo3").Bool()
 	c.Check(
-		rd.Get("foo3").Bool(),
+		vb,
 		Equals,
 		true)
 
 	// integers
 	rd.Set("foo4", 2)
+	vs, _ = rd.Get("foo4").Str()
 	c.Check(
-		rd.Get("foo4").Str(),
+		vs,
 		Equals,
 		"2")
 
@@ -254,7 +267,8 @@ func (s *S) TestFormatting(c *C) {
 func (s *S) TestAsync(c *C) {
 	fut := rd.AsyncPing()
 	r := fut.Reply()
-	c.Check(r.Str(), Equals, "PONG")
+	vs, _ := r.Str()
+	c.Check(vs, Equals, "PONG")
 }
 
 // Test multi-value calls.
@@ -272,22 +286,32 @@ func (s *S) TestMultiCall(c *C) {
 		mc.Set("foo", "bar")
 		mc.Get("foo")
 	})
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Error, IsNil)
-	c.Check(r.At(1).Str(), Equals, "bar")
+	c.Check(r.Type, Equals, ReplyMulti)
+	r0, _ := r.At(0)
+	c.Check(r0.Error, IsNil)
+	r1, _ := r.At(1)
+	vs, _ := r1.Str()
+	c.Check(vs, Equals, "bar")
 
 	r = rd.MultiCall(func(mc *MultiCall) {
 		mc.Set("foo2", "baz")
 		mc.Get("foo2")
 		rmc := mc.Flush()
-		c.Check(rmc.At(0).Error, IsNil)
-		c.Check(rmc.At(1).Str(), Equals, "baz")
+		r0, _ := rmc.At(0)
+		c.Check(r0.Error, IsNil)
+		r1, _ := rmc.At(1)
+		vs, _ = r1.Str()
+		c.Check(vs, Equals, "baz")
 		mc.Set("foo2", "qux")
 		mc.Get("foo2")
 	})
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Error, IsNil)
-	c.Check(r.At(1).Str(), Equals, "qux")
+	c.Check(r.Type, Equals, ReplyMulti)
+	r0, _ = r.At(0)
+	c.Check(r0.Error, IsNil)
+	r1, _ = r.At(1)
+	c.Check(r1.Error, IsNil)
+	vs, _ = r1.Str()
+	c.Check(vs, Equals, "qux")
 }
 
 // Test simple transactions.
@@ -296,9 +320,13 @@ func (s *S) TestTransaction(c *C) {
 		mc.Set("foo", "bar")
 		mc.Get("foo")
 	})
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Str(), Equals, "OK")
-	c.Check(r.At(1).Str(), Equals, "bar")
+	c.Check(r.Type, Equals, ReplyMulti)
+	r0, _ := r.At(0)
+	vs, _ := r0.Str()
+	c.Check(vs, Equals, "OK")
+	r1, _ := r.At(1)
+	vs, _ = r1.Str()
+	c.Check(vs, Equals, "bar")
 
 	// Flushing transaction
 	r = rd.Transaction(func(mc *MultiCall) {
@@ -306,10 +334,14 @@ func (s *S) TestTransaction(c *C) {
 		mc.Flush()
 		mc.Get("foo")
 	})
-	c.Assert(r.Type, Equals, ReplyMulti)
+	c.Check(r.Type, Equals, ReplyMulti)
 	c.Check(r.Len(), Equals, 2)
-	c.Check(r.At(0).Str(), Equals, "OK")
-	c.Check(r.At(1).Str(), Equals, "bar")
+	r0, _ = r.At(0)
+	vs, _ = r0.Str()
+	c.Check(vs, Equals, "OK")
+	r1, _ = r.At(1)
+	vs, _ = r1.Str()
+	c.Check(vs, Equals, "bar")
 }
 
 // Test succesful complex tranactions.
@@ -319,10 +351,12 @@ func (s *S) TestComplexTransaction(c *C) {
 		mc.Set("foo", "bar")
 		mc.Watch("foo")
 		rmc := mc.Flush()
-		c.Assert(rmc.Type, Equals, ReplyMulti)
-		c.Assert(rmc.Len(), Equals, 2)
-		c.Assert(rmc.At(0).Error, IsNil)
-		c.Assert(rmc.At(1).Error, IsNil)
+		c.Check(rmc.Type, Equals, ReplyMulti)
+		c.Check(rmc.Len(), Equals, 2)
+		r0, _ := rmc.At(0)
+		r1, _ := rmc.At(1)
+		c.Assert(r0.Error, IsNil)
+		c.Assert(r1.Error, IsNil)
 
 		mc.Multi()
 		mc.Set("foo", "baz")
@@ -330,16 +364,24 @@ func (s *S) TestComplexTransaction(c *C) {
 		mc.Call("brokenfunc")
 		mc.Exec()
 	})
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Assert(r.Len(), Equals, 5)
-	c.Check(r.At(0).Error, IsNil)
-	c.Check(r.At(1).Error, IsNil)
-	c.Check(r.At(2).Error, IsNil)
-	c.Check(r.At(3).Error, NotNil)
-	c.Assert(r.At(4).Type, Equals, ReplyMulti)
-	c.Assert(r.At(4).Len(), Equals, 2)
-	c.Check(r.At(4).At(0).Error, IsNil)
-	c.Check(r.At(4).At(1).Str(), Equals, "baz")
+	c.Check(r.Type, Equals, ReplyMulti)
+	c.Check(r.Len(), Equals, 5)
+	r0, _ := r.At(0)
+	r1, _ := r.At(1)
+	r2, _ := r.At(2)
+	r3, _ := r.At(3)
+	r4, _ := r.At(4)
+	c.Check(r0.Error, IsNil)
+	c.Check(r1.Error, IsNil)
+	c.Check(r2.Error, IsNil)
+	c.Check(r3.Error, NotNil)
+	c.Check(r4.Type, Equals, ReplyMulti)
+	c.Check(r4.Len(), Equals, 2)
+	r40, _ := r4.At(0)
+	r41, _ := r4.At(1)
+	c.Check(r40.Error, IsNil)
+	vs, _ := r41.Str()
+	c.Check(vs, Equals, "baz")
 
 	// Discarding transaction
 	r = rd.MultiCall(func(mc *MultiCall) {
@@ -349,14 +391,20 @@ func (s *S) TestComplexTransaction(c *C) {
 		mc.Discard()
 		mc.Get("foo")
 	})
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Assert(r.Len(), Equals, 5)
-	c.Check(r.At(0).Error, IsNil)
-	c.Check(r.At(1).Error, IsNil)
-	c.Check(r.At(2).Error, IsNil)
-	c.Check(r.At(3).Error, IsNil)
-	c.Check(r.At(4).Error, IsNil)
-	c.Check(r.At(4).Str(), Equals, "bar")
+	c.Check(r.Type, Equals, ReplyMulti)
+	c.Check(r.Len(), Equals, 5)
+	r0, _ = r.At(0)
+	r1, _ = r.At(1)
+	r2, _ = r.At(2)
+	r3, _ = r.At(3)
+	r4, _ = r.At(4)
+	c.Check(r0.Error, IsNil)
+	c.Check(r1.Error, IsNil)
+	c.Check(r2.Error, IsNil)
+	c.Check(r3.Error, IsNil)
+	c.Check(r4.Error, IsNil)
+	vs, _ = r4.Str()
+	c.Check(vs, Equals, "bar")
 }
 
 // Test asynchronous multicalls.
@@ -365,9 +413,12 @@ func (s *S) TestAsyncMultiCall(c *C) {
 		mc.Set("foo", "bar")
 		mc.Get("foo")
 	}).Reply()
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Error, IsNil)
-	c.Check(r.At(1).Str(), Equals, "bar")
+	c.Check(r.Type, Equals, ReplyMulti)
+	_, err := r.At(0)
+	c.Check(err, IsNil)
+	r1, _ := r.At(1)
+	vs, _ := r1.Str()
+	c.Check(vs, Equals, "bar")
 }
 
 // Test simple asynchronous transactions.
@@ -376,9 +427,13 @@ func (s *S) TestAsyncTransaction(c *C) {
 		mc.Set("foo", "bar")
 		mc.Get("foo")
 	}).Reply()
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(0).Str(), Equals, "OK")
-	c.Check(r.At(1).Str(), Equals, "bar")
+	c.Check(r.Type, Equals, ReplyMulti)
+	r0, _ := r.At(0)
+	r1, _ := r.At(1)
+	vs, _ := r0.Str()
+	c.Check(vs, Equals, "OK")
+	vs, _ = r1.Str()
+	c.Check(vs, Equals, "bar")
 }
 
 // Test Subscription.
@@ -398,9 +453,11 @@ func (s *S) TestSubscription(c *C) {
 
 	sub.Subscribe("chan1", "chan2")
 
-	c.Check(rd.Publish("chan1", "foo").Int(), Equals, 1)
+	vi, _ := rd.Publish("chan1", "foo").Int() 
+	c.Check(vi, Equals, 1)
 	sub.Unsubscribe("chan1")
-	c.Check(rd.Publish("chan1", "bar").Int(), Equals, 0)
+	vi, _ = rd.Publish("chan1", "bar").Int()
+	c.Check(vi, Equals, 0)
 
 	time.Sleep(time.Second)
 	c.Assert(len(messages), Equals, 4)
@@ -435,9 +492,11 @@ func (s *S) TestPsubscribe(c *C) {
 
 	sub.Psubscribe("foo.*")
 
-	c.Check(rd.Publish("foo.foo", "foo").Int(), Equals, 1)
+	vi, _ := rd.Publish("foo.foo", "foo").Int()
+	c.Check(vi, Equals, 1)
 	sub.Punsubscribe("foo.*")
-	c.Check(rd.Publish("foo.bar", "bar").Int(), Equals, 0)
+	vi, _ = rd.Publish("foo.bar", "bar").Int()
+	c.Check(vi, Equals, 0)
 
 	time.Sleep(time.Second)
 	c.Assert(len(messages), Equals, 3)
@@ -475,7 +534,8 @@ func (s *S) TestTCP(c *C) {
 	c.Assert(errA, IsNil)
 	rep := rdA.Echo("Hello, World!")
 	c.Assert(rep.Error, IsNil)
-	c.Check(rep.Str(), Equals, "Hello, World!")
+	vs, _ := rep.Str()
+	c.Check(vs, Equals, "Hello, World!")
 }
 
 // Test unix connections.
@@ -486,8 +546,9 @@ func (s *S) TestUnix(c *C) {
 	rdA, errA := NewClient(conf2)
 	c.Assert(errA, IsNil)
 	rep := rdA.Echo("Hello, World!")
-	c.Assert(rep.Error, IsNil)
-	c.Check(rep.Str(), Equals, "Hello, World!")
+	vs, err := rep.Str()
+	c.Assert(err, IsNil)
+	c.Check(vs, Equals, "Hello, World!")
 }
 
 // Test that command name is added to errors.
@@ -503,9 +564,10 @@ func (s *S) TestErrorCmd(c *C) {
 		mc.Set()
 		mc.Set("foo", "baz")
 	})
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.At(1).Error, NotNil)
-	c.Check(r.At(1).Error.Cmd, Equals, CmdSet)
+	r1, err := r.At(1)
+	c.Check(err, IsNil)
+	c.Assert(r1.Error, NotNil)
+	c.Check(r1.Error.Cmd, Equals, CmdSet)
 
 	// connection failure
 	conf2 := conf
@@ -513,7 +575,7 @@ func (s *S) TestErrorCmd(c *C) {
 	conf2.Address = "fdslkfjfklflsjf4536.com:12345"
 	rdB, _ := NewClient(conf2)
 	r = rdB.Set()
-	c.Check(r.Error, NotNil)
+	c.Assert(r.Error, NotNil)
 	c.Check(r.Error.Cmd, Equals, CmdSet)
 }
 
@@ -531,19 +593,23 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 		mc.Watch("foo")
 		mc.Multi()
 		rmc := mc.Flush()
-		c.Assert(rmc.Type, Equals, ReplyMulti)
-		c.Assert(rmc.Len(), Equals, 3)
-		c.Assert(rmc.At(0).Error, IsNil)
-		c.Assert(rmc.At(1).Error, IsNil)
-		c.Assert(rmc.At(2).Error, IsNil)
+		c.Check(rmc.Type, Equals, ReplyMulti)
+		c.Check(rmc.Len(), Equals, 3)
+		r0, _ := rmc.At(0)
+		r1, _ := rmc.At(1)
+		r2, _ := rmc.At(2)
+		c.Check(r0.Error, IsNil)
+		c.Check(r1.Error, IsNil)
+		c.Check(r2.Error, IsNil)
 
 		time.Sleep(time.Second * 2)
 		mc.Set("foo", 2)
 		mc.Exec()
 	})
-	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Assert(r.Len(), Equals, 2)
-	c.Check(r.At(1).Nil(), Equals, true)
+	c.Check(r.Type, Equals, ReplyMulti)
+	c.Check(r.Len(), Equals, 2)
+	r1, _ := r.At(1)
+	c.Check(r1.Nil(), Equals, true)
 }
 
 // Test illegal database.
