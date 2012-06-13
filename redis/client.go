@@ -146,7 +146,7 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 
 func checkConfig(c *Configuration) error {
 	if c.Address != "" && c.Path != "" {
-		return errors.New("redis: configuration has both tcp/ip address and unix path")
+		return errors.New(errmsg("configuration has both tcp/ip address and unix path"))
 	}
 
 	//* Some default values
