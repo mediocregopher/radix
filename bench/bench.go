@@ -20,8 +20,8 @@ var gomaxprocs *int = flag.Int("p", 8, "GOMAXPROCS value")
 
 // handleReplyError prints an error message for the given reply.
 func handleReplyError(rep *redis.Reply) {
-	if rep.Error != nil {
-		log.Println("redis: " + rep.Error.Error())
+	if rep.Err != nil {
+		log.Println("redis: " + rep.Err.Error())
 	} else {
 		log.Println("redis: unexpected reply type")
 	}
@@ -42,7 +42,7 @@ func benchmark(data string, handle func(string, *redis.Client, chan struct{})) t
 	defer c.Close()
 
 	rep := c.Flushdb()
-	if rep.Error != nil {
+	if rep.Err != nil {
 		handleReplyError(rep)
 		os.Exit(1)
 	}
