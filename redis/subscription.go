@@ -2,7 +2,6 @@ package redis
 
 import (
 	"log"
-	"sync/atomic"
 )
 
 type subType uint8
@@ -165,7 +164,7 @@ func (s *Subscription) listener() {
 	// read until connection is closed
 	for {
 		m = s.readMessage()
-		if m == nil && atomic.LoadInt32(&s.conn.closed) == 1 {
+		if m == nil && s.conn.closed() {
 			return
 		}
 

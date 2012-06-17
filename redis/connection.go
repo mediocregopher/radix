@@ -27,14 +27,14 @@ type call struct {
 type connection struct {
 	conn          net.Conn
 	reader        *bufio.Reader
-	closed        int32 // manipulated with atomic primitives
+	closed_        int32 // manipulated with atomic primitives
 	noReadTimeout bool  // toggle disabling of read timeout
 	config        *Configuration
 }
 
 func newConnection(config *Configuration) (conn *connection, err *Error) {
 	conn = &connection{
-		closed: 1, // closed by default
+		closed_: 1, // closed by default
 		config: config,
 	}
 
@@ -114,7 +114,7 @@ func (c *connection) init() *Error {
 		}
 	}
 
-	c.closed = 0
+	c.closed_ = 0
 	return nil
 }
 
@@ -178,11 +178,19 @@ func (c *connection) subscription(subType subType, data []string) *Error {
 }
 
 func (c *connection) close() {
-	atomic.StoreInt32(&c.closed, 1)
+	atomic.StoreInt32(&c.closed_, 1)
 
 	if c.conn != nil {
 		c.conn.Close()
 	}
+}
+
+func (c *connection) closed() bool {
+	if atomic.LoadInt32(&c.closed_) == 1 {
+		return true
+	}
+
+	return false
 }
 
 // helper for read()
