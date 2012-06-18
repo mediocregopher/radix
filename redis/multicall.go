@@ -47,12 +47,12 @@ func (mc *MultiCall) call(cmd Cmd, args ...interface{}) {
 	mc.calls = append(mc.calls, call{cmd, args})
 }
 
-// Call queues a Redis command call for later execution.
+// Call queues a call for later execution.
 func (mc *MultiCall) Call(cmd string, args ...interface{}) {
 	mc.call(Cmd(cmd), args...)
 }
 
-// Flush sends queued command calls to the Redis server for execution and
+// Flush sends queued calls to the Redis server for execution and
 // returns the returned Reply.
 func (mc *MultiCall) Flush() (r *Reply) {
 	r = mc.c.multiCall(mc.calls)
