@@ -28,7 +28,7 @@ func (mc *MultiCall) process(userCalls func(*MultiCall)) *Reply {
 		mc.Exec()
 		r = mc.c.multiCall(mc.calls)
 
-		execReply := r.Elems[len(r.Elems) - 1]
+		execReply := r.Elems[len(r.Elems)-1]
 		if execReply.Err == nil {
 			r.Elems = execReply.Elems
 		} else {

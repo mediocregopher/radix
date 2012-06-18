@@ -10,7 +10,7 @@ type Configuration struct {
 	Address        string
 	Path           string
 	Database       int
-	Auth           string
+	Password       string
 	PoolCapacity   int
 	Timeout        time.Duration
 	NoLoadingRetry bool

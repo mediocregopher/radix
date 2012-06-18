@@ -27,7 +27,7 @@ type call struct {
 type connection struct {
 	conn          net.Conn
 	reader        *bufio.Reader
-	closed_        int32 // manipulated with atomic primitives
+	closed_       int32 // manipulated with atomic primitives
 	noReadTimeout bool  // toggle disabling of read timeout
 	config        *Configuration
 }
@@ -35,7 +35,7 @@ type connection struct {
 func newConnection(config *Configuration) (conn *connection, err *Error) {
 	conn = &connection{
 		closed_: 1, // closed by default
-		config: config,
+		config:  config,
 	}
 
 	if err = conn.init(); err != nil {
@@ -106,8 +106,8 @@ func (c *connection) init() *Error {
 	}
 
 	// Authenticate if needed.
-	if c.config.Auth != "" {
-		r = c.call(CmdAuth, c.config.Auth)
+	if c.config.Password != "" {
+		r = c.call(CmdAuth, c.config.Password)
 		if r.Err != nil {
 			c.close()
 			return newErrorExt("authentication failed", r.Err, ErrorAuth)
@@ -207,8 +207,8 @@ func (c *connection) readErrHdlr(err error) (r *Reply) {
 		}
 
 		return &Reply{
-			Type:  ReplyError,
-			Err: newError("read failed: "+err.Error(), ErrorConnection),
+			Type: ReplyError,
+			Err:  newError("read failed: "+err.Error(), ErrorConnection),
 		}
 	}
 

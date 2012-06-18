@@ -34,7 +34,7 @@ const (
 type Reply struct {
 	Type  ReplyType
 	Elems []*Reply // Sub-replies
-	Err *Error
+	Err   *Error
 	str   string
 	int   int64
 }
