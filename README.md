@@ -30,16 +30,15 @@ Creating a Client instance is done as follows:
 		Timeout: 10, // (default: 0 (no timeout))
 
 		// Custom TCP/IP address or Unix path. (default: Address: "127.0.0.1:6379")
-		// Address: "127.0.0.1:6379", 
+		Address: "127.0.0.1:6379", 
 		// Path: "/tmp/radix.sock"
 
-		//* Optional parameters
 		// Password for authenticating (default: "")
-		// Password: "my_password", 
+		Password: "my_password", 
 		// Capacity of the connection pool (default: 50)
-		// PoolCapacity: 50, 
+		PoolCapacity: 50, 
 		// Don't try to retry on LOADING error? (default: false)
-		// NoLoadingRetry: false, 
+		NoLoadingRetry: false, 
 	})
 
 	if err != nil {
