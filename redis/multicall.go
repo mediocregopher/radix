@@ -52,7 +52,7 @@ func (mc *MultiCall) Call(cmd string, args ...interface{}) {
 	mc.call(Cmd(cmd), args...)
 }
 
-// Flush sends queued calls to the Redis server for execution and
+// Flush sends queued calls to the server for execution and
 // returns the returned Reply.
 func (mc *MultiCall) Flush() (r *Reply) {
 	r = mc.c.multiCall(mc.calls)
