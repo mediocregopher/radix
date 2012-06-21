@@ -42,30 +42,27 @@ echo -e ")
 
 # command calls
 for cmd in ${cmds[@]}; do
-	keyword="${cmd^}"
     echo "
-// $keyword calls Redis ${cmd^^} command. 
-func (c *Client) $keyword(args ...interface{}) *Reply {
+// ${cmd^} calls Redis ${cmd^^} command. 
+func (c *Client) ${cmd^}(args ...interface{}) *Reply {
 	return c.call(Cmd${cmd^}, args...)
 }" >>$filename
 done
 
 # async command calls
 for cmd in ${cmds[@]}; do
-	keyword="${cmd^}"
     echo "
-// Async$keyword calls Redis ${cmd^^} asynchronously. 
-func (c *Client) Async$keyword(args ...interface{}) Future {
+// Async${cmd^} calls Redis ${cmd^^} asynchronously. 
+func (c *Client) Async${cmd^}(args ...interface{}) Future {
 	return c.asyncCall(Cmd${cmd^}, args...)
 }" >>$filename
 done
 
 # multi command calls
 for cmd in ${cmds[@]}; do
-	keyword="${cmd^}"
     echo "
-// $keyword queues a Redis ${cmd^^} command for later execution. 
-func (mc *MultiCall) $keyword(args ...interface{}) {
+// ${cmd^} queues a Redis ${cmd^^} command for later execution. 
+func (mc *MultiCall) ${cmd^}(args ...interface{}) {
 	mc.call(Cmd${cmd^}, args...)
 }" >>$filename
 done
