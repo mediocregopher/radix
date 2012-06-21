@@ -14,7 +14,7 @@ import (
 
 var connections *int = flag.Int("c", 50, "number of connections")
 var requests *int = flag.Int("n", 10000, "number of request")
-var dsize *int = flag.Int("d", 2, "data size")
+var dsize *int = flag.Int("d", 3, "data size")
 var cpuprof *string = flag.String("cpuprof", "", "filename for cpuprof")
 var gomaxprocs *int = flag.Int("p", 8, "GOMAXPROCS value")
 
