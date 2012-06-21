@@ -15,6 +15,24 @@ To run the tests:
     go test -v -bench=".*"
 
 
+## Status
+
+Radix has been in development for a while already.
+The API should hopefully now be stable enough for development.
+
+Performance is decent, but don't expect C/hiredis level of speed.
+Several optimization attempts have been made, 
+but it seems that there is no easy way to increase performance much further.
+Performance might increase in the future, 
+when standard Go library is optimized.
+
+Here are some comparative results from the `bench` program included:
+
+```
+
+```
+
+
 ## Getting started
 
 Creating a Client instance is done as follows:
