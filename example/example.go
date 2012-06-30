@@ -40,7 +40,7 @@ func main() {
 
 	// It's generally good idea to check for errors like this,
 	// but for the sake of keeping this example short we'll omit these from now on.
-    if rep = c.Set("mykey0", "myval0"); rep.Err != nil {
+	if rep = c.Set("mykey0", "myval0"); rep.Err != nil {
 		fmt.Println("redis:", rep.Err)
 		return
 	}
