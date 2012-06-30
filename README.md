@@ -20,7 +20,7 @@ To run the tests:
 Radix has been in development for a while already.
 The API should hopefully now be stable enough for development.
 
-Performance is decent, but don't expect C/hiredis level of speed.
+Performance is decent, but don't expect Hiredis level of speeds.
 Several optimization attempts have been made, 
 but it seems that there is no easy way to increase performance much further.
 Performance might increase in the future, 
