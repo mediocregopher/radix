@@ -23,31 +23,31 @@ type call struct {
 // It is safe to call reader and writer at the same time from two different goroutines,
 // but it is not safe to call reader or writer at the same time from more than one goroutine.
 
-// connection describes a Redis connection.
-type connection struct {
+// conn describes a Redis connection.
+type conn struct {
 	conn          net.Conn
 	reader        *bufio.Reader
 	closed_       int32 // manipulated with atomic primitives
 	noReadTimeout bool  // toggle disabling of read timeout
-	config        *Configuration
+	config        *Config
 }
 
-func newConnection(config *Configuration) (conn *connection, err *Error) {
-	conn = &connection{
+func newConn(config *Config) (c *conn, err *Error) {
+	c = &conn{
 		closed_: 1, // closed by default
 		config:  config,
 	}
 
-	if err = conn.init(); err != nil {
-		conn.close()
-		conn = nil
+	if err = c.init(); err != nil {
+		c.close()
+		c = nil
 	}
 
 	return
 }
 
-// init is helper function for newConnection
-func (c *connection) init() *Error {
+// init is helper function for newConn
+func (c *conn) init() *Error {
 	var err error
 
 	// Establish a connection.
@@ -119,7 +119,7 @@ func (c *connection) init() *Error {
 }
 
 // call calls a Redis command.
-func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
+func (c *conn) call(cmd Cmd, args ...interface{}) (r *Reply) {
 	if err := c.writeRequest(call{cmd, args}); err != nil {
 		r = &Reply{Err: err}
 	} else {
@@ -130,7 +130,7 @@ func (c *connection) call(cmd Cmd, args ...interface{}) (r *Reply) {
 }
 
 // multiCall calls multiple Redis commands.
-func (c *connection) multiCall(cmds []call) (r *Reply) {
+func (c *conn) multiCall(cmds []call) (r *Reply) {
 	r = new(Reply)
 	if err := c.writeRequest(cmds...); err == nil {
 		r.Type = ReplyMulti
@@ -147,7 +147,7 @@ func (c *connection) multiCall(cmds []call) (r *Reply) {
 }
 
 // subscription handles subscribe, unsubscribe, psubscribe and pubsubscribe calls.
-func (c *connection) subscription(subType subType, data []string) *Error {
+func (c *conn) subscription(subType subType, data []string) *Error {
 	// Prepare command.
 	var cmd Cmd
 
@@ -177,7 +177,7 @@ func (c *connection) subscription(subType subType, data []string) *Error {
 	// subscribe/etc. return their replies as pubsub messages
 }
 
-func (c *connection) close() {
+func (c *conn) close() {
 	atomic.StoreInt32(&c.closed_, 1)
 
 	if c.conn != nil {
@@ -185,7 +185,7 @@ func (c *connection) close() {
 	}
 }
 
-func (c *connection) closed() bool {
+func (c *conn) closed() bool {
 	if atomic.LoadInt32(&c.closed_) == 1 {
 		return true
 	}
@@ -194,7 +194,7 @@ func (c *connection) closed() bool {
 }
 
 // helper for read()
-func (c *connection) readErrHdlr(err error) (r *Reply) {
+func (c *conn) readErrHdlr(err error) (r *Reply) {
 	if err != nil {
 		c.close()
 		err_, ok := err.(net.Error)
@@ -216,7 +216,7 @@ func (c *connection) readErrHdlr(err error) (r *Reply) {
 }
 
 // read reads data from the connection and returns a Reply.
-func (c *connection) read() (r *Reply) {
+func (c *conn) read() (r *Reply) {
 	var err error
 	var b []byte
 	r = new(Reply)
@@ -328,7 +328,7 @@ func (c *connection) read() (r *Reply) {
 	return r
 }
 
-func (c *connection) writeRequest(calls ...call) *Error {
+func (c *conn) writeRequest(calls ...call) *Error {
 	c.setWriteTimeout()
 	if _, err := c.conn.Write(createRequest(calls...)); err != nil {
 		c.close()
@@ -344,13 +344,13 @@ func (c *connection) writeRequest(calls ...call) *Error {
 	return nil
 }
 
-func (c *connection) setReadTimeout() {
+func (c *conn) setReadTimeout() {
 	if c.config.Timeout != 0 {
 		c.conn.SetReadDeadline(time.Now().Add(c.config.Timeout * time.Second))
 	}
 }
 
-func (c *connection) setWriteTimeout() {
+func (c *conn) setWriteTimeout() {
 	if c.config.Timeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.config.Timeout * time.Second))
 	}

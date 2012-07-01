@@ -29,7 +29,7 @@ func handleReplyError(rep *redis.Reply) {
 
 // benchmark benchmarks the given function.
 func benchmark(data string, handle func(string, *redis.Client, chan struct{})) time.Duration {
-	c, err := redis.NewClient(redis.Configuration{
+	c, err := redis.NewClient(redis.Config{
 		Database: 8,
 		PoolCapacity: *connections,
 	})

@@ -13,7 +13,7 @@ func main() {
 	var c *redis.Client
 	var err error
 
-	c, err = redis.NewClient(redis.Configuration{
+	c, err = redis.NewClient(redis.Config{
 		Database: 8,
 		// Timeout in seconds
 		Timeout: 10,

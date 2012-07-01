@@ -13,7 +13,7 @@ func Test(t *testing.T) {
 }
 
 var rd *Client
-var conf Configuration = Configuration{
+var conf Config = Config{
 	Address:      "127.0.0.1:6379",
 	Database:     8,
 	Timeout:      10,

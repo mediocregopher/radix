@@ -2,30 +2,18 @@ package redis
 
 import (
 	"errors"
-	"time"
 )
-
-// Configuration of a database client.
-type Configuration struct {
-	Address        string
-	Path           string
-	Database       int
-	Password       string
-	PoolCapacity   int
-	Timeout        time.Duration
-	NoLoadingRetry bool
-}
 
 //* Client
 
 // Client manages the access to a database.
 type Client struct {
-	config Configuration
+	config Config
 	pool   *connPool
 }
 
 // NewClient creates a new accessor.
-func NewClient(config Configuration) (*Client, error) {
+func NewClient(config Config) (*Client, error) {
 	if err := checkConfig(&config); err != nil {
 		return nil, err
 	}
@@ -141,7 +129,7 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 
 //* Helpers
 
-func checkConfig(c *Configuration) error {
+func checkConfig(c *Config) error {
 	if c.Address != "" && c.Path != "" {
 		return errors.New(errmsg("configuration has both tcp/ip address and unix path"))
 	}

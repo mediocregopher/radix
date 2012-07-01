@@ -12,6 +12,8 @@ const (
 	CmdAuth             Cmd = "AUTH"
 	CmdBgrewriteaof     Cmd = "BGREWRITEAOF"
 	CmdBgsave           Cmd = "BGSAVE"
+	CmdBitcount         Cmd = "BITCOUNT"
+	CmdBitop            Cmd = "BITOP"
 	CmdBlpop            Cmd = "BLPOP"
 	CmdBrpop            Cmd = "BRPOP"
 	CmdBrpoplpush       Cmd = "BRPOPLPUSH"
@@ -86,6 +88,7 @@ const (
 	CmdRandomkey        Cmd = "RANDOMKEY"
 	CmdRename           Cmd = "RENAME"
 	CmdRenamenx         Cmd = "RENAMENX"
+	CmdReplconf         Cmd = "REPLCONF"
 	CmdRestore          Cmd = "RESTORE"
 	CmdRpop             Cmd = "RPOP"
 	CmdRpoplpush        Cmd = "RPOPLPUSH"
@@ -166,6 +169,16 @@ func (c *Client) Bgrewriteaof(args ...interface{}) *Reply {
 // Bgsave calls Redis BGSAVE command. 
 func (c *Client) Bgsave(args ...interface{}) *Reply {
 	return c.call(CmdBgsave, args...)
+}
+
+// Bitcount calls Redis BITCOUNT command. 
+func (c *Client) Bitcount(args ...interface{}) *Reply {
+	return c.call(CmdBitcount, args...)
+}
+
+// Bitop calls Redis BITOP command. 
+func (c *Client) Bitop(args ...interface{}) *Reply {
+	return c.call(CmdBitop, args...)
 }
 
 // Blpop calls Redis BLPOP command. 
@@ -538,6 +551,11 @@ func (c *Client) Renamenx(args ...interface{}) *Reply {
 	return c.call(CmdRenamenx, args...)
 }
 
+// Replconf calls Redis REPLCONF command. 
+func (c *Client) Replconf(args ...interface{}) *Reply {
+	return c.call(CmdReplconf, args...)
+}
+
 // Restore calls Redis RESTORE command. 
 func (c *Client) Restore(args ...interface{}) *Reply {
 	return c.call(CmdRestore, args...)
@@ -836,6 +854,16 @@ func (c *Client) AsyncBgrewriteaof(args ...interface{}) Future {
 // AsyncBgsave calls Redis BGSAVE asynchronously. 
 func (c *Client) AsyncBgsave(args ...interface{}) Future {
 	return c.asyncCall(CmdBgsave, args...)
+}
+
+// AsyncBitcount calls Redis BITCOUNT asynchronously. 
+func (c *Client) AsyncBitcount(args ...interface{}) Future {
+	return c.asyncCall(CmdBitcount, args...)
+}
+
+// AsyncBitop calls Redis BITOP asynchronously. 
+func (c *Client) AsyncBitop(args ...interface{}) Future {
+	return c.asyncCall(CmdBitop, args...)
 }
 
 // AsyncBlpop calls Redis BLPOP asynchronously. 
@@ -1208,6 +1236,11 @@ func (c *Client) AsyncRenamenx(args ...interface{}) Future {
 	return c.asyncCall(CmdRenamenx, args...)
 }
 
+// AsyncReplconf calls Redis REPLCONF asynchronously. 
+func (c *Client) AsyncReplconf(args ...interface{}) Future {
+	return c.asyncCall(CmdReplconf, args...)
+}
+
 // AsyncRestore calls Redis RESTORE asynchronously. 
 func (c *Client) AsyncRestore(args ...interface{}) Future {
 	return c.asyncCall(CmdRestore, args...)
@@ -1506,6 +1539,16 @@ func (mc *MultiCall) Bgrewriteaof(args ...interface{}) {
 // Bgsave queues a Redis BGSAVE command for later execution. 
 func (mc *MultiCall) Bgsave(args ...interface{}) {
 	mc.call(CmdBgsave, args...)
+}
+
+// Bitcount queues a Redis BITCOUNT command for later execution. 
+func (mc *MultiCall) Bitcount(args ...interface{}) {
+	mc.call(CmdBitcount, args...)
+}
+
+// Bitop queues a Redis BITOP command for later execution. 
+func (mc *MultiCall) Bitop(args ...interface{}) {
+	mc.call(CmdBitop, args...)
 }
 
 // Blpop queues a Redis BLPOP command for later execution. 
@@ -1876,6 +1919,11 @@ func (mc *MultiCall) Rename(args ...interface{}) {
 // Renamenx queues a Redis RENAMENX command for later execution. 
 func (mc *MultiCall) Renamenx(args ...interface{}) {
 	mc.call(CmdRenamenx, args...)
+}
+
+// Replconf queues a Redis REPLCONF command for later execution. 
+func (mc *MultiCall) Replconf(args ...interface{}) {
+	mc.call(CmdReplconf, args...)
 }
 
 // Restore queues a Redis RESTORE command for later execution. 

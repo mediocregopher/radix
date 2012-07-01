@@ -11,11 +11,11 @@ type connPool struct {
 	free      list.List
 	lock      sync.Mutex
 	emptyCond *sync.Cond
-	config    *Configuration
+	config    *Config
 	closed    bool
 }
 
-func newConnPool(config *Configuration) *connPool {
+func newConnPool(config *Config) *connPool {
 	cp := &connPool{
 		available: config.PoolCapacity,
 		config:    config,
@@ -26,22 +26,22 @@ func newConnPool(config *Configuration) *connPool {
 	return cp
 }
 
-func (cp *connPool) push(conn *connection) {
+func (cp *connPool) push(c *conn) {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 	if cp.closed {
 		return
 	}
 
-	if !conn.closed() {
-		cp.free.PushFront(conn)
+	if !c.closed() {
+		cp.free.PushFront(c)
 	}
 
 	cp.available++
 	cp.emptyCond.Signal()
 }
 
-func (cp *connPool) pull() (conn *connection, err *Error) {
+func (cp *connPool) pull() (c *conn, err *Error) {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 	if cp.closed {
@@ -53,10 +53,10 @@ func (cp *connPool) pull() (conn *connection, err *Error) {
 	}
 
 	if cp.free.Len() > 0 {
-		conn, _ = cp.free.Remove(cp.free.Back()).(*connection)
+		c, _ = cp.free.Remove(cp.free.Back()).(*conn)
 	} else {
 		// Lazy creation of a connection
-		conn, err = newConnection(cp.config)
+		c, err = newConn(cp.config)
 
 		if err != nil {
 			return nil, err
@@ -64,15 +64,15 @@ func (cp *connPool) pull() (conn *connection, err *Error) {
 	}
 
 	cp.available--
-	return conn, nil
+	return c, nil
 }
 
 func (cp *connPool) close() {
 	cp.lock.Lock()
 	defer cp.lock.Unlock()
 	for e := cp.free.Front(); e != nil; e = e.Next() {
-		conn, _ := e.Value.(*connection)
-		conn.close()
+		c, _ := e.Value.(*conn)
+		c.close()
 	}
 
 	cp.free.Init()
