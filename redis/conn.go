@@ -1,14 +1,14 @@
 package redis
 
 import (
-	"errors"
 	"bufio"
 	"bytes"
+	"errors"
 	"net"
+	"regexp"
 	"strconv"
 	"sync/atomic"
 	"time"
-	"regexp"
 )
 
 //* Misc
@@ -94,7 +94,7 @@ func (c *conn) init() *Error {
 				if _, ok := info["loading_eta_seconds"]; ok {
 					eta, err := strconv.Atoi(info["loading_eta_seconds"])
 					if err == nil {
-						time.Sleep(time.Duration(eta)*time.Second)
+						time.Sleep(time.Duration(eta) * time.Second)
 					}
 				}
 			}
@@ -145,7 +145,7 @@ func (c *conn) multiCall(cmds []call) (r *Reply) {
 	if err := c.writeRequest(cmds...); err == nil {
 		r.Type = ReplyMulti
 		r.Elems = make([]*Reply, len(cmds))
-		for i, _ := range cmds {
+		for i := range cmds {
 			reply := c.read()
 			r.Elems[i] = reply
 		}
@@ -341,7 +341,7 @@ func (c *conn) read() (r *Reply) {
 			case i >= 0:
 				r.Type = ReplyMulti
 				r.Elems = make([]*Reply, i)
-				for i, _ := range r.Elems {
+				for i := range r.Elems {
 					r.Elems[i] = c.read()
 				}
 			default:
