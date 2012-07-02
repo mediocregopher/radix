@@ -20,6 +20,14 @@ To run the tests:
 Radix has been in development for a while already.
 The API should hopefully now be stable enough for development.
 
+Features implemented:
+
+* Support for all commands in Redis 2.4.x, 2.6.x and unstable releases
+* Pubsub support
+* Pipelining support
+* Simple transactions
+* Connection pooling
+
 Performance is decent, but don't expect Hiredis level of speeds.
 Several optimization attempts have been made, 
 but it seems that there is no easy way to increase performance much further.
