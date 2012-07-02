@@ -60,6 +60,20 @@ func (c *Client) AsyncCall(cmd string, args ...interface{}) Future {
 	return c.asyncCall(Cmd(cmd), args...)
 }
 
+// InfoMap calls the INFO command, parses and returns the results as a map[string]string or an error. 
+// Use Info method for fetching the unparsed INFO results.
+func (c *Client) InfoMap() (map[string]string, error) {
+	// Connection handling
+	conn, err := c.pool.pull()
+	if err != nil {
+		return nil, err
+	}
+
+	defer c.pool.push(conn)
+	return conn.infoMap()
+
+}
+
 func (c *Client) multiCall(transaction bool, f func(*MultiCall)) *Reply {
 	// Connection handling
 	conn, err := c.pool.pull()
@@ -131,7 +145,7 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 
 func checkConfig(c *Config) error {
 	if c.Address != "" && c.Path != "" {
-		return errors.New(errmsg("configuration has both tcp/ip address and unix path"))
+		return errors.New("configuration has both tcp/ip address and unix path")
 	}
 
 	//* Some default values

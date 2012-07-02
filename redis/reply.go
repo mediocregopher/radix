@@ -68,10 +68,20 @@ func (r *Reply) Bytes() ([]byte, error) {
 	return []byte(s), nil
 }
 
-// Int64 returns the reply value as a int64 or
-// an error, if the reply type is not ReplyInteger.
+// Int64 returns the reply value as a int64 or an error,
+// if the reply type is not ReplyInteger or the reply type
+// ReplyString could not be parsed to an int64.
 func (r *Reply) Int64() (int64, error) {
 	if r.Type != ReplyInteger {
+		if r.Type == ReplyString {
+			i64, err := strconv.ParseInt(r.str, 10, 64)
+			if err != nil {
+				return 0, errors.New("failed to parse integer value from string value")
+			} else {
+				return i64, nil
+			}
+		}
+
 		return 0, errors.New("integer value is not available for this reply type")
 	}
 

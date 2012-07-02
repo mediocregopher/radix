@@ -1,15 +1,19 @@
 package redis
 
 import (
+	"errors"
 	"bufio"
 	"bytes"
 	"net"
 	"strconv"
 	"sync/atomic"
 	"time"
+	"regexp"
 )
 
 //* Misc
+
+var infoRe *regexp.Regexp = regexp.MustCompile(`(?:(\w+):(\w+))+`)
 
 type call struct {
 	cmd  Cmd
@@ -81,28 +85,39 @@ func (c *conn) init() *Error {
 	c.reader = bufio.NewReader(c.conn)
 
 	// Select database.
-	r := c.call(CmdSelect, c.config.Database)
+	r := c.call(cmdSelect, c.config.Database)
 	if r.Err != nil {
 		if !c.config.NoLoadingRetry && r.Err.Test(ErrorLoading) {
+			// Attempt to read remaining loading time with INFO and sleep that time.
+			info, err := c.infoMap()
+			if err == nil {
+				if _, ok := info["loading_eta_seconds"]; ok {
+					eta, err := strconv.Atoi(info["loading_eta_seconds"])
+					if err == nil {
+						time.Sleep(time.Duration(eta)*time.Second)
+					}
+				}
+			}
+
 			// Keep retrying SELECT until it succeeds or we got some other error.
-			r = c.call(CmdSelect, c.config.Database)
+			r = c.call(cmdSelect, c.config.Database)
 			for r.Err != nil {
 				if !r.Err.Test(ErrorLoading) {
-					goto Selectfail
+					goto SelectFail
 				}
 				time.Sleep(time.Second)
-				r = c.call(CmdSelect, c.config.Database)
+				r = c.call(cmdSelect, c.config.Database)
 			}
 		}
 
-	Selectfail:
+	SelectFail:
 		c.close()
 		return newErrorExt("selecting database failed", r.Err)
 	}
 
 	// Authenticate if needed.
 	if c.config.Password != "" {
-		r = c.call(CmdAuth, c.config.Password)
+		r = c.call(cmdAuth, c.config.Password)
 		if r.Err != nil {
 			c.close()
 			return newErrorExt("authentication failed", r.Err, ErrorAuth)
@@ -141,6 +156,27 @@ func (c *conn) multiCall(cmds []call) (r *Reply) {
 	return r
 }
 
+// infoMap calls the INFO command, parses and returns the results as a map[string]string or an error. 
+func (c *conn) infoMap() (map[string]string, error) {
+	info := make(map[string]string)
+	r := c.call(cmdInfo)
+
+	s, err := r.Str()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, e := range infoRe.FindAllStringSubmatch(s, -1) {
+		if len(e) != 3 {
+			return nil, errors.New("failed to parse INFO results")
+		}
+
+		info[e[1]] = e[2]
+	}
+
+	return info, nil
+}
+
 // subscription handles subscribe, unsubscribe, psubscribe and pubsubscribe calls.
 func (c *conn) subscription(subType subType, data []string) *Error {
 	// Prepare command.
@@ -148,13 +184,13 @@ func (c *conn) subscription(subType subType, data []string) *Error {
 
 	switch subType {
 	case subSubscribe:
-		cmd = CmdSubscribe
+		cmd = cmdSubscribe
 	case subUnsubscribe:
-		cmd = CmdUnsubscribe
+		cmd = cmdUnsubscribe
 	case subPsubscribe:
-		cmd = CmdPsubscribe
+		cmd = cmdPsubscribe
 	case subPunsubscribe:
-		cmd = CmdPunsubscribe
+		cmd = cmdPunsubscribe
 	}
 
 	// Send the subscription request.

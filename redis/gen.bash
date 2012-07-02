@@ -35,7 +35,7 @@ EOF
 
 # commands
 for cmd in ${cmds[@]}; do
-	echo "	Cmd${cmd^} Cmd = \"${cmd^^}\"" >>$filename
+	echo "	cmd${cmd^} Cmd = \"${cmd^^}\"" >>$filename
 done
 echo -e ")
 " >>$filename
@@ -45,7 +45,7 @@ for cmd in ${cmds[@]}; do
     echo "
 // ${cmd^} calls Redis ${cmd^^} command. 
 func (c *Client) ${cmd^}(args ...interface{}) *Reply {
-	return c.call(Cmd${cmd^}, args...)
+	return c.call(cmd${cmd^}, args...)
 }" >>$filename
 done
 
@@ -54,7 +54,7 @@ for cmd in ${cmds[@]}; do
     echo "
 // Async${cmd^} calls Redis ${cmd^^} asynchronously. 
 func (c *Client) Async${cmd^}(args ...interface{}) Future {
-	return c.asyncCall(Cmd${cmd^}, args...)
+	return c.asyncCall(cmd${cmd^}, args...)
 }" >>$filename
 done
 
@@ -63,7 +63,7 @@ for cmd in ${cmds[@]}; do
     echo "
 // ${cmd^} queues a Redis ${cmd^^} command for later execution. 
 func (mc *MultiCall) ${cmd^}(args ...interface{}) {
-	mc.call(Cmd${cmd^}, args...)
+	mc.call(cmd${cmd^}, args...)
 }" >>$filename
 done
 

@@ -203,8 +203,8 @@ func (s *S) TestSets(c *C) {
 	c.Check(vb, Equals, true)
 }
 
-// Test argument formatting.
-func (s *S) TestFormatting(c *C) {
+// Test Reply.
+func (s *S) TestReply(c *C) {
 	// string
 	rd.Set("foo", "bar")
 	vs, _ := rd.Get("foo").Str()
@@ -237,24 +237,38 @@ func (s *S) TestFormatting(c *C) {
 		Equals,
 		"2")
 
+	rd.Set("foo5", 2)
+	vi, _ := rd.Get("foo5").Int()
+	c.Check(
+		vi,
+		Equals,
+		2)
+
+	rd.Set("foo6", "2")
+	vi, _ = rd.Get("foo6").Int()
+	c.Check(
+		vi,
+		Equals,
+		2)
+
 	// slice
-	rd.Rpush("foo5", []int{1, 2, 3})
-	foo5strings, err := rd.Lrange("foo5", 0, -1).List()
+	rd.Rpush("foo7", []int{1, 2, 3})
+	foo7strings, err := rd.Lrange("foo7", 0, -1).List()
 	c.Assert(err, IsNil)
 	c.Check(
-		foo5strings,
+		foo7strings,
 		DeepEquals,
 		[]string{"1", "2", "3"})
 
 	// map
-	rd.Hset("foo6", "k1", "v1")
-	rd.Hset("foo6", "k2", "v2")
-	rd.Hset("foo6", "k3", "v3")
+	rd.Hset("foo8", "k1", "v1")
+	rd.Hset("foo8", "k2", "v2")
+	rd.Hset("foo8", "k3", "v3")
 
-	foo6map, err := rd.Hgetall("foo6").Hash()
+	foo8map, err := rd.Hgetall("foo8").Hash()
 	c.Assert(err, IsNil)
 	c.Check(
-		foo6map,
+		foo8map,
 		DeepEquals,
 		map[string]string{
 			"k1": "v1",
@@ -518,6 +532,13 @@ func (s *S) TestUnix(c *C) {
 	c.Check(vs, Equals, "Hello, World!")
 }
 
+// Test Client.InfoMap.
+func (s *S) TestInfoMap(c *C) {
+	im, err := rd.InfoMap()
+	c.Assert(err, IsNil)
+	c.Check(im["pubsub_patterns"], Equals, "0")
+}
+
 //* Long tests
 
 // Test aborting complex tranactions.
@@ -593,7 +614,7 @@ func (s *Utils) TestCreateRequest(c *C) {
 func BenchmarkCreateRequest(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		createRequest(call{
-			cmd:  CmdSet,
+			cmd:  cmdSet,
 			args: []interface{}{"foo", "bar"},
 		})
 	}
