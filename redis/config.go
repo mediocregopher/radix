@@ -6,12 +6,21 @@ type Config struct {
 	Address string // eg. "173.194.32.33:6379"
 	Path    string // eg. "/tmp/redis.sock"
 
-	Database int    // Database number. Default: 0
-	Password string // Password for authentication. Leave as "" to not use authentication.
+	// Database number. Default: 0
+	Database int    
+
+	// Password for authentication. Leave as "" to not use authentication.
 	// Default: ""
-	PoolCapacity int  // Connection pool capacity. Default: 50
-	Timeout      int  // Socket timeout in seconds. Default: 0 (no timeouts)
-	RetryLoading bool // Retry on LOADING error? Default: true
+	Password string 
+
+	// Connection pool capacity. Default: 50
+	PoolCapacity int  
+
+	// Socket timeout in seconds. Default: 0 (no timeouts)
+	Timeout      int  
+
+	// Retry on LOADING error? Default: true
+	RetryLoading bool 
 }
 
 // DefaultConfig returns a new Config with default settings.
