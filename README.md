@@ -86,7 +86,7 @@ Creating a Client instance is done as follows:
 	c = redis.NewClient(conf)
 	defer c.Close()
 ```
-s
+
 Below is an example how to call simple blocking commands.
 Commands can be called with the generic Call() method or with any of the shortcut methods (Set(), Get(), ...).
 Executing multiple commands at once (pipelining) can be done with Client.MultiCall or 
