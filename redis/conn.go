@@ -377,12 +377,12 @@ func (c *conn) writeRequest(calls ...call) *Error {
 
 func (c *conn) setReadTimeout() {
 	if c.config.Timeout != 0 {
-		c.conn.SetReadDeadline(time.Now().Add(time.Duration(c.config.Timeout) * time.Second))
+		c.conn.SetReadDeadline(time.Now().Add(c.config.Timeout))
 	}
 }
 
 func (c *conn) setWriteTimeout() {
 	if c.config.Timeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(time.Duration(c.config.Timeout) * time.Second))
+		c.conn.SetWriteDeadline(time.Now().Add(c.config.Timeout))
 	}
 }

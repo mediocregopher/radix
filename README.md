@@ -82,7 +82,6 @@ Creating a Client instance is done as follows:
 
 	conf := redis.DefaultConfig()
 	conf.Database = 8 // Database number 
-	conf.Timeout = 10 // Socket timeout in seconds
 	c = redis.NewClient(conf)
 	defer c.Close()
 ```

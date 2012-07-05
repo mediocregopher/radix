@@ -1,5 +1,7 @@
 package redis
 
+import "time"
+
 // Config is a configuration of a database client.
 type Config struct {
 	// TCP/IP Address and unix path. Unix connections are prioritized if both are set.
@@ -16,8 +18,8 @@ type Config struct {
 	// Connection pool capacity. Default: 50
 	PoolCapacity int  
 
-	// Socket timeout in seconds. Default: 0 (no timeouts)
-	Timeout      int  
+	// Socket timeout. Default: 0 (no timeouts)
+	Timeout time.Duration
 
 	// Retry on LOADING error? Default: true
 	RetryLoading bool 

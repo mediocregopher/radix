@@ -17,7 +17,7 @@ func main() {
 	conf.Address = "127.0.0.1:6379" // TCP/IP address
 	// Alternatively: conf.Path = "/tmp/redis.sock"
 	conf.Database = 8 // Database number 
-	conf.Timeout = 10 // Socket timeout in seconds
+	conf.Timeout = time.Duration(10) * time.Second // Socket timeout in seconds
 	c = redis.NewClient(conf)
 
 	if err != nil {

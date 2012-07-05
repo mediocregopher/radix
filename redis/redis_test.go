@@ -47,7 +47,7 @@ func init() {
 	conf = DefaultConfig()
 	conf.Address = "127.0.0.1:6379"
 	conf.Database = 8
-	conf.Timeout = 10
+	conf.Timeout = time.Duration(10) * time.Second
 
 	Suite(&S{})
 	Suite(&Long{})
