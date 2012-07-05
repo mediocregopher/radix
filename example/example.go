@@ -13,15 +13,12 @@ func main() {
 	var c *redis.Client
 	var err error
 
-	c, err = redis.NewClient(redis.Config{
-		Database: 8,
-		// Timeout in seconds
-		Timeout: 10,
-
-		// Custom TCP/IP address or Unix path.
-		// Path: "/tmp/redis.sock",
-		// Address: "127.0.0.1:6379",
-	})
+	conf := redis.DefaultConfig()
+	conf.Address = "127.0.0.1:6379" // TCP/IP address
+	// Alternatively: conf.Path = "/tmp/redis.sock"
+	conf.Database = 8 // Database number 
+	conf.Timeout = 10 // Socket timeout in seconds
+	c = redis.NewClient(conf)
 
 	if err != nil {
 		fmt.Println("NewClient failed:", err)
@@ -108,10 +105,10 @@ func main() {
 	// Multicall reply is guaranteed to have the same number of sub-replies as calls,
 	// if it succeeds. They can be accessed through Reply.Elems.
 	if rep.Err != nil {
-			fmt.Println(rep.Err)
-			return
+		fmt.Println(rep.Err)
+		return
 	}
-	
+
 	s, err = rep.Elems[1].Str()
 	if err != nil {
 		fmt.Println(err)
@@ -126,10 +123,10 @@ func main() {
 		mc.Get("trankey")
 	})
 	if rep.Err != nil {
-			fmt.Println(rep.Err)
-			return
+		fmt.Println(rep.Err)
+		return
 	}
-	
+
 	s, err = rep.Elems[1].Str()
 	if err != nil {
 		fmt.Println(err)
@@ -150,7 +147,7 @@ func main() {
 			if rep.Err != nil {
 				return
 			}
-	
+
 			s, err := rep.Elems[1].Str()
 			if err == nil {
 				curval, err = strconv.Atoi(s)

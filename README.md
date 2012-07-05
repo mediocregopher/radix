@@ -80,40 +80,13 @@ Creating a Client instance is done as follows:
 
 	...
 
-	c, err := redis.NewClient(redis.Config{
-		Database: 0, // (default: 0)
-		// Timeout in seconds
-		Timeout: 10, // (default: 0 (no timeout))
-
-		// Custom TCP/IP address or Unix path. (default: Address: "127.0.0.1:6379")
-		Address: "127.0.0.1:6379", 
-		// Path: "/tmp/radix.sock"
-
-		// Password for authenticating (default: "")
-		Password: "my_password", 
-		// Capacity of the connection pool (default: 50)
-		PoolCapacity: 50, 
-		// Don't try to retry on LOADING error? (default: false)
-		NoLoadingRetry: false, 
-	})
-
-	if err != nil {
-		fmt.Printf("NewClient failed: %s\n", err)
-	}
-
+	conf := redis.DefaultConfig()
+	conf.Database = 8 // Database number 
+	conf.Timeout = 10 // Socket timeout in seconds
+	c = redis.NewClient(conf)
 	defer c.Close()
 ```
-
-As Redis is mostly a single threaded database, increasing the PoolCapacity parameter does not usually make
-much difference unless the latency to your server is very high. 
-The default is set to 50 connections which should be fine for most cases.
-However, note that Subscription instances create their own connections outside the connection pool,
-so try to reuse them.
-
-Sometimes Redis may give a LOADING error when it is loading keys from the disk.
-The default behaviour of Radix is to retry connecting until Redis is done with it, 
-but you may wish to override this behaviour with the NoLoadingRetry parameter.
-
+s
 Below is an example how to call simple blocking commands.
 Commands can be called with the generic Call() method or with any of the shortcut methods (Set(), Get(), ...).
 Executing multiple commands at once (pipelining) can be done with Client.MultiCall or 

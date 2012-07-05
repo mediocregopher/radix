@@ -32,9 +32,9 @@ const (
 
 // Reply holds a Redis reply.
 type Reply struct {
-	Type  ReplyType
-	Elems []*Reply // Sub-replies
-	Err   *Error
+	Type  ReplyType // Reply type
+	Elems []*Reply  // Sub-replies
+	Err   *Error    // Reply error
 	str   string
 	int   int64
 }

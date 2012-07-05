@@ -29,15 +29,10 @@ func handleReplyError(rep *redis.Reply) {
 
 // benchmark benchmarks the given function.
 func benchmark(data string, handle func(string, *redis.Client, chan struct{})) time.Duration {
-	c, err := redis.NewClient(redis.Config{
-		Database: 8,
-		PoolCapacity: *connections,
-	})
-
-	if err != nil {
-		log.Fatalf("NewClient failed: %s\n", err)
-	}
-
+	conf := redis.DefaultConfig()
+	conf.Database = 8
+	conf.PoolCapacity = *connections
+	c := redis.NewClient(conf)
 	defer c.Close()
 
 	rep := c.Flushdb()
@@ -96,7 +91,6 @@ func main() {
 		*requests,
 		*dsize,
 		*gomaxprocs)
-
 
 	args := flag.Args()
 	if len(args) == 0 {

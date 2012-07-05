@@ -1,9 +1,5 @@
 package redis
 
-import (
-	"errors"
-)
-
 //* Client
 
 // Client manages the access to a database.
@@ -12,16 +8,12 @@ type Client struct {
 	pool   *connPool
 }
 
-// NewClient creates a new accessor.
-func NewClient(config Config) (*Client, error) {
-	if err := checkConfig(&config); err != nil {
-		return nil, err
-	}
-
+// NewClient creates a new Client.
+func NewClient(config Config) *Client {
 	c := new(Client)
 	c.config = config
 	c.pool = newConnPool(&c.config)
-	return c, nil
+	return c
 }
 
 // Close closes all connections of the client.
@@ -139,25 +131,4 @@ func (c *Client) Subscription(msgHdlr func(msg *Message)) (*Subscription, *Error
 	}
 
 	return sub, nil
-}
-
-//* Helpers
-
-func checkConfig(c *Config) error {
-	if c.Address != "" && c.Path != "" {
-		return errors.New("configuration has both tcp/ip address and unix path")
-	}
-
-	//* Some default values
-	if c.Address == "" && c.Path == "" {
-		c.Address = "127.0.0.1:6379"
-	}
-	if c.Database <= 0 {
-		c.Database = 0
-	}
-	if c.PoolCapacity <= 0 {
-		c.PoolCapacity = 50
-	}
-
-	return nil
 }

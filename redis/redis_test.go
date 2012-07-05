@@ -13,25 +13,14 @@ func Test(t *testing.T) {
 }
 
 var rd *Client
-var conf Config = Config{
-	Address:      "127.0.0.1:6379",
-	Database:     8,
-	Timeout:      10,
-	PoolCapacity: 50,
-}
+var conf Config
 
 type TI interface {
 	Fatalf(string, ...interface{})
 }
 
 func setUpTest(c TI) {
-	var err error
-
-	rd, err = NewClient(conf)
-	if err != nil {
-		c.Fatalf("setUp NewClient failed: %s", err)
-	}
-
+	rd = NewClient(conf)
 	r := rd.Flushall()
 	if r.Err != nil {
 		c.Fatalf("setUp FLUSHALL failed: %s", r.Err)
@@ -55,6 +44,11 @@ type Utils struct{}
 var long = flag.Bool("long", false, "Include long running tests")
 
 func init() {
+	conf = DefaultConfig()
+	conf.Address = "127.0.0.1:6379"
+	conf.Database = 8
+	conf.Timeout = 10
+
 	Suite(&S{})
 	Suite(&Long{})
 	Suite(&Utils{})
@@ -508,11 +502,7 @@ func (s *S) TestError(c *C) {
 
 // Test tcp/ip connections.
 func (s *S) TestTCP(c *C) {
-	conf2 := conf
-	conf2.Address = "127.0.0.1:6379"
-	conf2.Path = ""
-	rdA, errA := NewClient(conf2)
-	c.Assert(errA, IsNil)
+	rdA := NewClient(conf)
 	rep := rdA.Echo("Hello, World!")
 	c.Assert(rep.Err, IsNil)
 	vs, _ := rep.Str()
@@ -521,11 +511,10 @@ func (s *S) TestTCP(c *C) {
 
 // Test unix connections.
 func (s *S) TestUnix(c *C) {
-	conf2 := conf
+	conf2 := DefaultConfig()
 	conf2.Address = ""
 	conf2.Path = "/tmp/redis.sock"
-	rdA, errA := NewClient(conf2)
-	c.Assert(errA, IsNil)
+	rdA := NewClient(conf2)
 	rep := rdA.Echo("Hello, World!")
 	vs, err := rep.Str()
 	c.Assert(err, IsNil)
@@ -555,8 +544,8 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 		rmc := mc.Flush()
 		c.Assert(rmc.Type, Equals, ReplyMulti)
 		c.Check(rmc.Elems[0].Err, IsNil)
-		c.Check(rmc.Elems[1], IsNil)
-		c.Check(rmc.Elems[2], IsNil)
+		c.Check(rmc.Elems[1].Err, IsNil)
+		c.Check(rmc.Elems[2].Err, IsNil)
 
 		time.Sleep(time.Second * 2)
 		mc.Set("foo", 2)
@@ -570,8 +559,7 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 func (s *Long) TestIllegalDatabase(c *C) {
 	conf2 := conf
 	conf2.Database = 4711
-	rdA, errA := NewClient(conf2)
-	c.Assert(errA, IsNil)
+	rdA := NewClient(conf2)
 	rA := rdA.Ping()
 	c.Check(rA.Err, NotNil)
 }

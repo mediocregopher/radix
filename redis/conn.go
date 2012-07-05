@@ -50,7 +50,7 @@ func (c *conn) init() *Error {
 	var err error
 
 	// Establish a connection.
-	if c.config.Address != "" {
+	if c.config.Path == "" {
 		// tcp connection
 		var addr *net.TCPAddr
 
@@ -87,7 +87,7 @@ func (c *conn) init() *Error {
 	// Select database.
 	r := c.call(cmdSelect, c.config.Database)
 	if r.Err != nil {
-		if !c.config.NoLoadingRetry && r.Err.Test(ErrorLoading) {
+		if c.config.RetryLoading && r.Err.Test(ErrorLoading) {
 			// Attempt to read remaining loading time with INFO and sleep that time.
 			info, err := c.infoMap()
 			if err == nil {
@@ -377,12 +377,12 @@ func (c *conn) writeRequest(calls ...call) *Error {
 
 func (c *conn) setReadTimeout() {
 	if c.config.Timeout != 0 {
-		c.conn.SetReadDeadline(time.Now().Add(c.config.Timeout * time.Second))
+		c.conn.SetReadDeadline(time.Now().Add(time.Duration(c.config.Timeout) * time.Second))
 	}
 }
 
 func (c *conn) setWriteTimeout() {
 	if c.config.Timeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.config.Timeout * time.Second))
+		c.conn.SetWriteDeadline(time.Now().Add(time.Duration(c.config.Timeout) * time.Second))
 	}
 }
