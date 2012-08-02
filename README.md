@@ -1,4 +1,4 @@
-Radix
+raRadix
 =====
 
 Radix is an asynchronous Redis client for Go.
@@ -6,12 +6,12 @@ Radix is an asynchronous Redis client for Go.
 
 ## Installation
 
-    go get github.com/fzzbt/radix/redis
+    go get github.com/fzzbt/redis/redis
 
 To run the tests:
 
     go get -u launchpad.net/gocheck
-    cd $GOROOT/src/pkg/github.com/fzzbt/radix/redis
+    cd $GOROOT/src/pkg/github.com/fzzbt/redis/redis
     go test -v -bench=".*"
 
 
@@ -38,14 +38,14 @@ Below are some comparative results from the `bench` program included.
 Tests were run on a 4-core Intel Core Q6600 processor.
 
 ```
-[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/radix/bench]$ ./bench -p 4 -n 1000000 set
+[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/redis/bench]$ ./bench -p 4 -n 1000000 set
 Connections: 50, Requests: 1000000, Payload: 3 bytes, GOMAXPROCS: 4
 
 ===== SET =====
 Requests per second:  51800.72530339555
 Duration:  19.304749s
 
-[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/radix/bench]$ ./bench -p 1 -n 1000000 set
+[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/redis/bench]$ ./bench -p 1 -n 1000000 set
 Connections: 50, Requests: 1000000, Payload: 3 bytes, GOMAXPROCS: 1
 
 ===== SET =====
@@ -53,7 +53,7 @@ Requests per second:  28699.872802163743
 Duration:  34.84336s
 
 
-[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/radix/bench]$ redis-benchmark -t set -n 1000000
+[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/redis/bench]$ redis-benchmark -t set -n 1000000
 ====== SET ======
   1000000 requests completed in 17.21 seconds
   50 parallel clients
@@ -138,13 +138,13 @@ take a look at the example program in `example/example.go`.
 
 ## API reference
 
-API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/radix/redis.
+API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzbt/redis/redis.
 
 Alternatively, run godoc for API reference:
 
 	godoc -http=:8080
 
-and point your browser to http://localhost:8080/pkg/github.com/fzzbt/radix/redis.
+and point your browser to http://localhost:8080/pkg/github.com/fzzbt/redis/redis.
 
 
 ## HACKING
