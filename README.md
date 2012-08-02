@@ -1,4 +1,4 @@
-raRadix
+Radix
 =====
 
 Radix is an asynchronous Redis client for Go.
