@@ -76,7 +76,7 @@ Note that increasing GOMAXPROCS may significantly increase performance on a mult
 Creating a Client instance is done as follows:
 
 ```go
-	import "github.com/fzzbt/radix/redis"
+	import "github.com/fzzbt/redis/redis"
 
 	...
 

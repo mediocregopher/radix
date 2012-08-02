@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/fzzbt/radix/redis"
+	"github.com/fzzbt/redis/redis"
 )
 
 var key string = "foo:rand:000000000000"

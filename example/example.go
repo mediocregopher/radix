@@ -1,10 +1,10 @@
-// radix example program.
+// example program
 
 package main
 
 import (
 	"fmt"
-	"github.com/fzzbt/radix/redis"
+	"github.com/fzzbt/redis/redis"
 	"strconv"
 	"time"
 )

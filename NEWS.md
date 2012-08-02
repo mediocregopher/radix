@@ -11,6 +11,13 @@
 
 * * *
 
+### 2012-08-02 Release v0.3.0
+
++ Repository renamed to redis, so it can be found in github search.
++ Major parts rewritten, mostly in connection. About 2x performance boosts.
++ Fixed a map parameter parsing error.
++ Various other fixes.
+
 ### 2012-05-25 Release v0.2.1
 
 + Fixed a race condition in connection pool that caused panic when GOMAXPROCS>1.
