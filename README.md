@@ -1,7 +1,7 @@
 Radix
 =====
 
-Radix is an asynchronous Redis client for Go.
+Radix is a Redis client for Go.
 
 
 ## Installation
