@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/fzzbt/redis/redis"
+	"github.com/fzzbt/radix/redis"
 	"log"
 	"os"
 	"runtime"
