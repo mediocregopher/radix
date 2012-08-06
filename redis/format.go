@@ -102,6 +102,8 @@ func createRequest(calls ...call) []byte {
 			switch arg.(type) {
 			case []byte:
 				argsLen++
+			case nil: 
+				argsLen++
 			default:
 				// Fallback to reflect-based.
 				kind := reflect.TypeOf(arg).Kind()

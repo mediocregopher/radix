@@ -104,7 +104,7 @@ func (s *S) TestSimpleValue(c *C) {
 	vb, _ = rd.Getbit("simple:bit", 1).Bool()
 	c.Check(vb, Equals, true)
 
-	c.Check(rd.Get("non:existing:key").Nil(), Equals, true)
+	c.Check(rd.Get("non:existing:key").Type, Equals, ReplyNil)
 	vb, _ = rd.Exists("non:existing:key").Bool()
 	c.Check(vb, Equals, false)
 	vb, _ = rd.Setnx("simple:nx", "Test").Bool()
@@ -140,10 +140,10 @@ func (s *S) TestList(c *C) {
 	rd.Rpush("list:a", "seven")
 	rd.Rpush("list:a", "eight")
 	rd.Rpush("list:a", "nine")
-	lranges, err := rd.Lrange("list:a", 0, -1).List()
+	la, err := rd.Lrange("list:a", 0, -1).List()
 	c.Assert(err, IsNil)
 	c.Check(
-		lranges,
+		la,
 		DeepEquals,
 		[]string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"})
 	vs, _ := rd.Lpop("list:a").Str()
@@ -165,7 +165,7 @@ func (s *S) TestList(c *C) {
 	c.Check(vi, Equals, 4)
 
 	rd.Rpoplpush("list:a", "list:b")
-	c.Check(rd.Lindex("list:b", 4711).Nil(), Equals, true)
+	c.Check(rd.Lindex("list:b", 4711).Type, Equals, ReplyNil)
 	vs, _ = rd.Lindex("list:b", 0).Str()
 	c.Check(vs, Equals, "five")
 
@@ -177,9 +177,20 @@ func (s *S) TestList(c *C) {
 	vs, _ = rd.Lpop("list:c").Str()
 	c.Check(vs, Equals, "1")
 
-	lrangenil, err := rd.Lrange("non-existent-list", 0, -1).List()
+	lnil, err := rd.Lrange("non-existent-list", 0, -1).List()
 	c.Assert(err, IsNil)
-	c.Check(lrangenil, DeepEquals, []string{})
+	c.Check(lnil, DeepEquals, []string{})
+
+	// nil elements
+	rd.Rpush("list:d", "one")
+	rd.Rpush("list:d", nil)
+	rd.Rpush("list:d", "three")
+	ld, err := rd.Lrange("list:d", 0, -1).List()
+	c.Assert(err, IsNil)
+	c.Check(
+		ld,
+		DeepEquals,
+		[]string{"one", "", "three"})
 }
 
 // Test set calls.
@@ -245,7 +256,7 @@ func (s *S) TestReply(c *C) {
 		Equals,
 		2)
 
-	// slice
+	// list
 	rd.Rpush("foo7", []int{1, 2, 3})
 	foo7strings, err := rd.Lrange("foo7", 0, -1).List()
 	c.Assert(err, IsNil)
@@ -254,9 +265,9 @@ func (s *S) TestReply(c *C) {
 		DeepEquals,
 		[]string{"1", "2", "3"})
 
-	// map
+	// hash
 	rd.Hset("foo8", "k1", "v1")
-	rd.Hset("foo8", "k2", "v2")
+	rd.Hset("foo8", "k2", nil)
 	rd.Hset("foo8", "k3", "v3")
 
 	foo8map, err := rd.Hgetall("foo8").Hash()
@@ -266,7 +277,7 @@ func (s *S) TestReply(c *C) {
 		DeepEquals,
 		map[string]string{
 			"k1": "v1",
-			"k2": "v2",
+			"k2": "",
 			"k3": "v3",
 		})
 }
@@ -552,7 +563,7 @@ func (s *Long) TestAbortingComplexTransaction(c *C) {
 		mc.Exec()
 	})
 	c.Assert(r.Type, Equals, ReplyMulti)
-	c.Check(r.Elems[1].Nil(), Equals, true)
+	c.Check(r.Elems[1].Type, Equals, ReplyNil)
 }
 
 // Test illegal database.
