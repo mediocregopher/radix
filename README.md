@@ -26,6 +26,7 @@ Features implemented:
 * Pubsub support
 * Pipelining support
 * Simple transactions
+* Asynchronous calls
 * Connection pooling
 
 Performance is decent, but don't expect Hiredis level of speeds.
