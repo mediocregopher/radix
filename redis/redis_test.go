@@ -127,6 +127,10 @@ func (s *S) TestMultiple(c *C) {
 		DeepEquals,
 		[]string{"a", "b", "c"},
 	)
+
+	// non-existend key
+	_, err = rd.Mget("multiple:a", "multiple:b", "multiple:c", "non:existent:key").List()
+	c.Assert(err, NotNil)
 }
 
 // Test list calls.
