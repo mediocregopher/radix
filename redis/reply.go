@@ -114,7 +114,8 @@ func (r *Reply) Bool() (bool, error) {
 }
 
 // List returns a multi-bulk reply as a slice of strings or an error.
-// The reply type must be ReplyMulti and its elements' types must all be ReplyString.
+// The reply type must be ReplyMulti and its elements' types must all be either ReplyString or ReplyNil.
+// Nil elements are returned as empty strings.
 // Useful for list commands.
 func (r *Reply) List() ([]string, error) {
 	if r.Type != ReplyMulti {
@@ -123,11 +124,13 @@ func (r *Reply) List() ([]string, error) {
 
 	strings := make([]string, len(r.Elems))
 	for i, v := range r.Elems {
-		if v.Type != ReplyString {
-			return nil, errors.New("element type is not ReplyString")
+		if v.Type == ReplyString {
+			strings[i] = v.str
+		} else if v.Type == ReplyNil {
+			strings[i] = ""
+		} else {
+			return nil, errors.New("sub-reply type is not ReplyString or ReplyNil")
 		}
-
-		strings[i] = v.str
 	}
 
 	return strings, nil
@@ -137,7 +140,8 @@ func (r *Reply) List() ([]string, error) {
 // The reply type must be ReplyMulti, 
 // it must have an even number of elements,
 // they must be in a "key value key value..." order and
-// values' types must all be ReplyString.
+// values must all be either ReplyString or ReplyNil.
+// Nil values are returned as empty strings.
 // Useful for hash commands.
 func (r *Reply) Hash() (map[string]string, error) {
 	rmap := map[string]string{}
@@ -151,14 +155,20 @@ func (r *Reply) Hash() (map[string]string, error) {
 	}
 
 	for i := 0; i < len(r.Elems)/2; i++ {
+		var val string
+
 		key, err := r.Elems[i*2].Str()
 		if err != nil {
 			return nil, errors.New("key element has no string reply")
 		}
 
-		val, err := r.Elems[i*2+1].Str()
-		if err != nil {
-			return nil, errors.New("value element has no string reply")
+		v := r.Elems[i*2+1]
+		if v.Type == ReplyString {
+			val = v.str
+		} else if v.Type == ReplyNil { 
+			// val = "" (implicit)
+		} else {
+			return nil, errors.New("value sub-reply type is not ReplyString or ReplyNil")
 		}
 
 		rmap[key] = val

@@ -15,6 +15,8 @@
 
 + Fixed a bug in parameter formatting that caused crashing when nil parameter was given.
 + Removed Reply.Nil(), it is redundant. Do a `Reply.Type == ReplyNil` comparison instead.
++ Reply.List() returns now nil elements as empty strings instead of giving an error.
++ Reply.Hash() returns now nil values as empty strings instead of giving an error.
 
 ### 2012-08-02 Release v0.3.0
 
