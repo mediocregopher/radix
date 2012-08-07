@@ -129,7 +129,7 @@ func (r *Reply) List() ([]string, error) {
 		} else if v.Type == ReplyNil {
 			strings[i] = ""
 		} else {
-			return nil, errors.New("sub-reply type is not ReplyString or ReplyNil")
+			return nil, errors.New("element type is not ReplyString or ReplyNil")
 		}
 	}
 
@@ -168,7 +168,7 @@ func (r *Reply) Hash() (map[string]string, error) {
 		} else if v.Type == ReplyNil { 
 			// val = "" (implicit)
 		} else {
-			return nil, errors.New("value sub-reply type is not ReplyString or ReplyNil")
+			return nil, errors.New("value element type is not ReplyString or ReplyNil")
 		}
 
 		rmap[key] = val
