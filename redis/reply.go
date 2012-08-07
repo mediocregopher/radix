@@ -165,13 +165,11 @@ func (r *Reply) Hash() (map[string]string, error) {
 		v := r.Elems[i*2+1]
 		if v.Type == ReplyString {
 			val = v.str
-		} else if v.Type == ReplyNil { 
-			// val = "" (implicit)
+			rmap[key] = val
+		} else if v.Type == ReplyNil {
 		} else {
 			return nil, errors.New("value element type is not ReplyString or ReplyNil")
 		}
-
-		rmap[key] = val
 	}
 
 	return rmap, nil
