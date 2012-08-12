@@ -13,3 +13,4 @@ Please keep the list sorted.
 
 * Juhani Ahman <juhanipm@gmail.com>
 * Bobby Powers <bobbypowers@gmail.com>
+* Russ Ross <russ@russross.com>
