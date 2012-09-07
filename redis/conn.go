@@ -84,6 +84,15 @@ func (c *conn) init() *Error {
 
 	c.reader = bufio.NewReader(c.conn)
 
+	// Authenticate if needed.
+	if c.config.Password != "" {
+		r := c.call(cmdAuth, c.config.Password)
+		if r.Err != nil {
+			c.close()
+			return newErrorExt("authentication failed", r.Err, ErrorAuth)
+		}
+	}
+
 	// Select database.
 	r := c.call(cmdSelect, c.config.Database)
 	if r.Err != nil {
@@ -113,15 +122,6 @@ func (c *conn) init() *Error {
 	SelectFail:
 		c.close()
 		return newErrorExt("selecting database failed", r.Err)
-	}
-
-	// Authenticate if needed.
-	if c.config.Password != "" {
-		r = c.call(cmdAuth, c.config.Password)
-		if r.Err != nil {
-			c.close()
-			return newErrorExt("authentication failed", r.Err, ErrorAuth)
-		}
 	}
 
 	c.closed_ = 0
