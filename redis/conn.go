@@ -208,6 +208,8 @@ func (c *conn) subscription(subType subType, data []string) *Error {
 	// subscribe/etc. return their replies as pubsub messages
 }
 
+// close closes the connection.
+// It is safe to call close() multiple times.
 func (c *conn) close() {
 	atomic.StoreInt32(&c.closed_, 1)
 
@@ -216,6 +218,7 @@ func (c *conn) close() {
 	}
 }
 
+// closed returns true, if connection is closed, otherwise false.
 func (c *conn) closed() bool {
 	if atomic.LoadInt32(&c.closed_) == 1 {
 		return true
