@@ -11,7 +11,6 @@ import (
 
 func main() {
 	var c *redis.Client
-	var err error
 
 	conf := redis.DefaultConfig()
 	conf.Address = "127.0.0.1:6379" // TCP/IP address
@@ -19,10 +18,6 @@ func main() {
 	conf.Database = 8 // Database number 
 	conf.Timeout = time.Duration(10) * time.Second // Socket timeout
 	c = redis.NewClient(conf)
-
-	if err != nil {
-		fmt.Println("NewClient failed:", err)
-	}
 
 	defer c.Close()
 

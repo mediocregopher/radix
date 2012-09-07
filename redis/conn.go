@@ -131,7 +131,7 @@ func (c *conn) init() *Error {
 // call calls a Redis command.
 func (c *conn) call(cmd Cmd, args ...interface{}) (r *Reply) {
 	if err := c.writeRequest(call{cmd, args}); err != nil {
-		r = &Reply{Err: err}
+		r = &Reply{Type: ReplyError, Err: err}
 	} else {
 		r = c.read()
 	}

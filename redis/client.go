@@ -25,7 +25,7 @@ func (c *Client) call(cmd Cmd, args ...interface{}) *Reply {
 	// Connection handling
 	conn, err := c.pool.pull()
 	if err != nil {
-		return &Reply{Err: err}
+		return &Reply{Type: ReplyError, Err: err}
 	}
 
 	defer c.pool.push(conn)
@@ -71,7 +71,7 @@ func (c *Client) multiCall(transaction bool, f func(*MultiCall)) *Reply {
 	conn, err := c.pool.pull()
 
 	if err != nil {
-		return &Reply{Err: err}
+		return &Reply{Type: ReplyError, Err: err}
 	}
 
 	defer c.pool.push(conn)
