@@ -50,38 +50,11 @@ func (c *conn) init() *Error {
 	var err error
 
 	// Establish a connection.
-	if c.config.Path == "" {
-		// tcp connection
-		var addr *net.TCPAddr
-
-		addr, err = net.ResolveTCPAddr("tcp", c.config.Address)
-		if err != nil {
-			c.close()
-			return newError(err.Error(), ErrorConnection)
-		}
-
-		c.conn, err = net.DialTCP("tcp", nil, addr)
-		if err != nil {
-			c.close()
-			return newError(err.Error(), ErrorConnection)
-		}
-	} else {
-		// unix connection
-		var addr *net.UnixAddr
-
-		addr, err = net.ResolveUnixAddr("unix", c.config.Path)
-		if err != nil {
-			c.close()
-			return newError(err.Error(), ErrorConnection)
-		}
-
-		c.conn, err = net.DialUnix("unix", nil, addr)
-		if err != nil {
-			c.close()
-			return newError(err.Error(), ErrorConnection)
-		}
+	c.conn, err = net.Dial(c.config.Network, c.config.Address)
+	if err != nil {
+		c.close()
+		return newError(err.Error(), ErrorConnection)
 	}
-
 	c.reader = bufio.NewReader(c.conn)
 
 	// Authenticate if needed.

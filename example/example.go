@@ -13,8 +13,18 @@ func main() {
 	var c *redis.Client
 
 	conf := redis.DefaultConfig()
-	conf.Address = "127.0.0.1:6379" // TCP/IP address
-	// Alternatively: conf.Path = "/tmp/redis.sock"
+	// Network and address
+	//
+	// Default are "tcp" and "127.0.0.1:6379" so these are commented out.
+
+	// TCP example:
+	// conf.Network = "tcp"
+	// conf.Address = "127.0.0.1:6379"
+
+	// Unix example: 
+	// conf.Network = "unix"
+	// conf.Address = "/tmp/redis.sock"
+
 	conf.Database = 8 // Database number 
 	conf.Timeout = time.Duration(10) * time.Second // Socket timeout
 	c = redis.NewClient(conf)

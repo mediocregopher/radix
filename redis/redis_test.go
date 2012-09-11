@@ -45,6 +45,7 @@ var long = flag.Bool("long", false, "Include long running tests")
 
 func init() {
 	conf = DefaultConfig()
+	conf.Network = "tcp"
 	conf.Address = "127.0.0.1:6379"
 	conf.Database = 8
 	conf.Timeout = time.Duration(10) * time.Second
@@ -523,8 +524,8 @@ func (s *S) TestTCP(c *C) {
 // Test unix connections.
 func (s *S) TestUnix(c *C) {
 	conf2 := DefaultConfig()
-	conf2.Address = ""
-	conf2.Path = "/tmp/redis.sock"
+	conf2.Network = "unix"
+	conf2.Address = "/tmp/redis.sock"
 	rdA := NewClient(conf2)
 	rep := rdA.Echo("Hello, World!")
 	vs, err := rep.Str()
