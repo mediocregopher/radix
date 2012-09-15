@@ -59,6 +59,7 @@ func (cp *connPool) pull() (c *conn, err *Error) {
 		c, err = newConn(cp.config)
 
 		if err != nil {
+	        cp.emptyCond.Signal()
 			return nil, err
 		}
 	}
