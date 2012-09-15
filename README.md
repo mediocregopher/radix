@@ -135,7 +135,7 @@ Furthermore, there is special handling for slices and maps, eg.
 Other types use reflect-based default string values.
 
 For more examples on how to use multicalls, transactions, subscriptions and more,
-take a look at the example program in `example/example.go`.
+take a look at the example program in `examples/example.go`.
 
 ## API reference
 
