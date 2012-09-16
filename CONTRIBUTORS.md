@@ -14,4 +14,5 @@ because the organization holds the copyright.*
 
 * Juhani Ahman <juhanipm@gmail.com>
 * Bobby Powers <bobbypowers@gmail.com>
+* Guihong Bai  <guihongbai@gmail.com>
 * Russ Ross <russ@russross.com>
