@@ -19,6 +19,8 @@ type Config struct {
 	PoolCapacity int  
 
 	// Socket timeout. Default: 0 (no timeouts)
+	// NOTE: Radix reconnects and retries once on failed write,
+	//       so effective write timeout is twice this value.
 	Timeout time.Duration
 
 	// Retry on LOADING error? Default: true

@@ -338,16 +338,24 @@ func (c *conn) read() (r *Reply) {
 func (c *conn) writeRequest(calls ...call) *Error {
 	c.setWriteTimeout()
 	if _, err := c.conn.Write(createRequest(calls...)); err != nil {
+		// Reconnect and retry once.
 		c.close()
+		err = c.init()
+		if err != nil { goto WriteFail }
+		c.setWriteTimeout()
+		if _, err = c.conn.Write(createRequest(calls...)); err != nil { 
+			c.close()
+			goto WriteFail
+		}
+		return nil
+	WriteFail:
 		err_, ok := err.(net.Error)
 		if ok && err_.Timeout() {
 			return newError("write failed, timeout error: "+err.Error(),
 				ErrorConnection, ErrorTimeout)
 		}
-
 		return newError("write failed: "+err.Error(), ErrorConnection)
 	}
-
 	return nil
 }
 
