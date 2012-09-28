@@ -16,12 +16,10 @@ type connPool struct {
 }
 
 func newConnPool(config *Config) *connPool {
-	cp := &connPool{
-		available: config.PoolCapacity,
-		config:    config,
-		closed:    false,
-	}
-
+	cp := new(connPool)
+	cp.available = config.PoolCapacity
+	cp.config = config
+	cp.closed = false
 	cp.emptyCond = sync.NewCond(&cp.lock)
 	return cp
 }
