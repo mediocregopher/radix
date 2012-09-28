@@ -60,8 +60,8 @@ func benchmark(testname string, command string, params ...interface{}) {
 
 	duration := time.Now().Sub(start)
 	rps := float64(*requests) / duration.Seconds()
-	fmt.Printf("Requests per second: %f\n", rps)
-	fmt.Printf("Duration: %fms\n\n", duration.Seconds()*1000)
+	fmt.Println("Requests per second:", rps)
+	fmt.Printf("Duration: %v\n\n", duration.Seconds())
 }
 
 func testIsSelected(args []string, name string) bool {
@@ -80,7 +80,9 @@ func main() {
 	conf.Database = *database
 	conf.PoolCapacity = *connections
 	// minimum amount of requests
-	if *requests < 1000 { *requests = 1000 }
+	if *requests < 1000 {
+		*requests = 1000
+	}
 	runtime.GOMAXPROCS(*gomaxprocs)
 
 	if *cpuprof != "" {
@@ -96,6 +98,12 @@ func main() {
 
 	for i := 0; i < *dsize; i++ {
 		data += "x"
+	}
+
+	err := flushdb()
+	if err != nil {
+		fmt.Println("FLUSHDB failed:", err)
+		return
 	}
 
 	fmt.Printf(
@@ -126,7 +134,6 @@ func main() {
 		}
 	}
 
-	flushdb()
 	if testIsSelected(args, "ping") {
 		benchmark("PING", "ping")
 	}

@@ -43,33 +43,29 @@ Tests were run on a 4-core Intel Core Q6600 processor.
 Connections: 50, Requests: 1000000, Payload: 3 bytes, GOMAXPROCS: 4
 
 ===== SET =====
-Requests per second:  51800.72530339555
-Duration:  19.304749s
+Requests per second: 50690.11036960492
+Duration: 19.727714
 
 [fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/radix/bench]$ ./bench -p 1 -n 1000000 set
 Connections: 50, Requests: 1000000, Payload: 3 bytes, GOMAXPROCS: 1
 
 ===== SET =====
-Requests per second:  28699.872802163743
-Duration:  34.84336s
-
+Requests per second: 27662.872353327028
+Duration: 36.149536
 
 [fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/radix/bench]$ redis-benchmark -t set -n 1000000
 ====== SET ======
-  1000000 requests completed in 17.21 seconds
+  1000000 requests completed in 11.97 seconds
   50 parallel clients
   3 bytes payload
   keep alive: 1
 
-93.16% <= 1 milliseconds
-99.99% <= 2 milliseconds
-100.00% <= 3 milliseconds
-100.00% <= 4 milliseconds
-100.00% <= 4 milliseconds
-58092.25 requests per second
+100.00% <= 1 milliseconds
+100.00% <= 2 milliseconds
+83521.26 requests per second
 ```
 
-Note that increasing GOMAXPROCS may significantly increase performance on a multi-core processor.
+Notice how increasing GOMAXPROCS may significantly increase performance on a multi-core processor.
 
 
 ## Getting started
