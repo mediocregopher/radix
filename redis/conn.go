@@ -341,9 +341,11 @@ func (c *conn) writeRequest(calls ...call) *Error {
 		// Reconnect and retry once.
 		c.close()
 		err = c.init()
-		if err != nil { goto WriteFail }
+		if err != nil {
+			goto WriteFail
+		}
 		c.setWriteTimeout()
-		if _, err = c.conn.Write(createRequest(calls...)); err != nil { 
+		if _, err = c.conn.Write(createRequest(calls...)); err != nil {
 			c.close()
 			goto WriteFail
 		}

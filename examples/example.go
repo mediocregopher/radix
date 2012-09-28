@@ -25,7 +25,7 @@ func main() {
 	// conf.Network = "unix"
 	// conf.Address = "/tmp/redis.sock"
 
-	conf.Database = 8 // Database number 
+	conf.Database = 8                              // Database number 
 	conf.Timeout = time.Duration(10) * time.Second // Socket timeout
 	c = redis.NewClient(conf)
 

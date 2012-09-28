@@ -9,14 +9,14 @@ type Config struct {
 	Address string // eg. "173.194.32.33:6379"
 
 	// Database number. Default: 0
-	Database int    
+	Database int
 
 	// Password for authentication. Leave as "" to not use authentication.
 	// Default: ""
-	Password string 
+	Password string
 
 	// Connection pool capacity. Default: 50
-	PoolCapacity int  
+	PoolCapacity int
 
 	// Socket timeout. Default: 0 (no timeouts)
 	// NOTE: Radix reconnects and retries once on failed write,
@@ -24,13 +24,13 @@ type Config struct {
 	Timeout time.Duration
 
 	// Retry on LOADING error? Default: true
-	RetryLoading bool 
+	RetryLoading bool
 }
 
 // DefaultConfig returns a new Config with default settings.
 func DefaultConfig() Config {
 	return Config{
-		Network: "tcp",
+		Network:      "tcp",
 		Address:      "127.0.0.1:6379",
 		PoolCapacity: 50,
 		RetryLoading: true,

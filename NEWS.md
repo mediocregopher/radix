@@ -11,6 +11,16 @@
 
 * * *
 
+### 2012-09-28 Release v0.3.2
+
++ Rewrote benchmark tool.
++ Issue #16: On failed request writes, Radix will now reconnect and retry once.
++ Issue #15: Fixed deadlock issue with laggy networks (thanks Guihong Bai).
++ Issue #12: Fixed missing ReplyError types from error replies (thanks Guihong Bai).
++ Issue #11: Fixed broken authentication (thanks Fabio Kung).
++ Issue #9: Error replies' methods now return the reply error instead of some method specific error
+  (thanks Russ Ross).
+
 ### 2012-08-06 Release v0.3.1
 
 + Fixed a bug in parameter formatting that caused crashing when nil parameter was given.
