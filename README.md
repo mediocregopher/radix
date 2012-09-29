@@ -165,4 +165,4 @@ when submitting their first commit. See the CONTRIBUTORS file for details.
 
 *Copyright 2012 The "Radix" Authors*. See file AUTHORS and CONTRIBUTORS.  
 Unless otherwise noted, the source files are distributed under the
-*BSD 2-Clause License* found in the LICENSE file.
+*MIT License* found in the LICENSE file.
