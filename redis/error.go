@@ -13,7 +13,6 @@ const (
 )
 
 type Error struct {
-	Cmd   Cmd // command that caused the error, if any
 	msg   string
 	flags ErrorFlag
 }
@@ -36,10 +35,6 @@ func newErrorExt(msg string, err *Error, flags ...ErrorFlag) *Error {
 
 // Error returns a string representation of the error.
 func (e *Error) Error() string {
-	if e.Cmd != "" {
-		return string(e.Cmd) + ": " + e.msg
-	}
-
 	return e.msg
 }
 

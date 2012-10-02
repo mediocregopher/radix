@@ -11,6 +11,10 @@
 
 * * *
 
+### 2012-10-02 Release v0.3.3
+
++ Removed unused Cmd field from Error.
+
 ### 2012-09-28 Release v0.3.2
 
 + Rewrote benchmark tool.
