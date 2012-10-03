@@ -1,10 +1,11 @@
-*This is the official list of **Radix** authors for copyright purposes.*
+Radix credits
+=============
 
 *Names should be added to this file as:*
 
 	`Organization` or `Name <email address>`
 
-Authors ordered by first contribution.
+Names ordered by first contribution.
 
 * * *
 

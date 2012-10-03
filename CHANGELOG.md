@@ -1,4 +1,5 @@
-###### Notice
+Changelog
+========
 
 *This file documents the changes in **Radix** versions that are listed below.*
 

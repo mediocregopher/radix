@@ -155,12 +155,12 @@ If you make contributions to the project, please follow the guidelines below:
 *  Write terse code without too much newlines or other non-essential whitespace.
 *  Separate code sections with "//* My section"-styled comments.
 
-New developers should add themselves to the list in AUTHORS file,
+New developers should add themselves to the list in CREDITS file,
 when submitting their first commit.
 
 
 ## Copyright and licensing
 
-*Copyright 2012 The "Radix" Authors*. See AUTHORS file.
+*Copyright 2012 Juhani Åhman*.
 Unless otherwise noted, the source files are distributed under the
 *MIT License* found in the LICENSE file.
