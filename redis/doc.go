@@ -1,4 +1,4 @@
-// This package implements an asynchronous Redis client.
+// This package implements a Redis client.
 //
 // Client is a structure for accessing a Redis database. 
 // Client.MultiCall can be used for sending multiple commands in a single request and

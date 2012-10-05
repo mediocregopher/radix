@@ -5,8 +5,10 @@ import "time"
 // Config is a configuration of a database client.
 type Config struct {
 	// Network and address
-	Network string // "tcp" or "unix"
-	Address string // eg. "173.194.32.33:6379"
+	// "tcp" or "unix". Default: "tcp"
+	Network string
+	// eg. "173.194.32.33:6379". Default: "127.0.0.1:6379"
+	Address string 
 
 	// Database number. Default: 0
 	Database int

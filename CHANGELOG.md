@@ -12,6 +12,10 @@ Changelog
 
 * * *
 
+### 2012-10-05 Release v0.3.4
+
++ Removed reconnecting logic as it didn't work as intended.
+
 ### 2012-10-02 Release v0.3.3
 
 + Removed unused Cmd field from Error.
