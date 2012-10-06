@@ -55,7 +55,7 @@ func (c *conn) init() *Error {
 		c.close()
 		return newError(err.Error(), ErrorConnection)
 	}
-	c.reader = bufio.NewReader(c.conn)
+	c.reader = bufio.NewReaderSize(c.conn, 4096)
 
 	// Authenticate if needed.
 	if c.config.Password != "" {
