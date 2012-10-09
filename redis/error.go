@@ -8,7 +8,6 @@ const (
 	ErrorLoading
 	ErrorAuth
 	ErrorParse
-	ErrorInvalid
 	ErrorTimeout
 )
 

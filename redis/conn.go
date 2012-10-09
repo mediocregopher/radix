@@ -323,13 +323,13 @@ func (c *conn) read() (r *Reply) {
 			default:
 				// invalid reply
 				r.Type = ReplyError
-				r.Err = newError("received invalid reply", ErrorInvalid)
+				r.Err = newError("received invalid reply", ErrorParse)
 			}
 		}
 	default:
 		// invalid reply
 		r.Type = ReplyError
-		r.Err = newError("received invalid reply", ErrorInvalid)
+		r.Err = newError("received invalid reply", ErrorParse)
 	}
 
 	return r
