@@ -516,11 +516,6 @@ func (c *Client) Psetex(args ...interface{}) *Reply {
 	return c.call(cmdPsetex, args...)
 }
 
-// Psubscribe calls Redis PSUBSCRIBE command. 
-func (c *Client) Psubscribe(args ...interface{}) *Reply {
-	return c.call(cmdPsubscribe, args...)
-}
-
 // Pttl calls Redis PTTL command. 
 func (c *Client) Pttl(args ...interface{}) *Reply {
 	return c.call(cmdPttl, args...)
@@ -529,11 +524,6 @@ func (c *Client) Pttl(args ...interface{}) *Reply {
 // Publish calls Redis PUBLISH command. 
 func (c *Client) Publish(args ...interface{}) *Reply {
 	return c.call(cmdPublish, args...)
-}
-
-// Punsubscribe calls Redis PUNSUBSCRIBE command. 
-func (c *Client) Punsubscribe(args ...interface{}) *Reply {
-	return c.call(cmdPunsubscribe, args...)
 }
 
 // Randomkey calls Redis RANDOMKEY command. 
@@ -701,11 +691,6 @@ func (c *Client) Strlen(args ...interface{}) *Reply {
 	return c.call(cmdStrlen, args...)
 }
 
-// Subscribe calls Redis SUBSCRIBE command. 
-func (c *Client) Subscribe(args ...interface{}) *Reply {
-	return c.call(cmdSubscribe, args...)
-}
-
 // Sunion calls Redis SUNION command. 
 func (c *Client) Sunion(args ...interface{}) *Reply {
 	return c.call(cmdSunion, args...)
@@ -734,11 +719,6 @@ func (c *Client) Ttl(args ...interface{}) *Reply {
 // Type calls Redis TYPE command. 
 func (c *Client) Type(args ...interface{}) *Reply {
 	return c.call(cmdType, args...)
-}
-
-// Unsubscribe calls Redis UNSUBSCRIBE command. 
-func (c *Client) Unsubscribe(args ...interface{}) *Reply {
-	return c.call(cmdUnsubscribe, args...)
 }
 
 // Unwatch calls Redis UNWATCH command. 
@@ -1201,11 +1181,6 @@ func (c *Client) AsyncPsetex(args ...interface{}) Future {
 	return c.asyncCall(cmdPsetex, args...)
 }
 
-// AsyncPsubscribe calls Redis PSUBSCRIBE asynchronously. 
-func (c *Client) AsyncPsubscribe(args ...interface{}) Future {
-	return c.asyncCall(cmdPsubscribe, args...)
-}
-
 // AsyncPttl calls Redis PTTL asynchronously. 
 func (c *Client) AsyncPttl(args ...interface{}) Future {
 	return c.asyncCall(cmdPttl, args...)
@@ -1214,11 +1189,6 @@ func (c *Client) AsyncPttl(args ...interface{}) Future {
 // AsyncPublish calls Redis PUBLISH asynchronously. 
 func (c *Client) AsyncPublish(args ...interface{}) Future {
 	return c.asyncCall(cmdPublish, args...)
-}
-
-// AsyncPunsubscribe calls Redis PUNSUBSCRIBE asynchronously. 
-func (c *Client) AsyncPunsubscribe(args ...interface{}) Future {
-	return c.asyncCall(cmdPunsubscribe, args...)
 }
 
 // AsyncRandomkey calls Redis RANDOMKEY asynchronously. 
@@ -1386,11 +1356,6 @@ func (c *Client) AsyncStrlen(args ...interface{}) Future {
 	return c.asyncCall(cmdStrlen, args...)
 }
 
-// AsyncSubscribe calls Redis SUBSCRIBE asynchronously. 
-func (c *Client) AsyncSubscribe(args ...interface{}) Future {
-	return c.asyncCall(cmdSubscribe, args...)
-}
-
 // AsyncSunion calls Redis SUNION asynchronously. 
 func (c *Client) AsyncSunion(args ...interface{}) Future {
 	return c.asyncCall(cmdSunion, args...)
@@ -1419,11 +1384,6 @@ func (c *Client) AsyncTtl(args ...interface{}) Future {
 // AsyncType calls Redis TYPE asynchronously. 
 func (c *Client) AsyncType(args ...interface{}) Future {
 	return c.asyncCall(cmdType, args...)
-}
-
-// AsyncUnsubscribe calls Redis UNSUBSCRIBE asynchronously. 
-func (c *Client) AsyncUnsubscribe(args ...interface{}) Future {
-	return c.asyncCall(cmdUnsubscribe, args...)
 }
 
 // AsyncUnwatch calls Redis UNWATCH asynchronously. 
@@ -1886,11 +1846,6 @@ func (mc *MultiCall) Psetex(args ...interface{}) {
 	mc.call(cmdPsetex, args...)
 }
 
-// Psubscribe queues a Redis PSUBSCRIBE command for later execution. 
-func (mc *MultiCall) Psubscribe(args ...interface{}) {
-	mc.call(cmdPsubscribe, args...)
-}
-
 // Pttl queues a Redis PTTL command for later execution. 
 func (mc *MultiCall) Pttl(args ...interface{}) {
 	mc.call(cmdPttl, args...)
@@ -1899,11 +1854,6 @@ func (mc *MultiCall) Pttl(args ...interface{}) {
 // Publish queues a Redis PUBLISH command for later execution. 
 func (mc *MultiCall) Publish(args ...interface{}) {
 	mc.call(cmdPublish, args...)
-}
-
-// Punsubscribe queues a Redis PUNSUBSCRIBE command for later execution. 
-func (mc *MultiCall) Punsubscribe(args ...interface{}) {
-	mc.call(cmdPunsubscribe, args...)
 }
 
 // Randomkey queues a Redis RANDOMKEY command for later execution. 
@@ -2071,11 +2021,6 @@ func (mc *MultiCall) Strlen(args ...interface{}) {
 	mc.call(cmdStrlen, args...)
 }
 
-// Subscribe queues a Redis SUBSCRIBE command for later execution. 
-func (mc *MultiCall) Subscribe(args ...interface{}) {
-	mc.call(cmdSubscribe, args...)
-}
-
 // Sunion queues a Redis SUNION command for later execution. 
 func (mc *MultiCall) Sunion(args ...interface{}) {
 	mc.call(cmdSunion, args...)
@@ -2104,11 +2049,6 @@ func (mc *MultiCall) Ttl(args ...interface{}) {
 // Type queues a Redis TYPE command for later execution. 
 func (mc *MultiCall) Type(args ...interface{}) {
 	mc.call(cmdType, args...)
-}
-
-// Unsubscribe queues a Redis UNSUBSCRIBE command for later execution. 
-func (mc *MultiCall) Unsubscribe(args ...interface{}) {
-	mc.call(cmdUnsubscribe, args...)
 }
 
 // Unwatch queues a Redis UNWATCH command for later execution. 

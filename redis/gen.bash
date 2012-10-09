@@ -17,7 +17,7 @@ if [ ! -e "$redis_h" ]; then
 fi
 
 cmds=`cat $redis_h | egrep '^void ([a-z])*Command\(' | sed 's/void \([a-z]*\)Command.*/\1/'`
-# for some reason, some commands arent in redis.h
+# SMEMBERS is missing from redis.h
 cmds=("${cmds[@]}" "smembers")
 # sort
 cmds=($(printf "%s\n" "${cmds[@]}"|sort))
@@ -39,6 +39,10 @@ for cmd in ${cmds[@]}; do
 done
 echo -e ")
 " >>$filename
+
+# remove *SUBSCRIBE commands from calls
+declare -a cmds=(${cmds[@]})
+declare -a cmds=(${cmds[@]/*subscribe/})
 
 # command calls
 for cmd in ${cmds[@]}; do
@@ -67,4 +71,4 @@ func (mc *MultiCall) ${cmd^}(args ...interface{}) {
 }" >>$filename
 done
 
-gofmt -tabs=true -tabwidth=4 -w $filename
+gofmt -w $filename
