@@ -8,7 +8,7 @@ type Config struct {
 	// "tcp" or "unix". Default: "tcp"
 	Network string
 	// eg. "173.194.32.33:6379". Default: "127.0.0.1:6379"
-	Address string 
+	Address string
 
 	// Database number. Default: 0
 	Database int

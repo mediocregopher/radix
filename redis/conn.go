@@ -36,12 +36,10 @@ func newConn(config *Config) (c *conn, err *Error) {
 		closed_: 1, // closed by default
 		config:  config,
 	}
-
 	if err = c.init(); err != nil {
 		c.close()
 		c = nil
 	}
-
 	return
 }
 
@@ -104,12 +102,9 @@ func (c *conn) init() *Error {
 // call calls a Redis command.
 func (c *conn) call(cmd Cmd, args ...interface{}) (r *Reply) {
 	if err := c.writeRequest(call{cmd, args}); err != nil {
-		r = &Reply{Type: ReplyError, Err: err}
-	} else {
-		r = c.read()
+		return &Reply{Type: ReplyError, Err: err}
 	}
-
-	return r
+	return c.read()
 }
 
 // multiCall calls multiple Redis commands.
@@ -125,7 +120,6 @@ func (c *conn) multiCall(cmds []call) (r *Reply) {
 	} else {
 		r.Err = newError(err.Error())
 	}
-
 	return r
 }
 
@@ -133,12 +127,10 @@ func (c *conn) multiCall(cmds []call) (r *Reply) {
 func (c *conn) infoMap() (map[string]string, error) {
 	info := make(map[string]string)
 	r := c.call(cmdInfo)
-
 	s, err := r.Str()
 	if err != nil {
 		return nil, err
 	}
-
 	for _, e := range infoRe.FindAllStringSubmatch(s, -1) {
 		if len(e) != 3 {
 			return nil, errors.New("failed to parse INFO results")
@@ -146,13 +138,11 @@ func (c *conn) infoMap() (map[string]string, error) {
 
 		info[e[1]] = e[2]
 	}
-
 	return info, nil
 }
 
 // subscription handles subscribe, unsubscribe, psubscribe and pubsubscribe calls.
 func (c *conn) subscription(subType subType, data []string) *Error {
-	// Prepare command.
 	var cmd Cmd
 
 	switch subType {
@@ -185,7 +175,6 @@ func (c *conn) subscription(subType subType, data []string) *Error {
 // It is safe to call close() multiple times.
 func (c *conn) close() {
 	atomic.StoreInt32(&c.closed_, 1)
-
 	if c.conn != nil {
 		c.conn.Close()
 	}
