@@ -14,7 +14,7 @@ func Test(t *testing.T) {
 var cn *Conn
 var conf Config
 
-type Co struct{}
+type ConnSuite struct{}
 
 func init() {
 	conf = DefaultConfig()
@@ -23,23 +23,21 @@ func init() {
 	conf.Database = 8
 	conf.Timeout = time.Duration(10) * time.Second
 
-	Suite(&Co{})
+	Suite(&ConnSuite{})
 }
 
-func (s *Co) SetUpTest(c *C) {
+func (s *ConnSuite) SetUpTest(c *C) {
 	var err error
 	cn, err = NewConn(conf)
 	c.Assert(err, IsNil)
 }
 
-func (s *Co) TearDownTest(c *C) {
+func (s *ConnSuite) TearDownTest(c *C) {
 	cn.Close()
 }
 
-//* Conn tests
-
 // Test Conn.Call().
-func (s *Co) TestConnCall(c *C) {
+func (s *ConnSuite) TestConnCall(c *C) {
 	v, _ := cn.Call("echo", "Hello, World!").Str()
 	c.Assert(v, Equals, "Hello, World!")
 }
