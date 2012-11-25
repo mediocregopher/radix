@@ -24,14 +24,14 @@ func newConnPool(config *Config) *connPool {
 	return cp
 }
 
-func (cp *connPool) push(c *conn) {
+func (cp *connPool) push(c *Conn) {
 	cp.Lock()
 	defer cp.Unlock()
 	if cp.closed {
 		return
 	}
 
-	if !c.closed() {
+	if !c.Closed() {
 		cp.free.PushFront(c)
 	}
 
@@ -39,7 +39,7 @@ func (cp *connPool) push(c *conn) {
 	cp.emptyCond.Signal()
 }
 
-func (cp *connPool) pull() (c *conn, err *Error) {
+func (cp *connPool) pull() (c *Conn, err *Error) {
 	cp.Lock()
 	defer cp.Unlock()
 	if cp.closed {
@@ -51,7 +51,7 @@ func (cp *connPool) pull() (c *conn, err *Error) {
 	}
 
 	if cp.free.Len() > 0 {
-		c, _ = cp.free.Remove(cp.free.Back()).(*conn)
+		c, _ = cp.free.Remove(cp.free.Back()).(*Conn)
 	} else {
 		// Lazy creation of a connection
 		c, err = newConn(cp.config)
@@ -70,8 +70,8 @@ func (cp *connPool) close() {
 	cp.Lock()
 	defer cp.Unlock()
 	for e := cp.free.Front(); e != nil; e = e.Next() {
-		c, _ := e.Value.(*conn)
-		c.close()
+		c, _ := e.Value.(*Conn)
+		c.Close()
 	}
 
 	cp.free.Init()

@@ -13,13 +13,14 @@ func Test(t *testing.T) {
 }
 
 var rd *Client
+var cn *Conn
 var conf Config
 
 type TI interface {
 	Fatalf(string, ...interface{})
 }
 
-func setUpTest(c TI) {
+func setUpClientTest(c TI) {
 	rd = NewClient(conf)
 	r := rd.Flushall()
 	if r.Err != nil {
@@ -27,7 +28,7 @@ func setUpTest(c TI) {
 	}
 }
 
-func tearDownTest(c TI) {
+func tearDownClientTest(c TI) {
 	r := rd.Flushall()
 	if r.Err != nil {
 		c.Fatalf("tearDown FLUSHALL failed: %s", r.Err)
@@ -39,6 +40,7 @@ func tearDownTest(c TI) {
 //* Tests
 type S struct{}
 type Long struct{}
+type Co struct{}
 type Utils struct{}
 
 var long = flag.Bool("long", false, "Include long running tests")
@@ -52,6 +54,7 @@ func init() {
 
 	Suite(&S{})
 	Suite(&Long{})
+	Suite(&Co{})
 	Suite(&Utils{})
 }
 
@@ -62,19 +65,29 @@ func (s *Long) SetUpSuite(c *C) {
 }
 
 func (s *S) SetUpTest(c *C) {
-	setUpTest(c)
+	setUpClientTest(c)
 }
 
 func (s *S) TearDownTest(c *C) {
-	tearDownTest(c)
+	tearDownClientTest(c)
 }
 
 func (s *Long) SetUpTest(c *C) {
-	setUpTest(c)
+	setUpClientTest(c)
 }
 
 func (s *Long) TearDownTest(c *C) {
-	tearDownTest(c)
+	tearDownClientTest(c)
+}
+
+func (s *Co) SetUpTest(c *C) {
+	var err error
+	cn, err = NewConn(conf)
+	c.Assert(err, IsNil)
+}
+
+func (s *Co) TearDownTest(c *C) {
+	cn.Close()
 }
 
 // Test connection calls.
@@ -457,7 +470,7 @@ func (s *S) TestUnix(c *C) {
 	c.Check(vs, Equals, "Hello, World!")
 }
 
-// Test Client.InfoMap.
+// Test Client.InfoMap().
 func (s *S) TestInfoMap(c *C) {
 	im, err := rd.InfoMap()
 	c.Assert(err, IsNil)
@@ -584,6 +597,14 @@ func (s *Long) TestIllegalDatabase(c *C) {
 	rdA := NewClient(conf2)
 	rA := rdA.Ping()
 	c.Check(rA.Err, NotNil)
+}
+
+//* Conn tests
+
+// Test Conn.Call().
+func (s *Co) TestConnCall(c *C) {
+	v, _ := cn.Echo("Hello, World!").Str()
+	c.Assert(v, Equals, "Hello, World!")
 }
 
 //* Utils tests

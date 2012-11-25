@@ -3,11 +3,11 @@ package redis
 // MultiCall holds data for multiple command calls.
 type MultiCall struct {
 	transaction bool
-	c           *conn
+	c           *Conn
 	calls       []call
 }
 
-func newMultiCall(transaction bool, c *conn) *MultiCall {
+func newMultiCall(transaction bool, c *Conn) *MultiCall {
 	return &MultiCall{
 		transaction: transaction,
 		c:           c,

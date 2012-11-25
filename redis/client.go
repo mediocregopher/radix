@@ -29,7 +29,7 @@ func (c *Client) call(cmd Cmd, args ...interface{}) *Reply {
 	}
 
 	defer c.pool.push(conn)
-	return conn.call(Cmd(cmd), args...)
+	return conn.call(cmd, args...)
 }
 
 // Call calls the given Redis command.
@@ -39,11 +39,9 @@ func (c *Client) Call(cmd string, args ...interface{}) *Reply {
 
 func (c *Client) asyncCall(cmd Cmd, args ...interface{}) Future {
 	f := newFuture()
-
 	go func() {
 		f <- c.call(cmd, args...)
 	}()
-
 	return f
 }
 
@@ -62,8 +60,7 @@ func (c *Client) InfoMap() (map[string]string, error) {
 	}
 
 	defer c.pool.push(conn)
-	return conn.infoMap()
-
+	return conn.InfoMap()
 }
 
 func (c *Client) multiCall(transaction bool, f func(*MultiCall)) *Reply {

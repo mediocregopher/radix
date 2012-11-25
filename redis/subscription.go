@@ -15,7 +15,7 @@ const (
 
 // Subscription is a structure for holding a Redis subscription for multiple channels.
 type Subscription struct {
-	c       *conn
+	c       *Conn
 	msgHdlr func(msg *Message)
 }
 
@@ -61,7 +61,7 @@ func (s *Subscription) Punsubscribe(patterns ...string) (err *Error) {
 // Close closes the subscription.
 func (s *Subscription) Close() {
 	// just sack the connection, listener will close down eventually.
-	s.c.close()
+	s.c.Close()
 }
 
 // readMessage reads and parses pubsub message data from the connection and returns it as a message.
@@ -164,7 +164,7 @@ func (s *Subscription) listener() {
 	// read until connection is closed
 	for {
 		m = s.readMessage()
-		if m == nil && s.c.closed() {
+		if m == nil && s.c.Closed() {
 			return
 		}
 

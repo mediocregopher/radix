@@ -41,10 +41,10 @@ echo -e ")
 " >>$filename
 
 # remove *SUBSCRIBE commands from calls
-declare -a cmds=(${cmds[@]})
-declare -a cmds=(${cmds[@]/*subscribe/})
+#declare -a cmds=(${cmds[@]})
+#declare -a cmds=(${cmds[@]/*subscribe/})
 
-# command calls
+# client commands
 for cmd in ${cmds[@]}; do
     echo "
 // ${cmd^} calls Redis ${cmd^^} command. 
