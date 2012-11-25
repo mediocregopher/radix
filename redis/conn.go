@@ -16,7 +16,7 @@ import (
 var infoRe *regexp.Regexp = regexp.MustCompile(`(?:(\w+):(\w+))+`)
 
 type call struct {
-	cmd  Cmd
+	cmd  string
 	args []interface{}
 }
 
@@ -57,21 +57,43 @@ func (c *Conn) Closed() bool {
 }
 
 // Call calls the given Redis command.
-func (c *Conn) Call(cmd string, args ...interface{}) *Reply {
-	return c.call(Cmd(cmd), args...)
+func (c *Conn) Call(cmd string, args ...interface{}) (r *Reply) {
+	if err := c.writeRequest(call{cmd, args}); err != nil {
+		return &Reply{Type: ReplyError, Err: err}
+	}
+	return c.read()
 }
 
 // AsyncCall calls the given Redis command asynchronously.
 func (c *Conn) AsyncCall(cmd string, args ...interface{}) Future {
-	return c.asyncCall(Cmd(cmd), args...)
+	f := newFuture()
+	go func() {
+		f <- c.Call(cmd, args...)
+	}()
+	return f
 }
 
+// multiCall calls multiple Redis commands.
+func (c *Conn) multiCall(cmds []call) (r *Reply) {
+	r = new(Reply)
+	if err := c.writeRequest(cmds...); err == nil {
+		r.Type = ReplyMulti
+		r.Elems = make([]*Reply, len(cmds))
+		for i := range cmds {
+			reply := c.read()
+			r.Elems[i] = reply
+		}
+	} else {
+		r.Err = newError(err.Error())
+	}
+	return r
+}
 
 // InfoMap calls the INFO command, parses and returns the results as a map[string]string or an error. 
 // Use Info method for fetching the unparsed INFO results.
 func (c *Conn) InfoMap() (map[string]string, error) {
 	info := make(map[string]string)
-	r := c.call(cmdInfo)
+	r := c.Call("info")
 	s, err := r.Str()
 	if err != nil {
 		return nil, err
@@ -114,7 +136,7 @@ func (c *Conn) init() *Error {
 
 	// Authenticate if needed.
 	if c.config.Password != "" {
-		r := c.call(cmdAuth, c.config.Password)
+		r := c.Call("auth", c.config.Password)
 		if r.Err != nil {
 			c.Close()
 			return newErrorExt("authentication failed", r.Err, ErrorAuth)
@@ -122,7 +144,7 @@ func (c *Conn) init() *Error {
 	}
 
 	// Select database.
-	r := c.call(cmdSelect, c.config.Database)
+	r := c.Call("select", c.config.Database)
 	if r.Err != nil {
 		if c.config.RetryLoading && r.Err.Test(ErrorLoading) {
 			// Attempt to read remaining loading time with INFO and sleep that time.
@@ -136,14 +158,14 @@ func (c *Conn) init() *Error {
 				}
 			}
 
-			// Keep retrying SELECT until it succeeds or we got some other error.
-			r = c.call(cmdSelect, c.config.Database)
+			// Keep retrying select until it succeeds or we got some other error.
+			r = c.Call("select", c.config.Database)
 			for r.Err != nil {
 				if !r.Err.Test(ErrorLoading) {
 					goto SelectFail
 				}
 				time.Sleep(time.Second)
-				r = c.call(cmdSelect, c.config.Database)
+				r = c.Call("select", c.config.Database)
 			}
 		}
 
@@ -156,52 +178,19 @@ func (c *Conn) init() *Error {
 	return nil
 }
 
-// call calls a Redis command.
-func (c *Conn) call(cmd Cmd, args ...interface{}) (r *Reply) {
-	if err := c.writeRequest(call{cmd, args}); err != nil {
-		return &Reply{Type: ReplyError, Err: err}
-	}
-	return c.read()
-}
-
-// asyncCall calls the given Redis command asynchronously.
-func (c *Conn) asyncCall(cmd Cmd, args ...interface{}) Future {
-	f := newFuture()
-	go func() {
-		f <- c.call(cmd, args...)
-	}()
-	return f
-}
-
-// multiCall calls multiple Redis commands.
-func (c *Conn) multiCall(cmds []call) (r *Reply) {
-	r = new(Reply)
-	if err := c.writeRequest(cmds...); err == nil {
-		r.Type = ReplyMulti
-		r.Elems = make([]*Reply, len(cmds))
-		for i := range cmds {
-			reply := c.read()
-			r.Elems[i] = reply
-		}
-	} else {
-		r.Err = newError(err.Error())
-	}
-	return r
-}
-
 // subscription handles subscribe, unsubscribe, psubscribe and pubsubscribe calls.
 func (c *Conn) subscription(subType subType, data []string) *Error {
-	var cmd Cmd
+	var cmd string
 
 	switch subType {
 	case subSubscribe:
-		cmd = cmdSubscribe
+		cmd = "subscribe"
 	case subUnsubscribe:
-		cmd = cmdUnsubscribe
+		cmd = "unsubscribe"
 	case subPsubscribe:
-		cmd = cmdPsubscribe
+		cmd = "psubscribe"
 	case subPunsubscribe:
-		cmd = cmdPunsubscribe
+		cmd = "punsubscribe"
 	}
 
 	// Send the subscription request.

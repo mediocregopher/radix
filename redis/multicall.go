@@ -18,14 +18,14 @@ func newMultiCall(transaction bool, c *Conn) *MultiCall {
 // calls, and returns the returned Reply.
 func (mc *MultiCall) process(userCalls func(*MultiCall)) *Reply {
 	if mc.transaction {
-		mc.Multi()
+		mc.Call("multi")
 	}
 	userCalls(mc)
 	var r *Reply
 	if !mc.transaction {
 		r = mc.c.multiCall(mc.calls)
 	} else {
-		mc.Exec()
+		mc.Call("exec")
 		r = mc.c.multiCall(mc.calls)
 
 		execReply := r.Elems[len(r.Elems)-1]
@@ -43,13 +43,9 @@ func (mc *MultiCall) process(userCalls func(*MultiCall)) *Reply {
 	return r
 }
 
-func (mc *MultiCall) call(cmd Cmd, args ...interface{}) {
-	mc.calls = append(mc.calls, call{cmd, args})
-}
-
 // Call queues a call for later execution.
 func (mc *MultiCall) Call(cmd string, args ...interface{}) {
-	mc.call(Cmd(cmd), args...)
+	mc.calls = append(mc.calls, call{cmd, args})
 }
 
 // Flush sends queued calls to the server for execution and

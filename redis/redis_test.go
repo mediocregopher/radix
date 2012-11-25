@@ -603,7 +603,7 @@ func (s *Long) TestIllegalDatabase(c *C) {
 
 // Test Conn.Call().
 func (s *Co) TestConnCall(c *C) {
-	v, _ := cn.Echo("Hello, World!").Str()
+	v, _ := cn.Call("echo", "Hello, World!").Str()
 	c.Assert(v, Equals, "Hello, World!")
 }
 

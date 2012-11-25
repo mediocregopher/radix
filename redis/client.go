@@ -21,7 +21,8 @@ func (c *Client) Close() {
 	c.pool.close()
 }
 
-func (c *Client) call(cmd Cmd, args ...interface{}) *Reply {
+// Call calls the given Redis command.
+func (c *Client) Call(cmd string, args ...interface{}) *Reply {
 	// Connection handling
 	conn, err := c.pool.pull()
 	if err != nil {
@@ -29,25 +30,16 @@ func (c *Client) call(cmd Cmd, args ...interface{}) *Reply {
 	}
 
 	defer c.pool.push(conn)
-	return conn.call(cmd, args...)
-}
-
-// Call calls the given Redis command.
-func (c *Client) Call(cmd string, args ...interface{}) *Reply {
-	return c.call(Cmd(cmd), args...)
-}
-
-func (c *Client) asyncCall(cmd Cmd, args ...interface{}) Future {
-	f := newFuture()
-	go func() {
-		f <- c.call(cmd, args...)
-	}()
-	return f
+	return conn.Call(cmd, args...)
 }
 
 // AsyncCall calls the given Redis command asynchronously.
 func (c *Client) AsyncCall(cmd string, args ...interface{}) Future {
-	return c.asyncCall(Cmd(cmd), args...)
+	f := newFuture()
+	go func() {
+		f <- c.Call(cmd, args...)
+	}()
+	return f
 }
 
 // InfoMap calls the INFO command, parses and returns the results as a map[string]string or an error. 
