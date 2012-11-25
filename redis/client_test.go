@@ -3,18 +3,10 @@ package redis
 import (
 	"flag"
 	. "launchpad.net/gocheck"
-	"testing"
 	"time"
 )
 
-// Hook up gocheck into the gotest runner.
-func Test(t *testing.T) {
-	TestingT(t)
-}
-
 var rd *Client
-var cn *Conn
-var conf Config
 
 type TI interface {
 	Fatalf(string, ...interface{})
@@ -22,14 +14,14 @@ type TI interface {
 
 func setUpClientTest(c TI) {
 	rd = NewClient(conf)
-	r := rd.Flushall()
+	r := rd.Call("flushall")
 	if r.Err != nil {
 		c.Fatalf("setUp FLUSHALL failed: %s", r.Err)
 	}
 }
 
 func tearDownClientTest(c TI) {
-	r := rd.Flushall()
+	r := rd.Call("flushall")
 	if r.Err != nil {
 		c.Fatalf("tearDown FLUSHALL failed: %s", r.Err)
 	}
@@ -40,8 +32,6 @@ func tearDownClientTest(c TI) {
 //* Tests
 type S struct{}
 type Long struct{}
-type Co struct{}
-type Utils struct{}
 
 var long = flag.Bool("long", false, "Include long running tests")
 
@@ -54,8 +44,6 @@ func init() {
 
 	Suite(&S{})
 	Suite(&Long{})
-	Suite(&Co{})
-	Suite(&Utils{})
 }
 
 func (s *Long) SetUpSuite(c *C) {
@@ -80,59 +68,49 @@ func (s *Long) TearDownTest(c *C) {
 	tearDownClientTest(c)
 }
 
-func (s *Co) SetUpTest(c *C) {
-	var err error
-	cn, err = NewConn(conf)
-	c.Assert(err, IsNil)
-}
-
-func (s *Co) TearDownTest(c *C) {
-	cn.Close()
-}
-
 // Test connection calls.
 func (s *S) TestConnection(c *C) {
-	v, _ := rd.Echo("Hello, World!").Str()
+	v, _ := rd.Call("echo", "Hello, World!").Str()
 	c.Check(v, Equals, "Hello, World!")
-	v, _ = rd.Ping().Str()
+	v, _ = rd.Call("ping").Str()
 	c.Check(v, Equals, "PONG")
 }
 
 // Test single return value calls.
 func (s *S) TestSimpleValue(c *C) {
 	// Simple value calls.
-	rd.Set("simple:string", "Hello,")
-	rd.Append("simple:string", " World!")
-	vs, _ := rd.Get("simple:string").Str()
+	rd.Call("set", "simple:string", "Hello,")
+	rd.Call("append", "simple:string", " World!")
+	vs, _ := rd.Call("get", "simple:string").Str()
 	c.Check(vs, Equals, "Hello, World!")
 
-	rd.Set("simple:int", 10)
-	vy, _ := rd.Incr("simple:int").Int()
+	rd.Call("set", "simple:int", 10)
+	vy, _ := rd.Call("incr","simple:int").Int()
 	c.Check(vy, Equals, 11)
 
-	rd.Setbit("simple:bit", 0, true)
-	rd.Setbit("simple:bit", 1, true)
+	rd.Call("setbit", "simple:bit", 0, true)
+	rd.Call("setbit","simple:bit", 1, true)
 
-	vb, _ := rd.Getbit("simple:bit", 0).Bool()
+	vb, _ := rd.Call("getbit","simple:bit", 0).Bool()
 	c.Check(vb, Equals, true)
-	vb, _ = rd.Getbit("simple:bit", 1).Bool()
+	vb, _ = rd.Call("getbit","simple:bit", 1).Bool()
 	c.Check(vb, Equals, true)
 
-	c.Check(rd.Get("non:existing:key").Type, Equals, ReplyNil)
-	vb, _ = rd.Exists("non:existing:key").Bool()
+	c.Check(rd.Call("get","non:existing:key").Type, Equals, ReplyNil)
+	vb, _ = rd.Call("exists","non:existing:key").Bool()
 	c.Check(vb, Equals, false)
-	vb, _ = rd.Setnx("simple:nx", "Test").Bool()
+	vb, _ = rd.Call("setnx","simple:nx", "Test").Bool()
 	c.Check(vb, Equals, true)
-	vb, _ = rd.Setnx("simple:nx", "Test").Bool()
+	vb, _ = rd.Call("setnx","simple:nx", "Test").Bool()
 	c.Check(vb, Equals, false)
 }
-
+/*
 // Test calls that return multiple values.
 func (s *S) TestMultiple(c *C) {
 	// Set values first.
-	rd.Set("multiple:a", "a")
-	rd.Set("multiple:b", "b")
-	rd.Set("multiple:c", "c")
+	rd.Call("set","multiple:a", "a")
+	rd.Call("set","multiple:b", "b")
+	rd.Call("set","multiple:c", "c")
 
 	mulstr, err := rd.Mget("multiple:a", "multiple:b", "multiple:c").List()
 	c.Assert(err, IsNil)
@@ -598,55 +576,4 @@ func (s *Long) TestIllegalDatabase(c *C) {
 	rA := rdA.Ping()
 	c.Check(rA.Err, NotNil)
 }
-
-//* Conn tests
-
-// Test Conn.Call().
-func (s *Co) TestConnCall(c *C) {
-	v, _ := cn.Call("echo", "Hello, World!").Str()
-	c.Assert(v, Equals, "Hello, World!")
-}
-
-//* Utils tests
-
-// Test formatArg().
-func (s *Utils) TestFormatArg(c *C) {
-	c.Check(formatArg("foo"), DeepEquals, []byte("$3\r\nfoo\r\n"))
-	c.Check(formatArg("世界"), DeepEquals, []byte("$6\r\n\xe4\xb8\x96\xe7\x95\x8c\r\n"))
-	c.Check(formatArg(int(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(int8(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(int16(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(int32(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(int64(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(uint(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(uint8(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(uint16(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(uint32(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(uint64(5)), DeepEquals, []byte("$1\r\n5\r\n"))
-	c.Check(formatArg(true), DeepEquals, []byte("$1\r\n1\r\n"))
-	c.Check(formatArg(false), DeepEquals, []byte("$1\r\n0\r\n"))
-	c.Check(formatArg([]interface{}{"foo", 5, true}), DeepEquals,
-		[]byte("$3\r\nfoo\r\n$1\r\n5\r\n$1\r\n1\r\n"))
-	c.Check(formatArg(map[interface{}]interface{}{1: "foo"}), DeepEquals,
-		[]byte("$1\r\n1\r\n$3\r\nfoo\r\n"))
-	c.Check(formatArg(1.5), DeepEquals, []byte("$3\r\n1.5\r\n"))
-}
-
-// Test createRequest().
-func (s *Utils) TestCreateRequest(c *C) {
-	c.Check(createRequest(call{cmd: "PING"}), DeepEquals, []byte("*1\r\n$4\r\nPING\r\n"))
-	c.Check(createRequest(call{
-		cmd:  "SET",
-		args: []interface{}{"key", 5},
-	}),
-		DeepEquals, []byte("*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$1\r\n5\r\n"))
-}
-
-func BenchmarkCreateRequest(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		createRequest(call{
-			cmd:  cmdSet,
-			args: []interface{}{"foo", "bar"},
-		})
-	}
-}
+*/
