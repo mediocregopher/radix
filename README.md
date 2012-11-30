@@ -22,51 +22,14 @@ The API should hopefully now be stable enough for development.
 
 Features implemented:
 
-* Support for all commands in Redis 2.4.x, 2.6.x and unstable releases
+* Supports Redis 2.4.x/2.6.x.
 * Pubsub support
 * Pipelining support
 * Simple transactions
 * Asynchronous calls
 * Connection pooling
 
-Performance is decent, but don't expect Hiredis level of speeds.
-Several optimization attempts have been made, 
-but it seems that there is no easy way to increase performance much further.
-Performance might increase in the future, 
-when standard Go library is optimized.
-
-Below are some comparative results from the `bench` program included.
-Tests were run on a 4-core Intel Core Q6600 processor.
-
-```
-[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/radix/bench]$ ./bench -p 4 -n 1000000 set
-Connections: 50, Requests: 1000000, Payload: 3 bytes, GOMAXPROCS: 4
-
-===== SET =====
-Requests per second: 50690.11036960492
-Duration: 19.727714
-
-[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/radix/bench]$ ./bench -p 1 -n 1000000 set
-Connections: 50, Requests: 1000000, Payload: 3 bytes, GOMAXPROCS: 1
-
-===== SET =====
-Requests per second: 27662.872353327028
-Duration: 36.149536
-
-[fzzbt@stacker /home/fzzbt/go/src/pkg/github.com/fzzbt/radix/bench]$ redis-benchmark -t set -n 1000000
-====== SET ======
-  1000000 requests completed in 11.97 seconds
-  50 parallel clients
-  3 bytes payload
-  keep alive: 1
-
-100.00% <= 1 milliseconds
-100.00% <= 2 milliseconds
-83521.26 requests per second
-```
-
-Notice how increasing GOMAXPROCS may significantly increase performance on a multi-core processor.
-
+Performance is decent, but has room for improvement.
 
 ## Getting started
 
