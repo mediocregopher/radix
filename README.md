@@ -1,11 +1,3 @@
-Unmaintained
-============
-I've decided not to maintain this anymore as there are faster clients out there
-and I'm unsatisfied with the current API anyway.
-
-see: https://github.com/vmihailenco/redis
-
-
 Radix
 =====
 
