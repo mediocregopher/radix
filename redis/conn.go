@@ -26,7 +26,6 @@ type call struct {
 type Conn struct {
 	conn          net.Conn
 	reader        *bufio.Reader
-	closed_       int32 // manipulated with atomic primitives
 	noReadTimeout bool  // toggle disabling of read timeout
 	config        *Config
 }
@@ -39,21 +38,8 @@ func NewConn(config Config) (c *Conn, err *Error) {
 }
 
 // Close closes the connection.
-// It is safe to call Close() multiple times.
-func (c *Conn) Close() {
-	atomic.StoreInt32(&c.closed_, 1)
-	if c.conn != nil {
-		c.conn.Close()
-	}
-}
-
-// Closed returns true, if connection is closed, otherwise false.
-func (c *Conn) Closed() bool {
-	if atomic.LoadInt32(&c.closed_) == 1 {
-		return true
-	}
-
-	return false
+func (c *Conn) Close() error {
+	return c.conn.Close()
 }
 
 // Call calls the given Redis command.
@@ -62,31 +48,6 @@ func (c *Conn) Call(cmd string, args ...interface{}) (r *Reply) {
 		return &Reply{Type: ReplyError, Err: err}
 	}
 	return c.read()
-}
-
-// AsyncCall calls the given Redis command asynchronously.
-func (c *Conn) AsyncCall(cmd string, args ...interface{}) Future {
-	f := newFuture()
-	go func() {
-		f <- c.Call(cmd, args...)
-	}()
-	return f
-}
-
-// multiCall calls multiple Redis commands.
-func (c *Conn) multiCall(cmds []call) (r *Reply) {
-	r = new(Reply)
-	if err := c.writeRequest(cmds...); err == nil {
-		r.Type = ReplyMulti
-		r.Elems = make([]*Reply, len(cmds))
-		for i := range cmds {
-			reply := c.read()
-			r.Elems[i] = reply
-		}
-	} else {
-		r.Err = newError(err.Error())
-	}
-	return r
 }
 
 // InfoMap calls the INFO command, parses and returns the results as a map[string]string or an error. 
@@ -111,19 +72,15 @@ func (c *Conn) InfoMap() (map[string]string, error) {
 //* Private methods
 
 func newConn(config *Config) (c *Conn, err *Error) {
-	c = &Conn{
-		closed_: 1, // closed by default
-		config:  config,
-	}
+	c = new(Conn)
+	c.config = config
 	if err = c.init(); err != nil {
 		c.Close()
 		c = nil
 	}
 	return
-}
 
-// init is helper function for newConn
-func (c *Conn) init() *Error {
+
 	var err error
 
 	// Establish a connection.
@@ -176,6 +133,22 @@ func (c *Conn) init() *Error {
 
 	c.closed_ = 0
 	return nil
+}
+
+// multiCall calls multiple Redis commands.
+func (c *Conn) multiCall(cmds []call) (r *Reply) {
+	r = new(Reply)
+	if err := c.writeRequest(cmds...); err == nil {
+		r.Type = ReplyMulti
+		r.Elems = make([]*Reply, len(cmds))
+		for i := range cmds {
+			reply := c.read()
+			r.Elems[i] = reply
+		}
+	} else {
+		r.Err = newError(err.Error())
+	}
+	return r
 }
 
 // subscription handles subscribe, unsubscribe, psubscribe and pubsubscribe calls.

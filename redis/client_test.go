@@ -29,7 +29,6 @@ func tearDownClientTest(c TI) {
 	rd.Close()
 }
 
-//* Tests
 type S struct{}
 type Long struct{}
 

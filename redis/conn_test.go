@@ -37,7 +37,15 @@ func (s *ConnSuite) TearDownTest(c *C) {
 }
 
 // Test Conn.Call().
-func (s *ConnSuite) TestConnCall(c *C) {
+func (s *ConnSuite) TestCall(c *C) {
 	v, _ := cn.Call("echo", "Hello, World!").Str()
 	c.Assert(v, Equals, "Hello, World!")
 }
+
+// Test Conn.AsyncCall().
+func (s *ConnSuite) TestAsyncCall(c *C) {
+	r := cn.AsyncCall("echo", "Hello, World!").Reply()
+	vs, _ := r.Str()
+	c.Check(vs, Equals, "Hello, World!")
+}
+
