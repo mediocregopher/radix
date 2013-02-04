@@ -5,6 +5,7 @@ import (
 )
 
 type ReplySuite struct{}
+
 var _ = Suite(&ReplySuite{})
 
 func (s *ReplySuite) TestStr(c *C) {

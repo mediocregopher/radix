@@ -2,24 +2,17 @@ package redis
 
 import (
 	. "launchpad.net/gocheck"
-	"testing"
 	"time"
 )
 
-// Hook up gocheck into the gotest runner.
-func Test(t *testing.T) {
-	TestingT(t)
-}
-
-var cn *Conn
 var conf Config
 
-type ConnSuite struct{}
+type ConnSuite struct {
+	c *Conn
+}
 
 func init() {
 	conf = DefaultConfig()
-	conf.Network = "tcp"
-	conf.Address = "127.0.0.1:6379"
 	conf.Database = 8
 	conf.Timeout = time.Duration(10) * time.Second
 
@@ -28,24 +21,32 @@ func init() {
 
 func (s *ConnSuite) SetUpTest(c *C) {
 	var err error
-	cn, err = NewConn(conf)
+	s.c, err = Dial("tcp", "127.0.0.1:6379", conf)
 	c.Assert(err, IsNil)
 }
 
 func (s *ConnSuite) TearDownTest(c *C) {
-	cn.Close()
+	s.c.Close()
 }
 
-// Test Conn.Call().
 func (s *ConnSuite) TestCall(c *C) {
-	v, _ := cn.Call("echo", "Hello, World!").Str()
+	v, _ := s.c.Call("echo", "Hello, World!").Str()
 	c.Assert(v, Equals, "Hello, World!")
 }
 
-// Test Conn.AsyncCall().
-func (s *ConnSuite) TestAsyncCall(c *C) {
-	r := cn.AsyncCall("echo", "Hello, World!").Reply()
-	vs, _ := r.Str()
-	c.Check(vs, Equals, "Hello, World!")
-}
+func (s *ConnSuite) TestPipeline(c *C) {
+	s.c.Append("echo", "foo")
+	s.c.Append("echo", "bar")
+	s.c.Append("echo", "zot")
 
+	v, _ := s.c.GetReply().Str()
+	c.Assert(v, Equals, "foo")
+
+	v, _ = s.c.GetReply().Str()
+	c.Assert(v, Equals, "bar")
+
+	v, _ = s.c.GetReply().Str()
+	c.Assert(v, Equals, "zot")
+
+	c.Assert(func() { s.c.GetReply() }, PanicMatches, "pipeline queue empty")
+}

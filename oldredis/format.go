@@ -7,12 +7,15 @@ import (
 	"strconv"
 )
 
-var delim []byte = []byte{'\r', '\n'}
+const (
+	dollar byte = 36
+	colon  byte = 58
+	minus  byte = 45
+	plus   byte = 43
+	star   byte = 42
+)
 
-type request struct {
-	cmd  string
-	args []interface{}
-}
+var delim []byte = []byte{13, 10}
 
 // formatArg formats the given argument to a Redis-styled argument byte slice.
 func formatArg(v interface{}) []byte {
@@ -23,14 +26,6 @@ func formatArg(v interface{}) []byte {
 		bs = vt
 	case string:
 		bs = []byte(vt)
-	case bool:
-		if vt {
-			bs = []byte{'1'}
-		} else {
-			bs = []byte{'0'}
-		}
-	case nil:
-		// empty byte slice
 	case int:
 		bs = []byte(strconv.Itoa(vt))
 	case int8:
@@ -51,6 +46,14 @@ func formatArg(v interface{}) []byte {
 		bs = []byte(strconv.FormatUint(uint64(vt), 10))
 	case uint64:
 		bs = []byte(strconv.FormatUint(vt, 10))
+	case bool:
+		if vt {
+			bs = []byte{49}
+		} else {
+			bs = []byte{48}
+		}
+	case nil:
+		// empty byte slice
 	default:
 		// Fallback to reflect-based.
 		switch reflect.TypeOf(vt).Kind() {
@@ -78,7 +81,7 @@ func formatArg(v interface{}) []byte {
 		}
 	}
 
-	b = append(b, '$')
+	b = append(b, dollar)
 	b = append(b, []byte(strconv.Itoa(len(bs)))...)
 	b = append(b, delim...)
 	b = append(b, bs...)
@@ -86,45 +89,53 @@ func formatArg(v interface{}) []byte {
 	return b
 }
 
-// createRequest creates a request string from the given requests.
-func createRequest(requests ...*request) []byte {
+// createRequest creates a Redis request for the given call and its arguments.
+func createRequest(calls ...call) []byte {
 	var total []byte
 
-	for _, req := range requests {
-		var s []byte
+	for _, call := range calls {
+		var req []byte
 
 		// Calculate number of arguments.
 		argsLen := 1
-		for _, arg := range req.args {
-			kind := reflect.TypeOf(arg).Kind()
-			switch kind {
-			case reflect.Slice:
-				argsLen += reflect.ValueOf(arg).Len()
-			case reflect.Map:
-				argsLen += reflect.ValueOf(arg).Len() * 2
-			default:
+		for _, arg := range call.args {
+			switch arg.(type) {
+			case []byte:
 				argsLen++
+			case nil:
+				argsLen++
+			default:
+				// Fallback to reflect-based.
+				kind := reflect.TypeOf(arg).Kind()
+				switch kind {
+				case reflect.Slice:
+					argsLen += reflect.ValueOf(arg).Len()
+				case reflect.Map:
+					argsLen += reflect.ValueOf(arg).Len() * 2
+				default:
+					argsLen++
+				}
 			}
 		}
 
 		// number of arguments
-		s = append(s, '*')
-		s = append(s, []byte(strconv.Itoa(argsLen))...)
-		s = append(s, delim...)
+		req = append(req, star)
+		req = append(req, []byte(strconv.Itoa(argsLen))...)
+		req = append(req, delim...)
 
 		// command
-		s = append(s, '$')
-		s = append(s, []byte(strconv.Itoa(len(req.cmd)))...)
-		s = append(s, delim...)
-		s = append(s, []byte(req.cmd)...)
-		s = append(s, delim...)
+		req = append(req, dollar)
+		req = append(req, []byte(strconv.Itoa(len(call.cmd)))...)
+		req = append(req, delim...)
+		req = append(req, []byte(call.cmd)...)
+		req = append(req, delim...)
 
 		// arguments
-		for _, arg := range req.args {
-			s = append(s, formatArg(arg)...)
+		for _, arg := range call.args {
+			req = append(req, formatArg(arg)...)
 		}
 
-		total = append(total, s...)
+		total = append(total, req...)
 	}
 
 	return total

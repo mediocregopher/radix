@@ -3,33 +3,59 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/fzzy/radix/redis"
+	"github.com/fzzbt/radix/redis"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"time"
 )
 
+var connections *int = flag.Int("c", 50, "number of connections")
 var requests *int = flag.Int("n", 10000, "number of request")
 var dsize *int = flag.Int("d", 3, "data size")
 var cpuprof *string = flag.String("cpuprof", "", "filename for cpuprof")
+var gomaxprocs *int = flag.Int("p", 8, "GOMAXPROCS value")
 var database *int = flag.Int("b", 8, "database used for testing (WILL BE FLUSHED!)")
 var conf redis.Config = redis.DefaultConfig()
 
-func errHndlr(err error) {
-	if err != nil {
-		fmt.Println("error:", err)
-		os.Exit(1)
+func flushdb() *redis.Error {
+	c := redis.NewClient(conf)
+	defer c.Close()
+	rep := c.Flushdb()
+	return rep.Err
+}
+
+func test(c *redis.Client, ch chan struct{}, doneChan chan struct{}, command string, params ...interface{}) {
+	for _ = range ch {
+		r := c.Call(command, params...)
+		if r.Err != nil {
+			fmt.Println(r.Err)
+			os.Exit(1)
+		}
 	}
+	doneChan <- struct{}{}
 }
 
 // benchmark benchmarks the given command with the given parameters 
 // and displays the given test name.
-func benchmark(c *redis.Conn, testname string, command string, params ...interface{}) {
+func benchmark(testname string, command string, params ...interface{}) {
 	fmt.Printf("===== %s =====\n", testname)
+	c := redis.NewClient(conf)
+	defer c.Close()
+
+	ch := make(chan struct{})
+	doneChan := make(chan struct{})
 	start := time.Now()
 
+	for i := 0; i < *connections; i++ {
+		go test(c, ch, doneChan, command, params...)
+	}
 	for i := 0; i < *requests; i++ {
-		c.Call(command, params...)
+		ch <- struct{}{}
+	}
+	close(ch)
+	for i := 0; i < *connections; i++ {
+		<-doneChan
 	}
 
 	duration := time.Now().Sub(start)
@@ -52,10 +78,12 @@ func main() {
 
 	flag.Parse()
 	conf.Database = *database
+	conf.PoolCapacity = *connections
 	// minimum amount of requests
 	if *requests < 1000 {
 		*requests = 1000
 	}
+	runtime.GOMAXPROCS(*gomaxprocs)
 
 	if *cpuprof != "" {
 		f, err := os.Create(*cpuprof)
@@ -72,16 +100,18 @@ func main() {
 		data += "x"
 	}
 
-	c, err := redis.Dial("tcp", "127.0.0.1:6379", conf)
-	errHndlr(err)
-
-	r := c.Call("flushdb")
-	errHndlr(r.Err)
+	err := flushdb()
+	if err != nil {
+		fmt.Println("FLUSHDB failed:", err)
+		return
+	}
 
 	fmt.Printf(
-		"Requests: %d, Payload: %d byte \n\n",
+		"Connections: %d, Requests: %d, Payload: %d bytes, GOMAXPROCS: %d\n\n",
+		*connections,
 		*requests,
-		*dsize)
+		*dsize,
+		*gomaxprocs)
 
 	args := flag.Args()
 	if len(args) == 0 {
@@ -105,47 +135,47 @@ func main() {
 	}
 
 	if testIsSelected(args, "ping") {
-		benchmark(c, "PING", "ping")
+		benchmark("PING", "ping")
 	}
 	if testIsSelected(args, "set") {
-		benchmark(c, "SET", "set", "foo:rand:000000000000", data)
+		benchmark("SET", "set", "foo:rand:000000000000", data)
 	}
 	if testIsSelected(args, "get") {
-		benchmark(c, "GET", "get", "foo:rand:000000000000")
+		benchmark("GET", "get", "foo:rand:000000000000")
 	}
 	if testIsSelected(args, "incr") {
-		benchmark(c, "INCR", "incr", "counter:rand:000000000000")
+		benchmark("INCR", "incr", "counter:rand:000000000000")
 	}
 	if testIsSelected(args, "lpush") {
-		benchmark(c, "LPUSH", "lpush", "mylist", data)
+		benchmark("LPUSH", "lpush", "mylist", data)
 	}
 	if testIsSelected(args, "lpop") {
-		benchmark(c, "LPOP", "lpop", "mylist")
+		benchmark("LPOP", "lpop", "mylist")
 	}
 	if testIsSelected(args, "sadd") {
-		benchmark(c, "SADD", "sadd", "myset", "counter:rand:000000000000")
+		benchmark("SADD", "sadd", "myset", "counter:rand:000000000000")
 	}
 	if testIsSelected(args, "spop") {
-		benchmark(c, "SPOP", "spop", "myset")
+		benchmark("SPOP", "spop", "myset")
 	}
 	if testIsSelected(args, "lrange") ||
 		testIsSelected(args, "lrange_100") ||
 		testIsSelected(args, "lrange_300") ||
 		testIsSelected(args, "lrange_450") ||
 		testIsSelected(args, "lrange_600") {
-		benchmark(c, "LPUSH (needed to benchmark LRANGE)", "lpush", "mylist", data)
+		benchmark("LPUSH (needed to benchmark LRANGE)", "lpush", "mylist", data)
 	}
 	if testIsSelected(args, "lrange") || testIsSelected(args, "lrange_100") {
-		benchmark(c, "LRANGE_100", "lrange", "mylist", 0, 99)
+		benchmark("LRANGE_100", "lrange", "mylist", 0, 99)
 	}
 	if testIsSelected(args, "lrange") || testIsSelected(args, "lrange_300") {
-		benchmark(c, "LRANGE_300", "lrange", "mylist", 0, 299)
+		benchmark("LRANGE_300", "lrange", "mylist", 0, 299)
 	}
 	if testIsSelected(args, "lrange") || testIsSelected(args, "lrange_450") {
-		benchmark(c, "LRANGE_450", "lrange", "mylist", 0, 449)
+		benchmark("LRANGE_450", "lrange", "mylist", 0, 449)
 	}
 	if testIsSelected(args, "lrange") || testIsSelected(args, "lrange_600") {
-		benchmark(c, "LRANGE_600", "lrange", "mylist", 0, 599)
+		benchmark("LRANGE_600", "lrange", "mylist", 0, 599)
 	}
 	if testIsSelected(args, "mset") {
 		args := make([]interface{}, 20)
@@ -153,9 +183,7 @@ func main() {
 			args[i] = "foo:rand:000000000000"
 			args[i+1] = data
 		}
-		benchmark(c, "MSET", "mset", args...)
+		benchmark("MSET", "mset", args...)
 	}
-
-	r = c.Call("flushdb")
-	errHndlr(r.Err)
+	flushdb()
 }

@@ -3,16 +3,16 @@ package redis
 import (
 	"bufio"
 	"bytes"
-	"strconv"
 	"errors"
+	"strconv"
 )
 
 //* Common errors
 
-var AuthError error = errors.New("authentication failed");
-var LoadingError error = errors.New("server is busy loading dataset in memory");
-var ParseError error = errors.New("parse error");
-var TimeoutError error = errors.New("timeout error");
+var AuthError error = errors.New("authentication failed")
+var LoadingError error = errors.New("server is busy loading dataset in memory")
+var ParseError error = errors.New("parse error")
+var TimeoutError error = errors.New("timeout error")
 
 // Parse reads data from the given Reader and constructs a Reply.
 func parse(reader *bufio.Reader) (r *Reply) {
@@ -68,7 +68,7 @@ func parse(reader *bufio.Reader) (r *Reply) {
 				for rc < ir {
 					n, err := reader.Read(br[rc:])
 					if err != nil {
-						r.Type= ErrorReply
+						r.Type = ErrorReply
 						r.Err = err
 					}
 					rc += n

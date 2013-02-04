@@ -1,12 +1,13 @@
 package redis
 
 import (
-	. "launchpad.net/gocheck"
-	"bytes"
 	"bufio"
+	"bytes"
+	. "launchpad.net/gocheck"
 )
 
 type ParserSuite struct{}
+
 var _ = Suite(&ParserSuite{})
 
 func parseString(s string) *Reply {

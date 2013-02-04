@@ -2,59 +2,19 @@ package redis
 
 import (
 	"bufio"
-	"bytes"
+	"container/list"
 	"errors"
 	"net"
 	"regexp"
 	"strconv"
-	"sync/atomic"
 	"time"
 )
 
-//* Misc
+var infoRe *regexp.Regexp = regexp.MustCompile(`^(?:(\w+):(\w+))+\r\n$`)
 
-var infoRe *regexp.Regexp = regexp.MustCompile(`(?:(\w+):(\w+))+`)
-
-type call struct {
-	cmd  string
-	args []interface{}
-}
-
-//** Conn
-
-// Conn describes a Redis connection.
-type Conn struct {
-	conn          net.Conn
-	reader        *bufio.Reader
-	noReadTimeout bool  // toggle disabling of read timeout
-	config        *Config
-}
-
-//* Public methods
-
-// NewConn creates a new Conn.
-func NewConn(config Config) (c *Conn, err *Error) {
-	return newConn(&config)
-}
-
-// Close closes the connection.
-func (c *Conn) Close() error {
-	return c.conn.Close()
-}
-
-// Call calls the given Redis command.
-func (c *Conn) Call(cmd string, args ...interface{}) (r *Reply) {
-	if err := c.writeRequest(call{cmd, args}); err != nil {
-		return &Reply{Type: ReplyError, Err: err}
-	}
-	return c.read()
-}
-
-// InfoMap calls the INFO command, parses and returns the results as a map[string]string or an error. 
-// Use Info method for fetching the unparsed INFO results.
-func (c *Conn) InfoMap() (map[string]string, error) {
+// ParseInfo parses the given INFO command reply and returns it as a map or an error.
+func ParseInfo(r *Reply) (map[string]string, error) {
 	info := make(map[string]string)
-	r := c.Call("info")
 	s, err := r.Str()
 	if err != nil {
 		return nil, err
@@ -69,43 +29,50 @@ func (c *Conn) InfoMap() (map[string]string, error) {
 	return info, nil
 }
 
-//* Private methods
+//* Conn
 
-func newConn(config *Config) (c *Conn, err *Error) {
-	c = new(Conn)
-	c.config = config
-	if err = c.init(); err != nil {
-		c.Close()
-		c = nil
-	}
-	return
+// Conn describes a Redis connection.
+type Conn struct {
+	config Config
+	conn   net.Conn
+	reader *bufio.Reader
+	inbuf  *list.List
+	outbuf []*request
+}
 
-
-	var err error
-
-	// Establish a connection.
-	c.conn, err = net.Dial(c.config.Network, c.config.Address)
+func Dial(network, addr string, config Config) (*Conn, error) {
+	// establish connection
+	conn, err := net.Dial(network, addr)
 	if err != nil {
-		c.Close()
-		return newError(err.Error(), ErrorConnection)
+		return nil, err
 	}
-	c.reader = bufio.NewReaderSize(c.conn, 4096)
+	return NewConn(conn, config)
+}
 
-	// Authenticate if needed.
-	if c.config.Password != "" {
-		r := c.Call("auth", c.config.Password)
+// NewConn creates a new Conn with the given connection and configuration.
+func NewConn(conn net.Conn, config Config) (*Conn, error) {
+	c := new(Conn)
+	c.config = config
+	c.conn = conn
+	c.reader = bufio.NewReaderSize(c.conn, 4096)
+	c.inbuf = list.New()
+
+	// authenticate if needed
+	if config.Password != "" {
+		r := c.Call("auth", config.Password)
 		if r.Err != nil {
-			c.Close()
-			return newErrorExt("authentication failed", r.Err, ErrorAuth)
+			c.conn.Close()
+			return nil, AuthError
 		}
 	}
 
-	// Select database.
-	r := c.Call("select", c.config.Database)
+	// select database
+	r := c.Call("select", config.Database)
 	if r.Err != nil {
-		if c.config.RetryLoading && r.Err.Test(ErrorLoading) {
-			// Attempt to read remaining loading time with INFO and sleep that time.
-			info, err := c.InfoMap()
+		if c.config.RetryLoading && r.Err == LoadingError {
+			// attempt to read the remaining loading time with INFO and sleep that time
+			r := c.Call("info")
+			info, err := ParseInfo(r)
 			if err == nil {
 				if _, ok := info["loading_eta_seconds"]; ok {
 					eta, err := strconv.Atoi(info["loading_eta_seconds"])
@@ -115,216 +82,88 @@ func newConn(config *Config) (c *Conn, err *Error) {
 				}
 			}
 
-			// Keep retrying select until it succeeds or we got some other error.
-			r = c.Call("select", c.config.Database)
-			for r.Err != nil {
-				if !r.Err.Test(ErrorLoading) {
-					goto SelectFail
+			// keep retrying select until it succeeds or we got some other error
+			for {
+				r = c.Call("select", config.Database)
+				if r.Err == nil {
+					break
+				}
+				if r.Err != LoadingError {
+					return nil, r.Err
 				}
 				time.Sleep(time.Second)
-				r = c.Call("select", c.config.Database)
 			}
+		} else {
+			return nil, LoadingError
 		}
-
-	SelectFail:
-		c.Close()
-		return newErrorExt("selecting database failed", r.Err)
 	}
 
-	c.closed_ = 0
-	return nil
+	return c, nil
 }
 
-// multiCall calls multiple Redis commands.
-func (c *Conn) multiCall(cmds []call) (r *Reply) {
-	r = new(Reply)
-	if err := c.writeRequest(cmds...); err == nil {
-		r.Type = ReplyMulti
-		r.Elems = make([]*Reply, len(cmds))
-		for i := range cmds {
-			reply := c.read()
-			r.Elems[i] = reply
+//* Public methods
+
+// Close closes the connection.
+func (c *Conn) Close() error {
+	return c.conn.Close()
+}
+
+// Call calls the given Redis command.
+func (c *Conn) Call(cmd string, args ...interface{}) *Reply {
+	err := c.writeRequest(&request{cmd, args})
+	if err != nil {
+		return &Reply{Type: ErrorReply, Err: err}
+	}
+	return parse(c.reader)
+}
+
+// Append adds the given call to the pipeline queue.
+// Use GetReply() to read the reply.
+func (c *Conn) Append(cmd string, args ...interface{}) {
+	c.outbuf = append(c.outbuf, &request{cmd, args})
+}
+
+// GetReply returns the reply for the next request in pipeline queue.
+// Panics, if the pipeline queue is empty.
+func (c *Conn) GetReply() *Reply {
+	// input buffer non-empty, return the first one.
+	if c.inbuf.Len() > 0 {
+		return c.inbuf.Remove(c.inbuf.Front()).(*Reply)
+	}
+
+	if len(c.outbuf) == 0 {
+		panic("pipeline queue empty")
+	}
+
+	// input buffer empty,
+	// write entire output buffer to the socket.
+	err := c.writeRequest(c.outbuf...)
+	if err != nil {
+		// fill the input buffer with error replies
+		for i := 0; i < len(c.outbuf); i++ {
+			c.inbuf.PushBack(&Reply{Type: ErrorReply, Err: err})
 		}
 	} else {
-		r.Err = newError(err.Error())
+		// read pending replies to the input buffer
+		for i := 0; i < len(c.outbuf); i++ {
+			c.inbuf.PushBack(parse(c.reader))
+		}
 	}
-	return r
+	c.outbuf = nil
+
+	return c.inbuf.Remove(c.inbuf.Front()).(*Reply)
 }
 
-// subscription handles subscribe, unsubscribe, psubscribe and pubsubscribe calls.
-func (c *Conn) subscription(subType subType, data []string) *Error {
-	var cmd string
+//* Private methods
 
-	switch subType {
-	case subSubscribe:
-		cmd = "subscribe"
-	case subUnsubscribe:
-		cmd = "unsubscribe"
-	case subPsubscribe:
-		cmd = "psubscribe"
-	case subPunsubscribe:
-		cmd = "punsubscribe"
-	}
-
-	// Send the subscription request.
-	channels := make([]interface{}, len(data))
-	for i, v := range data {
-		channels[i] = v
-	}
-
-	err := c.writeRequest(call{cmd, channels})
-	if err == nil {
-		return nil
-	}
-
-	return newError(err.Error())
-	// subscribe/etc. return their replies as pubsub messages
-}
-
-// helper for read()
-func (c *Conn) readErrHdlr(err error) (r *Reply) {
-	if err != nil {
-		c.Close()
-		err_, ok := err.(net.Error)
-		if ok && err_.Timeout() {
-			return &Reply{
-				Type: ReplyError,
-				Err: newError("read failed, timeout error: "+err.Error(), ErrorConnection,
-					ErrorTimeout),
-			}
-		}
-
-		return &Reply{
-			Type: ReplyError,
-			Err:  newError("read failed: "+err.Error(), ErrorConnection),
-		}
-	}
-
-	return nil
-}
-
-// read reads data from the connection and returns a Reply.
-func (c *Conn) read() (r *Reply) {
-	var err error
-	var b []byte
-	r = new(Reply)
-
-	if !c.noReadTimeout {
-		c.setReadTimeout()
-	}
-	b, err = c.reader.ReadBytes('\n')
-	if re := c.readErrHdlr(err); re != nil {
-		return re
-	}
-
-	// Analyze the first byte.
-	fb := b[0]
-	b = b[1 : len(b)-2] // get rid of the first byte and the trailing \r
-	switch fb {
-	case '-':
-		// Error reply.
-		r.Type = ReplyError
-		switch {
-		case bytes.HasPrefix(b, []byte("ERR")):
-			r.Err = newError(string(b[4:]), ErrorRedis)
-		case bytes.HasPrefix(b, []byte("LOADING")):
-			r.Err = newError("Redis is loading data into memory", ErrorRedis, ErrorLoading)
-		default:
-			// this shouldn't really ever execute
-			r.Err = newError(string(b), ErrorRedis)
-		}
-	case '+':
-		// Status reply.
-		r.Type = ReplyStatus
-		r.str = string(b)
-	case ':':
-		// Integer reply.
-		var i int64
-		i, err = strconv.ParseInt(string(b), 10, 64)
-		if err != nil {
-			r.Type = ReplyError
-			r.Err = newError("integer reply parse error", ErrorParse)
-		} else {
-			r.Type = ReplyInteger
-			r.int = i
-		}
-	case '$':
-		// Bulk reply, or key not found.
-		var i int
-		i, err = strconv.Atoi(string(b))
-		if err != nil {
-			r.Type = ReplyError
-			r.Err = newError("bulk reply parse error", ErrorParse)
-		} else {
-			if i == -1 {
-				// Key not found
-				r.Type = ReplyNil
-			} else {
-				// Reading the data.
-				ir := i + 2
-				br := make([]byte, ir)
-				rc := 0
-
-				for rc < ir {
-					if !c.noReadTimeout {
-						c.setReadTimeout()
-					}
-					n, err := c.reader.Read(br[rc:])
-					if re := c.readErrHdlr(err); re != nil {
-						return re
-					}
-
-					rc += n
-				}
-				s := string(br[0:i])
-				r.Type = ReplyString
-				r.str = s
-			}
-		}
-	case '*':
-		// Multi-bulk reply. Just return the count
-		// of the replies. The caller has to do the
-		// individual calls.
-		var i int
-		i, err = strconv.Atoi(string(b))
-		if err != nil {
-			r.Type = ReplyError
-			r.Err = newError("multi-bulk reply parse error", ErrorParse)
-		} else {
-			switch {
-			case i == -1:
-				// nil multi-bulk
-				r.Type = ReplyNil
-			case i >= 0:
-				r.Type = ReplyMulti
-				r.Elems = make([]*Reply, i)
-				for i := range r.Elems {
-					r.Elems[i] = c.read()
-				}
-			default:
-				// invalid reply
-				r.Type = ReplyError
-				r.Err = newError("received invalid reply", ErrorParse)
-			}
-		}
-	default:
-		// invalid reply
-		r.Type = ReplyError
-		r.Err = newError("received invalid reply", ErrorParse)
-	}
-
-	return r
-}
-
-func (c *Conn) writeRequest(calls ...call) *Error {
+func (c *Conn) writeRequest(requests ...*request) error {
 	c.setWriteTimeout()
-	if _, err := c.conn.Write(createRequest(calls...)); err != nil {
+	if _, err := c.conn.Write(createRequest(requests...)); err != nil {
 		errn, ok := err.(net.Error)
 		if ok && errn.Timeout() {
-			return newError("write failed, timeout error: "+err.Error(),
-				ErrorConnection, ErrorTimeout)
+			return TimeoutError
 		}
-		return newError("write failed: "+err.Error(), ErrorConnection)
+		return err
 	}
 	return nil
 }
