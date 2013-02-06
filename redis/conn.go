@@ -69,32 +69,32 @@ func NewConn(conn net.Conn, config Config) (*Conn, error) {
 	// select database
 	r := c.Call("select", config.Database)
 	if r.Err != nil {
-		if c.config.RetryLoading && r.Err == LoadingError {
-			// attempt to read the remaining loading time with INFO and sleep that time
-			r := c.Call("info")
-			info, err := ParseInfo(r)
-			if err == nil {
-				if _, ok := info["loading_eta_seconds"]; ok {
-					eta, err := strconv.Atoi(info["loading_eta_seconds"])
-					if err == nil {
-						time.Sleep(time.Duration(eta) * time.Second)
-					}
-				}
-			}
-
-			// keep retrying select until it succeeds or we got some other error
-			for {
-				r = c.Call("select", config.Database)
-				if r.Err == nil {
-					break
-				}
-				if r.Err != LoadingError {
-					return nil, r.Err
-				}
-				time.Sleep(time.Second)
-			}
-		} else {
+		if !(c.config.RetryLoading && r.Err == LoadingError) {
 			return nil, LoadingError
+		}
+
+		// attempt to read the remaining loading time with INFO and sleep that time
+		r := c.Call("info")
+		info, err := ParseInfo(r)
+		if err == nil {
+			if _, ok := info["loading_eta_seconds"]; ok {
+				eta, err := strconv.Atoi(info["loading_eta_seconds"])
+				if err == nil {
+						time.Sleep(time.Duration(eta) * time.Second)
+				}
+			}
+		}
+		
+		// keep retrying select until it succeeds or we got some other error
+		for {
+			r = c.Call("select", config.Database)
+			if r.Err == nil {
+				break
+			}
+			if r.Err != LoadingError {
+				return nil, r.Err
+			}
+			time.Sleep(time.Second)
 		}
 	}
 
