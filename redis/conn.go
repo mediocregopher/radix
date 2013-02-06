@@ -1,8 +1,6 @@
 package redis
 
 import (
-	"bufio"
-	"container/list"
 	"errors"
 	"net"
 	"regexp"
@@ -35,9 +33,8 @@ func ParseInfo(r *Reply) (map[string]string, error) {
 type Conn struct {
 	config Config
 	conn   net.Conn
-	reader *bufio.Reader
-	inbuf  *list.List
-	outbuf []*request
+	pending []*request
+	parser *parser
 }
 
 func Dial(network, addr string, config Config) (*Conn, error) {
@@ -54,8 +51,7 @@ func NewConn(conn net.Conn, config Config) (*Conn, error) {
 	c := new(Conn)
 	c.config = config
 	c.conn = conn
-	c.reader = bufio.NewReaderSize(c.conn, 4096)
-	c.inbuf = list.New()
+	c.parser = newParser(c.conn)
 
 	// authenticate if needed
 	if config.Password != "" {
@@ -114,13 +110,13 @@ func (c *Conn) Call(cmd string, args ...interface{}) *Reply {
 	if err != nil {
 		return &Reply{Type: ErrorReply, Err: err}
 	}
-	return parse(c.reader)
+	return c.parser.parse()
 }
-
+/*
 // Append adds the given call to the pipeline queue.
 // Use GetReply() to read the reply.
 func (c *Conn) Append(cmd string, args ...interface{}) {
-	c.outbuf = append(c.outbuf, &request{cmd, args})
+	c.outbuf = append(c.pending, &request{cmd, args})
 }
 
 // GetReply returns the reply for the next request in pipeline queue.
@@ -153,7 +149,7 @@ func (c *Conn) GetReply() *Reply {
 
 	return c.inbuf.Remove(c.inbuf.Front()).(*Reply)
 }
-
+*/
 //* Private methods
 
 func (c *Conn) writeRequest(requests ...*request) error {

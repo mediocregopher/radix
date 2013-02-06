@@ -12,7 +12,9 @@ var _ = Suite(&ParserSuite{})
 
 func parseString(s string) *Reply {
 	reader := bufio.NewReader(bytes.NewBufferString(s))
-	return parse(reader)
+	p := new(parser)
+	p.reader = reader
+	return p.parse()
 }
 
 func (s *ParserSuite) TestParse(c *C) {
