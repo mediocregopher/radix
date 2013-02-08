@@ -24,10 +24,10 @@ func main() {
 	errHndlr(err)
 	defer c.Close()
 
-	r := c.Call("flushdb")
+	r := c.Cmd("flushdb")
 	errHndlr(r.Err)
 
-	r = c.Call("echo", "Hello world!")
+	r = c.Cmd("echo", "Hello world!")
 	errHndlr(r.Err)
 
 	s, err := r.Str()
@@ -35,10 +35,10 @@ func main() {
 	fmt.Println("echo:", s)
 
 	//* Strings
-	r = c.Call("set", "mykey0", "myval0")
+	r = c.Cmd("set", "mykey0", "myval0")
 	errHndlr(r.Err)
 
-	s, err = c.Call("get", "mykey0").Str()
+	s, err = c.Cmd("get", "mykey0").Str()
 	errHndlr(err)
 	fmt.Println("mykey0:", s)
 
@@ -49,11 +49,11 @@ func main() {
 	}
 
 	// Alternatively:
-	// c.Call("mset", "mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
-	r = c.Call("mset", myhash)
+	// c.Cmd("mset", "mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
+	r = c.Cmd("mset", myhash)
 	errHndlr(r.Err)
 
-	ls, err := c.Call("mget", "mykey1", "mykey2", "mykey3").List()
+	ls, err := c.Cmd("mget", "mykey1", "mykey2", "mykey3").List()
 	errHndlr(err)
 	fmt.Println("mykeys values:", ls)
 
@@ -61,11 +61,11 @@ func main() {
 	mylist := []string{"foo", "bar", "qux"}
 
 	// Alternativaly:
-	// c.Call("rpush", "mylist", "foo", "bar", "qux")
-	r = c.Call("rpush", "mylist", mylist)
+	// c.Cmd("rpush", "mylist", "foo", "bar", "qux")
+	r = c.Cmd("rpush", "mylist", mylist)
 	errHndlr(r.Err)
 
-	mylist, err = c.Call("lrange", "mylist", 0, -1).List()
+	mylist, err = c.Cmd("lrange", "mylist", 0, -1).List()
 	errHndlr(err)
 
 	fmt.Println("mylist:", mylist)
@@ -73,11 +73,11 @@ func main() {
 	//* Hash handling
 
 	// Alternatively:
-	// c.Call("hmset", "myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
-	r = c.Call("hmset", "myhash", myhash)
+	// c.Cmd("hmset", "myhash", ""mykey1", "myval1", "mykey2", "myval2", "mykey3", "myval3")
+	r = c.Cmd("hmset", "myhash", myhash)
 	errHndlr(r.Err)
 
-	myhash, err = c.Call("hgetall", "myhash").Hash()
+	myhash, err = c.Cmd("hgetall", "myhash").Hash()
 	errHndlr(err)
 
 	fmt.Println("myhash:", myhash)

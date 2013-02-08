@@ -15,15 +15,9 @@ type Config struct {
 	// Socket timeout. 
 	// Default: 0 (no timeouts)
 	Timeout time.Duration
-
-	// Retry on LOADING error? 
-	// Default: true
-	RetryLoading bool
 }
 
 // DefaultConfig returns a new Config with default settings.
 func DefaultConfig() Config {
-	return Config{
-		RetryLoading: true,
-	}
+	return Config{}
 }

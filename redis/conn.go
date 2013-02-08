@@ -1,31 +1,24 @@
 package redis
 
 import (
+	"bytes"
+	"bufio"
 	"errors"
 	"net"
-	"regexp"
 	"strconv"
 	"time"
 )
 
-var infoRe *regexp.Regexp = regexp.MustCompile(`^(?:(\w+):(\w+))+\r\n$`)
+const (
+	bufSize int = 4096
+)
 
-// ParseInfo parses the given INFO command reply and returns it as a map or an error.
-func ParseInfo(r *Reply) (map[string]string, error) {
-	info := make(map[string]string)
-	s, err := r.Str()
-	if err != nil {
-		return nil, err
-	}
-	for _, e := range infoRe.FindAllStringSubmatch(s, -1) {
-		if len(e) != 3 {
-			return nil, errors.New("failed to parse INFO results")
-		}
+//* Common errors
 
-		info[e[1]] = e[2]
-	}
-	return info, nil
-}
+var AuthError error = errors.New("authentication failed")
+var LoadingError error = errors.New("server is busy loading dataset in memory")
+var ParseError error = errors.New("parse error")
+var PipelineQueueEmptyError error = errors.New("pipeline queue empty")
 
 //* Conn
 
@@ -33,8 +26,9 @@ func ParseInfo(r *Reply) (map[string]string, error) {
 type Conn struct {
 	config Config
 	conn   net.Conn
+	reader *bufio.Reader
 	pending []*request
-	parser *parser
+	completed []*Reply
 }
 
 func Dial(network, addr string, config Config) (*Conn, error) {
@@ -51,11 +45,11 @@ func NewConn(conn net.Conn, config Config) (*Conn, error) {
 	c := new(Conn)
 	c.config = config
 	c.conn = conn
-	c.parser = newParser(c.conn)
+	c.reader = bufio.NewReaderSize(conn, bufSize)
 
 	// authenticate if needed
 	if config.Password != "" {
-		r := c.Call("auth", config.Password)
+		r := c.Cmd("auth", config.Password)
 		if r.Err != nil {
 			c.conn.Close()
 			return nil, AuthError
@@ -63,35 +57,10 @@ func NewConn(conn net.Conn, config Config) (*Conn, error) {
 	}
 
 	// select database
-	r := c.Call("select", config.Database)
+	r := c.Cmd("select", config.Database)
 	if r.Err != nil {
-		if !(c.config.RetryLoading && r.Err == LoadingError) {
-			return nil, LoadingError
-		}
-
-		// attempt to read the remaining loading time with INFO and sleep that time
-		r := c.Call("info")
-		info, err := ParseInfo(r)
-		if err == nil {
-			if _, ok := info["loading_eta_seconds"]; ok {
-				eta, err := strconv.Atoi(info["loading_eta_seconds"])
-				if err == nil {
-						time.Sleep(time.Duration(eta) * time.Second)
-				}
-			}
-		}
-		
-		// keep retrying select until it succeeds or we got some other error
-		for {
-			r = c.Call("select", config.Database)
-			if r.Err == nil {
-				break
-			}
-			if r.Err != LoadingError {
-				return nil, r.Err
-			}
-			time.Sleep(time.Second)
-		}
+		c.conn.Close()
+		return nil, r.Err
 	}
 
 	return c, nil
@@ -104,61 +73,62 @@ func (c *Conn) Close() error {
 	return c.conn.Close()
 }
 
-// Call calls the given Redis command.
-func (c *Conn) Call(cmd string, args ...interface{}) *Reply {
+// Cmd calls the given Redis command.
+func (c *Conn) Cmd(cmd string, args ...interface{}) *Reply {
 	err := c.writeRequest(&request{cmd, args})
 	if err != nil {
 		return &Reply{Type: ErrorReply, Err: err}
 	}
-	return c.parser.parse()
+	return c.readReply()
 }
-/*
+
 // Append adds the given call to the pipeline queue.
 // Use GetReply() to read the reply.
 func (c *Conn) Append(cmd string, args ...interface{}) {
-	c.outbuf = append(c.pending, &request{cmd, args})
+	c.pending = append(c.pending, &request{cmd, args})
 }
 
-// GetReply returns the reply for the next request in pipeline queue.
-// Panics, if the pipeline queue is empty.
+// GetReply returns the reply for the next request in the pipeline queue.
+// PipelineQueueEmptyError is returned, if the pipeline queue is empty.
 func (c *Conn) GetReply() *Reply {
-	// input buffer non-empty, return the first one.
-	if c.inbuf.Len() > 0 {
-		return c.inbuf.Remove(c.inbuf.Front()).(*Reply)
+	if len(c.completed) > 0 {
+		r := c.completed[0]
+		c.completed = c.completed[1:]
+		return r
+	}
+	c.completed = nil
+	
+	if len(c.pending) == 0 {
+		return &Reply{Type: ErrorReply, Err: PipelineQueueEmptyError}
 	}
 
-	if len(c.outbuf) == 0 {
-		panic("pipeline queue empty")
-	}
-
-	// input buffer empty,
-	// write entire output buffer to the socket.
-	err := c.writeRequest(c.outbuf...)
+	nreqs := len(c.pending)
+	err := c.writeRequest(c.pending...)
+	c.pending = nil
 	if err != nil {
-		// fill the input buffer with error replies
-		for i := 0; i < len(c.outbuf); i++ {
-			c.inbuf.PushBack(&Reply{Type: ErrorReply, Err: err})
-		}
-	} else {
-		// read pending replies to the input buffer
-		for i := 0; i < len(c.outbuf); i++ {
-			c.inbuf.PushBack(parse(c.reader))
-		}
+		return &Reply{Type: ErrorReply, Err: err}
 	}
-	c.outbuf = nil
+	r := c.readReply()
+	c.completed = make([]*Reply, nreqs-1)
+	for i := 0; i<nreqs-1; i++ {
+		c.completed[i] = c.readReply()
+	}
 
-	return c.inbuf.Remove(c.inbuf.Front()).(*Reply)
+	return r
 }
-*/
+
 //* Private methods
+
+func (c *Conn) readReply() *Reply {
+	c.setReadTimeout()
+	return c.parse()
+}
 
 func (c *Conn) writeRequest(requests ...*request) error {
 	c.setWriteTimeout()
-	if _, err := c.conn.Write(createRequest(requests...)); err != nil {
-		errn, ok := err.(net.Error)
-		if ok && errn.Timeout() {
-			return TimeoutError
-		}
+	_, err := c.conn.Write(createRequest(requests...))
+	if err != nil {
+		c.Close()
 		return err
 	}
 	return nil
@@ -174,4 +144,103 @@ func (c *Conn) setWriteTimeout() {
 	if c.config.Timeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.config.Timeout))
 	}
+}
+
+// Parse reads data from the given Reader and constructs a Reply.
+func (c *Conn) parse() (r *Reply) {
+	r = new(Reply)
+	b, err := c.reader.ReadBytes('\n')
+	if err != nil {
+		c.Close()
+		r.Type = ErrorReply
+		r.Err = err
+		return
+	}
+
+	fb := b[0]
+	b = b[1 : len(b)-2] // get rid of the first byte and the trailing \r\n
+	switch fb {
+	case '-':
+		// error reply
+		r.Type = ErrorReply
+		if bytes.HasPrefix(b, []byte("LOADING")) {
+			r.Err = LoadingError
+		} else {
+			r.Err = errors.New(string(b))
+		}
+	case '+':
+		// status reply
+		r.Type = StatusReply
+		r.str = string(b)
+	case ':':
+		// integer reply
+		i, err := strconv.ParseInt(string(b), 10, 64)
+		if err != nil {
+			r.Type = ErrorReply
+			r.Err = ParseError
+		} else {
+			r.Type = IntegerReply
+			r.int = i
+		}
+	case '$':
+		// bulk reply
+		i, err := strconv.Atoi(string(b))
+		if err != nil {
+			r.Type = ErrorReply
+			r.Err = ParseError
+		} else {
+			if i == -1 {
+				// null bulk reply (key not found)
+				r.Type = NilReply
+			} else {
+				// bulk reply
+				ir := i + 2
+				br := make([]byte, ir)
+				rc := 0
+
+				for rc < ir {
+					n, err := c.reader.Read(br[rc:])
+					if err != nil {
+						c.Close()
+						r.Type = ErrorReply
+						r.Err = err
+					}
+					rc += n
+				}
+				s := string(br[0:i])
+				r.Type = BulkReply
+				r.str = s
+			}
+		}
+	case '*':
+		// multi bulk reply
+		i, err := strconv.Atoi(string(b))
+		if err != nil {
+			r.Type = ErrorReply
+			r.Err = ParseError
+		} else {
+			switch {
+			case i == -1:
+				// null multi bulk
+				r.Type = NilReply
+			case i >= 0:
+				// multi bulk
+				// parse the replies recursively
+				r.Type = MultiReply
+				r.Elems = make([]*Reply, i)
+				for i := range r.Elems {
+					r.Elems[i] = c.parse()
+				}
+			default:
+				// invalid multi bulk reply
+				r.Type = ErrorReply
+				r.Err = ParseError
+			}
+		}
+	default:
+		// invalid reply
+		r.Type = ErrorReply
+		r.Err = ParseError
+	}
+	return
 }
