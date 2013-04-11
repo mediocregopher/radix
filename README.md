@@ -6,12 +6,12 @@ Radix is a Redis client for Go.
 
 ## Installation
 
-    go get github.com/fzzbt/radix/redis
+    go get github.com/fzzy/radix/redis
 
 To run the tests:
 
     go get -u launchpad.net/gocheck
-    cd $GOROOT/src/pkg/github.com/fzzbt/radix/redis
+    cd $GOROOT/src/pkg/github.com/fzzy/radix/redis
     go test -v -bench=".*"
 
 
@@ -36,7 +36,7 @@ Performance is decent, but has room for improvement.
 Creating a Client instance is done as follows:
 
 ```go
-	import "github.com/fzzbt/radix/redis"
+	import "github.com/fzzy/radix/redis"
 
 	...
 
