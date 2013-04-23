@@ -1,11 +1,12 @@
 package redis
 
 import (
-	"bytes"
 	"bufio"
+	"bytes"
 	"errors"
 	"net"
 	"strconv"
+	"time"
 )
 
 const (
@@ -23,18 +24,31 @@ var PipelineQueueEmptyError error = errors.New("pipeline queue empty")
 
 // Client describes a Redis client.
 type Client struct {
-	conn   net.Conn
-	reader *bufio.Reader
-	pending []*request
+	conn      net.Conn
+	timeout   time.Duration
+	reader    *bufio.Reader
+	pending   []*request
 	completed []*Reply
 }
 
-// NewClient creates a new Client with the given connection.
-func NewClient(conn net.Conn) *Client {
+// Dial connects to the given network address with the given timeout. 
+func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
+	// establish a connection
+	conn, err := net.Dial(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
 	c := new(Client)
 	c.conn = conn
+	c.timeout = timeout
 	c.reader = bufio.NewReaderSize(conn, bufSize)
-	return c
+	return c, nil
+}
+
+// Dial connects to the given network address. 
+func Dial(network, addr string) (*Client, error) {
+	return DialTimeout(network, addr, time.Duration(0))
 }
 
 //* Public methods
@@ -50,7 +64,7 @@ func (c *Client) Cmd(cmd string, args ...interface{}) *Reply {
 	if err != nil {
 		return &Reply{Type: ErrorReply, Err: err}
 	}
-	return c.parse()
+	return c.readReply()
 }
 
 // Append adds the given call to the pipeline queue.
@@ -69,7 +83,7 @@ func (c *Client) GetReply() *Reply {
 		return r
 	}
 	c.completed = nil
-	
+
 	if len(c.pending) == 0 {
 		return &Reply{Type: ErrorReply, Err: PipelineQueueEmptyError}
 	}
@@ -80,10 +94,10 @@ func (c *Client) GetReply() *Reply {
 	if err != nil {
 		return &Reply{Type: ErrorReply, Err: err}
 	}
-	r := c.parse()
+	r := c.readReply()
 	c.completed = make([]*Reply, nreqs-1)
-	for i := 0; i<nreqs-1; i++ {
-		c.completed[i] = c.parse()
+	for i := 0; i < nreqs-1; i++ {
+		c.completed[i] = c.readReply()
 	}
 
 	return r
@@ -91,7 +105,25 @@ func (c *Client) GetReply() *Reply {
 
 //* Private methods
 
+func (c *Client) setReadTimeout() {
+	if c.timeout != 0 {
+		c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+	}
+}
+
+func (c *Client) setWriteTimeout() {
+	if c.timeout != 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	}
+}
+
+func (c *Client) readReply() *Reply {
+	c.setReadTimeout()
+	return c.parse()
+}
+
 func (c *Client) writeRequest(requests ...*request) error {
+	c.setWriteTimeout()
 	_, err := c.conn.Write(createRequest(requests...))
 	if err != nil {
 		c.Close()

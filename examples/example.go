@@ -93,40 +93,4 @@ func main() {
 	s, err = r.Str()
 	errHndlr(err)
 	fmt.Println("multikey:", s)
-
-	/*
-		 TODO: scripting
-		       Pub/sub
-
-		//* Pub/sub
-		msgHdlr := func(msg *redis.Message) {
-			switch msg.Type {
-			case redis.MessageMessage:
-				fmt.Printf("Received message \"%s\" from channel \"%s\".\n", msg.Payload, msg.Channel)
-			case redis.MessagePmessage:
-				fmt.Printf("Received pattern message \"%s\" from channel \"%s\" with pattern "+
-					"\"%s\".\n", msg.Payload, msg.Channel, msg.Pattern)
-			default:
-				fmt.Println("Received other message:", msg)
-			}
-		}
-
-		sub, err_ := c.Subscription(msgHdlr)
-		if err_ != nil {
-			fmt.Printf("Failed to subscribe: '%s'!\n", err_)
-			return
-		}
-
-		defer sub.Close()
-
-		sub.Subscribe("chan1", "chan2")
-		sub.Psubscribe("chan*")
-
-		c.Publish("chan1", "foo")
-		sub.Unsubscribe("chan1")
-		c.Publish("chan2", "bar")
-
-		// give some time for the message handler to receive the messages
-		time.Sleep(time.Second)
-	*/
 }

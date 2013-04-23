@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	. "launchpad.net/gocheck"
-	"net"
+	"time"
 )
 
 type ClientSuite struct {
@@ -17,9 +17,8 @@ func init() {
 
 func (s *ClientSuite) SetUpTest(c *C) {
 	var err error
-	conn, err := net.Dial("tcp", "127.0.0.1:6379")
+	s.c, err = DialTimeout("tcp", "127.0.0.1:6379", time.Duration(10)*time.Second)
 	c.Assert(err, IsNil)
-	s.c = NewClient(conn)
 
 	// select database
 	r := s.c.Cmd("select", 8)
@@ -55,7 +54,7 @@ func (s *ClientSuite) TestPipeline(c *C) {
 }
 
 func (s *ClientSuite) TestParse(c *C) {
-	parseString := func (b string) *Reply {
+	parseString := func(b string) *Reply {
 		s.c.reader = bufio.NewReader(bytes.NewBufferString(b))
 		return s.c.parse()
 	}
