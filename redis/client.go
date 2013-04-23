@@ -31,7 +31,7 @@ type Client struct {
 	completed []*Reply
 }
 
-// Dial connects to the given network address with the given timeout. 
+// Dial connects to the given Redis server with the given timeout. 
 func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
 	// establish a connection
 	conn, err := net.Dial(network, addr)
@@ -46,7 +46,7 @@ func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
 	return c, nil
 }
 
-// Dial connects to the given network address. 
+// Dial connects to the given Redis server. 
 func Dial(network, addr string) (*Client, error) {
 	return DialTimeout(network, addr, time.Duration(0))
 }
