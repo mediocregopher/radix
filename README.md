@@ -35,9 +35,6 @@ If you make contributions to the project, please follow the guidelines below:
 *  Run "gofmt -w -s" for all Go code before pushing your code. 
 *  Write terse code without too much newlines or other non-essential whitespace.
 
-New developers should add themselves to the list in CREDITS file,
-when submitting their first commit.
-
 
 ## Copyright and licensing
 
