@@ -13,7 +13,6 @@ var requests *int = flag.Int("n", 10000, "number of request")
 var dsize *int = flag.Int("d", 3, "data size")
 var cpuprof *string = flag.String("cpuprof", "", "filename for cpuprof")
 var database *int = flag.Int("b", 8, "database used for testing (WILL BE FLUSHED!)")
-var conf redis.Config = redis.DefaultConfig()
 
 func errHndlr(err error) {
 	if err != nil {
@@ -24,7 +23,7 @@ func errHndlr(err error) {
 
 // benchmark benchmarks the given command with the given parameters 
 // and displays the given test name.
-func benchmark(c *redis.Conn, testname string, command string, params ...interface{}) {
+func benchmark(c *redis.Client, testname string, command string, params ...interface{}) {
 	fmt.Printf("===== %s =====\n", testname)
 	start := time.Now()
 
@@ -51,7 +50,6 @@ func main() {
 	var data string
 
 	flag.Parse()
-	conf.Database = *database
 	// minimum amount of requests
 	if *requests < 1000 {
 		*requests = 1000
@@ -72,10 +70,14 @@ func main() {
 		data += "x"
 	}
 
-	c, err := redis.Dial("tcp", "127.0.0.1:6379", conf)
+	c, err := redis.Dial("tcp", "127.0.0.1:6379")
 	errHndlr(err)
 
-	r := c.Cmd("flushdb")
+	// select database
+	r := c.Cmd("select", *database)
+	errHndlr(err)
+
+	r = c.Cmd("flushdb")
 	errHndlr(r.Err)
 
 	fmt.Printf(
