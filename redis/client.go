@@ -19,19 +19,19 @@ var LoadingError error = errors.New("server is busy loading dataset in memory")
 var ParseError error = errors.New("parse error")
 var PipelineQueueEmptyError error = errors.New("pipeline queue empty")
 
-//* Conn
+//* Client
 
-// Conn describes a Redis connection.
-type Conn struct {
+// Client describes a Redis client.
+type Client struct {
 	conn   net.Conn
 	reader *bufio.Reader
 	pending []*request
 	completed []*Reply
 }
 
-// NewConn creates a new Conn with the given connection.
-func NewConn(conn net.Conn) *Conn {
-	c := new(Conn)
+// NewClient creates a new Client with the given connection.
+func NewClient(conn net.Conn) *Client {
+	c := new(Client)
 	c.conn = conn
 	c.reader = bufio.NewReaderSize(conn, bufSize)
 	return c
@@ -40,28 +40,28 @@ func NewConn(conn net.Conn) *Conn {
 //* Public methods
 
 // Close closes the connection.
-func (c *Conn) Close() error {
+func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
 // Cmd calls the given Redis command.
-func (c *Conn) Cmd(cmd string, args ...interface{}) *Reply {
+func (c *Client) Cmd(cmd string, args ...interface{}) *Reply {
 	err := c.writeRequest(&request{cmd, args})
 	if err != nil {
 		return &Reply{Type: ErrorReply, Err: err}
 	}
-	return c.readReply()
+	return c.parse()
 }
 
 // Append adds the given call to the pipeline queue.
 // Use GetReply() to read the reply.
-func (c *Conn) Append(cmd string, args ...interface{}) {
+func (c *Client) Append(cmd string, args ...interface{}) {
 	c.pending = append(c.pending, &request{cmd, args})
 }
 
 // GetReply returns the reply for the next request in the pipeline queue.
 // PipelineQueueEmptyError is returned, if the pipeline queue is empty.
-func (c *Conn) GetReply() *Reply {
+func (c *Client) GetReply() *Reply {
 	if len(c.completed) > 0 {
 		r := c.completed[0]
 		c.completed = c.completed[1:]
@@ -79,10 +79,10 @@ func (c *Conn) GetReply() *Reply {
 	if err != nil {
 		return &Reply{Type: ErrorReply, Err: err}
 	}
-	r := c.readReply()
+	r := c.parse()
 	c.completed = make([]*Reply, nreqs-1)
 	for i := 0; i<nreqs-1; i++ {
-		c.completed[i] = c.readReply()
+		c.completed[i] = c.parse()
 	}
 
 	return r
@@ -90,11 +90,7 @@ func (c *Conn) GetReply() *Reply {
 
 //* Private methods
 
-func (c *Conn) readReply() *Reply {
-	return c.parse()
-}
-
-func (c *Conn) writeRequest(requests ...*request) error {
+func (c *Client) writeRequest(requests ...*request) error {
 	_, err := c.conn.Write(createRequest(requests...))
 	if err != nil {
 		c.Close()
@@ -103,8 +99,7 @@ func (c *Conn) writeRequest(requests ...*request) error {
 	return nil
 }
 
-// Parse reads data from the given Reader and constructs a Reply.
-func (c *Conn) parse() (r *Reply) {
+func (c *Client) parse() (r *Reply) {
 	r = new(Reply)
 	b, err := c.reader.ReadBytes('\n')
 	if err != nil {

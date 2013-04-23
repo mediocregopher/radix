@@ -7,36 +7,35 @@ import (
 	"net"
 )
 
-type ConnSuite struct {
-	c *Conn
+type ClientSuite struct {
+	c *Client
 }
 
 func init() {
-	Suite(&ConnSuite{})
+	Suite(&ClientSuite{})
 }
 
-func (s *ConnSuite) SetUpTest(c *C) {
+func (s *ClientSuite) SetUpTest(c *C) {
 	var err error
 	conn, err := net.Dial("tcp", "127.0.0.1:6379")
 	c.Assert(err, IsNil)
-	s.c = NewConn(conn)
-	defer s.c.Close()
+	s.c = NewClient(conn)
 
 	// select database
-	r := c.Cmd("select", 8)
+	r := s.c.Cmd("select", 8)
 	c.Assert(r.Err, IsNil)
 }
 
-func (s *ConnSuite) TearDownTest(c *C) {
+func (s *ClientSuite) TearDownTest(c *C) {
 	s.c.Close()
 }
 
-func (s *ConnSuite) TestCmd(c *C) {
+func (s *ClientSuite) TestCmd(c *C) {
 	v, _ := s.c.Cmd("echo", "Hello, World!").Str()
 	c.Assert(v, Equals, "Hello, World!")
 }
 
-func (s *ConnSuite) TestPipeline(c *C) {
+func (s *ClientSuite) TestPipeline(c *C) {
 	s.c.Append("echo", "foo")
 	s.c.Append("echo", "bar")
 	s.c.Append("echo", "zot")
@@ -53,7 +52,7 @@ func (s *ConnSuite) TestPipeline(c *C) {
 	//c.Assert(func() { s.c.GetReply() }, PanicMatches, "pipeline queue empty")
 }
 
-func (s *ConnSuite) TestParse(c *C) {
+func (s *ClientSuite) TestParse(c *C) {
 	parseString := func (b string) *Reply {
 		s.c.reader = bufio.NewReader(bytes.NewBufferString(b))
 		return s.c.parse()
