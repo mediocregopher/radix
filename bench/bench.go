@@ -29,7 +29,7 @@ func benchmark(c *redis.Conn, testname string, command string, params ...interfa
 	start := time.Now()
 
 	for i := 0; i < *requests; i++ {
-		c.Call(command, params...)
+		c.Cmd(command, params...)
 	}
 
 	duration := time.Now().Sub(start)
@@ -75,7 +75,7 @@ func main() {
 	c, err := redis.Dial("tcp", "127.0.0.1:6379", conf)
 	errHndlr(err)
 
-	r := c.Call("flushdb")
+	r := c.Cmd("flushdb")
 	errHndlr(r.Err)
 
 	fmt.Printf(
@@ -156,6 +156,6 @@ func main() {
 		benchmark(c, "MSET", "mset", args...)
 	}
 
-	r = c.Call("flushdb")
+	r = c.Cmd("flushdb")
 	errHndlr(r.Err)
 }
