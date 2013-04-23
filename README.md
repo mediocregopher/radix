@@ -1,7 +1,8 @@
 Radix
 =====
 
-Radix is a Redis client for Go.
+Radix is a minimalistic Redis client for Go.
+If you need an advanced Redis client, look elsewhere.
 
 
 ## Installation
@@ -14,14 +15,6 @@ To run the tests:
     cd $GOROOT/src/pkg/github.com/fzzy/radix/redis
     go test -v -bench=".*"
 
-
-## Status
-
-TODO
-
-## Getting started
-
-TODO
 
 ## API reference
 
@@ -40,10 +33,7 @@ If you make contributions to the project, please follow the guidelines below:
 
 *  Maximum line-width is 100 characters.
 *  Run "gofmt -w -s" for all Go code before pushing your code. 
-*  Avoid commenting trivial or otherwise obvious code.
-*  Avoid writing fancy ascii-artsy comments. 
 *  Write terse code without too much newlines or other non-essential whitespace.
-*  Separate code sections with "//* My section"-styled comments.
 
 New developers should add themselves to the list in CREDITS file,
 when submitting their first commit.
@@ -51,6 +41,6 @@ when submitting their first commit.
 
 ## Copyright and licensing
 
-*Copyright 2012 Juhani Åhman*.
+*Copyright 2013 Juhani Åhman*.
 Unless otherwise noted, the source files are distributed under the
 *MIT License* found in the LICENSE file.

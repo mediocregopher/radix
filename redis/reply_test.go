@@ -83,10 +83,32 @@ func (s *ReplySuite) TestBool(c *C) {
 	c.Check(err, NotNil)
 }
 
-// TODO
 func (s *ReplySuite) TestList(c *C) {
+	r := &Reply{Type: MultiReply}
+	r.Elems = make([]*Reply, 3)
+	r.Elems[0] = &Reply{Type: BulkReply, str:"0"}
+	r.Elems[1] = &Reply{Type: NilReply}
+	r.Elems[2] = &Reply{Type: BulkReply, str:"2"}
+	l, err := r.List()
+	c.Assert(err, IsNil)
+	c.Assert(len(l), Equals, 3)
+	c.Check(l[0], Equals, "0")
+	c.Check(l[1], Equals, "")
+	c.Check(l[2], Equals, "2")
 }
 
-// TODO
 func (s *ReplySuite) TestHash(c *C) {
+	r := &Reply{Type: MultiReply}
+	r.Elems = make([]*Reply, 6)
+	r.Elems[0] = &Reply{Type: BulkReply, str:"a"}
+	r.Elems[1] = &Reply{Type: BulkReply, str:"0"}
+	r.Elems[2] = &Reply{Type: BulkReply, str:"b"}
+	r.Elems[3] = &Reply{Type: NilReply}
+	r.Elems[4] = &Reply{Type: BulkReply, str:"c"}
+	r.Elems[5] = &Reply{Type: BulkReply, str:"2"}
+	h, err := r.Hash()
+	c.Assert(err, IsNil)
+	c.Check(h["a"], Equals, "0")
+	c.Check(h["b"], Equals, "")
+	c.Check(h["c"], Equals, "2")
 }
