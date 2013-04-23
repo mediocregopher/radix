@@ -4,27 +4,27 @@ import (
 	"bufio"
 	"bytes"
 	. "launchpad.net/gocheck"
-	"time"
+	"net"
 )
-
-var conf Config
 
 type ConnSuite struct {
 	c *Conn
 }
 
 func init() {
-	conf = DefaultConfig()
-	conf.Database = 8
-	conf.Timeout = time.Duration(10) * time.Second
-
 	Suite(&ConnSuite{})
 }
 
 func (s *ConnSuite) SetUpTest(c *C) {
 	var err error
-	s.c, err = Dial("tcp", "127.0.0.1:6379", conf)
+	conn, err := net.Dial("tcp", "127.0.0.1:6379")
 	c.Assert(err, IsNil)
+	s.c = NewConn(conn)
+	defer s.c.Close()
+
+	// select database
+	r := c.Cmd("select", 8)
+	c.Assert(r.Err, IsNil)
 }
 
 func (s *ConnSuite) TearDownTest(c *C) {

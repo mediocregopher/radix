@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net"
 	"strconv"
-	"time"
 )
 
 const (
@@ -24,46 +23,18 @@ var PipelineQueueEmptyError error = errors.New("pipeline queue empty")
 
 // Conn describes a Redis connection.
 type Conn struct {
-	config Config
 	conn   net.Conn
 	reader *bufio.Reader
 	pending []*request
 	completed []*Reply
 }
 
-func Dial(network, addr string, config Config) (*Conn, error) {
-	// establish connection
-	conn, err := net.Dial(network, addr)
-	if err != nil {
-		return nil, err
-	}
-	return NewConn(conn, config)
-}
-
-// NewConn creates a new Conn with the given connection and configuration.
-func NewConn(conn net.Conn, config Config) (*Conn, error) {
+// NewConn creates a new Conn with the given connection.
+func NewConn(conn net.Conn) *Conn {
 	c := new(Conn)
-	c.config = config
 	c.conn = conn
 	c.reader = bufio.NewReaderSize(conn, bufSize)
-
-	// authenticate if needed
-	if config.Password != "" {
-		r := c.Cmd("auth", config.Password)
-		if r.Err != nil {
-			c.conn.Close()
-			return nil, AuthError
-		}
-	}
-
-	// select database
-	r := c.Cmd("select", config.Database)
-	if r.Err != nil {
-		c.conn.Close()
-		return nil, r.Err
-	}
-
-	return c, nil
+	return c
 }
 
 //* Public methods
@@ -120,30 +91,16 @@ func (c *Conn) GetReply() *Reply {
 //* Private methods
 
 func (c *Conn) readReply() *Reply {
-	c.setReadTimeout()
 	return c.parse()
 }
 
 func (c *Conn) writeRequest(requests ...*request) error {
-	c.setWriteTimeout()
 	_, err := c.conn.Write(createRequest(requests...))
 	if err != nil {
 		c.Close()
 		return err
 	}
 	return nil
-}
-
-func (c *Conn) setReadTimeout() {
-	if c.config.Timeout != 0 {
-		c.conn.SetReadDeadline(time.Now().Add(c.config.Timeout))
-	}
-}
-
-func (c *Conn) setWriteTimeout() {
-	if c.config.Timeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.config.Timeout))
-	}
 }
 
 // Parse reads data from the given Reader and constructs a Reply.
