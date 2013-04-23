@@ -60,7 +60,8 @@ func (c *Client) Append(cmd string, args ...interface{}) {
 }
 
 // GetReply returns the reply for the next request in the pipeline queue.
-// PipelineQueueEmptyError is returned, if the pipeline queue is empty.
+// Error reply with PipelineQueueEmptyError is returned, 
+// if the pipeline queue is empty.
 func (c *Client) GetReply() *Reply {
 	if len(c.completed) > 0 {
 		r := c.completed[0]

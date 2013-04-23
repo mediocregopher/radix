@@ -49,7 +49,9 @@ func (s *ClientSuite) TestPipeline(c *C) {
 	v, _ = s.c.GetReply().Str()
 	c.Assert(v, Equals, "zot")
 
-	//c.Assert(func() { s.c.GetReply() }, PanicMatches, "pipeline queue empty")
+	r := s.c.GetReply()
+	c.Assert(r.Type, Equals, ErrorReply)
+	c.Assert(r.Err, Equals, PipelineQueueEmptyError)
 }
 
 func (s *ClientSuite) TestParse(c *C) {
