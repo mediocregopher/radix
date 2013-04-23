@@ -17,14 +17,15 @@ func errHndlr(err error) {
 }
 
 func main() {
-	conf := redis.DefaultConfig()
-	conf.Database = 8                              // Database number 
-	conf.Timeout = time.Duration(10) * time.Second // Socket timeout
-	c, err := redis.Dial("tcp", "127.0.0.1:6379", conf)
+	c, err := redis.DialTimeout("tcp", "127.0.0.1:6379", time.Duration(10)*time.Second)
 	errHndlr(err)
 	defer c.Close()
 
-	r := c.Cmd("flushdb")
+	// select database
+	r := c.Cmd("select", 8)
+	errHndlr(r.Err)
+
+	r = c.Cmd("flushdb")
 	errHndlr(r.Err)
 
 	r = c.Cmd("echo", "Hello world!")
