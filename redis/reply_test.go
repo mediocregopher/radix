@@ -97,6 +97,20 @@ func (s *ReplySuite) TestList(c *C) {
 	c.Check(l[2], Equals, "2")
 }
 
+func (s *ReplySuite) TestBytesList(c *C) {
+	r := &Reply{Type: MultiReply}
+	r.Elems = make([]*Reply, 3)
+	r.Elems[0] = &Reply{Type: BulkReply, buf: []byte("0")}
+	r.Elems[1] = &Reply{Type: NilReply}
+	r.Elems[2] = &Reply{Type: BulkReply, buf: []byte("2")}
+	l, err := r.ListBytes()
+	c.Assert(err, IsNil)
+	c.Assert(len(l), Equals, 3)
+	c.Check(l[0], DeepEquals, []byte("0"))
+	c.Assert(l[1], IsNil)
+	c.Check(l[2], DeepEquals, []byte("2"))
+}
+
 func (s *ReplySuite) TestHash(c *C) {
 	r := &Reply{Type: MultiReply}
 	r.Elems = make([]*Reply, 6)

@@ -128,6 +128,8 @@ func (r *Reply) Bool() (bool, error) {
 // Nil elements are returned as empty strings.
 // Useful for list commands.
 func (r *Reply) List() ([]string, error) {
+	// Doing all this in two places instead of just calling ListBytes() so we don't have
+	// to iterate twice
 	if r.Type == ErrorReply {
 		return nil, r.Err
 	}
@@ -147,6 +149,32 @@ func (r *Reply) List() ([]string, error) {
 	}
 
 	return strings, nil
+}
+
+// ListBytes returns a multi bulk reply as a slice of bytes slices or an error.
+// The reply type must be MultiReply and its elements' types must all be either BulkReply or NilReply.
+// Nil elements are returned as nil.
+// Useful for list commands.
+func (r *Reply) ListBytes() ([][]byte, error) {
+	if r.Type == ErrorReply {
+		return nil, r.Err
+	}
+	if r.Type != MultiReply {
+		return nil, errors.New("reply type is not MultiReply")
+	}
+
+	bufs := make([][]byte, len(r.Elems))
+	for i, v := range r.Elems {
+		if v.Type == BulkReply {
+			bufs[i] = v.buf
+		} else if v.Type == NilReply {
+			bufs[i] = nil
+		} else {
+			return nil, errors.New("element type is not BulkReply or NilReply")
+		}
+	}
+
+	return bufs, nil
 }
 
 // Hash returns a multi bulk reply as a map[string]string or an error.
