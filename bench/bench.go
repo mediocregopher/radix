@@ -21,7 +21,7 @@ func errHndlr(err error) {
 	}
 }
 
-// benchmark benchmarks the given command with the given parameters 
+// benchmark benchmarks the given command with the given parameters
 // and displays the given test name.
 func benchmark(c *redis.Client, testname string, command string, params ...interface{}) {
 	fmt.Printf("===== %s =====\n", testname)

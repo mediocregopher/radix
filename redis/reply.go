@@ -35,31 +35,31 @@ type Reply struct {
 	Type  ReplyType // Reply type
 	Elems []*Reply  // Sub-replies
 	Err   error     // Reply error
-	str   string
+	buf   []byte
 	int   int64
 }
 
-// Str returns the reply value as a string or
+// Bytes returns the reply value as a string or
 // an error, if the reply type is not StatusReply or BulkReply.
-func (r *Reply) Str() (string, error) {
+func (r *Reply) Bytes() ([]byte, error) {
 	if r.Type == ErrorReply {
-		return "", r.Err
+		return nil, r.Err
 	}
 	if !(r.Type == StatusReply || r.Type == BulkReply) {
-		return "", errors.New("string value is not available for this reply type")
+		return nil, errors.New("string value is not available for this reply type")
 	}
 
-	return r.str, nil
+	return r.buf, nil
 }
 
-// Bytes is a convenience method for calling Reply.Str() and converting it to []byte.
-func (r *Reply) Bytes() ([]byte, error) {
-	s, err := r.Str()
+// Str is a convenience method for calling Reply.Bytes() and converting it to string
+func (r *Reply) Str() (string, error) {
+	b, err := r.Bytes()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	return []byte(s), nil
+	return string(b), nil
 }
 
 // Int64 returns the reply value as a int64 or an error,
@@ -128,6 +128,8 @@ func (r *Reply) Bool() (bool, error) {
 // Nil elements are returned as empty strings.
 // Useful for list commands.
 func (r *Reply) List() ([]string, error) {
+	// Doing all this in two places instead of just calling ListBytes() so we don't have
+	// to iterate twice
 	if r.Type == ErrorReply {
 		return nil, r.Err
 	}
@@ -138,7 +140,7 @@ func (r *Reply) List() ([]string, error) {
 	strings := make([]string, len(r.Elems))
 	for i, v := range r.Elems {
 		if v.Type == BulkReply {
-			strings[i] = v.str
+			strings[i] = string(v.buf)
 		} else if v.Type == NilReply {
 			strings[i] = ""
 		} else {
@@ -149,8 +151,34 @@ func (r *Reply) List() ([]string, error) {
 	return strings, nil
 }
 
+// ListBytes returns a multi bulk reply as a slice of bytes slices or an error.
+// The reply type must be MultiReply and its elements' types must all be either BulkReply or NilReply.
+// Nil elements are returned as nil.
+// Useful for list commands.
+func (r *Reply) ListBytes() ([][]byte, error) {
+	if r.Type == ErrorReply {
+		return nil, r.Err
+	}
+	if r.Type != MultiReply {
+		return nil, errors.New("reply type is not MultiReply")
+	}
+
+	bufs := make([][]byte, len(r.Elems))
+	for i, v := range r.Elems {
+		if v.Type == BulkReply {
+			bufs[i] = v.buf
+		} else if v.Type == NilReply {
+			bufs[i] = nil
+		} else {
+			return nil, errors.New("element type is not BulkReply or NilReply")
+		}
+	}
+
+	return bufs, nil
+}
+
 // Hash returns a multi bulk reply as a map[string]string or an error.
-// The reply type must be MultiReply, 
+// The reply type must be MultiReply,
 // it must have an even number of elements,
 // they must be in a "key value key value..." order and
 // values must all be either BulkReply or NilReply.
@@ -180,7 +208,7 @@ func (r *Reply) Hash() (map[string]string, error) {
 
 		v := r.Elems[i*2+1]
 		if v.Type == BulkReply {
-			val = v.str
+			val = string(v.buf)
 			rmap[key] = val
 		} else if v.Type == NilReply {
 		} else {
@@ -201,7 +229,7 @@ func (r *Reply) String() string {
 	case StatusReply:
 		fallthrough
 	case BulkReply:
-		return r.str
+		return string(r.buf)
 	case IntegerReply:
 		return strconv.FormatInt(r.int, 10)
 	case NilReply:
