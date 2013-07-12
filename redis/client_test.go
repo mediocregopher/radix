@@ -77,7 +77,7 @@ func (s *ClientSuite) TestParse(c *C) {
 	// status reply
 	r = parseString("+OK\r\n")
 	c.Check(r.Type, Equals, StatusReply)
-	c.Check(r.str, Equals, "OK")
+	c.Check(r.buf, DeepEquals, []byte("OK"))
 
 	// integer reply
 	r = parseString(":1337\r\n")
@@ -91,7 +91,7 @@ func (s *ClientSuite) TestParse(c *C) {
 	// bulk reply
 	r = parseString("$6\r\nfoobar\r\n")
 	c.Check(r.Type, Equals, BulkReply)
-	c.Check(r.str, Equals, "foobar")
+	c.Check(r.buf, DeepEquals, []byte("foobar"))
 
 	// null multi bulk reply
 	r = parseString("*-1\r\n")
@@ -105,7 +105,7 @@ func (s *ClientSuite) TestParse(c *C) {
 	c.Check(r.Elems[1].int, Equals, int64(2))
 	c.Check(r.Elems[2].int, Equals, int64(3))
 	c.Check(r.Elems[3].int, Equals, int64(4))
-	c.Check(r.Elems[4].str, Equals, "foobar")
+	c.Check(r.Elems[4].buf, DeepEquals, []byte("foobar"))
 
 	// invalid multi bulk reply
 	r = parseString("*-2\r\n")

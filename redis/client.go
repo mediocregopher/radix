@@ -31,7 +31,7 @@ type Client struct {
 	completed []*Reply
 }
 
-// Dial connects to the given Redis server with the given timeout. 
+// Dial connects to the given Redis server with the given timeout.
 func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
 	// establish a connection
 	conn, err := net.Dial(network, addr)
@@ -46,7 +46,7 @@ func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
 	return c, nil
 }
 
-// Dial connects to the given Redis server. 
+// Dial connects to the given Redis server.
 func Dial(network, addr string) (*Client, error) {
 	return DialTimeout(network, addr, time.Duration(0))
 }
@@ -74,7 +74,7 @@ func (c *Client) Append(cmd string, args ...interface{}) {
 }
 
 // GetReply returns the reply for the next request in the pipeline queue.
-// Error reply with PipelineQueueEmptyError is returned, 
+// Error reply with PipelineQueueEmptyError is returned,
 // if the pipeline queue is empty.
 func (c *Client) GetReply() *Reply {
 	if len(c.completed) > 0 {
@@ -156,7 +156,7 @@ func (c *Client) parse() (r *Reply) {
 	case '+':
 		// status reply
 		r.Type = StatusReply
-		r.str = string(b)
+		r.buf = b
 	case ':':
 		// integer reply
 		i, err := strconv.ParseInt(string(b), 10, 64)
@@ -192,9 +192,8 @@ func (c *Client) parse() (r *Reply) {
 					}
 					rc += n
 				}
-				s := string(br[0:i])
 				r.Type = BulkReply
-				r.str = s
+				r.buf = br[0:i]
 			}
 		}
 	case '*':
