@@ -39,7 +39,7 @@ type Reply struct {
 	int   int64
 }
 
-// Bytes returns the reply value as a string or
+// Bytes returns the reply value as a byte string or
 // an error, if the reply type is not StatusReply or BulkReply.
 func (r *Reply) Bytes() ([]byte, error) {
 	if r.Type == ErrorReply {
