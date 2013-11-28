@@ -18,7 +18,7 @@ To run the tests:
 
 ## API reference
 
-API reference is available in http://gopkgdoc.appspot.com/pkg/github.com/fzzy/radix/redis.
+API reference is available in http://godoc.org/github.com/fzzy/radix/redis.
 
 Alternatively, run godoc for API reference:
 
