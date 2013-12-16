@@ -86,6 +86,8 @@ func formatArg(v interface{}) []byte {
 	return b
 }
 
+var byteSliceType = reflect.TypeOf([]byte(nil))
+
 // createRequest creates a request string from the given requests.
 func createRequest(requests ...*request) []byte {
 	var total []byte
@@ -96,10 +98,14 @@ func createRequest(requests ...*request) []byte {
 		// Calculate number of arguments.
 		argsLen := 1
 		for _, arg := range req.args {
-			kind := reflect.TypeOf(arg).Kind()
-			switch kind {
+			typ := reflect.TypeOf(arg)
+			switch typ.Kind() {
 			case reflect.Slice:
-				argsLen += reflect.ValueOf(arg).Len()
+				if typ == byteSliceType {
+					argsLen++
+				} else {
+					argsLen += reflect.ValueOf(arg).Len()
+				}
 			case reflect.Map:
 				argsLen += reflect.ValueOf(arg).Len() * 2
 			default:
