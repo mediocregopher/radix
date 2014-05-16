@@ -136,7 +136,10 @@ func (c *Client) parse() (r *Reply) {
 	r = new(Reply)
 	b, err := c.reader.ReadBytes('\n')
 	if err != nil {
-		c.Close()
+		if t, ok := err.(*net.OpError); !ok || !t.Timeout() {
+			// close connection except timeout
+			c.Close()
+		}
 		r.Type = ErrorReply
 		r.Err = err
 		return
