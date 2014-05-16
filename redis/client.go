@@ -105,10 +105,6 @@ func (c *Client) GetReply() *Reply {
 
 //* Private methods
 
-type timeout interface {
-	Timeout() bool
-}
-
 func (c *Client) setReadTimeout() {
 	if c.timeout != 0 {
 		c.conn.SetReadDeadline(time.Now().Add(c.timeout))
@@ -140,7 +136,8 @@ func (c *Client) parse() (r *Reply) {
 	r = new(Reply)
 	b, err := c.reader.ReadBytes('\n')
 	if err != nil {
-		if t, ok := err.(timeout); ! ok || ! t.Timeout() { // close connection except timeout
+		if t, ok := err.(*net.OpError); !ok || !t.Timeout() {
+			// close connection except timeout
 			c.Close()
 		}
 		r.Type = ErrorReply
