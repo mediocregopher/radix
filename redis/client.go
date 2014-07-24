@@ -64,7 +64,7 @@ func (c *Client) Cmd(cmd string, args ...interface{}) *Reply {
 	if err != nil {
 		return &Reply{Type: ErrorReply, Err: err}
 	}
-	return c.readReply()
+	return c.ReadReply()
 }
 
 // Append adds the given call to the pipeline queue.
@@ -94,10 +94,10 @@ func (c *Client) GetReply() *Reply {
 	if err != nil {
 		return &Reply{Type: ErrorReply, Err: err}
 	}
-	r := c.readReply()
+	r := c.ReadReply()
 	c.completed = make([]*Reply, nreqs-1)
 	for i := 0; i < nreqs-1; i++ {
-		c.completed[i] = c.readReply()
+		c.completed[i] = c.ReadReply()
 	}
 
 	return r
@@ -117,7 +117,23 @@ func (c *Client) setWriteTimeout() {
 	}
 }
 
-func (c *Client) readReply() *Reply {
+// This will read a redis reply off of the connection without sending anything
+// first (useful after you've sent a SUSBSCRIBE command). This will block until
+// a reply is received or the timeout is reached. On timeout an ErrorReply will
+// be returned, you can check if it's a timeout like so:
+//
+//	r := conn.ReadReply()
+//	if r.Err != nil {
+//		if t, ok := r.Err.(*net.OpError); ok && t.Timeout() {
+//			// Is timeout
+//		} else {
+//			// Not timeout
+//		}
+//	}
+//
+// Note: this is a more low-level function, you really shouldn't have to
+// actually use it unless you're writing your own pub/sub code
+func (c *Client) ReadReply() *Reply {
 	c.setReadTimeout()
 	return c.parse()
 }
