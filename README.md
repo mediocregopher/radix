@@ -1,43 +1,43 @@
-Radix
-=====
+# Radix
 
-Radix is a minimalistic Redis client for Go.
-If you need an advanced Redis client, look elsewhere.
+Radix is a minimalistic Redis client for Go. It is broken up into the following:
 
+* [redis](http://godoc.org/github.com/fzzy/radix/redis) - A wrapper around a
+  single redis connection. Supports normal commands/response as well as
+  pipelining.
+
+    * [resp](http://godoc.org/github.com/fzzy/radix/redis/resp) - A utility
+      package for encoding and decoding messages from redis
+
+* extra - a sub-package containing added functionality
+
+    * [pool](http://godoc.org/github.com/fzzy/radix/extra/pool) - a simple,
+      automatically expanding/cleaning connection pool.
+
+    * [pubsub](http://godoc.org/github.com/fzzy/radix/extra/pubsub) - a simple
+      wrapper providing convenient access to Redis Pub/Sub functionality.
+
+    * [sentinel](http://godoc.org/github.com/fzzy/radix/extra/sentinel) - a
+      client for [redis sentinel][sentinel] which acts as a connection pool for
+      a cluster of redis nodes. A sentinel client connects to a sentinel
+      instance and any master redis instances that instance is monitoring. If a
+      master becomes unavailable, the sentinel client will automatically start
+      distributing connections from the slave chosen by the sentinel instance.
 
 ## Installation
 
     go get github.com/fzzy/radix/redis
 
-To run the tests:
+## Testing
 
     go get -u launchpad.net/gocheck
     cd $GOROOT/src/pkg/github.com/fzzy/radix/redis
     go test -v -bench=".*"
-
-
-## API reference
-
-API reference is available in http://godoc.org/github.com/fzzy/radix/redis.
-
-Alternatively, run godoc for API reference:
-
-	godoc -http=:8080
-
-and point your browser to http://localhost:8080/pkg/github.com/fzzy/radix/redis.
-
-
-## HACKING
-
-If you make contributions to the project, please follow the guidelines below:
-
-*  Maximum line-width is 100 characters.
-*  Run "gofmt -w -s" for all Go code before pushing your code. 
-*  Write terse code without too much newlines or other non-essential whitespace.
-
 
 ## Copyright and licensing
 
 *Copyright 2013 Juhani Åhman*.
 Unless otherwise noted, the source files are distributed under the
 *MIT License* found in the LICENSE file.
+
+[sentinel]: http://redis.io/topics/sentinel
