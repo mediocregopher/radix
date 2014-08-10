@@ -2,11 +2,12 @@ package redis
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"net"
-	"strconv"
+	"strings"
 	"time"
+
+	"github.com/fzzy/radix/redis/resp"
 )
 
 const (
@@ -15,9 +16,7 @@ const (
 
 //* Common errors
 
-var AuthError error = errors.New("authentication failed")
 var LoadingError error = errors.New("server is busy loading dataset in memory")
-var ParseError error = errors.New("parse error")
 var PipelineQueueEmptyError error = errors.New("pipeline queue empty")
 
 //* Client
@@ -29,6 +28,12 @@ type Client struct {
 	reader    *bufio.Reader
 	pending   []*request
 	completed []*Reply
+}
+
+// request describes a client's request to the redis server
+type request struct {
+	cmd  string
+	args []interface{}
 }
 
 // Dial connects to the given Redis server with the given timeout.
@@ -140,110 +145,97 @@ func (c *Client) ReadReply() *Reply {
 
 func (c *Client) writeRequest(requests ...*request) error {
 	c.setWriteTimeout()
-	_, err := c.conn.Write(createRequest(requests...))
-	if err != nil {
-		c.Close()
-		return err
+	for i := range requests {
+		req := make([]interface{}, 0, len(requests[i].args)+1)
+		req = append(req, requests[i].cmd)
+		req = append(req, requests[i].args...)
+		err := resp.WriteArbitraryAsString(c.conn, req)
+		if err != nil {
+			c.Close()
+			return err
+		}
 	}
 	return nil
 }
 
-func (c *Client) parse() (r *Reply) {
-	r = new(Reply)
-	b, err := c.reader.ReadBytes('\n')
+func (c *Client) parse() *Reply {
+	m, err := resp.ReadMessage(c.reader)
 	if err != nil {
 		if t, ok := err.(*net.OpError); !ok || !t.Timeout() {
 			// close connection except timeout
 			c.Close()
 		}
+		return &Reply{Type: ErrorReply, Err: err}
+	}
+	r, err := messageToReply(m)
+	if err != nil {
+		return &Reply{Type: ErrorReply, Err: err}
+	}
+	return r
+}
+
+// The error return parameter is for bubbling up parse errors and the like, if
+// the error is sent by redis itself as an Err message type, then it will be
+// sent back as an actual Reply
+func messageToReply(m *resp.Message) (*Reply, error) {
+	r := &Reply{}
+
+	switch m.Type {
+	case resp.Err:
+		errMsg, err := m.Err()
+		if err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(errMsg.Error(), "LOADING") {
+			err = LoadingError
+		} else {
+			err = errMsg
+		}
 		r.Type = ErrorReply
 		r.Err = err
-		return
-	}
 
-	fb := b[0]
-	b = b[1 : len(b)-2] // get rid of the first byte and the trailing \r\n
-	switch fb {
-	case '-':
-		// error reply
-		r.Type = ErrorReply
-		if bytes.HasPrefix(b, []byte("LOADING")) {
-			r.Err = LoadingError
-		} else {
-			r.Err = errors.New(string(b))
+	case resp.SimpleStr:
+		status, err := m.Bytes()
+		if err != nil {
+			return nil, err
 		}
-	case '+':
-		// status reply
 		r.Type = StatusReply
-		r.buf = b
-	case ':':
-		// integer reply
-		i, err := strconv.ParseInt(string(b), 10, 64)
-		if err != nil {
-			r.Type = ErrorReply
-			r.Err = ParseError
-		} else {
-			r.Type = IntegerReply
-			r.int = i
-		}
-	case '$':
-		// bulk reply
-		i, err := strconv.Atoi(string(b))
-		if err != nil {
-			r.Type = ErrorReply
-			r.Err = ParseError
-		} else {
-			if i == -1 {
-				// null bulk reply (key not found)
-				r.Type = NilReply
-			} else {
-				// bulk reply
-				ir := i + 2
-				br := make([]byte, ir)
-				rc := 0
+		r.buf = status
 
-				for rc < ir {
-					n, err := c.reader.Read(br[rc:])
-					if err != nil {
-						c.Close()
-						r.Type = ErrorReply
-						r.Err = err
-					}
-					rc += n
-				}
-				r.Type = BulkReply
-				r.buf = br[0:i]
-			}
-		}
-	case '*':
-		// multi bulk reply
-		i, err := strconv.Atoi(string(b))
+	case resp.Int:
+		i, err := m.Int()
 		if err != nil {
-			r.Type = ErrorReply
-			r.Err = ParseError
-		} else {
-			switch {
-			case i == -1:
-				// null multi bulk
-				r.Type = NilReply
-			case i >= 0:
-				// multi bulk
-				// parse the replies recursively
-				r.Type = MultiReply
-				r.Elems = make([]*Reply, i)
-				for i := range r.Elems {
-					r.Elems[i] = c.parse()
-				}
-			default:
-				// invalid multi bulk reply
-				r.Type = ErrorReply
-				r.Err = ParseError
+			return nil, err
+		}
+		r.Type = IntegerReply
+		r.int = i
+
+	case resp.BulkStr:
+		b, err := m.Bytes()
+		if err != nil {
+			return nil, err
+		}
+		r.Type = BulkReply
+		r.buf = b
+
+	case resp.Nil:
+		r.Type = NilReply
+
+	case resp.Array:
+		ms, err := m.Array()
+		if err != nil {
+			return nil, err
+		}
+		r.Type = MultiReply
+		r.Elems = make([]*Reply, len(ms))
+		for i := range ms {
+			r.Elems[i], err = messageToReply(ms[i])
+			if err != nil {
+				return nil, err
 			}
 		}
-	default:
-		// invalid reply
-		r.Type = ErrorReply
-		r.Err = ParseError
 	}
-	return
+
+	return r, nil
+
 }

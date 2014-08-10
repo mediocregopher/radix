@@ -9,9 +9,9 @@ type ReplySuite struct{}
 var _ = Suite(&ReplySuite{})
 
 func (s *ReplySuite) TestStr(c *C) {
-	r := &Reply{Type: ErrorReply, Err: ParseError}
+	r := &Reply{Type: ErrorReply, Err: LoadingError}
 	_, err := r.Str()
-	c.Check(err, Equals, ParseError)
+	c.Check(err, Equals, LoadingError)
 
 	r = &Reply{Type: IntegerReply}
 	_, err = r.Str()
@@ -36,9 +36,9 @@ func (s *ReplySuite) TestBytes(c *C) {
 }
 
 func (s *ReplySuite) TestInt64(c *C) {
-	r := &Reply{Type: ErrorReply, Err: ParseError}
+	r := &Reply{Type: ErrorReply, Err: LoadingError}
 	_, err := r.Int64()
-	c.Check(err, Equals, ParseError)
+	c.Check(err, Equals, LoadingError)
 
 	r = &Reply{Type: IntegerReply, int: 5}
 	b, err := r.Int64()

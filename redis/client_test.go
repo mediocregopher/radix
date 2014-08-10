@@ -106,14 +106,4 @@ func (s *ClientSuite) TestParse(c *C) {
 	c.Check(r.Elems[2].int, Equals, int64(3))
 	c.Check(r.Elems[3].int, Equals, int64(4))
 	c.Check(r.Elems[4].buf, DeepEquals, []byte("foobar"))
-
-	// invalid multi bulk reply
-	r = parseString("*-2\r\n")
-	c.Check(r.Type, Equals, ErrorReply)
-	c.Check(r.Err, Equals, ParseError)
-
-	// invalid reply
-	r = parseString("@foo\r\n")
-	c.Check(r.Type, Equals, ErrorReply)
-	c.Check(r.Err, Equals, ParseError)
 }
