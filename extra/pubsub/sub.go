@@ -12,9 +12,9 @@ type SubReplyType uint8
 
 const (
 	ErrorReply SubReplyType = iota
-	SubscribeType
-	UnsubscribeType
-	MessageType
+	SubscribeReply
+	UnsubscribeReply
+	MessageReply
 )
 
 // SubClient wraps a Redis client to provide convenience methods for Pub/Sub functionality.
@@ -27,8 +27,8 @@ type SubClient struct {
 type SubReply struct {
 	Type     SubReplyType // SubReply type
 	Channel  string       // Channel reply is on
-	SubCount int          // Count of subs active after this action (SubscribeType or UnsubscribeType)
-	Message  string       // Publish message (MessageType)
+	SubCount int          // Count of subs active after this action (SubscribeReply or UnsubscribeReply)
+	Message  string       // Publish message (MessageReply)
 	Err      error        // SubReply error
 	Reply    *redis.Reply // Original Redis reply
 }
@@ -67,10 +67,11 @@ func (c *SubClient) PUnsubscribe(patterns ...interface{}) *SubReply {
 	return c.filterMessages("PUNSUBSCRIBE", patterns...)
 }
 
-// Receive returns the next publish reply on the Redis client.
-// It is possible Receive will timeout, and the *SubReply will
-// be an ErrorReply. You can use the TimedOut() method on SubReply
-// to easily determine if that is the case.
+// Receive returns the next publish reply on the Redis client.  It is possible
+// Receive will timeout, and the *SubReply will be an ErrorReply. You can use
+// the Timeout() method on SubReply to easily determine if that is the case. If
+// this is the case you can call Receive again to continue listening for
+// publishes
 func (c *SubClient) Receive() *SubReply {
 	return c.receive(false)
 }
@@ -88,7 +89,7 @@ func (c *SubClient) filterMessages(cmd string, names ...interface{}) *SubReply {
 	r := c.Client.Cmd(cmd, names...)
 	sr := c.parseReply(r)
 	for {
-		if sr.Type == MessageType {
+		if sr.Type == MessageReply {
 			c.messages.PushBack(sr)
 		} else {
 			break
@@ -131,7 +132,7 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 	//first element
 	switch rtype {
 	case "subscribe":
-		sr.Type = SubscribeType
+		sr.Type = SubscribeReply
 		count, err := reply.Elems[2].Int()
 		if err != nil {
 			sr.Err = errors.New("subscribe reply does not have int value for sub count")
@@ -140,7 +141,7 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 			sr.SubCount = count
 		}
 	case "unsubscribe":
-		sr.Type = UnsubscribeType
+		sr.Type = UnsubscribeReply
 		count, err := reply.Elems[2].Int()
 		if err != nil {
 			sr.Err = errors.New("unsubscribe reply does not have int value for sub count")
@@ -149,7 +150,7 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 			sr.SubCount = count
 		}
 	case "message":
-		sr.Type = MessageType
+		sr.Type = MessageReply
 		msg, err := reply.Elems[2].Str()
 		if err != nil {
 			sr.Err = errors.New("message reply does not have string value for body")

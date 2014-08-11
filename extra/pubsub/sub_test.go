@@ -28,7 +28,7 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != SubscribeType {
+	if sr.Type != SubscribeReply {
 		t.Fatal("Did not receive a subscribe reply")
 	}
 
@@ -56,7 +56,7 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != MessageType {
+	if sr.Type != MessageReply {
 		t.Fatal("Did not receive a message reply")
 	}
 
@@ -69,7 +69,7 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != UnsubscribeType {
+	if sr.Type != UnsubscribeReply {
 		t.Fatal("Did not receive a unsubscribe reply")
 	}
 
