@@ -4,14 +4,14 @@
 
 *Items should be added to this file as:*
 
-	### YYYY-MM-DD Release
+    ### YYYY-MM-DD Release
 
-	+ Additional changes.
-	+ More changes.
+    + Additional changes.
+    + More changes.
 
 * * *
 
-### 2014-8-10 Release v0.4.0 (pending)
+### 2014-8-10 Release v0.4.0
 
 + Rewrite encoding/decoding out into its own sub-package (`resp`)
 + Add `extra` sub-package with the following features
