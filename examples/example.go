@@ -94,4 +94,11 @@ func main() {
 	s, err = r.Str()
 	errHndlr(err)
 	fmt.Println("multikey:", s)
+
+	//* Publish/Subscribe
+	c.Cmd("publish", "queue", "test")
+
+	c.Cmd("subscribe", "queue")
+
+	r = c.ReadReply() //Blocks until message is received
 }
