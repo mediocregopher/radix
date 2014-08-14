@@ -207,7 +207,10 @@ func (c *Client) GetMaster(name string) (*redis.Client, error) {
 	req := getReq{name, make(chan *getReqRet)}
 	c.getCh <- &req
 	ret := <-req.retCh
-	return ret.conn, ret.err
+	if ret.err != nil {
+		return nil, ret.err
+	}
+	return ret.conn, nil
 }
 
 // Return a connection for a master of a given name. As with the pool package,
