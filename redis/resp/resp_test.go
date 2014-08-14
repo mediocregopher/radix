@@ -144,6 +144,16 @@ var arbitraryAsStringTests = []arbitraryTest{
 	{map[int]int{1: 2, 3: 4}, []byte("*4\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n4\r\n")},
 }
 
+var arbitraryAsFlattenedStringsTests = []arbitraryTest{
+	{
+		[]interface{}{"wat", map[string]interface{}{
+			"foo": 1,
+			"bar": "baz",
+		}},
+		[]byte("*5\r\n$3\r\nwat\r\n$3\r\nfoo\r\n$1\r\n1\r\n$3\r\nbar\r\n$3\r\nbaz\r\n"),
+	},
+}
+
 func (_ *RespSuite) TestWriteArbitrary(c *C) {
 	var err error
 	buf := bytes.NewBuffer([]byte{})
@@ -163,6 +173,18 @@ func (_ *RespSuite) TestWriteArbitraryAsString(c *C) {
 		c.Logf("Checking test %v", test)
 		buf.Reset()
 		err = WriteArbitraryAsString(buf, test.val)
+		c.Check(err, Equals, nil)
+		c.Check(buf.Bytes(), DeepEquals, test.expect)
+	}
+}
+
+func (_ *RespSuite) TestWriteArbitraryAsFlattendStrings(c *C) {
+	var err error
+	buf := bytes.NewBuffer([]byte{})
+	for _, test := range arbitraryAsFlattenedStringsTests {
+		c.Logf("Checking test %v", test)
+		buf.Reset()
+		err = WriteArbitraryAsFlattenedStrings(buf, test.val)
 		c.Check(err, Equals, nil)
 		c.Check(buf.Bytes(), DeepEquals, test.expect)
 	}

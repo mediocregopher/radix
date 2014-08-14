@@ -151,7 +151,7 @@ func (c *Client) writeRequest(requests ...*request) error {
 		req := make([]interface{}, 0, len(requests[i].args)+1)
 		req = append(req, requests[i].cmd)
 		req = append(req, requests[i].args...)
-		err := resp.WriteArbitraryAsString(c.Conn, req)
+		err := resp.WriteArbitraryAsFlattenedStrings(c.Conn, req)
 		if err != nil {
 			c.Close()
 			return err

@@ -239,17 +239,26 @@ func WriteArbitrary(w io.Writer, m interface{}) error {
 	return err
 }
 
-// WriteArbitraryAsString is similar to WriteArbitrary except that it will
-// encode all types except Array as a BulkStr, converting the argument into a
-// string first as necessary. This is useful because commands to a redis server
-// must be given as an array of bulk strings.
-//
-// Note that if a Message type is found it will *not* be encoded to a BulkStr,
-// but will simply be passed through as whatever type it already represents.
+// WriteArbitraryAsString is similar to WriteArbitraryAsFlattenedString except
+// that it won't flatten any embedded arrays.
 func WriteArbitraryAsString(w io.Writer, m interface{}) error {
 	b := format(m, true)
 	_, err := w.Write(b)
 	return err
+}
+
+// WriteArbitraryAsFlattenedStrings is similar to WriteArbitrary except that it
+// will encode all types except Array as a BulkStr, converting the argument into
+// a string first as necessary. It will also flatten any embedded arrays into a
+// single long array. This is useful because commands to a redis server must be
+// given as an array of bulk strings. If the argument isn't already in a slice
+// or map it will be wrapped so that it is written as an Array of size one.
+//
+// Note that if a Message type is found it will *not* be encoded to a BulkStr,
+// but will simply be passed through as whatever type it already represents.
+func WriteArbitraryAsFlattenedStrings(w io.Writer, m interface{}) error {
+	fm := flatten(m)
+	return WriteArbitraryAsString(w, fm)
 }
 
 func format(m interface{}, forceString bool) []byte {
@@ -296,11 +305,25 @@ func format(m interface{}, forceString bool) []byte {
 		} else {
 			return formatErr(mt)
 		}
+
+	// We duplicate the below code here a bit, since this is the common case and
+	// it'd be better to not get the reflect package involved here
+	case []interface{}:
+		l := len(mt)
+		b := make([]byte, 0, l*1024)
+		b = append(b, '*')
+		b = append(b, []byte(strconv.Itoa(l))...)
+		b = append(b, []byte("\r\n")...)
+		for i := 0; i < l; i++ {
+			b = append(b, format(mt[i], forceString)...)
+		}
+		return b
+
 	case *Message:
 		return mt.raw
 	default:
 		// Fallback to reflect-based.
-		switch reflect.TypeOf(mt).Kind() {
+		switch reflect.TypeOf(m).Kind() {
 		case reflect.Slice:
 			rm := reflect.ValueOf(mt)
 			l := rm.Len()
@@ -309,7 +332,8 @@ func format(m interface{}, forceString bool) []byte {
 			b = append(b, []byte(strconv.Itoa(l))...)
 			b = append(b, []byte("\r\n")...)
 			for i := 0; i < l; i++ {
-				b = append(b, format(rm.Index(i).Interface(), forceString)...)
+				vv := rm.Index(i).Interface()
+				b = append(b, format(vv, forceString)...)
 			}
 
 			return b
@@ -331,6 +355,44 @@ func format(m interface{}, forceString bool) []byte {
 		default:
 			return []byte(fmt.Sprint(m))
 		}
+	}
+}
+
+var typeOfBytes = reflect.TypeOf([]byte(nil))
+
+func flatten(m interface{}) []interface{} {
+	t := reflect.TypeOf(m)
+
+	// If it's a byte-slice we don't want to flatten
+	if t == typeOfBytes {
+		return []interface{}{m}
+	}
+
+	switch t.Kind() {
+	case reflect.Slice:
+		rm := reflect.ValueOf(m)
+		l := rm.Len()
+		ret := make([]interface{}, 0, l)
+		for i := 0; i < l; i++ {
+			ret = append(ret, flatten(rm.Index(i).Interface())...)
+		}
+		return ret
+
+	case reflect.Map:
+		rm := reflect.ValueOf(m)
+		l := rm.Len() * 2
+		keys := rm.MapKeys()
+		ret := make([]interface{}, 0, l)
+		for _, k := range keys {
+			kv := k.Interface()
+			vv := rm.MapIndex(k).Interface()
+			ret = append(ret, flatten(kv)...)
+			ret = append(ret, flatten(vv)...)
+		}
+		return ret
+
+	default:
+		return []interface{}{m}
 	}
 }
 
