@@ -11,6 +11,10 @@
 
 * * *
 
+### 2014-8-14 Release v0.4.2
+
++ Fix Cmd not flattening arguments properly
+
 ### 2014-8-14 Release v0.4.1
 
 + Make Client's connection be publicly accessible
