@@ -11,6 +11,10 @@
 
 * * *
 
+### 2014-8-14 Release v0.4.1
+
++ Make Client's connection be publicly accessible
+
 ### 2014-8-10 Release v0.4.0
 
 + Rewrite encoding/decoding out into its own sub-package (`resp`)
