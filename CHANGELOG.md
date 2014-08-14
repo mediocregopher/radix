@@ -11,6 +11,10 @@
 
 * * *
 
+### 2014-8-14 Release v0.4.3
+
++ Make sentinel package return error and not ClientError
+
 ### 2014-8-14 Release v0.4.2
 
 + Fix Cmd not flattening arguments properly

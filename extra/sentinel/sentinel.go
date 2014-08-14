@@ -76,11 +76,12 @@ type Client struct {
 // Creates a sentinel client. Connects to the given sentinel instance, pulls the
 // information for the masters of the given names, and creates an intial pool of
 // connections for each master. The client will automatically replace the pool
-// for any master should sentinel decide to fail the master over.
+// for any master should sentinel decide to fail the master over. The returned
+// error is a *ClientError.
 func NewClient(
 	network, address string, poolSize int, names ...string,
 ) (
-	*Client, *ClientError,
+	*Client, error,
 ) {
 
 	// We use this to fetch initial details about masters before we upgrade it
@@ -201,8 +202,8 @@ func (c *Client) spin() {
 
 // Retrieves a connection for the master of the given name. If sentinel has
 // become unreachable this will always return an error. Close should be called
-// in that case
-func (c *Client) GetMaster(name string) (*redis.Client, *ClientError) {
+// in that case. The returned error is a *ClientError.
+func (c *Client) GetMaster(name string) (*redis.Client, error) {
 	req := getReq{name, make(chan *getReqRet)}
 	c.getCh <- &req
 	ret := <-req.retCh
