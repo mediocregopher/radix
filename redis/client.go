@@ -23,7 +23,9 @@ var PipelineQueueEmptyError error = errors.New("pipeline queue empty")
 
 // Client describes a Redis client.
 type Client struct {
-	conn      net.Conn
+	// The connection the client talks to redis over. Don't touch this unless
+	// you know what you're doing.
+	Conn      net.Conn
 	timeout   time.Duration
 	reader    *bufio.Reader
 	pending   []*request
@@ -45,7 +47,7 @@ func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
 	}
 
 	c := new(Client)
-	c.conn = conn
+	c.Conn = conn
 	c.timeout = timeout
 	c.reader = bufio.NewReaderSize(conn, bufSize)
 	return c, nil
@@ -60,7 +62,7 @@ func Dial(network, addr string) (*Client, error) {
 
 // Close closes the connection.
 func (c *Client) Close() error {
-	return c.conn.Close()
+	return c.Conn.Close()
 }
 
 // Cmd calls the given Redis command.
@@ -112,13 +114,13 @@ func (c *Client) GetReply() *Reply {
 
 func (c *Client) setReadTimeout() {
 	if c.timeout != 0 {
-		c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+		c.Conn.SetReadDeadline(time.Now().Add(c.timeout))
 	}
 }
 
 func (c *Client) setWriteTimeout() {
 	if c.timeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+		c.Conn.SetWriteDeadline(time.Now().Add(c.timeout))
 	}
 }
 
@@ -149,7 +151,7 @@ func (c *Client) writeRequest(requests ...*request) error {
 		req := make([]interface{}, 0, len(requests[i].args)+1)
 		req = append(req, requests[i].cmd)
 		req = append(req, requests[i].args...)
-		err := resp.WriteArbitraryAsString(c.conn, req)
+		err := resp.WriteArbitraryAsString(c.Conn, req)
 		if err != nil {
 			c.Close()
 			return err
