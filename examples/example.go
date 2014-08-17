@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"github.com/fzzy/radix/redis"
+	"github.com/fzzy/radix/extra/pubsub"
 	"os"
 	"time"
 )
@@ -95,10 +96,15 @@ func main() {
 	errHndlr(err)
 	fmt.Println("multikey:", s)
 
-	//* Publish/Subscribe
-	c.Cmd("publish", "queue", "test")
+	//* Publish
+	c.Cmd("publish", "queue", "data")
 
-	c.Cmd("subscribe", "queue")
-
-	r = c.ReadReply() //Blocks until message is received
+	//* Subscribe
+	psclient := pubsub.NewSubClient(c)
+	psclient.Subscribe("queue1", "queue2")
+	reply := psclient.Receive() //Blocks until reply is received or timeout is tripped
+	if !reply.Timeout(){
+		fmt.Println(reply)
+	}
+	psclient.Unsubscribe("queue1", "queue2") //Unsubscribe before issuing any other commands with c
 }
