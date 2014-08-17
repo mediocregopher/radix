@@ -4,8 +4,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/fzzy/radix/redis"
 	"github.com/fzzy/radix/extra/pubsub"
+	"github.com/fzzy/radix/redis"
 	"os"
 	"time"
 )
@@ -100,11 +100,11 @@ func main() {
 	c.Cmd("publish", "queue", "data")
 
 	//* Subscribe
-	psclient := pubsub.NewSubClient(c)
-	psclient.Subscribe("queue1", "queue2")
-	reply := psclient.Receive() //Blocks until reply is received or timeout is tripped
-	if !reply.Timeout(){
-		fmt.Println(reply)
+	psc := pubsub.NewSubClient(c)
+	psc.Subscribe("queue1", "queue2")
+	psr := psc.Receive() //Blocks until reply is received or timeout is tripped
+	if !psr.Timeout() {
+		fmt.Println(r)
 	}
-	psclient.Unsubscribe("queue1", "queue2") //Unsubscribe before issuing any other commands with c
+	psc.Unsubscribe("queue1", "queue2") //Unsubscribe before issuing any other commands with c
 }
