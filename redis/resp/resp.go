@@ -136,8 +136,12 @@ func readBulkStr(r *bufio.Reader) (*Message, error) {
 
 	// There's a hanging \r\n there, gotta read past it
 	trail := make([]byte, 2)
-	if _, err = r.Read(trail); err != nil {
-		return nil, err
+	for i := 0; i < 2; i++ {
+		if c, err := r.ReadByte(); err != nil {
+			return nil, err
+		} else {
+			trail[i] = c
+		}
 	}
 
 	blens := len(b) + len(total)
