@@ -11,6 +11,10 @@
 
 * * *
 
+### 2014-8-18 Release v0.4.4
+
++ Fix reading of bulk strings for some rare cases
+
 ### 2014-8-14 Release v0.4.3
 
 + Make sentinel package return error and not ClientError
