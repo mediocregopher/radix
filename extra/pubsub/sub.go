@@ -26,11 +26,11 @@ type SubClient struct {
 // SubReply wraps a Redis reply and provides convienient access to Pub/Sub info.
 type SubReply struct {
 	Type     SubReplyType // SubReply type
-	Channel  string       // Channel reply is on
+	Channel  string       // Channel reply is on (MessageReply)
 	SubCount int          // Count of subs active after this action (SubscribeReply or UnsubscribeReply)
 	Message  string       // Publish message (MessageReply)
-	Err      error        // SubReply error
-	Reply    *redis.Reply // Original Redis reply
+	Err      error        // SubReply error (ErrorReply)
+	Reply    *redis.Reply // Original Redis reply (MessageReply)
 }
 
 // Timeout determines if this SubReply is an error type
@@ -87,14 +87,18 @@ func (c *SubClient) receive(skipBuffer bool) *SubReply {
 
 func (c *SubClient) filterMessages(cmd string, names ...interface{}) *SubReply {
 	r := c.Client.Cmd(cmd, names...)
-	sr := c.parseReply(r)
-	for {
+	var sr *SubReply
+	for i := 0; i < len(names); i++ {
+		// If nil we know this is the first loop
+		if sr == nil {
+			sr = c.parseReply(r)
+		} else {
+			sr = c.receive(true)
+		}
 		if sr.Type == MessageReply {
 			c.messages.PushBack(sr)
-		} else {
-			break
+			i--
 		}
-		sr = c.receive(true)
 	}
 	return sr
 }
@@ -121,13 +125,6 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 		sr.Type = ErrorReply
 		return sr
 	}
-	channel, err := reply.Elems[1].Str()
-	if err != nil {
-		sr.Err = errors.New("subscription multireply does not have string value for channel")
-		sr.Type = ErrorReply
-		return sr
-	}
-	sr.Channel = channel
 
 	//first element
 	switch rtype {
@@ -151,6 +148,13 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 		}
 	case "message":
 		sr.Type = MessageReply
+		channel, err := reply.Elems[1].Str()
+		if err != nil {
+			sr.Err = errors.New("subscription multireply does not have string value for channel")
+			sr.Type = ErrorReply
+			return sr
+		}
+		sr.Channel = channel
 		msg, err := reply.Elems[2].Str()
 		if err != nil {
 			sr.Err = errors.New("message reply does not have string value for body")
