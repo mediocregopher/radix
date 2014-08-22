@@ -11,6 +11,11 @@
 
 * * *
 
+### 2014-8-22 Release v0.4.5
+
++ Fix bug in pubsub where it wasn't pulling all subscribe replies
++ Update examples
+
 ### 2014-8-18 Release v0.4.4
 
 + Fix reading of bulk strings for some rare cases
