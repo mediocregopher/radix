@@ -128,7 +128,7 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 
 	//first element
 	switch rtype {
-	case "subscribe":
+	case "subscribe", "psubscribe":
 		sr.Type = SubscribeReply
 		count, err := reply.Elems[2].Int()
 		if err != nil {
@@ -137,7 +137,7 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 		} else {
 			sr.SubCount = count
 		}
-	case "unsubscribe":
+	case "unsubscribe", "punsubscribe":
 		sr.Type = UnsubscribeReply
 		count, err := reply.Elems[2].Int()
 		if err != nil {
@@ -146,7 +146,7 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 		} else {
 			sr.SubCount = count
 		}
-	case "message":
+	case "message", "pmessage":
 		sr.Type = MessageReply
 		channel, err := reply.Elems[1].Str()
 		if err != nil {
