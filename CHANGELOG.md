@@ -11,6 +11,11 @@
 
 * * *
 
+### 2014-9-22 Release v0.4.6
+
++ Fix bug in pubsub package preventing patterned sub commands from working
+  (thanks @hayesgm!)
+
 ### 2014-8-22 Release v0.4.5
 
 + Fix bug in pubsub where it wasn't pulling all subscribe replies
