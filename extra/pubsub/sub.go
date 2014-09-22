@@ -146,32 +146,24 @@ func (c *SubClient) parseReply(reply *redis.Reply) *SubReply {
 		} else {
 			sr.SubCount = count
 		}
-	case "message":
+	case "message", "pmessage":
+		var chanI, msgI int
+
+		if rtype == "message" {
+			chanI, msgI = 1, 2
+		} else { // "pmessage"
+			chanI, msgI = 2, 3
+		}
+
 		sr.Type = MessageReply
-		channel, err := reply.Elems[1].Str()
+		channel, err := reply.Elems[chanI].Str()
 		if err != nil {
 			sr.Err = errors.New("subscription multireply does not have string value for channel")
 			sr.Type = ErrorReply
 			return sr
 		}
 		sr.Channel = channel
-		msg, err := reply.Elems[2].Str()
-		if err != nil {
-			sr.Err = errors.New("message reply does not have string value for body")
-			sr.Type = ErrorReply
-		} else {
-			sr.Message = msg
-		}
-	case "pmessage":
-		sr.Type = MessageReply
-		channel, err := reply.Elems[2].Str()
-		if err != nil {
-			sr.Err = errors.New("subscription multireply does not have string value for channel")
-			sr.Type = ErrorReply
-			return sr
-		}
-		sr.Channel = channel
-		msg, err := reply.Elems[3].Str()
+		msg, err := reply.Elems[msgI].Str()
 		if err != nil {
 			sr.Err = errors.New("message reply does not have string value for body")
 			sr.Type = ErrorReply
