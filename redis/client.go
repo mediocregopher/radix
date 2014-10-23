@@ -178,7 +178,7 @@ func (c *Client) parse() *Reply {
 
 // The error return parameter is for bubbling up parse errors and the like, if
 // the error is sent by redis itself as an Err message type, then it will be
-// sent back as an actual Reply
+// sent back as an actual Reply (wrapped in a CmdError)
 func messageToReply(m *resp.Message) (*Reply, error) {
 	r := &Reply{}
 
@@ -191,7 +191,7 @@ func messageToReply(m *resp.Message) (*Reply, error) {
 		if strings.HasPrefix(errMsg.Error(), "LOADING") {
 			err = LoadingError
 		} else {
-			err = errMsg
+			err = &CmdError{errMsg}
 		}
 		r.Type = ErrorReply
 		r.Err = err

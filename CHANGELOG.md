@@ -11,6 +11,11 @@
 
 * * *
 
+### 2014-10-23 Release v0.4.7
+
++ Implement CmdError so clients can tell an application level error from an
+  external error
+
 ### 2014-9-22 Release v0.4.6
 
 + Fix bug in pubsub package preventing patterned sub commands from working

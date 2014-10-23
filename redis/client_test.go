@@ -32,6 +32,10 @@ func (s *ClientSuite) TearDownTest(c *C) {
 func (s *ClientSuite) TestCmd(c *C) {
 	v, _ := s.c.Cmd("echo", "Hello, World!").Str()
 	c.Assert(v, Equals, "Hello, World!")
+
+	// Test that a bad command properly returns a *CmdError
+	err := s.c.Cmd("non-existant-cmd").Err
+	c.Assert(err.(*CmdError).Error(), Not(Equals), "")
 }
 
 func (s *ClientSuite) TestPipeline(c *C) {

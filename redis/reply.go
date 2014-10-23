@@ -5,6 +5,28 @@ import (
 	"strconv"
 )
 
+// A CmdError implements the error interface and is what is returned when the
+// server returns an error on the application level (e.g. key doesn't exist or
+// is the wrong type), as opposed to a connection/transport error.
+//
+// You can test if a reply is a CmdError like so:
+//
+//	r := conn.Cmd("GET", "key-which-isnt-a-string")
+//	if r.Err != nil {
+//		if cerr, ok := r.Err.(*redis.CmdError); ok {
+//			// Is CmdError
+//		} else {
+//			// Is other error
+//		}
+//	}
+type CmdError struct {
+	Err error
+}
+
+func (cerr *CmdError) Error() string {
+	return cerr.Err.Error()
+}
+
 //* Reply
 
 /*
