@@ -36,6 +36,12 @@ func (s *ClientSuite) TestCmd(c *C) {
 	// Test that a bad command properly returns a *CmdError
 	err := s.c.Cmd("non-existant-cmd").Err
 	c.Assert(err.(*CmdError).Error(), Not(Equals), "")
+
+	// Test that application level errors propagate correctly
+	s.c.Cmd("sadd", "foo", "bar")
+	_, err = s.c.Cmd("get", "foo").Str()
+	c.Assert(err.(*CmdError).Error(), Not(Equals), "")
+
 }
 
 func (s *ClientSuite) TestPipeline(c *C) {
