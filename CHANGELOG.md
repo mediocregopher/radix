@@ -11,6 +11,11 @@
 
 * * *
 
+### 2014-11-04 Release v0.4.8
+
++ Fix writing float values and other arbitrary values in resp, which would have
+  caused a connection to hang if a command with a float was ever sent
+
 ### 2014-10-23 Release v0.4.7
 
 + Implement CmdError so clients can tell an application level error from an
