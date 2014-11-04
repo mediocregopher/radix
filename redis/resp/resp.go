@@ -303,6 +303,12 @@ func format(m interface{}, forceString bool) []byte {
 		return formatInt(int64(mt), forceString)
 	case uint64:
 		return formatInt(int64(mt), forceString)
+	case float32:
+		ft := strconv.FormatFloat(float64(mt), 'f', -1, 32)
+		return formatStr([]byte(ft))
+	case float64:
+		ft := strconv.FormatFloat(mt, 'f', -1, 64)
+		return formatStr([]byte(ft))
 	case error:
 		if forceString {
 			return formatStr([]byte(mt.Error()))
@@ -357,7 +363,7 @@ func format(m interface{}, forceString bool) []byte {
 			}
 			return b
 		default:
-			return []byte(fmt.Sprint(m))
+			return formatStr([]byte(fmt.Sprint(m)))
 		}
 	}
 }

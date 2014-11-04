@@ -119,6 +119,8 @@ var arbitraryTests = []arbitraryTest{
 	{80, []byte(":80\r\n")},
 	{int64(-80), []byte(":-80\r\n")},
 	{uint64(80), []byte(":80\r\n")},
+	{float32(0.1234), []byte("$6\r\n0.1234\r\n")},
+	{float64(0.1234), []byte("$6\r\n0.1234\r\n")},
 	{errors.New("hi"), []byte("-hi\r\n")},
 
 	{nilMessage, []byte("$-1\r\n")},
@@ -136,6 +138,8 @@ var arbitraryAsStringTests = []arbitraryTest{
 	{80, []byte("$2\r\n80\r\n")},
 	{int64(-80), []byte("$3\r\n-80\r\n")},
 	{uint64(80), []byte("$2\r\n80\r\n")},
+	{float32(0.1234), []byte("$6\r\n0.1234\r\n")},
+	{float64(0.1234), []byte("$6\r\n0.1234\r\n")},
 	{errors.New("hi"), []byte("$2\r\nhi\r\n")},
 
 	{nilMessage, []byte("$-1\r\n")},
