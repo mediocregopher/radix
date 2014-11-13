@@ -152,9 +152,8 @@ var arbitraryAsFlattenedStringsTests = []arbitraryTest{
 	{
 		[]interface{}{"wat", map[string]interface{}{
 			"foo": 1,
-			"bar": "baz",
 		}},
-		[]byte("*5\r\n$3\r\nwat\r\n$3\r\nfoo\r\n$1\r\n1\r\n$3\r\nbar\r\n$3\r\nbaz\r\n"),
+		[]byte("*3\r\n$3\r\nwat\r\n$3\r\nfoo\r\n$1\r\n1\r\n"),
 	},
 }
 
