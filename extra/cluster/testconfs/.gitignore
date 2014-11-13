@@ -1,0 +1,4 @@
+*-cluster.conf
+*.rdb
+*.aof
+*.log
