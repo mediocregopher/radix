@@ -126,7 +126,7 @@ var arbitraryTests = []arbitraryTest{
 	{nilMessage, []byte("$-1\r\n")},
 
 	{[]int{1, 2, 3}, []byte("*3\r\n:1\r\n:2\r\n:3\r\n")},
-	{map[int]int{1: 2, 3: 4}, []byte("*4\r\n:1\r\n:2\r\n:3\r\n:4\r\n")},
+	{map[int]int{1: 2}, []byte("*2\r\n:1\r\n:2\r\n")},
 }
 
 var arbitraryAsStringTests = []arbitraryTest{
@@ -145,7 +145,7 @@ var arbitraryAsStringTests = []arbitraryTest{
 	{nilMessage, []byte("$-1\r\n")},
 
 	{[]int{1, 2, 3}, []byte("*3\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n")},
-	{map[int]int{1: 2, 3: 4}, []byte("*4\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n4\r\n")},
+	{map[int]int{1: 2}, []byte("*2\r\n$1\r\n1\r\n$1\r\n2\r\n")},
 }
 
 var arbitraryAsFlattenedStringsTests = []arbitraryTest{
