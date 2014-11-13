@@ -31,8 +31,7 @@ Radix is a minimalistic Redis client for Go. It is broken up into the following:
 ## Testing
 
     go get -u launchpad.net/gocheck
-    cd $GOROOT/src/pkg/github.com/fzzy/radix/redis
-    go test -v -bench=".*"
+    go test -bench=".*" ./...
 
 ## Copyright and licensing
 
