@@ -123,6 +123,8 @@ var arbitraryTests = []arbitraryTest{
 
 	{[]int{1, 2, 3}, []byte("*3\r\n:1\r\n:2\r\n:3\r\n")},
 	{map[int]int{1: 2}, []byte("*2\r\n:1\r\n:2\r\n")},
+
+	{NewSimpleString("OK"), []byte("+OK\r\n")},
 }
 
 var arbitraryAsStringTests = []arbitraryTest{
@@ -142,6 +144,8 @@ var arbitraryAsStringTests = []arbitraryTest{
 
 	{[]int{1, 2, 3}, []byte("*3\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n")},
 	{map[int]int{1: 2}, []byte("*2\r\n$1\r\n1\r\n$1\r\n2\r\n")},
+
+	{NewSimpleString("OK"), []byte("+OK\r\n")},
 }
 
 var arbitraryAsFlattenedStringsTests = []arbitraryTest{

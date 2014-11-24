@@ -55,6 +55,26 @@ func NewMessage(b []byte) (*Message, error) {
 	return ReadMessage(bytes.NewReader(b))
 }
 
+// Can be used when writing to a resp stream to write a simple-string-style
+// stream (e.g. +OK\r\n) instead of the default bulk-string-style strings.
+//
+// 	foo := NewSimpleString("foo")
+// 	bar := NewSimpleString("bar")
+// 	baz := NewSimpleString("baz")
+// 	resp.WriteArbitrary(w, foo)
+// 	resp.WriteArbitrary(w, []interface{}{bar, baz})
+//
+func NewSimpleString(s string) *Message {
+	b := append(make([]byte, 0, len(s) + 3), '+')
+	b = append(b, []byte(s)...)
+	b = append(b, '\r', '\n')
+	return &Message{
+		Type: SimpleStr,
+		val:  s,
+		raw:  b,
+	}
+}
+
 // ReadMessage attempts to read a message object from the given io.Reader, parse
 // it, and return a Message struct representing it
 func ReadMessage(reader io.Reader) (*Message, error) {
@@ -331,6 +351,7 @@ func format(m interface{}, forceString bool) []byte {
 
 	case *Message:
 		return mt.raw
+
 	default:
 		// Fallback to reflect-based.
 		switch reflect.TypeOf(m).Kind() {
