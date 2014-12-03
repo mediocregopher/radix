@@ -38,7 +38,8 @@ type request struct {
 	args []interface{}
 }
 
-// Dial connects to the given Redis server with the given timeout.
+// Dial connects to the given Redis server with the given timeout, which will be
+// used as the read/write timeout when communicating with redis
 func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
 	// establish a connection
 	conn, err := net.Dial(network, addr)

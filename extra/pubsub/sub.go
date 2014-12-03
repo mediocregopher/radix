@@ -1,3 +1,5 @@
+// The pubsub package provides a wrapper around a normal redis client which
+// makes interacting with subscribe commands much easier
 package pubsub
 
 import (

@@ -1,3 +1,5 @@
+// The pool package implements a connection pool for redis connections which is
+// thread-safe
 package pool
 
 import (
