@@ -76,6 +76,41 @@ func (p *Pool) Put(conn *redis.Client) {
 	}
 }
 
+// A useful helper method which acts as a wrapper around Put. It will only
+// actually Put the conn back if potentialErr is not an error or is a
+// redis.CmdError. It would be used like the following:
+//
+//	func doSomeThings(p *Pool) error {
+//		conn, redisErr := p.Get()
+//		if redisErr != nil {
+//			return redisErr
+//		}
+//		defer p.CarefullyPut(conn, &redisErr)
+//
+//		var i int
+//		i, redisErr = conn.Cmd("GET", "foo").Int()
+//		if redisErr != nil {
+//			return redisErr
+//		}
+//
+//		redisErr = conn.Cmd("SET", "foo", i * 3).Err
+//		return redisErr
+//	}
+//
+// If we were just using the normal Put we wouldn't be able to defer it because
+// we don't want to Put back a connection which is broken. This method takes
+// care of doing that check so we can still use the convenient defer
+func (p *Pool) CarefullyPut(conn *redis.Client, potentialErr *error) {
+	if potentialErr != nil && *potentialErr != nil {
+		// We don't care about command errors, they don't indicate anything
+		// about the connection integrity
+		if _, ok := (*potentialErr).(*redis.CmdError); !ok {
+			return
+		}
+	}
+	p.Put(conn)
+}
+
 // Removes and calls Close() on all the connections currently in the pool.
 // Assuming there are no other connections waiting to be Put back this method
 // effectively closes and cleans up the pool.
