@@ -30,8 +30,15 @@ Radix is a minimalistic Redis client for Go. It is broken up into the following:
 
 ## Testing
 
-    go get -u launchpad.net/gocheck
-    go test -bench=".*" ./...
+    go get -u github.com/stretchr/testify
+    make test
+
+The test action assumes you have a redis server listening on port 6379. It will
+adiitionally bring up and tear down redis cluster nodes on ports 7000 and 7001.
+You can specify the path to `redis-server` to use when setting up cluster like
+so:
+
+    make REDIS_SERVER=/path/to/redis-server test
 
 ## Copyright and licensing
 

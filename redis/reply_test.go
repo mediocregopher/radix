@@ -1,117 +1,114 @@
 package redis
 
 import (
-	. "launchpad.net/gocheck"
+	"github.com/stretchr/testify/assert"
+	. "testing"
 )
 
-type ReplySuite struct{}
-
-var _ = Suite(&ReplySuite{})
-
-func (s *ReplySuite) TestStr(c *C) {
+func TestStr(t *T) {
 	r := &Reply{Type: ErrorReply, Err: LoadingError}
 	_, err := r.Str()
-	c.Check(err, Equals, LoadingError)
+	assert.Equal(t, LoadingError, err)
 
 	r = &Reply{Type: IntegerReply}
 	_, err = r.Str()
-	c.Check(err, NotNil)
+	assert.NotNil(t, err)
 
 	r = &Reply{Type: StatusReply, buf: []byte("foo")}
 	b, err := r.Str()
-	c.Check(err, IsNil)
-	c.Check(b, Equals, "foo")
+	assert.Nil(t, err)
+	assert.Equal(t, "foo", b)
 
 	r = &Reply{Type: BulkReply, buf: []byte("foo")}
 	b, err = r.Str()
-	c.Check(err, IsNil)
-	c.Check(b, Equals, "foo")
+	assert.Nil(t, err)
+	assert.Equal(t, "foo", b)
 }
 
-func (s *ReplySuite) TestBytes(c *C) {
+func TestBytes(t *T) {
 	r := &Reply{Type: BulkReply, buf: []byte("foo")}
 	b, err := r.Bytes()
-	c.Check(err, IsNil)
-	c.Check(b, DeepEquals, []byte("foo"))
+	assert.Nil(t, err)
+	assert.Equal(t, []byte("foo"), b)
 }
 
-func (s *ReplySuite) TestInt64(c *C) {
+func TestInt64(t *T) {
 	r := &Reply{Type: ErrorReply, Err: LoadingError}
 	_, err := r.Int64()
-	c.Check(err, Equals, LoadingError)
+	assert.Equal(t, LoadingError, err)
 
 	r = &Reply{Type: IntegerReply, int: 5}
 	b, err := r.Int64()
-	c.Check(err, IsNil)
-	c.Check(b, Equals, int64(5))
+	assert.Nil(t, err)
+	assert.Equal(t, int64(5), b)
 
 	r = &Reply{Type: BulkReply, buf: []byte("5")}
 	b, err = r.Int64()
-	c.Check(err, IsNil)
-	c.Check(b, Equals, int64(5))
+	assert.Nil(t, err)
+	assert.Equal(t, int64(5), b)
 
 	r = &Reply{Type: BulkReply, buf: []byte("foo")}
 	_, err = r.Int64()
-	c.Check(err, NotNil)
+	assert.NotNil(t, err)
 }
 
-func (s *ReplySuite) TestInt(c *C) {
+func TestInt(t *T) {
 	r := &Reply{Type: IntegerReply, int: 5}
 	b, err := r.Int()
-	c.Check(err, IsNil)
-	c.Check(b, Equals, 5)
+	assert.Nil(t, err)
+	assert.Equal(t, 5, b)
 }
 
-func (s *ReplySuite) TestBool(c *C) {
+func TestBool(t *T) {
 	r := &Reply{Type: IntegerReply, int: 0}
 	b, err := r.Bool()
-	c.Check(err, IsNil)
-	c.Check(b, Equals, false)
+	assert.Nil(t, err)
+	assert.Equal(t, false, b)
 
 	r = &Reply{Type: StatusReply, buf: []byte("0")}
 	b, err = r.Bool()
-	c.Check(err, IsNil)
-	c.Check(b, Equals, false)
+	assert.Nil(t, err)
+	assert.Equal(t, false, b)
 
 	r = &Reply{Type: IntegerReply, int: 2}
 	b, err = r.Bool()
-	c.Check(err, IsNil)
-	c.Check(b, Equals, true)
+	assert.Nil(t, err)
+	assert.Equal(t, true, b)
 
 	r = &Reply{Type: NilReply}
 	_, err = r.Bool()
-	c.Check(err, NotNil)
+	assert.NotNil(t, err)
 }
 
-func (s *ReplySuite) TestList(c *C) {
+func TestList(t *T) {
 	r := &Reply{Type: MultiReply}
 	r.Elems = make([]*Reply, 3)
 	r.Elems[0] = &Reply{Type: BulkReply, buf: []byte("0")}
 	r.Elems[1] = &Reply{Type: NilReply}
 	r.Elems[2] = &Reply{Type: BulkReply, buf: []byte("2")}
 	l, err := r.List()
-	c.Assert(err, IsNil)
-	c.Assert(len(l), Equals, 3)
-	c.Check(l[0], Equals, "0")
-	c.Check(l[1], Equals, "")
-	c.Check(l[2], Equals, "2")
+	assert.Nil(t, err)
+	assert.Equal(t, 3, len(l))
+	assert.Equal(t, "0", l[0])
+	assert.Equal(t, "", l[1])
+	assert.Equal(t, "2", l[2])
 }
 
-func (s *ReplySuite) TestBytesList(c *C) {
+func TestBytesList(t *T) {
 	r := &Reply{Type: MultiReply}
 	r.Elems = make([]*Reply, 3)
 	r.Elems[0] = &Reply{Type: BulkReply, buf: []byte("0")}
 	r.Elems[1] = &Reply{Type: NilReply}
 	r.Elems[2] = &Reply{Type: BulkReply, buf: []byte("2")}
 	l, err := r.ListBytes()
-	c.Assert(err, IsNil)
-	c.Assert(len(l), Equals, 3)
-	c.Check(l[0], DeepEquals, []byte("0"))
-	c.Assert(l[1], IsNil)
-	c.Check(l[2], DeepEquals, []byte("2"))
+	assert.Nil(t, err)
+	assert.Equal(t, 3, len(l))
+	assert.Equal(t, []byte("0"), l[0])
+	assert.Nil(t, l[1])
+	assert.Equal(t, []byte("2"), l[2])
 }
 
-func (s *ReplySuite) TestHash(c *C) {
+func TestHash(t *T) {
 	r := &Reply{Type: MultiReply}
 	r.Elems = make([]*Reply, 6)
 	r.Elems[0] = &Reply{Type: BulkReply, buf: []byte("a")}
@@ -121,8 +118,8 @@ func (s *ReplySuite) TestHash(c *C) {
 	r.Elems[4] = &Reply{Type: BulkReply, buf: []byte("c")}
 	r.Elems[5] = &Reply{Type: BulkReply, buf: []byte("2")}
 	h, err := r.Hash()
-	c.Assert(err, IsNil)
-	c.Check(h["a"], Equals, "0")
-	c.Check(h["b"], Equals, "")
-	c.Check(h["c"], Equals, "2")
+	assert.Nil(t, err)
+	assert.Equal(t, "0", h["a"])
+	assert.Equal(t, "", h["b"])
+	assert.Equal(t, "2", h["c"])
 }

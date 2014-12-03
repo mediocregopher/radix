@@ -3,104 +3,100 @@ package resp
 import (
 	"bytes"
 	"errors"
-	. "launchpad.net/gocheck"
+	"github.com/stretchr/testify/assert"
+	. "testing"
 )
 
-type RespSuite struct{}
-
-var _ = Suite(&RespSuite{})
-
-func (_ *RespSuite) TestRead(c *C) {
+func TestRead(t *T) {
 	var m *Message
 	var err error
 
 	_, err = NewMessage(nil)
-	c.Check(err, Not(Equals), nil)
+	assert.NotNil(t, err)
 
 	_, err = NewMessage([]byte{})
-	c.Check(err, Not(Equals), nil)
+	assert.NotNil(t, err)
 
 	// Simple string
 	m, _ = NewMessage([]byte("+ohey\r\n"))
-	c.Check(m.Type, Equals, SimpleStr)
-	c.Check(m.val.([]byte), DeepEquals, []byte("ohey"))
+	assert.Equal(t, SimpleStr, m.Type)
+	assert.Equal(t, []byte("ohey"), m.val)
 
 	// Empty simple string
 	m, _ = NewMessage([]byte("+\r\n"))
-	c.Check(m.Type, Equals, SimpleStr)
-	c.Check(m.val.([]byte), DeepEquals, []byte(""))
+	assert.Equal(t, SimpleStr, m.Type)
+	assert.Equal(t, []byte(""), m.val.([]byte))
 
 	// Error
 	m, _ = NewMessage([]byte("-ohey\r\n"))
-	c.Check(m.Type, Equals, Err)
-	c.Check(m.val.([]byte), DeepEquals, []byte("ohey"))
+	assert.Equal(t, Err, m.Type)
+	assert.Equal(t, []byte("ohey"), m.val.([]byte))
 
 	// Empty error
 	m, _ = NewMessage([]byte("-\r\n"))
-	c.Check(m.Type, Equals, Err)
-	c.Check(m.val.([]byte), DeepEquals, []byte(""))
+	assert.Equal(t, Err, m.Type)
+	assert.Equal(t, []byte(""), m.val.([]byte))
 
 	// Int
 	m, _ = NewMessage([]byte(":1024\r\n"))
-	c.Check(m.Type, Equals, Int)
-	c.Check(m.val.(int64), Equals, int64(1024))
+	assert.Equal(t, Int, m.Type)
+	assert.Equal(t, int64(1024), m.val.(int64))
 
 	// Bulk string
 	m, _ = NewMessage([]byte("$3\r\nfoo\r\n"))
-	c.Check(m.Type, Equals, BulkStr)
-	c.Check(m.val.([]byte), DeepEquals, []byte("foo"))
+	assert.Equal(t, BulkStr, m.Type)
+	assert.Equal(t, []byte("foo"), m.val.([]byte))
 
 	// Empty bulk string
 	m, _ = NewMessage([]byte("$0\r\n\r\n"))
-	c.Check(m.Type, Equals, BulkStr)
-	c.Check(m.val.([]byte), DeepEquals, []byte(""))
+	assert.Equal(t, BulkStr, m.Type)
+	assert.Equal(t, []byte(""), m.val.([]byte))
 
 	// Nil bulk string
 	m, _ = NewMessage([]byte("$-1\r\n"))
-	c.Check(m.Type, Equals, Nil)
+	assert.Equal(t, Nil, m.Type)
 
 	// Array
 	m, _ = NewMessage([]byte("*2\r\n+foo\r\n+bar\r\n"))
-	c.Check(m.Type, Equals, Array)
-	c.Check(len(m.val.([]*Message)), Equals, 2)
-	c.Check(m.val.([]*Message)[0].Type, Equals, SimpleStr)
-	c.Check(m.val.([]*Message)[0].val.([]byte), DeepEquals, []byte("foo"))
-	c.Check(m.val.([]*Message)[1].Type, Equals, SimpleStr)
-	c.Check(m.val.([]*Message)[1].val.([]byte), DeepEquals, []byte("bar"))
+	assert.Equal(t, Array, m.Type)
+	assert.Equal(t, 2, len(m.val.([]*Message)))
+	assert.Equal(t, SimpleStr, m.val.([]*Message)[0].Type)
+	assert.Equal(t, []byte("foo"), m.val.([]*Message)[0].val.([]byte))
+	assert.Equal(t, SimpleStr, m.val.([]*Message)[1].Type)
+	assert.Equal(t, []byte("bar"), m.val.([]*Message)[1].val.([]byte))
 
 	// Empty array
 	m, _ = NewMessage([]byte("*0\r\n"))
-	c.Check(m.Type, Equals, Array)
-	c.Check(len(m.val.([]*Message)), Equals, 0)
+	assert.Equal(t, Array, m.Type)
+	assert.Equal(t, 0, len(m.val.([]*Message)))
 
 	// Nil Array
 	m, _ = NewMessage([]byte("*-1\r\n"))
-	c.Check(m.Type, Equals, Nil)
+	assert.Equal(t, Nil, m.Type)
 
 	// Embedded Array
 	m, _ = NewMessage([]byte("*3\r\n+foo\r\n+bar\r\n*2\r\n+foo\r\n+bar\r\n"))
-	c.Check(m.Type, Equals, Array)
-	c.Check(len(m.val.([]*Message)), Equals, 3)
-	c.Check(m.val.([]*Message)[0].Type, Equals, SimpleStr)
-	c.Check(m.val.([]*Message)[0].val.([]byte), DeepEquals, []byte("foo"))
-	c.Check(m.val.([]*Message)[1].Type, Equals, SimpleStr)
-	c.Check(m.val.([]*Message)[1].val.([]byte), DeepEquals, []byte("bar"))
+	assert.Equal(t, Array, m.Type)
+	assert.Equal(t, 3, len(m.val.([]*Message)))
+	assert.Equal(t, SimpleStr, m.val.([]*Message)[0].Type)
+	assert.Equal(t, []byte("foo"), m.val.([]*Message)[0].val.([]byte))
+	assert.Equal(t, SimpleStr, m.val.([]*Message)[1].Type)
+	assert.Equal(t, []byte("bar"), m.val.([]*Message)[1].val.([]byte))
 	m = m.val.([]*Message)[2]
-	c.Check(len(m.val.([]*Message)), Equals, 2)
-	c.Check(m.val.([]*Message)[0].Type, Equals, SimpleStr)
-	c.Check(m.val.([]*Message)[0].val.([]byte), DeepEquals, []byte("foo"))
-	c.Check(m.val.([]*Message)[1].Type, Equals, SimpleStr)
-	c.Check(m.val.([]*Message)[1].val.([]byte), DeepEquals, []byte("bar"))
+	assert.Equal(t, 2, len(m.val.([]*Message)))
+	assert.Equal(t, SimpleStr, m.val.([]*Message)[0].Type)
+	assert.Equal(t, []byte("foo"), m.val.([]*Message)[0].val.([]byte))
+	assert.Equal(t, SimpleStr, m.val.([]*Message)[1].Type)
+	assert.Equal(t, []byte("bar"), m.val.([]*Message)[1].val.([]byte))
 
 	// Test that two bulks in a row read correctly
 	m, _ = NewMessage([]byte("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"))
-	c.Check(m.Type, Equals, Array)
-	c.Check(len(m.val.([]*Message)), Equals, 2)
-	c.Check(m.val.([]*Message)[0].Type, Equals, BulkStr)
-	c.Check(m.val.([]*Message)[0].val.([]byte), DeepEquals, []byte("foo"))
-	c.Check(m.val.([]*Message)[1].Type, Equals, BulkStr)
-	c.Check(m.val.([]*Message)[1].val.([]byte), DeepEquals, []byte("bar"))
-
+	assert.Equal(t, Array, m.Type)
+	assert.Equal(t, 2, len(m.val.([]*Message)))
+	assert.Equal(t, BulkStr, m.val.([]*Message)[0].Type)
+	assert.Equal(t, []byte("foo"), m.val.([]*Message)[0].val.([]byte))
+	assert.Equal(t, BulkStr, m.val.([]*Message)[1].Type)
+	assert.Equal(t, []byte("bar"), m.val.([]*Message)[1].val.([]byte))
 }
 
 type arbitraryTest struct {
@@ -157,53 +153,53 @@ var arbitraryAsFlattenedStringsTests = []arbitraryTest{
 	},
 }
 
-func (_ *RespSuite) TestWriteArbitrary(c *C) {
+func TestWriteArbitrary(t *T) {
 	var err error
 	buf := bytes.NewBuffer([]byte{})
 	for _, test := range arbitraryTests {
-		c.Logf("Checking test %v", test)
+		t.Logf("Checking test %v", test)
 		buf.Reset()
 		err = WriteArbitrary(buf, test.val)
-		c.Check(err, Equals, nil)
-		c.Check(buf.Bytes(), DeepEquals, test.expect)
+		assert.Nil(t, err)
+		assert.Equal(t, test.expect, buf.Bytes())
 	}
 }
 
-func (_ *RespSuite) TestWriteArbitraryAsString(c *C) {
+func TestWriteArbitraryAsString(t *T) {
 	var err error
 	buf := bytes.NewBuffer([]byte{})
 	for _, test := range arbitraryAsStringTests {
-		c.Logf("Checking test %v", test)
+		t.Logf("Checking test %v", test)
 		buf.Reset()
 		err = WriteArbitraryAsString(buf, test.val)
-		c.Check(err, Equals, nil)
-		c.Check(buf.Bytes(), DeepEquals, test.expect)
+		assert.Nil(t, err)
+		assert.Equal(t, test.expect, buf.Bytes())
 	}
 }
 
-func (_ *RespSuite) TestWriteArbitraryAsFlattendStrings(c *C) {
+func TestWriteArbitraryAsFlattenedStrings(t *T) {
 	var err error
 	buf := bytes.NewBuffer([]byte{})
 	for _, test := range arbitraryAsFlattenedStringsTests {
-		c.Logf("Checking test %v", test)
+		t.Logf("Checking test %v", test)
 		buf.Reset()
 		err = WriteArbitraryAsFlattenedStrings(buf, test.val)
-		c.Check(err, Equals, nil)
-		c.Check(buf.Bytes(), DeepEquals, test.expect)
+		assert.Nil(t, err)
+		assert.Equal(t, test.expect, buf.Bytes())
 	}
 }
 
-func (_ *RespSuite) TestMessageWrite(c *C) {
+func TestMessageWrite(t *T) {
 	var err error
 	var m *Message
 	buf := bytes.NewBuffer([]byte{})
 	for _, test := range arbitraryTests {
-		c.Logf("Checking test; %v", test)
+		t.Logf("Checking test; %v", test)
 		buf.Reset()
 		m, err = NewMessage(test.expect)
-		c.Check(err, Equals, nil)
+		assert.Nil(t, err)
 		err = WriteMessage(buf, m)
-		c.Check(err, Equals, nil)
-		c.Check(buf.Bytes(), DeepEquals, test.expect)
+		assert.Nil(t, err)
+		assert.Equal(t, test.expect, buf.Bytes())
 	}
 }
