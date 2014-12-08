@@ -11,6 +11,13 @@
 
 * * *
 
+### 2014-12-07 Release v0.5.0
+
++ Upgrade tests to use the testify library. It's a little easier to use than the
+  old one
++ Implement the cluster package
++ Small upgrades to pool and resp
+
 ### 2014-11-04 Release v0.4.8
 
 + Fix writing float values and other arbitrary values in resp, which would have
