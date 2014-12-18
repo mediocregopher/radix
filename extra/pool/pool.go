@@ -142,6 +142,7 @@ func (p *Pool) CarefullyPut(conn *redis.Client, potentialErr *error) {
 		// We don't care about command errors, they don't indicate anything
 		// about the connection integrity
 		if _, ok := (*potentialErr).(*redis.CmdError); !ok {
+			conn.Close()
 			return
 		}
 	}
