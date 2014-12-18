@@ -11,6 +11,12 @@
 
 * * *
 
+### 2014-12-18 Release v0.5.1
+
++ Add a CarefullyPutMaster method to sentinel, analogous to the CarefullyPut
+  method in pool
++ Updated the sentinel package's documentation to include some examples
+
 ### 2014-12-07 Release v0.5.0
 
 + Upgrade tests to use the testify library. It's a little easier to use than the
