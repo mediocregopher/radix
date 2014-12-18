@@ -1,12 +1,50 @@
 // The sentinel package provides a convenient interface with a redis sentinel
 // which will automatically handle pooling connections and automatic failover.
 //
+// Here's an example of creating a sentinel client and then using it to perform
+// some commands
+//
+//	func example() error {
+//		// If there exists sentinel masters "bucket0" and "bucket1", and we want out
+//		// client to create pools for both:
+//		client, err := sentinel.NewClient("tcp", "localhost:6379", 100, "bucket0", "bucket1")
+//		if err != nil {
+//			return err
+//		}
+//
+//		if err := exampleCmd(client); err != nil {
+//			return err
+//		}
+//
+//		return nil
+//	}
+//
+//	func exampleCmd(client *sentinel.Client) error {
+//		conn, redisErr := client.GetMaster("bucket0")
+//		if redisErr != nil {
+//			return redisErr
+//		}
+//		// We use CarefullyPutMaster to conditionally put the connection back in the
+//		// pool depending on the last error seen
+//		defer client.CarefullyPutMaster("bucket0", conn, &redisErr)
+//
+//		var i int
+//		if i, redisErr = conn.Cmd("GET", "foo").Int(); redisErr != nil {
+//			return redisErr
+//		}
+//
+//		if redisErr = conn.Cmd("SET", "foo", i+1); redisErr != nil {
+//			return redisErr
+//		}
+//
+//		return nil
+//	}
+//
 // This package only gaurantees that when GetMaster is called the returned
 // connection will be a connection to the master as of the moment that method is
 // called. It is still possible that there is a failover as that connection is
-// being used by the application, or before the PutMaster. Because of this,
-// always check errors and never PutMaster on a connection which has returned an
-// error.
+// being used by the application. The Readonly() method on CmdError will be
+// helpful if you want to gracefully handle this case.
 //
 // As a final note, a Client can be interacted with from multiple routines at
 // once safely, except for the Close method. To safely Close, ensure that only
