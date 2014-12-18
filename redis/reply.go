@@ -3,6 +3,7 @@ package redis
 import (
 	"errors"
 	"strconv"
+	"strings"
 )
 
 // A CmdError implements the error interface and is what is returned when the
@@ -25,6 +26,11 @@ type CmdError struct {
 
 func (cerr *CmdError) Error() string {
 	return cerr.Err.Error()
+}
+
+// Returns true if error returned was due to the redis server being read only
+func (cerr *CmdError) Readonly() bool {
+	return strings.HasPrefix(cerr.Err.Error(), "READONLY")
 }
 
 //* Reply

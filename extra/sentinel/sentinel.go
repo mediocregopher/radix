@@ -220,6 +220,41 @@ func (c *Client) PutMaster(name string, client *redis.Client) {
 	c.putCh <- &putReq{name, client}
 }
 
+// A useful helper method, analagous to the pool package's CarefullyPut method.
+// Since we don't want to Put a connection which is having connectivity
+// issues, this can be defered inside a function to make sure we only put back a
+// connection when we should. It should be used like the following:
+//
+//	func doSomeThings(c *Client) error {
+//		conn, redisErr := c.GetMaster("bucket0")
+//		if redisErr != nil {
+//			return redisErr
+//		}
+//		defer c.CarefullyPutMaster("bucket0", conn, &redisErr)
+//
+//		var i int
+//		i, redisErr = conn.Cmd("GET", "foo").Int()
+//		if redisErr != nil {
+//			return redisErr
+//		}
+//
+//		redisErr = conn.Cmd("SET", "foo", i * 3).Err
+//		return redisErr
+//	}
+func (c *Client) CarefullyPutMaster(
+	name string, client *redis.Client, potentialErr *error,
+) {
+	if potentialErr != nil && *potentialErr != nil {
+		// If the client sent back that it's READONLY then we don't want to keep
+		// this connection around. Otherwise, we don't care about command errors
+		if cerr, ok := (*potentialErr).(*redis.CmdError); !ok || cerr.Readonly() {
+			client.Close()
+			return
+		}
+	}
+	c.PutMaster(name, client)
+}
+
 // Closes all connection pools as well as the connection to sentinel.
 func (c *Client) Close() {
 	close(c.closeCh)
