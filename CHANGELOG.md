@@ -11,6 +11,10 @@
 
 * * *
 
+### 2015-1-26 Release v0.5.2
+
++ Make the cluster package be thread-safe
+
 ### 2014-12-18 Release v0.5.1
 
 + Add a CarefullyPutMaster method to sentinel, analogous to the CarefullyPut
