@@ -24,6 +24,12 @@ Radix is a minimalistic Redis client for Go. It is broken up into the following:
       master becomes unavailable, the sentinel client will automatically start
       distributing connections from the slave chosen by the sentinel instance.
 
+    * [cluster](http://godoc.org/github.com/fzzy/radix/extra/cluster) - a client
+      for a [redis cluster][cluster] which automatically handles interacting
+      with a redis cluster, transparently handling redirects and pooling. This
+      client keeps a mapping of slots to nodes internally, and automatically
+      keeps it up-to-date.
+
 ## Installation
 
     go get github.com/fzzy/radix/redis
@@ -47,3 +53,4 @@ Unless otherwise noted, the source files are distributed under the
 *MIT License* found in the LICENSE file.
 
 [sentinel]: http://redis.io/topics/sentinel
+[cluster]: http://redis.io/topics/cluster-spec

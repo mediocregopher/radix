@@ -17,5 +17,11 @@ api links to available sub-packages:
   unavailable, the sentinel client will automatically start distributing
   connections from the slave chosen by the sentinel instance.
 
+* [cluster](http://godoc.org/github.com/fzzy/radix/extra/cluster) - a client
+  for a [redis cluster][cluster] which automatically handles interacting with a
+  redis cluster, transparently handling redirects and pooling. This client keeps
+  a mapping of slots to nodes internally, and automatically keeps it up-to-date.
+
 [radix]: https://github.com/fzzy/radix
 [sentinel]: http://redis.io/topics/sentinel
+[cluster]: http://redis.io/topics/cluster-spec
