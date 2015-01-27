@@ -25,7 +25,7 @@ func main() {
 	}
 
 	oldKeys := make(chan string, 1000)
-	
+
 	doRand := time.Tick(100 * time.Millisecond)
 	doOldRand := time.Tick(1 * time.Second)
 
