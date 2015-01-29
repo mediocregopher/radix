@@ -53,11 +53,12 @@ type connTup struct {
 // Cluster wraps a Client and accounts for all redis cluster logic
 type Cluster struct {
 	mapping
-	pools    map[string]*pool.Pool
-	timeout  time.Duration
-	poolSize int
-	callCh   chan func(*Cluster)
-	stopCh   chan struct{}
+	pools         map[string]*pool.Pool
+	timeout       time.Duration
+	poolSize      int
+	resetThrottle *time.Ticker
+	callCh        chan func(*Cluster)
+	stopCh        chan struct{}
 
 	// Number of slot misses. This is incremented everytime a command's reply is
 	// a MOVED or ASK message. This should be accessed in a thread-safe manner,
@@ -78,6 +79,10 @@ type Opts struct {
 
 	// The size of the connection pool to use for each host. Default is 10
 	PoolSize int
+
+	// The time which must elapse between subsequent calls to Reset(). The
+	// default is 10 seconds
+	ResetThrottle time.Duration
 }
 
 // NewCluster will perform the following steps to initialize:
@@ -112,6 +117,9 @@ func NewClusterWithOpts(o Opts) (*Cluster, error) {
 	if o.PoolSize == 0 {
 		o.PoolSize = 10
 	}
+	if o.ResetThrottle == 0 {
+		o.ResetThrottle = 10 * time.Second
+	}
 
 	initialPool, err := newPool(o.Addr, o.Timeout, o.PoolSize)
 	if err != nil {
@@ -123,10 +131,11 @@ func NewClusterWithOpts(o Opts) (*Cluster, error) {
 		pools: map[string]*pool.Pool{
 			o.Addr: initialPool,
 		},
-		timeout:  o.Timeout,
-		poolSize: o.PoolSize,
-		callCh:   make(chan func(*Cluster)),
-		stopCh:   make(chan struct{}),
+		timeout:       o.Timeout,
+		poolSize:      o.PoolSize,
+		resetThrottle: time.NewTicker(o.ResetThrottle),
+		callCh:        make(chan func(*Cluster)),
+		stopCh:        make(chan struct{}),
 	}
 	go c.spin()
 	if err := c.Reset(); err != nil {
@@ -227,6 +236,10 @@ func (c *Cluster) getRandomPoolInner() (string, *pool.Pool) {
 // as necessary. It begins by calling CLUSTER SLOTS on a random known
 // connection. The return from that is used to re-create the topology, create
 // any missing clients, and close any clients which are no longer needed.
+//
+// This call is inherently throttled, so that multiple clients can call it at
+// the same time and it will only actually occur once (subsequent clients will
+// have nil returned immediately).
 func (c *Cluster) Reset() error {
 	respCh := make(chan error)
 	c.callCh <- func(c *Cluster) {
@@ -236,6 +249,14 @@ func (c *Cluster) Reset() error {
 }
 
 func (c *Cluster) resetInner() error {
+
+	// Throttle resetting so a bunch of routines can call Reset at once and the
+	// server won't be spammed
+	select {
+	case <-c.resetThrottle.C:
+	default:
+		return nil
+	}
 
 	addr, p := c.getRandomPoolInner()
 	if p == nil {
@@ -543,6 +564,7 @@ func (c *Cluster) Close() {
 			p.Empty()
 			delete(c.pools, addr)
 		}
+		c.resetThrottle.Stop()
 	}
 	close(c.stopCh)
 }
