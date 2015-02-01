@@ -558,6 +558,38 @@ func (c *Cluster) ClientForKey(key string) (*redis.Client, string, error) {
 	return client, addr, err
 }
 
+// ClientPerMaster returns a single *redis.Client per master that the cluster
+// currently knows about. The map returned maps the address of the client to the
+// client itself. If there is an error retrieving any of the clients (for
+// instance if a new connection has to be made to get it) only that error is
+// returned.
+//
+// Like ClientForKey, the clients retrieved by this method cannot be returned
+// back to the pool inside Cluster. You must call Close() on each of them when
+// you're done with them
+func (c *Cluster) ClientPerMaster() (map[string]*redis.Client, error) {
+	type resp struct {
+		m   map[string]*redis.Client
+		err error
+	}
+	respCh := make(chan resp)
+	c.callCh <- func(c *Cluster) {
+		m := map[string]*redis.Client{}
+		for addr, p := range c.pools {
+			client, err := p.Get()
+			if err != nil {
+				respCh <- resp{nil, err}
+				return
+			}
+			m[addr] = client
+		}
+		respCh <- resp{m, nil}
+	}
+
+	r := <-respCh
+	return r.m, r.err
+}
+
 // Close calls Close on all connected clients. Once this is called no other
 // methods should be called on this instance of Cluster
 func (c *Cluster) Close() {
