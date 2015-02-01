@@ -23,6 +23,11 @@ type Client struct {
 
 	completed, completedHead []*Resp
 
+	// The network/address of the redis instance this client is connected to.
+	// These will be wahtever strings were passed into the Dial function when
+	// creating this connection
+	Network, Addr string
+
 	// The most recent critical network error which occured when either reading
 	// or writing. A critical network error is one in which the connection was
 	// found to be no longer usable; in essence, any error except a timeout.
@@ -53,6 +58,8 @@ func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
 		timeout:       timeout,
 		completed:     completed,
 		completedHead: completed,
+		Network:       network,
+		Addr:          addr,
 	}, nil
 }
 
