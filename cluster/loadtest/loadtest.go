@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/fzzy/radix/extra/cluster"
+	"github.com/mediocregopher/radix.v2/cluster"
 )
 
 func randString() string {
@@ -19,7 +19,7 @@ func randString() string {
 }
 
 func main() {
-	c, err := cluster.NewCluster("localhost:7000")
+	c, err := cluster.New("localhost:7000")
 	if err != nil {
 		log.Fatal(err)
 	}

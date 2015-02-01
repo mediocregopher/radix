@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/fzzy/radix/extra/pool"
-	"github.com/fzzy/radix/redis"
+	"github.com/mediocregopher/radix.v2/pool"
+	"github.com/mediocregopher/radix.v2/redis"
 )
 
 // These tests assume there is a cluster running on ports 7000 and 7001, with
@@ -37,10 +37,14 @@ func TestKeyFromArg(t *T) {
 }
 
 func getCluster(t *T) *Cluster {
-	cluster, err := NewCluster("127.0.0.1:7000")
+	cluster, err := New("127.0.0.1:7000")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Pretend there is no throttle initially, so tests can get at least one
+	// more reset call
+	cluster.resetThrottle.Stop()
+	cluster.resetThrottle = nil
 	return cluster
 }
 
@@ -61,7 +65,7 @@ func TestReset(t *T) {
 	assert.Nil(t, err)
 
 	// Prove that the bogus client is closed
-	_, ok := cluster.pools["127.0.0.:6379"]
+	_, ok := cluster.pools["127.0.0.1:6379"]
 	assert.Equal(t, false, ok)
 
 	// Prove that the remaining two addresses are still in clients, were not
@@ -85,8 +89,6 @@ func TestCmd(t *T) {
 	s, err = cluster.Cmd("GET", "bar").Str()
 	assert.Nil(t, err)
 	assert.Equal(t, "foo", s)
-
-	assert.Equal(t, 0, cluster.Misses)
 }
 
 func TestCmdMiss(t *T) {
@@ -97,16 +99,14 @@ func TestCmdMiss(t *T) {
 
 	assert.Nil(t, cluster.Cmd("SET", "foo", "baz").Err)
 
-	barClient, barAddr, err := cluster.ClientForKey("bar")
+	barClient, err := cluster.GetForKey("bar")
 	assert.Nil(t, err)
 
 	args := []interface{}{"foo"}
-	r := cluster.clientCmd(barAddr, barClient, "GET", args, false, nil, false)
+	r := cluster.clientCmd(barClient, "GET", args, false, nil, false)
 	s, err := r.Str()
 	assert.Nil(t, err)
 	assert.Equal(t, "baz", s)
-
-	assert.Equal(t, 1, cluster.Misses)
 }
 
 // This one is kind of a toughy. We have to set a certain slot (which isn't
@@ -119,12 +119,11 @@ func TestCmdAsk(t *T) {
 	slot := CRC16([]byte(key)) % numSlots
 
 	assert.Nil(t, cluster.Cmd("DEL", key).Err)
-	assert.Equal(t, 0, cluster.Misses)
 
 	// the key "wat" originally belongs on 7000
-	_, src, err := cluster.getConn("", "127.0.0.1:7000")
+	src, err := cluster.getConn("", "127.0.0.1:7000")
 	assert.Nil(t, err)
-	_, dst, err := cluster.getConn("", "127.0.0.1:7001")
+	dst, err := cluster.getConn("", "127.0.0.1:7001")
 	assert.Nil(t, err)
 
 	// We need the node ids. Unfortunately, this is the best way to get them
@@ -147,12 +146,9 @@ func TestCmdAsk(t *T) {
 	// Start the "migration"
 	assert.Nil(t, dst.Cmd("CLUSTER", "SETSLOT", slot, "IMPORTING", srcID).Err)
 	assert.Nil(t, src.Cmd("CLUSTER", "SETSLOT", slot, "MIGRATING", dstID).Err)
-	assert.Equal(t, 0, cluster.Misses)
 
-	// Make sure we can still "get" the value, and that the redirect actually
-	// happened
-	assert.Equal(t, redis.NilReply, cluster.Cmd("GET", key).Type)
-	assert.Equal(t, 1, cluster.Misses)
+	// Make sure we can still "get" the value
+	assert.Equal(t, true, cluster.Cmd("GET", key).IsType(redis.Nil))
 
 	// Bail on the migration TODO this doesn't totally bail for some reason
 	assert.Nil(t, dst.Cmd("CLUSTER", "SETSLOT", slot, "NODE", srcID).Err)

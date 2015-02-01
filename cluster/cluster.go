@@ -20,35 +20,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fzzy/radix/extra/pool"
-	"github.com/fzzy/radix/redis"
+	"github.com/mediocregopher/radix.v2/pool"
+	"github.com/mediocregopher/radix.v2/redis"
 )
 
 const numSlots = 16384
 
 type mapping [numSlots]string
 
-func errorReply(err error) *redis.Reply {
-	return &redis.Reply{Type: redis.ErrorReply, Err: err}
+func errorResp(err error) *redis.Resp {
+	return redis.NewResp(err)
 }
 
-func errorReplyf(format string, args ...interface{}) *redis.Reply {
-	return errorReply(fmt.Errorf(format, args...))
+func errorRespf(format string, args ...interface{}) *redis.Resp {
+	return errorResp(fmt.Errorf(format, args...))
 }
 
 var (
-	// BadCmdNoKey is an error reply returned when no key is given to the Cmd
+	// ErrBadCmdNoKey is an error reply returned when no key is given to the Cmd
 	// method
-	BadCmdNoKey = &redis.CmdError{errors.New("bad command, no key")}
+	ErrBadCmdNoKey = errors.New("bad command, no key")
 
 	errNoPools = errors.New("no pools to pull from")
 )
-
-type connTup struct {
-	addr string
-	conn *redis.Client
-	err  error
-}
 
 // Cluster wraps a Client and accounts for all redis cluster logic
 type Cluster struct {
@@ -59,10 +53,15 @@ type Cluster struct {
 	callCh        chan func(*Cluster)
 	stopCh        chan struct{}
 
-	// Number of slot misses. This is incremented everytime a command's reply is
-	// a MOVED or ASK message. This should be accessed in a thread-safe manner,
-	// i.e. when no other routines can be calling any methods on this Cluster
-	Misses uint64
+	// This is written to whenever a slot miss (either a MOVED or ASK) is
+	// encountered. This is mainly for informational purposes, it's not meant to
+	// be actionable. If nothing is listening the message is dropped
+	MissCh chan struct{}
+
+	// This is written to whenever the cluster discovers there's been some kind
+	// of re-ordering/addition/removal of cluster nodes. If nothing is listening
+	// the message is dropped
+	ChangeCh chan struct{}
 }
 
 // Opts are Options which can be passed in to NewClusterWithOpts. If any
@@ -84,7 +83,7 @@ type Opts struct {
 	ResetThrottle time.Duration
 }
 
-// NewCluster will perform the following steps to initialize:
+// New will perform the following steps to initialize:
 //
 // - Connect to the node given in the argument
 //
@@ -97,22 +96,15 @@ type Opts struct {
 // At this point the Cluster has a complete view of the cluster's topology and
 // can immediately start performing commands with (theoretically) zero slot
 // misses
-func NewCluster(addr string) (*Cluster, error) {
-	return NewClusterTimeout(addr, time.Duration(0))
-}
-
-// NewClusterTimeout is the Same as NewCluster, but will use timeout as the
-// read/write timeout when communicating with cluster nodes
-func NewClusterTimeout(addr string, timeout time.Duration) (*Cluster, error) {
-	return NewClusterWithOpts(Opts{
-		Addr:    addr,
-		Timeout: timeout,
+func New(addr string) (*Cluster, error) {
+	return NewWithOpts(Opts{
+		Addr: addr,
 	})
 }
 
-// NewClusterWithOpts is the same as NewCluster, but with more fine-tuned
-// configuration options. See ClusterOpts for more available options
-func NewClusterWithOpts(o Opts) (*Cluster, error) {
+// NewWithOpts is the same as NewCluster, but with more fine-tuned
+// configuration options. See Opts for more available options
+func NewWithOpts(o Opts) (*Cluster, error) {
 	if o.PoolSize == 0 {
 		o.PoolSize = 10
 	}
@@ -120,7 +112,7 @@ func NewClusterWithOpts(o Opts) (*Cluster, error) {
 		o.ResetThrottle = 10 * time.Second
 	}
 
-	initialPool, err := newPool(o.Addr, o.Timeout, o.PoolSize)
+	initialPool, err := newPool(o.Addr, &o)
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +123,10 @@ func NewClusterWithOpts(o Opts) (*Cluster, error) {
 		pools: map[string]*pool.Pool{
 			o.Addr: initialPool,
 		},
-		callCh: make(chan func(*Cluster)),
-		stopCh: make(chan struct{}),
+		callCh:   make(chan func(*Cluster)),
+		stopCh:   make(chan struct{}),
+		MissCh:   make(chan struct{}),
+		ChangeCh: make(chan struct{}),
 	}
 	go c.spin()
 	if err := c.Reset(); err != nil {
@@ -141,15 +135,11 @@ func NewClusterWithOpts(o Opts) (*Cluster, error) {
 	return &c, nil
 }
 
-func newPool(
-	addr string, timeout time.Duration, poolSize int,
-) (
-	*pool.Pool, error,
-) {
+func newPool(addr string, o *Opts) (*pool.Pool, error) {
 	df := func(network, addr string) (*redis.Client, error) {
-		return redis.DialTimeout(network, addr, timeout)
+		return redis.DialTimeout(network, addr, o.Timeout)
 	}
-	return pool.NewCustomPool("tcp", addr, poolSize, df)
+	return pool.NewCustomPool("tcp", addr, o.PoolSize, df)
 }
 
 // Anything which requires creating/deleting pools must be done in here
@@ -165,68 +155,72 @@ func (c *Cluster) spin() {
 }
 
 // Returns a connection for the given key or given address, depending on which
-// is set. Even if addr is given the returned addr may be different, if that
-// addr didn't have an associated pool
-func (c *Cluster) getConn(key, addr string) (string, *redis.Client, error) {
-	respCh := make(chan *connTup)
+// is set. If the given pool couldn't be used a connection from a random pool
+// will (attempt) to be returned
+func (c *Cluster) getConn(key, addr string) (*redis.Client, error) {
+	type resp struct {
+		conn *redis.Client
+		err  error
+	}
+	respCh := make(chan *resp)
 	c.callCh <- func(c *Cluster) {
 		if key != "" {
 			addr = c.addrForKeyInner(key)
 		}
 
-		pool, ok := c.pools[addr]
+		var err error
+		p, ok := c.pools[addr]
 		if !ok {
-			addr, pool = c.getRandomPoolInner()
+			p, err = newPool(addr, &c.o)
 		}
 
-		if pool == nil {
-			respCh <- &connTup{err: errNoPools}
+		var conn *redis.Client
+		if err == nil {
+			conn, err = p.Get()
+			if err == nil {
+				respCh <- &resp{conn, nil}
+				return
+			}
+		}
+
+		// If there's an error try one more time retrieving from a random pool
+		// before bailing
+		p = c.getRandomPoolInner()
+		if p == nil {
+			respCh <- &resp{err: errNoPools}
+			return
+		}
+		conn, err = p.Get()
+		if err != nil {
+			respCh <- &resp{err: err}
 			return
 		}
 
-		conn, err := pool.Get()
-		// If there's an error try one more time retrieving from a random pool
-		// before bailing
-		if err != nil {
-			addr, pool = c.getRandomPoolInner()
-			if pool == nil {
-				respCh <- &connTup{err: errNoPools}
-				return
-			}
-			conn, err = pool.Get()
-			if err != nil {
-				respCh <- &connTup{err: err}
-				return
-			}
-		}
-
-		respCh <- &connTup{addr, conn, nil}
+		respCh <- &resp{conn, nil}
 	}
 	r := <-respCh
-	return r.addr, r.conn, r.err
+	return r.conn, r.err
 }
 
-// Puts the connection back in the pool for the given address. Takes in a
-// pointer to an error which can be used to decide whether or not to put the
-// connection back. It's a pointer because this method is deferable (like
-// CarefullyPut)
-func (c *Cluster) putConn(addr string, conn *redis.Client, maybeErr *error) {
+// Put putss the connection back in its pool. To be used alongside any of the
+// Get* methods once use of the redis.Client is done
+func (c *Cluster) Put(conn *redis.Client) {
 	c.callCh <- func(c *Cluster) {
-		pool := c.pools[addr]
-		if pool == nil {
+		p := c.pools[conn.Addr]
+		if p == nil {
 			conn.Close()
 			return
 		}
 
-		pool.CarefullyPut(conn, maybeErr)
+		p.Put(conn)
 	}
 }
 
-func (c *Cluster) getRandomPoolInner() (string, *pool.Pool) {
-	for addr, pool := range c.pools {
-		return addr, pool
+func (c *Cluster) getRandomPoolInner() *pool.Pool {
+	for _, pool := range c.pools {
+		return pool
 	}
-	return "", nil
+	return nil
 }
 
 // Reset will re-retrieve the cluster topology and set up/teardown connections
@@ -260,7 +254,7 @@ func (c *Cluster) resetInner() error {
 		c.resetThrottle = time.NewTicker(c.o.ResetThrottle)
 	}
 
-	addr, p := c.getRandomPoolInner()
+	p := c.getRandomPoolInner()
 	if p == nil {
 		return fmt.Errorf("no available nodes to call CLUSTER SLOTS on")
 	}
@@ -272,31 +266,39 @@ func (c *Cluster) resetInner() error {
 	defer client.Close()
 
 	pools := map[string]*pool.Pool{
-		addr: p,
+		p.Addr: p,
 	}
 
-	r := client.Cmd("CLUSTER", "SLOTS")
-	if r.Err != nil {
-		return r.Err
-	} else if r.Elems == nil || len(r.Elems) < 1 {
-		return errors.New("malformed CLUSTER SLOTS response")
+	elems, err := client.Cmd("CLUSTER", "SLOTS").Array()
+	if err != nil {
+		return err
+	} else if len(elems) == 0 {
+		return errors.New("empty CLUSTER SLOTS response")
 	}
 
-	var start, end, port int
+	var start, end, port int64
 	var ip, slotAddr string
 	var slotPool *pool.Pool
-	var ok bool
-	for _, slotGroup := range r.Elems {
-		if start, err = slotGroup.Elems[0].Int(); err != nil {
+	var ok, changed bool
+	for _, slotGroup := range elems {
+		slotElems, err := slotGroup.Array()
+		if err != nil {
 			return err
 		}
-		if end, err = slotGroup.Elems[1].Int(); err != nil {
+		if start, err = slotElems[0].Int(); err != nil {
 			return err
 		}
-		if ip, err = slotGroup.Elems[2].Elems[0].Str(); err != nil {
+		if end, err = slotElems[1].Int(); err != nil {
 			return err
 		}
-		if port, err = slotGroup.Elems[2].Elems[1].Int(); err != nil {
+		slotAddrElems, err := slotElems[2].Array()
+		if err != nil {
+			return err
+		}
+		if ip, err = slotAddrElems[0].Str(); err != nil {
+			return err
+		}
+		if port, err = slotAddrElems[1].Int(); err != nil {
 			return err
 		}
 
@@ -304,9 +306,9 @@ func (c *Cluster) resetInner() error {
 		// connected to. I guess the node doesn't know its own ip? I guess that
 		// makes sense
 		if ip == "" {
-			slotAddr = addr
+			slotAddr = p.Addr
 		} else {
-			slotAddr = ip + ":" + strconv.Itoa(port)
+			slotAddr = ip + ":" + strconv.FormatInt(port, 10)
 		}
 		for i := start; i <= end; i++ {
 			c.mapping[i] = slotAddr
@@ -314,10 +316,11 @@ func (c *Cluster) resetInner() error {
 		if slotPool, ok = c.pools[slotAddr]; ok {
 			pools[slotAddr] = slotPool
 		} else {
-			slotPool, err = newPool(slotAddr, c.o.Timeout, c.o.PoolSize)
+			slotPool, err = newPool(slotAddr, &c.o)
 			if err != nil {
 				return err
 			}
+			changed = true
 			pools[slotAddr] = slotPool
 		}
 	}
@@ -325,9 +328,17 @@ func (c *Cluster) resetInner() error {
 	for addr := range c.pools {
 		if _, ok := pools[addr]; !ok {
 			c.pools[addr].Empty()
+			changed = true
 		}
 	}
 	c.pools = pools
+
+	if changed {
+		select {
+		case c.ChangeCh <- struct{}{}:
+		default:
+		}
+	}
 
 	return nil
 }
@@ -353,24 +364,23 @@ func (c *Cluster) resetInner() error {
 // Cmd performs the given command on the correct cluster node and gives back the
 // command's reply. The command *must* have a key parameter (i.e. len(args) >=
 // 1). If any MOVED or ASK errors are returned they will be transparently
-// handled by this method. This method will also increment the Misses field on
-// the Cluster struct whenever a redirection occurs
-func (c *Cluster) Cmd(cmd string, args ...interface{}) *redis.Reply {
+// handled by this method.
+func (c *Cluster) Cmd(cmd string, args ...interface{}) *redis.Resp {
 	if len(args) < 1 {
-		return errorReply(BadCmdNoKey)
+		return errorResp(ErrBadCmdNoKey)
 	}
 
 	key, err := keyFromArg(args[0])
 	if err != nil {
-		return errorReply(err)
+		return errorResp(err)
 	}
 
-	addr, client, err := c.getConn(key, "")
+	client, err := c.getConn(key, "")
 	if err != nil {
-		return errorReply(err)
+		return errorResp(err)
 	}
 
-	return c.clientCmd(addr, client, cmd, args, false, nil, false)
+	return c.clientCmd(client, cmd, args, false, nil, false)
 }
 
 func haveTried(tried map[string]bool, addr string) bool {
@@ -389,12 +399,12 @@ func justTried(tried map[string]bool, addr string) map[string]bool {
 }
 
 func (c *Cluster) clientCmd(
-	addr string, client *redis.Client, cmd string, args []interface{}, ask bool,
+	client *redis.Client, cmd string, args []interface{}, ask bool,
 	tried map[string]bool, haveReset bool,
-) *redis.Reply {
+) *redis.Resp {
 	var err error
-	var r *redis.Reply
-	defer c.putConn(addr, client, &err)
+	var r *redis.Resp
+	defer c.Put(client)
 
 	if ask {
 		r = client.Cmd("ASKING")
@@ -416,28 +426,27 @@ func (c *Cluster) clientCmd(
 	// code is what will be run 99% of the time and is pretty streamlined,
 	// everything after this point is allowed to be hairy and gross
 
-	haveTriedBefore := haveTried(tried, addr)
-	tried = justTried(tried, addr)
+	haveTriedBefore := haveTried(tried, client.Addr)
+	tried = justTried(tried, client.Addr)
 
-	// If we're not dealing with a CmdError (application error) then it's a
-	// network error, deal with that here
-	if _, ok := err.(*redis.CmdError); !ok {
+	// Deal with n
+	if r.IsType(redis.IOErr) {
 		// If this is the first time trying this node, try it again
 		if !haveTriedBefore {
-			if addr, client, try2err := c.getConn("", addr); try2err == nil {
-				return c.clientCmd(addr, client, cmd, args, false, tried, haveReset)
+			if client, try2err := c.getConn("", client.Addr); try2err == nil {
+				return c.clientCmd(client, cmd, args, false, tried, haveReset)
 			}
 		}
 		// Otherwise try calling Reset() and getting a random client
 		if !haveReset {
 			if resetErr := c.Reset(); resetErr != nil {
-				return errorReplyf("Could not get cluster info: %s", resetErr)
+				return errorRespf("Could not get cluster info: %s", resetErr)
 			}
-			addr, client, getErr := c.getConn("", "")
+			client, getErr := c.getConn("", "")
 			if getErr != nil {
-				return errorReply(getErr)
+				return errorResp(getErr)
 			}
-			return c.clientCmd(addr, client, cmd, args, false, tried, true)
+			return c.clientCmd(client, cmd, args, false, tried, true)
 		}
 		// Otherwise give up and return the most recent error
 		return r
@@ -450,7 +459,10 @@ func (c *Cluster) clientCmd(
 	if moved || ask {
 		slot, addr := redirectInfo(msg)
 		c.callCh <- func(c *Cluster) {
-			c.Misses++
+			select {
+			case c.MissCh <- struct{}{}:
+			default:
+			}
 		}
 
 		// if we already tried the node we've been told to try, Reset and
@@ -458,35 +470,35 @@ func (c *Cluster) clientCmd(
 		// already did that once, bail hard
 		if haveTried(tried, addr) {
 			if haveReset {
-				return errorReplyf("Cluster doesn't make sense")
+				return errorRespf("Cluster doesn't make sense")
 			}
 			if resetErr := c.Reset(); resetErr != nil {
-				return errorReplyf("Could not get cluster info: %s", resetErr)
+				return errorRespf("Could not get cluster info: %s", resetErr)
 			}
-			addr, client, getErr := c.getConn("", "")
+			client, getErr := c.getConn("", "")
 			if getErr != nil {
-				return errorReplyf("No available cluster nodes: %s", getErr)
+				return errorRespf("No available cluster nodes: %s", getErr)
 			}
 
 			// we go back to scratch here, pretend we haven't tried any
 			// since we just picked a random node, it's likely we'll get a
 			// redirect. We won't reset again so this doesn't hurt too much
-			return c.clientCmd(addr, client, cmd, args, false, nil, true)
+			return c.clientCmd(client, cmd, args, false, nil, true)
 
-			// We don't want to change the slot if we've tried this address for this
-			// slot before, it changed it the last time probably and obiously it
-			// doesn't work anyway
+			// We don't want to change the slot if we've tried this address for
+			// this slot before, it changed it the last time probably and
+			// obiously it doesn't work anyway
 		} else if moved {
 			c.callCh <- func(c *Cluster) {
 				c.mapping[slot] = addr
 			}
 		}
 
-		addr, client, getErr := c.getConn("", addr)
+		client, getErr := c.getConn("", addr)
 		if getErr != nil {
-			return errorReply(getErr)
+			return errorResp(getErr)
 		}
-		return c.clientCmd(addr, client, cmd, args, ask, tried, haveReset)
+		return c.clientCmd(client, cmd, args, ask, tried, haveReset)
 	}
 
 	// It's a normal application error (like WRONG KEY TYPE or whatever), return
@@ -521,13 +533,13 @@ func keyFromArg(arg interface{}) (string, error) {
 		case reflect.Slice:
 			argVal := reflect.ValueOf(arg)
 			if argVal.Len() < 1 {
-				return "", BadCmdNoKey
+				return "", ErrBadCmdNoKey
 			}
 			first := argVal.Index(0).Interface()
 			return keyFromArg(first)
 		case reflect.Map:
 			// Maps have no order, we can't possibly choose a key out of one
-			return "", BadCmdNoKey
+			return "", ErrBadCmdNoKey
 		default:
 			return fmt.Sprint(arg), nil
 		}
@@ -544,30 +556,21 @@ func (c *Cluster) addrForKeyInner(key string) string {
 	return c.mapping[i]
 }
 
-// ClientForKey returns the Client which *ought* to handle the given key (along
-// with the node address for that client), based on Cluster's understanding of
-// the cluster topology at the given moment. If the slot isn't known or there is
-// an error contacting the correct node, a random client is returned.
-//
-// The client retrieved by this method cannot be returned back to the pool
-// inside Cluster, meaning you must call Close() on it when you're done with it.
-// Cluster will generate new connections for its pool if need be, so don't worry
-// about not having to return it.
-func (c *Cluster) ClientForKey(key string) (*redis.Client, string, error) {
-	addr, client, err := c.getConn(key, "")
-	return client, addr, err
+// GetForKey returns the Client which *ought* to handle the given key, based
+// on Cluster's understanding of the cluster topology at the given moment. If
+// the slot isn't known or there is an error contacting the correct node, a
+// random client is returned. The client must be returned back to its pool using
+// Put when through
+func (c *Cluster) GetForKey(key string) (*redis.Client, error) {
+	return c.getConn(key, "")
 }
 
-// ClientPerMaster returns a single *redis.Client per master that the cluster
-// currently knows about. The map returned maps the address of the client to the
-// client itself. If there is an error retrieving any of the clients (for
-// instance if a new connection has to be made to get it) only that error is
-// returned.
-//
-// Like ClientForKey, the clients retrieved by this method cannot be returned
-// back to the pool inside Cluster. You must call Close() on each of them when
-// you're done with them
-func (c *Cluster) ClientPerMaster() (map[string]*redis.Client, error) {
+// GetEvery returns a single *redis.Client per master that the cluster currently
+// knows about. The map returned maps the address of the client to the client
+// itself. If there is an error retrieving any of the clients (for instance if a
+// new connection has to be made to get it) only that error is returned. Each
+// client must be returned back to its pools using Put when through
+func (c *Cluster) GetEvery() (map[string]*redis.Client, error) {
 	type resp struct {
 		m   map[string]*redis.Client
 		err error
@@ -598,7 +601,9 @@ func (c *Cluster) Close() {
 			p.Empty()
 			delete(c.pools, addr)
 		}
-		c.resetThrottle.Stop()
+		if c.resetThrottle != nil {
+			c.resetThrottle.Stop()
+		}
 	}
 	close(c.stopCh)
 }

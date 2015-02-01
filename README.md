@@ -2,7 +2,7 @@
 
 **WORK IN PROGRESS, NOT READY FOR USAGE YET**
 
-[![GoDoc](https://godoc.org/github.com/mediocregopher/radix.v2/redis?status.svg)](https://godoc.org/github.com/mediocregopher/radix.v2/redis)
+[![GoDoc](https://godoc.org/github.com/mediocregopher/radix.v2?status.svg)](https://godoc.org/github.com/mediocregopher/radix.v2)
 
 Radix is a minimalistic [Redis][redis] client for Go. It is broken up into
 small, single-purpose packages for ease of use.
@@ -24,29 +24,30 @@ small, single-purpose packages for ease of use.
   unavailable, the sentinel client will automatically start distributing
   connections from the slave chosen by the sentinel instance.
 
-* extra - a sub-package containing added functionality
-
-    * [cluster](http://godoc.org/github.com/mediocregopher/radix.v2/extra/cluster) - a client
-      for a [redis cluster][cluster] which automatically handles interacting
-      with a redis cluster, transparently handling redirects and pooling. This
-      client keeps a mapping of slots to nodes internally, and automatically
-      keeps it up-to-date.
+* [cluster](http://godoc.org/github.com/mediocregopher/radix.v2/cluster) - a
+  client for a [redis cluster][cluster] which automatically handles interacting
+  with a redis cluster, transparently handling redirects and pooling. This
+  client keeps a mapping of slots to nodes internally, and automatically keeps
+  it up-to-date.
 
 ## Installation
 
-    go get github.com/mediocregopher/radix.v2/redis
+    go get github.com/mediocregopher/radix.v2/...
 
 ## Testing
 
-    go get github.com/stretchr/testify
-    make test
+    go test github.com/mediocregopher/radix.v2/...
 
-The test action assumes you have a redis server listening on port 6379. It will
-adiitionally bring up and tear down redis cluster nodes on ports 7000 and 7001.
-You can specify the path to `redis-server` to use when setting up cluster like
-so:
+The test action assumes you have the following running:
 
-    make REDIS_SERVER=/path/to/redis-server test
+* A redis server listening on port 6379
+
+* A redis cluster node listening on port 7000, handling slots 0 through 8191
+
+* A redis cluster node listening on port 7001, handling slots 8192 through 16383
+
+The slot number are particularly important as the tests for the cluster package
+do some trickery which depends on certain keys being assigned to certain nodes
 
 ## Why is this V2?
 
