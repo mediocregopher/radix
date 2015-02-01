@@ -52,10 +52,9 @@ type connTup struct {
 
 // Cluster wraps a Client and accounts for all redis cluster logic
 type Cluster struct {
+	o Opts
 	mapping
 	pools         map[string]*pool.Pool
-	timeout       time.Duration
-	poolSize      int
 	resetThrottle *time.Ticker
 	callCh        chan func(*Cluster)
 	stopCh        chan struct{}
@@ -127,15 +126,13 @@ func NewClusterWithOpts(o Opts) (*Cluster, error) {
 	}
 
 	c := Cluster{
+		o:       o,
 		mapping: mapping{},
 		pools: map[string]*pool.Pool{
 			o.Addr: initialPool,
 		},
-		timeout:       o.Timeout,
-		poolSize:      o.PoolSize,
-		resetThrottle: time.NewTicker(o.ResetThrottle),
-		callCh:        make(chan func(*Cluster)),
-		stopCh:        make(chan struct{}),
+		callCh: make(chan func(*Cluster)),
+		stopCh: make(chan struct{}),
 	}
 	go c.spin()
 	if err := c.Reset(); err != nil {
@@ -251,11 +248,16 @@ func (c *Cluster) Reset() error {
 func (c *Cluster) resetInner() error {
 
 	// Throttle resetting so a bunch of routines can call Reset at once and the
-	// server won't be spammed
-	select {
-	case <-c.resetThrottle.C:
-	default:
-		return nil
+	// server won't be spammed. We don't a throttle until the second Reset is
+	// called, so the initial call inside New goes through correctly
+	if c.resetThrottle != nil {
+		select {
+		case <-c.resetThrottle.C:
+		default:
+			return nil
+		}
+	} else {
+		c.resetThrottle = time.NewTicker(c.o.ResetThrottle)
 	}
 
 	addr, p := c.getRandomPoolInner()
@@ -312,7 +314,7 @@ func (c *Cluster) resetInner() error {
 		if slotPool, ok = c.pools[slotAddr]; ok {
 			pools[slotAddr] = slotPool
 		} else {
-			slotPool, err = newPool(slotAddr, c.timeout, c.poolSize)
+			slotPool, err = newPool(slotAddr, c.o.Timeout, c.o.PoolSize)
 			if err != nil {
 				return err
 			}
