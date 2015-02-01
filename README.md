@@ -17,14 +17,14 @@ small, single-purpose packages for ease of use.
 * [pubsub](http://godoc.org/github.com/mediocregopher/radix.v2/pubsub) - a
   simple wrapper providing convenient access to Redis Pub/Sub functionality.
 
-* extra - a sub-package containing added functionality
+* [sentinel](http://godoc.org/github.com/mediocregopher/radix.v2/sentinel) - a
+  client for [redis sentinel][sentinel] which acts as a connection pool for a
+  cluster of redis nodes. A sentinel client connects to a sentinel instance and
+  any master redis instances that instance is monitoring. If a master becomes
+  unavailable, the sentinel client will automatically start distributing
+  connections from the slave chosen by the sentinel instance.
 
-    * [sentinel](http://godoc.org/github.com/mediocregopher/radix.v2/extra/sentinel) - a
-      client for [redis sentinel][sentinel] which acts as a connection pool for
-      a cluster of redis nodes. A sentinel client connects to a sentinel
-      instance and any master redis instances that instance is monitoring. If a
-      master becomes unavailable, the sentinel client will automatically start
-      distributing connections from the slave chosen by the sentinel instance.
+* extra - a sub-package containing added functionality
 
     * [cluster](http://godoc.org/github.com/mediocregopher/radix.v2/extra/cluster) - a client
       for a [redis cluster][cluster] which automatically handles interacting

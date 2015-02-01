@@ -1,12 +1,12 @@
-// The sentinel package provides a convenient interface with a redis sentinel
-// which will automatically handle pooling connections and automatic failover.
+// Package sentinel provides a convenient interface with a redis sentinel which
+// will automatically handle pooling connections and automatic failover.
 //
 // Here's an example of creating a sentinel client and then using it to perform
 // some commands
 //
 //	func example() error {
-//		// If there exists sentinel masters "bucket0" and "bucket1", and we want out
-//		// client to create pools for both:
+//		// If there exists sentinel masters "bucket0" and "bucket1", and we want
+//		// out client to create pools for both:
 //		client, err := sentinel.NewClient("tcp", "localhost:6379", 100, "bucket0", "bucket1")
 //		if err != nil {
 //			return err
@@ -20,21 +20,19 @@
 //	}
 //
 //	func exampleCmd(client *sentinel.Client) error {
-//		conn, redisErr := client.GetMaster("bucket0")
-//		if redisErr != nil {
+//		conn, err := client.GetMaster("bucket0")
+//		if err != nil {
 //			return redisErr
 //		}
-//		// We use CarefullyPutMaster to conditionally put the connection back in the
-//		// pool depending on the last error seen
-//		defer client.CarefullyPutMaster("bucket0", conn, &redisErr)
+//		defer client.PutMaster("bucket0", conn)
 //
-//		var i int
-//		if i, redisErr = conn.Cmd("GET", "foo").Int(); redisErr != nil {
-//			return redisErr
+//		i, err := conn.Cmd("GET", "foo").Int()
+//		if err != nil {
+//			return err
 //		}
 //
-//		if redisErr = conn.Cmd("SET", "foo", i+1); redisErr != nil {
-//			return redisErr
+//		if err := conn.Cmd("SET", "foo", i+1); err != nil {
+//			return err
 //		}
 //
 //		return nil
@@ -43,8 +41,7 @@
 // This package only gaurantees that when GetMaster is called the returned
 // connection will be a connection to the master as of the moment that method is
 // called. It is still possible that there is a failover as that connection is
-// being used by the application. The Readonly() method on CmdError will be
-// helpful if you want to gracefully handle this case.
+// being used by the application.
 //
 // As a final note, a Client can be interacted with from multiple routines at
 // once safely, except for the Close method. To safely Close, ensure that only
@@ -54,15 +51,16 @@ package sentinel
 
 import (
 	"errors"
-	"github.com/fzzy/radix/redis"
 	"strings"
 
-	"github.com/fzzy/radix/extra/pool"
-	"github.com/fzzy/radix/extra/pubsub"
+	"github.com/mediocregopher/radix.v2/pool"
+	"github.com/mediocregopher/radix.v2/pubsub"
+	"github.com/mediocregopher/radix.v2/redis"
 )
 
-// An error wrapper returned by operations in this package. It implements the
-// error interface and can therefore be passed around as a normal error.
+// ClientError is an error wrapper returned by operations in this package. It
+// implements the error interface and can therefore be passed around as a normal
+// error.
 type ClientError struct {
 	err error
 
@@ -73,6 +71,7 @@ type ClientError struct {
 	SentinelErr bool
 }
 
+// Error implements the error protocol
 func (ce *ClientError) Error() string {
 	return ce.err.Error()
 }
@@ -97,6 +96,8 @@ type switchMaster struct {
 	addr string
 }
 
+// Client communicates with a sentinel instance and manages connection pools of
+// active masters
 type Client struct {
 	poolSize    int
 	masterPools map[string]*pool.Pool
@@ -111,11 +112,11 @@ type Client struct {
 	switchMasterCh chan *switchMaster
 }
 
-// Creates a sentinel client. Connects to the given sentinel instance, pulls the
-// information for the masters of the given names, and creates an intial pool of
-// connections for each master. The client will automatically replace the pool
-// for any master should sentinel decide to fail the master over. The returned
-// error is a *ClientError.
+// NewClient creates a sentinel client. Connects to the given sentinel instance,
+// pulls the information for the masters of the given names, and creates an
+// intial pool of connections for each master. The client will automatically
+// replace the pool for any master should sentinel decide to fail the master
+// over. The returned error is a *ClientError.
 func NewClient(
 	network, address string, poolSize int, names ...string,
 ) (
@@ -222,7 +223,7 @@ func (c *Client) spin() {
 		case sm := <-c.switchMasterCh:
 			if p, ok := c.masterPools[sm.name]; ok {
 				p.Empty()
-				p = pool.NewOrEmptyPool("tcp", sm.addr, c.poolSize)
+				p, _ = pool.NewPool("tcp", sm.addr, c.poolSize)
 				c.masterPools[sm.name] = p
 			}
 
@@ -238,9 +239,9 @@ func (c *Client) spin() {
 	}
 }
 
-// Retrieves a connection for the master of the given name. If sentinel has
-// become unreachable this will always return an error. Close should be called
-// in that case. The returned error is a *ClientError.
+// GetMaster retrieves a connection for the master of the given name. If
+// sentinel has become unreachable this will always return an error. Close
+// should be called in that case. The returned error is a *ClientError.
 func (c *Client) GetMaster(name string) (*redis.Client, error) {
 	req := getReq{name, make(chan *getReqRet)}
 	c.getCh <- &req
@@ -251,49 +252,25 @@ func (c *Client) GetMaster(name string) (*redis.Client, error) {
 	return ret.conn, nil
 }
 
-// Return a connection for a master of a given name. As with the pool package,
-// do not return a connection which is having connectivity issues, or which is
-// otherwise unable to perform requests.
+// PutMaster return a connection for a master of a given name
 func (c *Client) PutMaster(name string, client *redis.Client) {
 	c.putCh <- &putReq{name, client}
 }
 
-// A useful helper method, analagous to the pool package's CarefullyPut method.
-// Since we don't want to Put a connection which is having connectivity
-// issues, this can be defered inside a function to make sure we only put back a
-// connection when we should. It should be used like the following:
-//
-//	func doSomeThings(c *Client) error {
-//		conn, redisErr := c.GetMaster("bucket0")
-//		if redisErr != nil {
-//			return redisErr
-//		}
-//		defer c.CarefullyPutMaster("bucket0", conn, &redisErr)
-//
-//		var i int
-//		i, redisErr = conn.Cmd("GET", "foo").Int()
-//		if redisErr != nil {
-//			return redisErr
-//		}
-//
-//		redisErr = conn.Cmd("SET", "foo", i * 3).Err
-//		return redisErr
-//	}
-func (c *Client) CarefullyPutMaster(
-	name string, client *redis.Client, potentialErr *error,
-) {
-	if potentialErr != nil && *potentialErr != nil {
-		// If the client sent back that it's READONLY then we don't want to keep
-		// this connection around. Otherwise, we don't care about command errors
-		if cerr, ok := (*potentialErr).(*redis.CmdError); !ok || cerr.Readonly() {
-			client.Close()
-			return
-		}
+// WithMaster is a wrapper around GetMaster/PutMaster which allows you to easily
+// use a client connection without worrying about Get/Put. It works exactly as
+// the With method in the pool package does
+func (c *Client) WithMaster(name string, f func(*redis.Client)) error {
+	conn, err := c.GetMaster(name)
+	if err != nil {
+		return err
 	}
-	c.PutMaster(name, client)
+	f(conn)
+	c.PutMaster(name, conn)
+	return nil
 }
 
-// Closes all connection pools as well as the connection to sentinel.
+// Close closes all connection pools as well as the connection to sentinel.
 func (c *Client) Close() {
 	close(c.closeCh)
 }
