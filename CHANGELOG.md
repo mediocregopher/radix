@@ -11,6 +11,10 @@
 
 * * *
 
+### 2015-1-31 Release v0.5.3
+
++ Add throttle to Reset calls in cluster
+
 ### 2015-1-26 Release v0.5.2
 
 + Make the cluster package be thread-safe
