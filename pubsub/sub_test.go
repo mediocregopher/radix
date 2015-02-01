@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fzzy/radix/redis"
+	"github.com/mediocregopher/radix.v2/redis"
 )
 
 func TestSubscribe(t *testing.T) {
@@ -28,7 +28,7 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != SubscribeReply {
+	if sr.Type != Subscribe {
 		t.Fatal("Did not receive a subscribe reply")
 	}
 
@@ -41,7 +41,7 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal(r.Err)
 	}
 
-	subChan := make(chan *SubReply)
+	subChan := make(chan *SubResp)
 	go func() {
 		subChan <- sub.Receive()
 	}()
@@ -56,7 +56,7 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != MessageReply {
+	if sr.Type != Message {
 		t.Fatal("Did not receive a message reply")
 	}
 
@@ -69,7 +69,7 @@ func TestSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != UnsubscribeReply {
+	if sr.Type != Unsubscribe {
 		t.Fatal("Did not receive a unsubscribe reply")
 	}
 
@@ -98,7 +98,7 @@ func TestPSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != SubscribeReply {
+	if sr.Type != Subscribe {
 		t.Fatal("Did not receive a subscribe reply")
 	}
 
@@ -111,7 +111,7 @@ func TestPSubscribe(t *testing.T) {
 		t.Fatal(r.Err)
 	}
 
-	subChan := make(chan *SubReply)
+	subChan := make(chan *SubResp)
 	go func() {
 		subChan <- sub.Receive()
 	}()
@@ -126,7 +126,7 @@ func TestPSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != MessageReply {
+	if sr.Type != Message {
 		t.Fatal("Did not receive a message reply")
 	}
 
@@ -139,7 +139,7 @@ func TestPSubscribe(t *testing.T) {
 		t.Fatal(sr.Err)
 	}
 
-	if sr.Type != UnsubscribeReply {
+	if sr.Type != Unsubscribe {
 		t.Fatal("Did not receive a unsubscribe reply")
 	}
 
