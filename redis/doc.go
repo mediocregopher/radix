@@ -1,8 +1,9 @@
-// A simple client for connecting and interacting with redis.
+// Package redis is a simple client for connecting and interacting with a single
+// redis instance.
 //
 // To import inside your package do:
 //
-//	import "github.com/fzzy/radix/redis"
+//	import "github.com/mediocregopher/radix.v2/redis"
 //
 // Connecting
 //
@@ -16,9 +17,9 @@
 // Make sure to call Close on the client if you want to clean it up before the
 // end of the program.
 //
-// Cmd and Reply
+// Cmd and Resp
 //
-// The Cmd method returns a Reply, which has methods for converting to various
+// The Cmd method returns a Resp, which has methods for converting to various
 // types. Each of these methods returns an error which can either be a
 // connection error (e.g. timeout), an application error (e.g. key is wrong
 // type), or a conversion error (e.g. cannot convert to integer). You can also
@@ -36,21 +37,26 @@
 //		// handle err
 //	}
 //
-// Multi Replies
+// Array Replies
 //
-// The elements to Multi replies can be accessed as strings using List or
-// ListBytes, or you can use the Elems field for more low-level access:
+// The elements to Array replies can be accessed as strings using List or
+// ListBytes, or you can use the Array method for more low level access:
 //
 //	r := client.Cmd("MGET", "foo", "bar", "baz")
+//	if r.Err != nil {
+//		// handle error
+//	}
 //
 //	// This:
-//	for _, elemStr := range r.List() {
+//	l, _ := r.List()
+//	for _, elemStr := range l {
 //		fmt.Println(elemStr)
 //	}
 //
 //	// is equivalent to this:
-//	for i := range r.Elems {
-//		elemStr, _ := r.Elems[i].Str()
+//	elems, err := r.Array()
+//	for i := range elems {
+//		elemStr, _ := elems[i].Str()
 //		fmt.Println(elemStr)
 //	}
 //
@@ -58,30 +64,49 @@
 //
 // Pipelining is when the client sends a bunch of commands to the server at
 // once, and only once all the commands have been sent does it start reading the
-// replies off the socket. This is supported using the Append and GetReply
-// methods. Append will simply append the command to a buffer without sending
-// it, the first time GetReply is called it will send all the commands in the
-// buffer and return the Reply for the first command that was sent. Subsequent
-// calls to GetReply return Replys for subsequent commands:
+// replies off the socket. This is supported using the PipeAppend and PipeResp
+// methods. PipeAppend will simply append the command to a buffer without
+// sending it, the first time PipeResp is called it will send all the commands
+// in the buffer and return the Resp for the first command that was sent.
+// Subsequent calls to PipeResp return Resps for subsequent commands:
 //
-//	client.Append("GET", "foo")
-//	client.Append("SET", "bar", "foo")
-//	client.Append("DEL", "baz")
+//	client.PipeAppend("GET", "foo")
+//	client.PipeAppend("SET", "bar", "foo")
+//	client.PipeAppend("DEL", "baz")
 //
 //	// Read GET foo reply
-//	foo, err := client.GetReply().Str()
+//	foo, err := client.PipeResp().Str()
 //	if err != nil {
 //		// handle err
 //	}
 //
 //	// Read SET bar foo reply
-//	if err := client.GetReply().Err; err != nil {
+//	if err := client.PipeResp().Err; err != nil {
 //		// handle err
 //	}
 //
 //	// Read DEL baz reply
-//	if err := client.GetReply().Err; err != nil {
+//	if err := client.PipeResp().Err; err != nil {
 //		// handle err
 //	}
 //
+// Flattening
+//
+// Radix will automatically flatten passed in maps and slices into the argument
+// list. For example, the following are all equivalent:
+//
+//	client.Cmd("HMSET", "myhash", "key1", "val1", "key2", "val2")
+//	client.Cmd("HMSET", "myhash", []string{"key1", "val1", "key2", "val2"})
+//	client.Cmd("HMSET", "myhash", map[string]string{
+//		"key1": "val1",
+//		"key2": "val2",
+//	})
+//	client.Cmd("HMSET", "myhash", [][]string{
+//		[]string{"key1", "val1"},
+//		[]string{"key2", "val2"},
+//	})
+//
+//	Radix is not picky about the types inside or outside the maps/slices, if
+//	they don't match a subset of primitive types it will fall back to reflection
+//	to figure out what they are and encode them.
 package redis

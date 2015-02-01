@@ -7,9 +7,6 @@ small, single-purpose packages for ease of use.
   single redis connection. Supports normal commands/response as well as
   pipelining.
 
-    * [resp](http://godoc.org/github.com/mediocregopher/radix.v2/redis/resp) - A utility
-      package for encoding and decoding messages from redis
-
 * extra - a sub-package containing added functionality
 
     * [pool](http://godoc.org/github.com/mediocregopher/radix.v2/extra/pool) - a simple,
@@ -46,6 +43,30 @@ You can specify the path to `redis-server` to use when setting up cluster like
 so:
 
     make REDIS_SERVER=/path/to/redis-server test
+
+## Why is this V2?
+
+V1 of radix was started by [fzzy][https://github.com/fzzy] and can be found
+[here][https://github.com/fzzy/radix]. Some time in 2014 I took over the project
+and reached a point where I couldn't make improvements that I wanted to make due
+to past design decisions (mostly my own). So I've started V2, which has
+redesigned some core aspects of the api and hopefully made things easier to use
+and faster.
+
+Here are the major changes since V1:
+
+* Combining resp and redis packages
+
+* Reply is now Resp
+
+* List and ListBytes can no longer return nil if the response type is Nil. They
+will return a bad type error in that case
+
+* Hash is now Map
+
+* Append is now PipeAppend, GetReply is now PipeResp
+
+* PipelineQueueEmptyError is now ErrPipelineEmpty
 
 ## Copyright and licensing
 
