@@ -1,5 +1,9 @@
 # Radix
 
+**WORK IN PROGRESS, NOT READY FOR USAGE YET**
+
+[![GoDoc](https://godoc.org/github.com/mediocregopher/radix.v2/redis?status.svg)](https://godoc.org/github.com/mediocregopher/radix.v2/redis)
+
 Radix is a minimalistic [Redis][redis] client for Go. It is broken up into
 small, single-purpose packages for ease of use.
 
@@ -30,7 +34,7 @@ small, single-purpose packages for ease of use.
 
 ## Installation
 
-    go get github.com/mediocregopher/radix/redis
+    go get github.com/mediocregopher/radix.v2/redis
 
 ## Testing
 
@@ -46,8 +50,8 @@ so:
 
 ## Why is this V2?
 
-V1 of radix was started by [fzzy][https://github.com/fzzy] and can be found
-[here][https://github.com/fzzy/radix]. Some time in 2014 I took over the project
+V1 of radix was started by [fzzy](https://github.com/fzzy) and can be found
+[here](https://github.com/fzzy/radix). Some time in 2014 I took over the project
 and reached a point where I couldn't make improvements that I wanted to make due
 to past design decisions (mostly my own). So I've started V2, which has
 redesigned some core aspects of the api and hopefully made things easier to use
