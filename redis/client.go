@@ -22,6 +22,13 @@ type Client struct {
 	pending    []*request
 
 	completed, completedHead []*Resp
+
+	// The most recent critical network error which occured when either reading
+	// or writing. A critical network error is one in which the connection was
+	// found to be no longer usable; in essence, any error except a timeout.
+	// Close is automatically called on the client when it encounters a critical
+	// network error
+	LastCritical error
 }
 
 // request describes a client's request to the redis server
@@ -116,7 +123,7 @@ func (c *Client) ReadResp() *Resp {
 	}
 	r := c.respReader.Read()
 	if r.IsType(IOErr) && !IsTimeout(r) {
-		// We close if the IOErr wasn't caused by a timeout
+		c.LastCritical = r.Err
 		c.Close()
 	}
 	return r
@@ -132,6 +139,7 @@ func (c *Client) writeRequest(requests ...*request) error {
 		req = append(req, requests[i].args...)
 		_, err := NewRespFlattenedStrings(req).WriteTo(c.conn)
 		if err != nil {
+			c.LastCritical = err
 			c.Close()
 			return err
 		}

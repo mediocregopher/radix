@@ -56,3 +56,17 @@ func TestPipeline(t *T) {
 		assert.Equal(t, ErrPipelineEmpty, r.Err)
 	}
 }
+
+func TestLastCritical(t *T) {
+	c := dial(t)
+
+	// LastCritical shouldn't get set for application errors
+	assert.NotNil(t, c.Cmd("WHAT").Err)
+	assert.Nil(t, c.LastCritical)
+
+	c.Close()
+	r := c.Cmd("WHAT")
+	assert.Equal(t, true, r.IsType(IOErr))
+	assert.NotNil(t, r.Err)
+	assert.NotNil(t, c.LastCritical)
+}
