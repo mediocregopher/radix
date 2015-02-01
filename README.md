@@ -11,10 +11,10 @@ small, single-purpose packages for ease of use.
   single redis connection. Supports normal commands/response as well as
   pipelining.
 
-* extra - a sub-package containing added functionality
+* [pool](http://godoc.org/github.com/mediocregopher/radix.v2/pool) - a simple,
+  automatically expanding/cleaning connection pool.
 
-    * [pool](http://godoc.org/github.com/mediocregopher/radix.v2/extra/pool) - a simple,
-      automatically expanding/cleaning connection pool.
+* extra - a sub-package containing added functionality
 
     * [pubsub](http://godoc.org/github.com/mediocregopher/radix.v2/extra/pubsub) - a simple
       wrapper providing convenient access to Redis Pub/Sub functionality.
