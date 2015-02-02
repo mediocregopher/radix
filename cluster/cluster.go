@@ -370,7 +370,7 @@ func (c *Cluster) Cmd(cmd string, args ...interface{}) *redis.Resp {
 		return errorResp(ErrBadCmdNoKey)
 	}
 
-	key, err := keyFromArg(args[0])
+	key, err := KeyFromArgs(args)
 	if err != nil {
 		return errorResp(err)
 	}
@@ -518,11 +518,18 @@ func redirectInfo(msg string) (int, string) {
 	return slot, addr
 }
 
-// We unfortunately support some weird stuff for command arguments, such as
-// automatically flattening slices and things like that. So this gets
-// complicated. Usually the user will do something normal like pass in a string
-// or byte slice though, so usually this will be pretty fast
-func keyFromArg(arg interface{}) (string, error) {
+// KeyFromArgs takes in the args parameters that might be passed into Cmd and
+// returns the key that will be chosen for that set of arguments to locate the
+// command in the cluster. Since radix supports complicated arguments (like
+// slices, slices of slices, maps, etc...) this is not always as straightforward
+// as it might seem, so this helper method is provided.
+//
+// ErrBadCmdNoKey is returned if no key can be determined
+func KeyFromArgs(args ...interface{}) (string, error) {
+	if len(args) == 0 {
+		return "", ErrBadCmdNoKey
+	}
+	arg := args[0]
 	switch argv := arg.(type) {
 	case string:
 		return argv, nil
@@ -536,7 +543,7 @@ func keyFromArg(arg interface{}) (string, error) {
 				return "", ErrBadCmdNoKey
 			}
 			first := argVal.Index(0).Interface()
-			return keyFromArg(first)
+			return KeyFromArgs(first)
 		case reflect.Map:
 			// Maps have no order, we can't possibly choose a key out of one
 			return "", ErrBadCmdNoKey
@@ -591,6 +598,16 @@ func (c *Cluster) GetEvery() (map[string]*redis.Client, error) {
 
 	r := <-respCh
 	return r.m, r.err
+}
+
+// GetAddrForKey returns the address which would be used to handle the given key
+// in the cluster.
+func (c *Cluster) GetAddrForKey(key string) string {
+	respCh := make(chan string)
+	c.callCh <- func(c *Cluster) {
+		respCh <- c.addrForKeyInner(key)
+	}
+	return <-respCh
 }
 
 // Close calls Close on all connected clients. Once this is called no other
