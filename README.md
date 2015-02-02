@@ -64,9 +64,6 @@ Here are the major changes since V1:
 
 * Reply is now Resp
 
-* List and ListBytes can no longer return nil if the response type is Nil. They
-will return a bad type error in that case
-
 * Hash is now Map
 
 * Append is now PipeAppend, GetReply is now PipeResp

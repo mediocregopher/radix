@@ -276,7 +276,7 @@ func (c *Cluster) resetInner() error {
 		return errors.New("empty CLUSTER SLOTS response")
 	}
 
-	var start, end, port int64
+	var start, end, port int
 	var ip, slotAddr string
 	var slotPool *pool.Pool
 	var ok, changed bool
@@ -308,7 +308,7 @@ func (c *Cluster) resetInner() error {
 		if ip == "" {
 			slotAddr = p.Addr
 		} else {
-			slotAddr = ip + ":" + strconv.FormatInt(port, 10)
+			slotAddr = ip + ":" + strconv.Itoa(port)
 		}
 		for i := start; i <= end; i++ {
 			c.mapping[i] = slotAddr

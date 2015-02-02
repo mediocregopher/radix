@@ -298,9 +298,15 @@ func (r *Resp) Str() (string, error) {
 	return string(b), nil
 }
 
-// Int returns an int64 representing the value of the Resp. Only valid for a
+// Int returns an int representing the value of the Resp. Only valid for a
 // Resp of type Int. If r.Err != nil that will be returned
-func (r *Resp) Int() (int64, error) {
+func (r *Resp) Int() (int, error) {
+	i, err := r.Int64()
+	return int(i), err
+}
+
+// Int64 is like Int, but returns int64 instead of Int
+func (r *Resp) Int64() (int64, error) {
 	if r.Err != nil {
 		return 0, r.Err
 	}
@@ -324,7 +330,7 @@ func (r *Resp) Array() ([]*Resp, error) {
 
 // List is a wrapper around Array which returns the result as a list of strings,
 // calling Str() on each Resp which Array returns. Any errors encountered are
-// immediately returned
+// immediately returned. Any Nil replies are interpreted as empty strings
 func (r *Resp) List() ([]string, error) {
 	m, err := r.Array()
 	if err != nil {
@@ -332,6 +338,10 @@ func (r *Resp) List() ([]string, error) {
 	}
 	l := make([]string, len(m))
 	for i := range m {
+		if m[i].IsType(Nil) {
+			l[i] = ""
+			continue
+		}
 		s, err := m[i].Str()
 		if err != nil {
 			return nil, err
@@ -343,7 +353,7 @@ func (r *Resp) List() ([]string, error) {
 
 // ListBytes is a wrapper around Array which returns the result as a list of
 // byte slices, calling Bytes() on each Resp which Array returns. Any errors
-// encountered are immediately returned
+// encountered are immediately returned. Any Nil replies are interpreted as nil
 func (r *Resp) ListBytes() ([][]byte, error) {
 	m, err := r.Array()
 	if err != nil {
@@ -351,6 +361,10 @@ func (r *Resp) ListBytes() ([][]byte, error) {
 	}
 	l := make([][]byte, len(m))
 	for i := range m {
+		if m[i].IsType(Nil) {
+			l[i] = nil
+			continue
+		}
 		b, err := m[i].Bytes()
 		if err != nil {
 			return nil, err
