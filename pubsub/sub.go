@@ -35,6 +35,7 @@ type SubResp struct {
 
 	Type     SubRespType
 	Channel  string // Channel resp is on (Message)
+	Pattern  string // Pattern which was matched for publishes captured by a PSubscribe
 	SubCount int    // Count of subs active after this action (Subscribe or Unsubscribe)
 	Message  string // Publish message (Message)
 	Err      error  // SubResp error (Error)
@@ -168,6 +169,13 @@ func (c *SubClient) parseResp(resp *redis.Resp) *SubResp {
 			chanI, msgI = 1, 2
 		} else { // "pmessage"
 			chanI, msgI = 2, 3
+			pattern, err := elems[1].Str()
+			if err != nil {
+				sr.Err = fmt.Errorf("message pattern: %s", err)
+				sr.Type = Error
+				return sr
+			}
+			sr.Pattern = pattern
 		}
 
 		sr.Type = Message

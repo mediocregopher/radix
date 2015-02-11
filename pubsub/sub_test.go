@@ -130,6 +130,10 @@ func TestPSubscribe(t *testing.T) {
 		t.Fatal("Did not receive a message reply")
 	}
 
+	if sr.Pattern != pattern {
+		t.Fatal(fmt.Sprintf("Did not recieve expected pattern '%s', instead got: '%s'", pattern, sr.Pattern))
+	}
+
 	if sr.Message != message {
 		t.Fatal(fmt.Sprintf("Did not recieve expected message '%s', instead got: '%s'", message, sr.Message))
 	}
