@@ -8,7 +8,7 @@
 // connection you use Get, and to return the connection to the pool when you're
 // done with it you use Put.
 //
-//	p, err := pool.NewPool("tcp", "localhost:6379", 10)
+//	p, err := pool.New("tcp", "localhost:6379", 10)
 //	if err != nil {
 //		// handle error
 //	}
@@ -58,7 +58,7 @@
 //
 // Sometimes it's necessary to run some code on each connection in a pool upon
 // its creation, for example in the case of AUTH. This can be done with
-// NewCustomPool, like so
+// NewCustom, like so
 //
 //	df := func(network, addr string) (*redis.Client, error) {
 //		client, err := redis.Dial(network, addr)
@@ -71,5 +71,5 @@
 //		}
 //		return client, nil
 //	}
-//	p, err := pool.NewCustomPool("tcp", "127.0.0.1:6379", 10, df)
+//	p, err := pool.NewCustom("tcp", "127.0.0.1:6379", 10, df)
 package pool

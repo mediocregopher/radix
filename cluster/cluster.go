@@ -139,7 +139,7 @@ func newPool(addr string, o *Opts) (*pool.Pool, error) {
 	df := func(network, addr string) (*redis.Client, error) {
 		return redis.DialTimeout(network, addr, o.Timeout)
 	}
-	return pool.NewCustomPool("tcp", addr, o.PoolSize, df)
+	return pool.NewCustom("tcp", addr, o.PoolSize, df)
 }
 
 // Anything which requires creating/deleting pools must be done in here

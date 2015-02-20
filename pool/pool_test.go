@@ -10,7 +10,7 @@ import (
 
 func TestPool(t *T) {
 	size := 10
-	pool, err := NewPool("tcp", "localhost:6379", size)
+	pool, err := New("tcp", "localhost:6379", size)
 	require.Nil(t, err)
 
 	var wg sync.WaitGroup
@@ -38,7 +38,7 @@ func TestPool(t *T) {
 
 func TestCmd(t *T) {
 	size := 10
-	pool, err := NewPool("tcp", "localhost:6379", 10)
+	pool, err := New("tcp", "localhost:6379", 10)
 	require.Nil(t, err)
 
 	var wg sync.WaitGroup
@@ -56,7 +56,7 @@ func TestCmd(t *T) {
 }
 
 func TestPut(t *T) {
-	pool, err := NewPool("tcp", "localhost:6379", 10)
+	pool, err := New("tcp", "localhost:6379", 10)
 	require.Nil(t, err)
 
 	conn, err := pool.Get()

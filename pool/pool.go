@@ -13,18 +13,18 @@ type Pool struct {
 	df   DialFunc
 
 	// The network/address that the pool is connecting to. These are going to be
-	// whatever was passed into the NewPool function. These should not be
+	// whatever was passed into the New function. These should not be
 	// changed after the pool is initialized
 	Network, Addr string
 }
 
-// DialFunc is a function which can be passed into NewCustomPool
+// DialFunc is a function which can be passed into NewCustom
 type DialFunc func(network, addr string) (*redis.Client, error)
 
-// NewCustomPool is like NewPool except you can specify a DialFunc which will be
+// NewCustom is like New except you can specify a DialFunc which will be
 // used when creating new connections for the pool. The common use-case is to do
 // authentication for new connections.
-func NewCustomPool(network, addr string, size int, df DialFunc) (*Pool, error) {
+func NewCustom(network, addr string, size int, df DialFunc) (*Pool, error) {
 	var client *redis.Client
 	var err error
 	pool := make([]*redis.Client, 0, size)
@@ -51,12 +51,12 @@ func NewCustomPool(network, addr string, size int, df DialFunc) (*Pool, error) {
 	return &p, err
 }
 
-// NewPool creates a new Pool whose connections are all created using
+// New creates a new Pool whose connections are all created using
 // redis.Dial(network, addr). The size indicates the maximum number of idle
 // connections to have waiting to be used at any given moment. If an error is
 // encountered an empty (but still usable) pool is returned alongside that error
-func NewPool(network, addr string, size int) (*Pool, error) {
-	return NewCustomPool(network, addr, size, redis.Dial)
+func New(network, addr string, size int) (*Pool, error) {
+	return NewCustom(network, addr, size, redis.Dial)
 }
 
 // Get retrieves an available redis client. If there are none available it will
