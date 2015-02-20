@@ -46,15 +46,11 @@
 //		// handle error
 //	}
 //
-// Additionally there is the With method, which handles Get-ing and Put-ing for
-// you
+// Additionally there is the Cmd method on Pool, which handles Get-ing and
+// Put-ing for you in the case of only wanting to execute a single command
 //
-//	err := p.With(func(conn *redis.Client) {
-//		if conn.Cmd("SOME", "CMD").Err != nil {
-//			// handle error
-//		}
-//	})
-//	if err != nil {
+//	r := p.Cmd("SOME", "CMD")
+//	if r.Err != nil {
 //		// handle error
 //	}
 //

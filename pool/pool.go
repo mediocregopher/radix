@@ -83,6 +83,18 @@ func (p *Pool) Put(conn *redis.Client) {
 	}
 }
 
+// Cmd automatically gets one client from the pool, executes the given command
+// (returning its result), and puts the client back in the pool
+func (p *Pool) Cmd(cmd string, args ...interface{}) *redis.Resp {
+	c, err := p.Get()
+	if err != nil {
+		return redis.NewResp(err)
+	}
+	defer p.Put(c)
+
+	return c.Cmd(cmd, args...)
+}
+
 // Empty removes and calls Close() on all the connections currently in the pool.
 // Assuming there are no other connections waiting to be Put back this method
 // effectively closes and cleans up the pool.
@@ -96,18 +108,4 @@ func (p *Pool) Empty() {
 			return
 		}
 	}
-}
-
-// With is a nice wrapper around Get and Put which takes in a function which
-// will use a client connection (perhaps more than once) and handles Get-ing and
-// Put-ing that connection for you. If an error is returned when Get-ing a
-// client that is returned instead of calling the function
-func (p *Pool) With(f func(*redis.Client)) error {
-	client, err := p.Get()
-	if err != nil {
-		return err
-	}
-	f(client)
-	p.Put(client)
-	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"sync"
 	. "testing"
 
-	"github.com/mediocregopher/radix.v2/redis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +36,7 @@ func TestPool(t *T) {
 	assert.Equal(t, 0, len(pool.pool))
 }
 
-func TestWith(t *T) {
+func TestCmd(t *T) {
 	size := 10
 	pool, err := NewPool("tcp", "localhost:6379", 10)
 	require.Nil(t, err)
@@ -47,9 +46,7 @@ func TestWith(t *T) {
 		wg.Add(1)
 		go func() {
 			for i := 0; i < 100; i++ {
-				assert.Nil(t, pool.With(func(c *redis.Client) {
-					assert.Nil(t, c.Cmd("ECHO", "HI").Err)
-				}))
+				assert.Nil(t, pool.Cmd("ECHO", "HI").Err)
 			}
 			wg.Done()
 		}()

@@ -256,21 +256,3 @@ func (c *Client) GetMaster(name string) (*redis.Client, error) {
 func (c *Client) PutMaster(name string, client *redis.Client) {
 	c.putCh <- &putReq{name, client}
 }
-
-// WithMaster is a wrapper around GetMaster/PutMaster which allows you to easily
-// use a client connection without worrying about Get/Put. It works exactly as
-// the With method in the pool package does
-func (c *Client) WithMaster(name string, f func(*redis.Client)) error {
-	conn, err := c.GetMaster(name)
-	if err != nil {
-		return err
-	}
-	f(conn)
-	c.PutMaster(name, conn)
-	return nil
-}
-
-// Close closes all connection pools as well as the connection to sentinel.
-func (c *Client) Close() {
-	close(c.closeCh)
-}
