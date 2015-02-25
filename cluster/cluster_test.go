@@ -30,7 +30,7 @@ func TestKeyFromArg(t *T) {
 	}
 
 	for out, in := range m {
-		key, err := keyFromArg(in)
+		key, err := KeyFromArgs(in)
 		assert.Nil(t, err)
 		assert.Equal(t, out, key)
 	}
@@ -61,8 +61,16 @@ func TestReset(t *T) {
 	assert.Nil(t, err)
 	cluster.pools["127.0.0.1:6379"] = p
 
-	err = cluster.Reset()
-	assert.Nil(t, err)
+	// We use resetInnerUsingPool so that we can specifically specify the pool
+	// being used, so we don't accidentally use the 6379 one (which doesn't have
+	// CLUSTER commands)
+	respCh := make(chan bool)
+	cluster.callCh <- func(c *Cluster) {
+		err := cluster.resetInnerUsingPool(old7000Pool)
+		assert.Nil(t, err)
+		respCh <- true
+	}
+	<-respCh
 
 	// Prove that the bogus client is closed
 	_, ok := cluster.pools["127.0.0.1:6379"]
