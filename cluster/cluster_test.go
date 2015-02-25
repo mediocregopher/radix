@@ -57,7 +57,7 @@ func TestReset(t *T) {
 
 	// We make a bogus client and add it to the cluster to prove that it gets
 	// removed, since it's not needed
-	p, err := pool.NewPool("tcp", "127.0.0.1:6379", 10)
+	p, err := pool.New("tcp", "127.0.0.1:6379", 10)
 	assert.Nil(t, err)
 	cluster.pools["127.0.0.1:6379"] = p
 

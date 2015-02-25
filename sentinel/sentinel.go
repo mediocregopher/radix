@@ -138,7 +138,7 @@ func NewClient(
 			return nil, &ClientError{err: err, SentinelErr: true}
 		}
 		addr := l[3] + ":" + l[5]
-		pool, err := pool.NewPool("tcp", addr, poolSize)
+		pool, err := pool.New("tcp", addr, poolSize)
 		if err != nil {
 			return nil, &ClientError{err: err}
 		}
@@ -223,7 +223,7 @@ func (c *Client) spin() {
 		case sm := <-c.switchMasterCh:
 			if p, ok := c.masterPools[sm.name]; ok {
 				p.Empty()
-				p, _ = pool.NewPool("tcp", sm.addr, c.poolSize)
+				p, _ = pool.New("tcp", sm.addr, c.poolSize)
 				c.masterPools[sm.name] = p
 			}
 
