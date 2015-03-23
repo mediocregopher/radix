@@ -299,9 +299,7 @@ func (c *Cluster) resetInnerUsingPool(p *pool.Pool) error {
 	}
 	defer p.Put(client)
 
-	pools := map[string]*pool.Pool{
-		p.Addr: p,
-	}
+	pools := map[string]*pool.Pool{}
 
 	elems, err := client.Cmd("CLUSTER", "SLOTS").Array()
 	if err != nil {
