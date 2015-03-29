@@ -83,10 +83,9 @@ func Scan(r *redis.Client, ch chan string, cmd, key, pattern string) error {
 	}
 }
 
-// ScanCluster is like Scan except it operates over a whole cluster.
-func ScanCluster(
-	c *cluster.Cluster, ch chan string, cmd, key, pattern string,
-) error {
+// ScanCluster is like Scan except it operates over a whole cluster. Unlike Scan
+// it only works with SCAN and as such only takes in a pattern string.
+func ScanCluster(c *cluster.Cluster, ch chan string, pattern string) error {
 	defer close(ch)
 	clients, err := c.GetEvery()
 	if err != nil {
@@ -100,7 +99,7 @@ func ScanCluster(
 		cch := make(chan string)
 		var err error
 		go func() {
-			err = Scan(client, cch, cmd, key, pattern)
+			err = Scan(client, cch, "SCAN", "", pattern)
 		}()
 		for key := range cch {
 			ch <- key
