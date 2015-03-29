@@ -30,6 +30,11 @@ small, single-purpose packages for ease of use.
   client keeps a mapping of slots to nodes internally, and automatically keeps
   it up-to-date.
 
+* [util](http://godoc.org/github.com/mediocregopher/radix.v2/util) - a
+  package containing a number of helper methods for doing common tasks with the
+  radix package, such as SCANing either a single redis instance or every one in
+  a cluster
+
 ## Installation
 
     go get github.com/mediocregopher/radix.v2/...
