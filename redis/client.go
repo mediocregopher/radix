@@ -83,7 +83,7 @@ func (c *Client) Cmd(cmd string, args ...interface{}) *Resp {
 }
 
 // PipeAppend adds the given call to the pipeline queue.
-// Use GetReply() to read the reply.
+// Use PipeResp() to read the response.
 func (c *Client) PipeAppend(cmd string, args ...interface{}) {
 	c.pending = append(c.pending, &request{cmd, args})
 }
