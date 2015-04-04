@@ -106,7 +106,7 @@ func TestClusterScan(t *T) {
 	// make sure we get all results when scanning with an existing prefix
 	ch := make(chan string)
 	go func() {
-		err = ScanCluster(cluster, ch, prefix+":*")
+		err = Scan(cluster, ch, "SCAN", "", prefix+":*")
 	}()
 	testMap := map[string]bool{}
 	for key := range ch {
@@ -119,7 +119,7 @@ func TestClusterScan(t *T) {
 	// prefix
 	ch = make(chan string)
 	go func() {
-		err = ScanCluster(cluster, ch, prefix+"DNE:*")
+		err = Scan(cluster, ch, "SCAN", "", prefix+"DNE:*")
 	}()
 	testMap = map[string]bool{}
 	for key := range ch {
