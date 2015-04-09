@@ -106,7 +106,7 @@
 //		[]string{"key2", "val2"},
 //	})
 //
-//	Radix is not picky about the types inside or outside the maps/slices, if
-//	they don't match a subset of primitive types it will fall back to reflection
-//	to figure out what they are and encode them.
+// Radix is not picky about the types inside or outside the maps/slices, if they
+// don't match a subset of primitive types it will fall back to reflection to
+// figure out what they are and encode them.
 package redis
