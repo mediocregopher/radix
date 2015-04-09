@@ -65,8 +65,8 @@ type Cluster struct {
 	ChangeCh chan struct{}
 }
 
-// Opts are Options which can be passed in to NewClusterWithOpts. If any
-// are set to their zero value the default value will be used instead
+// Opts are Options which can be passed in to NewWithOpts. If any are set to
+// their zero value the default value will be used instead
 type Opts struct {
 
 	// Required. The address of a single node in the cluster
