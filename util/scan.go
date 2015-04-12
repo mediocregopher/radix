@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/mediocregopher/radix.v2/cluster"
-	"github.com/mediocregopher/radix.v2/pool"
-	"github.com/mediocregopher/radix.v2/redis"
 )
 
 func scanSingle(r Cmder, ch chan string, cmd, key, pattern string) error {
@@ -114,28 +112,15 @@ func scanCluster(c *cluster.Cluster, ch chan string, pattern string) error {
 //	}
 //
 func Scan(r Cmder, ch chan string, cmd, key, pattern string) error {
-	var err error
-	var c *redis.Client
-
-	switch rr := r.(type) {
-	case *cluster.Cluster:
-		if strings.ToUpper(cmd) == "SCAN" {
-			return scanCluster(rr, ch, pattern)
-		}
-		c, err = rr.GetForKey(key)
-		defer rr.Put(c)
-		r = c
-
-	case *pool.Pool:
-		c, err = rr.Get()
-		defer rr.Put(c)
-		r = c
-
+	if rr, ok := r.(*cluster.Cluster); ok && strings.ToUpper(cmd) == "SCAN" {
+		return scanCluster(rr, ch, pattern)
 	}
-
+	var cmdErr error
+	err := withClientForKey(r, key, func(c Cmder) {
+		cmdErr = scanSingle(r, ch, cmd, key, pattern)
+	})
 	if err != nil {
 		return err
 	}
-
-	return scanSingle(r, ch, cmd, key, pattern)
+	return cmdErr
 }
