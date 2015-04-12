@@ -2,7 +2,9 @@ package redis
 
 import (
 	"errors"
+	"fmt"
 	"net"
+	"reflect"
 	"time"
 )
 
@@ -152,4 +154,42 @@ func (c *Client) writeRequest(requests ...*request) error {
 		}
 	}
 	return nil
+}
+
+var errBadCmdNoKey = errors.New("bad command, no key")
+
+// KeyFromArgs is a helper function which other library packages which wrap this
+// one might find useful. It takes in a set of arguments which might be passed
+// into Cmd and returns the first key for the command. Since radix supports
+// complicated arguments (like slices, slices of slices, maps, etc...) this is
+// not always as straightforward as it might seem, so this helper function is
+// provided.
+//
+// An error is returned if no key can be determined
+func KeyFromArgs(args ...interface{}) (string, error) {
+	if len(args) == 0 {
+		return "", errBadCmdNoKey
+	}
+	arg := args[0]
+	switch argv := arg.(type) {
+	case string:
+		return argv, nil
+	case []byte:
+		return string(argv), nil
+	default:
+		switch reflect.TypeOf(arg).Kind() {
+		case reflect.Slice:
+			argVal := reflect.ValueOf(arg)
+			if argVal.Len() < 1 {
+				return "", errBadCmdNoKey
+			}
+			first := argVal.Index(0).Interface()
+			return KeyFromArgs(first)
+		case reflect.Map:
+			// Maps have no order, we can't possibly choose a key out of one
+			return "", errBadCmdNoKey
+		default:
+			return fmt.Sprint(arg), nil
+		}
+	}
 }

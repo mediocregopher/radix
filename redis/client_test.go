@@ -70,3 +70,20 @@ func TestLastCritical(t *T) {
 	assert.NotNil(t, r.Err)
 	assert.NotNil(t, c.LastCritical)
 }
+
+func TestKeyFromArg(t *T) {
+	m := map[string]interface{}{
+		"foo0": "foo0",
+		"foo1": []byte("foo1"),
+		"1":    1,
+		"1.1":  1.1,
+		"foo2": []string{"foo2", "bar"},
+		"foo3": [][]string{{"foo3", "bar"}, {"baz", "buz"}},
+	}
+
+	for out, in := range m {
+		key, err := KeyFromArgs(in)
+		assert.Nil(t, err)
+		assert.Equal(t, out, key)
+	}
+}

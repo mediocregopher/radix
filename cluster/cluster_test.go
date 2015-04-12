@@ -19,23 +19,6 @@ import (
 // It is also assumed that there is an unrelated redis instance on port 6379,
 // which will be connected to but not modified in any way
 
-func TestKeyFromArg(t *T) {
-	m := map[string]interface{}{
-		"foo0": "foo0",
-		"foo1": []byte("foo1"),
-		"1":    1,
-		"1.1":  1.1,
-		"foo2": []string{"foo2", "bar"},
-		"foo3": [][]string{{"foo3", "bar"}, {"baz", "buz"}},
-	}
-
-	for out, in := range m {
-		key, err := KeyFromArgs(in)
-		assert.Nil(t, err)
-		assert.Equal(t, out, key)
-	}
-}
-
 func getCluster(t *T) *Cluster {
 	cluster, err := New("127.0.0.1:7000")
 	if err != nil {

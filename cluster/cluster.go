@@ -15,7 +15,6 @@ package cluster
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -403,7 +402,7 @@ func (c *Cluster) Cmd(cmd string, args ...interface{}) *redis.Resp {
 		return errorResp(ErrBadCmdNoKey)
 	}
 
-	key, err := KeyFromArgs(args)
+	key, err := redis.KeyFromArgs(args)
 	if err != nil {
 		return errorResp(err)
 	}
@@ -537,41 +536,6 @@ func redirectInfo(msg string) (int, string) {
 	}
 	addr := parts[2]
 	return slot, addr
-}
-
-// KeyFromArgs takes in the args parameters that might be passed into Cmd and
-// returns the key that will be chosen for that set of arguments to locate the
-// command in the cluster. Since radix supports complicated arguments (like
-// slices, slices of slices, maps, etc...) this is not always as straightforward
-// as it might seem, so this helper method is provided.
-//
-// ErrBadCmdNoKey is returned if no key can be determined
-func KeyFromArgs(args ...interface{}) (string, error) {
-	if len(args) == 0 {
-		return "", ErrBadCmdNoKey
-	}
-	arg := args[0]
-	switch argv := arg.(type) {
-	case string:
-		return argv, nil
-	case []byte:
-		return string(argv), nil
-	default:
-		switch reflect.TypeOf(arg).Kind() {
-		case reflect.Slice:
-			argVal := reflect.ValueOf(arg)
-			if argVal.Len() < 1 {
-				return "", ErrBadCmdNoKey
-			}
-			first := argVal.Index(0).Interface()
-			return KeyFromArgs(first)
-		case reflect.Map:
-			// Maps have no order, we can't possibly choose a key out of one
-			return "", ErrBadCmdNoKey
-		default:
-			return fmt.Sprint(arg), nil
-		}
-	}
 }
 
 func (c *Cluster) addrForKeyInner(key string) string {
