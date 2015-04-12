@@ -8,7 +8,7 @@ import (
 	"github.com/mediocregopher/radix.v2/redis"
 )
 
-// Cmder is an interface which can be used to interfchanbeably work with either
+// Cmder is an interface which can be used to interchangeably work with either
 // redis.Client (the basic, single connection redis client), pool.Pool, or
 // cluster.Cluster. All three implement a Cmd method (although, as is the case
 // with Cluster, sometimes with different limitations), and therefore all three
