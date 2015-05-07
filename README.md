@@ -1,7 +1,5 @@
 # Radix
 
-**WORK IN PROGRESS, NOT READY FOR USAGE YET**
-
 [![GoDoc](https://godoc.org/github.com/mediocregopher/radix.v2?status.svg)](https://godoc.org/github.com/mediocregopher/radix.v2)
 
 Radix is a minimalistic [Redis][redis] client for Go. It is broken up into
@@ -63,7 +61,7 @@ to past design decisions (mostly my own). So I've started V2, which has
 redesigned some core aspects of the api and hopefully made things easier to use
 and faster.
 
-Here are the major changes since V1:
+Here are some of the major changes since V1:
 
 * Combining resp and redis packages
 
@@ -74,6 +72,10 @@ Here are the major changes since V1:
 * Append is now PipeAppend, GetReply is now PipeResp
 
 * PipelineQueueEmptyError is now ErrPipelineEmpty
+
+* Significant changes to pool, making it easier to use
+
+* More functionality in cluster
 
 ## Copyright and licensing
 
