@@ -76,7 +76,8 @@ type Resp struct {
 // NewResp takes the given value and interprets it into a resp encoded byte
 // stream
 func NewResp(v interface{}) *Resp {
-	return format(v, false)
+	r := format(v, false)
+	return &r
 }
 
 // NewRespSimple is like NewResp except it encodes its string as a resp
@@ -100,7 +101,8 @@ func NewRespSimple(s string) *Resp {
 // Array of size one
 func NewRespFlattenedStrings(v interface{}) *Resp {
 	fv := flatten(v)
-	return format(fv, true)
+	r := format(fv, true)
+	return &r
 }
 
 // newRespIOErr is a convenience method for making Resps to wrap io errors
@@ -135,13 +137,13 @@ func (rr *RespReader) Read() *Resp {
 		res = formatErr(err)
 		res.typ = IOErr
 	}
-	return res
+	return &res
 }
 
-func bufioReadResp(r *bufio.Reader) (*Resp, error) {
+func bufioReadResp(r *bufio.Reader) (Resp, error) {
 	b, err := r.Peek(1)
 	if err != nil {
-		return nil, err
+		return Resp{}, err
 	}
 	switch b[0] {
 	case simpleStrPrefix:
@@ -155,50 +157,50 @@ func bufioReadResp(r *bufio.Reader) (*Resp, error) {
 	case arrayPrefix:
 		return readArray(r)
 	default:
-		return nil, errBadType
+		return Resp{}, errBadType
 	}
 }
 
-func readSimpleStr(r *bufio.Reader) (*Resp, error) {
+func readSimpleStr(r *bufio.Reader) (Resp, error) {
 	b, err := r.ReadBytes(delimEnd)
 	if err != nil {
-		return nil, err
+		return Resp{}, err
 	}
-	return &Resp{typ: SimpleStr, val: b[1 : len(b)-2], raw: b}, nil
+	return Resp{typ: SimpleStr, val: b[1 : len(b)-2], raw: b}, nil
 }
 
-func readError(r *bufio.Reader) (*Resp, error) {
+func readError(r *bufio.Reader) (Resp, error) {
 	b, err := r.ReadBytes(delimEnd)
 	if err != nil {
-		return nil, err
+		return Resp{}, err
 	}
 	err = errors.New(string(b[1 : len(b)-2]))
-	return &Resp{typ: AppErr, val: err, raw: b, Err: err}, nil
+	return Resp{typ: AppErr, val: err, raw: b, Err: err}, nil
 }
 
-func readInt(r *bufio.Reader) (*Resp, error) {
+func readInt(r *bufio.Reader) (Resp, error) {
 	b, err := r.ReadBytes(delimEnd)
 	if err != nil {
-		return nil, err
+		return Resp{}, err
 	}
 	i, err := strconv.ParseInt(string(b[1:len(b)-2]), 10, 64)
 	if err != nil {
-		return nil, errParse
+		return Resp{}, errParse
 	}
-	return &Resp{typ: Int, val: i, raw: b}, nil
+	return Resp{typ: Int, val: i, raw: b}, nil
 }
 
-func readBulkStr(r *bufio.Reader) (*Resp, error) {
+func readBulkStr(r *bufio.Reader) (Resp, error) {
 	b, err := r.ReadBytes(delimEnd)
 	if err != nil {
-		return nil, err
+		return Resp{}, err
 	}
 	size, err := strconv.ParseInt(string(b[1:len(b)-2]), 10, 64)
 	if err != nil {
-		return nil, errParse
+		return Resp{}, errParse
 	}
 	if size < 0 {
-		return &Resp{typ: Nil, raw: b}, nil
+		return Resp{typ: Nil, raw: b}, nil
 	}
 	total := make([]byte, size)
 	b2 := total
@@ -206,7 +208,7 @@ func readBulkStr(r *bufio.Reader) (*Resp, error) {
 	for len(b2) > 0 {
 		n, err = r.Read(b2)
 		if err != nil {
-			return nil, err
+			return Resp{}, err
 		}
 		b2 = b2[n:]
 	}
@@ -216,7 +218,7 @@ func readBulkStr(r *bufio.Reader) (*Resp, error) {
 	for i := 0; i < 2; i++ {
 		c, err := r.ReadByte()
 		if err != nil {
-			return nil, err
+			return Resp{}, err
 		}
 		trail[i] = c
 	}
@@ -226,32 +228,32 @@ func readBulkStr(r *bufio.Reader) (*Resp, error) {
 	raw = append(raw, b...)
 	raw = append(raw, total...)
 	raw = append(raw, trail...)
-	return &Resp{typ: BulkStr, val: total, raw: raw}, nil
+	return Resp{typ: BulkStr, val: total, raw: raw}, nil
 }
 
-func readArray(r *bufio.Reader) (*Resp, error) {
+func readArray(r *bufio.Reader) (Resp, error) {
 	b, err := r.ReadBytes(delimEnd)
 	if err != nil {
-		return nil, err
+		return Resp{}, err
 	}
 	size, err := strconv.ParseInt(string(b[1:len(b)-2]), 10, 64)
 	if err != nil {
-		return nil, errParse
+		return Resp{}, errParse
 	}
 	if size < 0 {
-		return &Resp{typ: Nil, raw: b}, nil
+		return Resp{typ: Nil, raw: b}, nil
 	}
 
-	arr := make([]*Resp, size)
+	arr := make([]Resp, size)
 	for i := range arr {
 		m, err := bufioReadResp(r)
 		if err != nil {
-			return nil, err
+			return Resp{}, err
 		}
 		arr[i] = m
 		b = append(b, m.raw...)
 	}
-	return &Resp{typ: Array, val: arr, raw: b}, nil
+	return Resp{typ: Array, val: arr, raw: b}, nil
 }
 
 // IsType returns whether or or not the reply is of a given type
@@ -316,23 +318,35 @@ func (r *Resp) Int64() (int64, error) {
 	return 0, errNotInt
 }
 
-// Array returns the Resp slice encompassed by this Resp. Only valid for a Resp
-// of type Array. If r.Err != nil that will be returned
-func (r *Resp) Array() ([]*Resp, error) {
+func (r *Resp) betterArray() ([]Resp, error) {
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	if a, ok := r.val.([]*Resp); ok {
+	if a, ok := r.val.([]Resp); ok {
 		return a, nil
 	}
 	return nil, errNotArray
+}
+
+// Array returns the Resp slice encompassed by this Resp. Only valid for a Resp
+// of type Array. If r.Err != nil that will be returned
+func (r *Resp) Array() ([]*Resp, error) {
+	a, err := r.betterArray()
+	if err != nil {
+		return nil, err
+	}
+	abad := make([]*Resp, len(a))
+	for i := range a {
+		abad[i] = &a[i]
+	}
+	return abad, nil
 }
 
 // List is a wrapper around Array which returns the result as a list of strings,
 // calling Str() on each Resp which Array returns. Any errors encountered are
 // immediately returned. Any Nil replies are interpreted as empty strings
 func (r *Resp) List() ([]string, error) {
-	m, err := r.Array()
+	m, err := r.betterArray()
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +369,7 @@ func (r *Resp) List() ([]string, error) {
 // byte slices, calling Bytes() on each Resp which Array returns. Any errors
 // encountered are immediately returned. Any Nil replies are interpreted as nil
 func (r *Resp) ListBytes() ([][]byte, error) {
-	m, err := r.Array()
+	m, err := r.betterArray()
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +392,7 @@ func (r *Resp) ListBytes() ([][]byte, error) {
 // calling Str() on alternating key/values for the map. All value fields of type
 // Nil will be treated as empty strings, keys must all be of type Str
 func (r *Resp) Map() (map[string]string, error) {
-	l, err := r.Array()
+	l, err := r.betterArray()
 	if err != nil {
 		return nil, err
 	}
@@ -473,7 +487,7 @@ func flatten(m interface{}) []interface{} {
 	}
 }
 
-func format(m interface{}, forceString bool) *Resp {
+func format(m interface{}, forceString bool) Resp {
 	switch mt := m.(type) {
 	case []byte:
 		return formatStr(mt)
@@ -525,7 +539,7 @@ func format(m interface{}, forceString bool) *Resp {
 	// it'd be better to not get the reflect package involved here
 	case []interface{}:
 		l := len(mt)
-		rl := make([]*Resp, 0, l)
+		rl := make([]Resp, 0, l)
 		b := make([]byte, 0, l*1024)
 		b = append(b, '*')
 		b = append(b, []byte(strconv.Itoa(l))...)
@@ -535,10 +549,10 @@ func format(m interface{}, forceString bool) *Resp {
 			b = append(b, r.raw...)
 			rl = append(rl, r)
 		}
-		return &Resp{typ: Array, val: rl, raw: b}
+		return Resp{typ: Array, val: rl, raw: b}
 
 	case *Resp:
-		return mt
+		return *mt
 
 	default:
 		// Fallback to reflect-based.
@@ -546,7 +560,7 @@ func format(m interface{}, forceString bool) *Resp {
 		case reflect.Slice:
 			rm := reflect.ValueOf(mt)
 			l := rm.Len()
-			rl := make([]*Resp, 0, l)
+			rl := make([]Resp, 0, l)
 			b := make([]byte, 0, l*1024)
 			b = append(b, '*')
 			b = append(b, []byte(strconv.Itoa(l))...)
@@ -557,12 +571,12 @@ func format(m interface{}, forceString bool) *Resp {
 				rl = append(rl, r)
 				b = append(b, r.raw...)
 			}
-			return &Resp{typ: Array, val: rl, raw: b}
+			return Resp{typ: Array, val: rl, raw: b}
 
 		case reflect.Map:
 			rm := reflect.ValueOf(mt)
 			l := rm.Len() * 2
-			rl := make([]*Resp, 0, l)
+			rl := make([]Resp, 0, l)
 			b := make([]byte, 0, l*1024)
 			b = append(b, '*')
 			b = append(b, []byte(strconv.Itoa(l))...)
@@ -580,7 +594,7 @@ func format(m interface{}, forceString bool) *Resp {
 				rl = append(rl, vr)
 				b = append(b, vr.raw...)
 			}
-			return &Resp{typ: Array, val: rl, raw: b}
+			return Resp{typ: Array, val: rl, raw: b}
 
 		default:
 			return formatStr([]byte(fmt.Sprint(m)))
@@ -588,7 +602,7 @@ func format(m interface{}, forceString bool) *Resp {
 	}
 }
 
-func formatStr(b []byte) *Resp {
+func formatStr(b []byte) Resp {
 	l := strconv.Itoa(len(b))
 	bs := make([]byte, 0, len(l)+len(b)+5)
 	bs = append(bs, bulkStrPrefix)
@@ -596,19 +610,19 @@ func formatStr(b []byte) *Resp {
 	bs = append(bs, delim...)
 	bs = append(bs, b...)
 	bs = append(bs, delim...)
-	return &Resp{typ: BulkStr, val: b, raw: bs}
+	return Resp{typ: BulkStr, val: b, raw: bs}
 }
 
-func formatErr(ierr error) *Resp {
+func formatErr(ierr error) Resp {
 	ierrstr := []byte(ierr.Error())
 	bs := make([]byte, 0, len(ierrstr)+3)
 	bs = append(bs, errPrefix)
 	bs = append(bs, ierrstr...)
 	bs = append(bs, delim...)
-	return &Resp{typ: AppErr, val: ierr, raw: bs, Err: ierr}
+	return Resp{typ: AppErr, val: ierr, raw: bs, Err: ierr}
 }
 
-func formatInt(i int64, forceString bool) *Resp {
+func formatInt(i int64, forceString bool) Resp {
 	istr := strconv.FormatInt(i, 10)
 	if forceString {
 		return formatStr([]byte(istr))
@@ -617,13 +631,13 @@ func formatInt(i int64, forceString bool) *Resp {
 	bs = append(bs, intPrefix)
 	bs = append(bs, istr...)
 	bs = append(bs, delim...)
-	return &Resp{typ: Int, val: i, raw: bs}
+	return Resp{typ: Int, val: i, raw: bs}
 }
 
 var nilFormatted = []byte("$-1\r\n")
 
-func formatNil() *Resp {
-	return &Resp{typ: Nil, val: nil, raw: nilFormatted}
+func formatNil() Resp {
+	return Resp{typ: Nil, val: nil, raw: nilFormatted}
 }
 
 // IsTimeout is a helper function for determining if an IOErr Resp was caused by

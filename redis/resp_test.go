@@ -77,11 +77,11 @@ func TestRead(t *T) {
 	// Array
 	r = pretendRead("*2\r\n+foo\r\n+bar\r\n")
 	assert.Equal(t, Array, r.typ)
-	assert.Equal(t, 2, len(r.val.([]*Resp)))
-	assert.Equal(t, SimpleStr, r.val.([]*Resp)[0].typ)
-	assert.Exactly(t, []byte("foo"), r.val.([]*Resp)[0].val)
-	assert.Equal(t, SimpleStr, r.val.([]*Resp)[1].typ)
-	assert.Exactly(t, []byte("bar"), r.val.([]*Resp)[1].val)
+	assert.Equal(t, 2, len(r.val.([]Resp)))
+	assert.Equal(t, SimpleStr, r.val.([]Resp)[0].typ)
+	assert.Exactly(t, []byte("foo"), r.val.([]Resp)[0].val)
+	assert.Equal(t, SimpleStr, r.val.([]Resp)[1].typ)
+	assert.Exactly(t, []byte("bar"), r.val.([]Resp)[1].val)
 	l, err := r.List()
 	assert.Nil(t, err)
 	assert.Equal(t, []string{"foo", "bar"}, l)
@@ -95,7 +95,7 @@ func TestRead(t *T) {
 	// Empty Array
 	r = pretendRead("*0\r\n")
 	assert.Equal(t, Array, r.typ)
-	assert.Equal(t, 0, len(r.val.([]*Resp)))
+	assert.Equal(t, 0, len(r.val.([]Resp)))
 
 	// Nil Array
 	r = pretendRead("*-1\r\n")
@@ -104,26 +104,26 @@ func TestRead(t *T) {
 	// Embedded Array
 	r = pretendRead("*3\r\n+foo\r\n+bar\r\n*2\r\n+foo\r\n+bar\r\n")
 	assert.Equal(t, Array, r.typ)
-	assert.Equal(t, 3, len(r.val.([]*Resp)))
-	assert.Equal(t, SimpleStr, r.val.([]*Resp)[0].typ)
-	assert.Exactly(t, []byte("foo"), r.val.([]*Resp)[0].val)
-	assert.Equal(t, SimpleStr, r.val.([]*Resp)[1].typ)
-	assert.Exactly(t, []byte("bar"), r.val.([]*Resp)[1].val)
-	r = r.val.([]*Resp)[2]
-	assert.Equal(t, 2, len(r.val.([]*Resp)))
-	assert.Equal(t, SimpleStr, r.val.([]*Resp)[0].typ)
-	assert.Exactly(t, []byte("foo"), r.val.([]*Resp)[0].val)
-	assert.Equal(t, SimpleStr, r.val.([]*Resp)[1].typ)
-	assert.Exactly(t, []byte("bar"), r.val.([]*Resp)[1].val)
+	assert.Equal(t, 3, len(r.val.([]Resp)))
+	assert.Equal(t, SimpleStr, r.val.([]Resp)[0].typ)
+	assert.Exactly(t, []byte("foo"), r.val.([]Resp)[0].val)
+	assert.Equal(t, SimpleStr, r.val.([]Resp)[1].typ)
+	assert.Exactly(t, []byte("bar"), r.val.([]Resp)[1].val)
+	r = &r.val.([]Resp)[2]
+	assert.Equal(t, 2, len(r.val.([]Resp)))
+	assert.Equal(t, SimpleStr, r.val.([]Resp)[0].typ)
+	assert.Exactly(t, []byte("foo"), r.val.([]Resp)[0].val)
+	assert.Equal(t, SimpleStr, r.val.([]Resp)[1].typ)
+	assert.Exactly(t, []byte("bar"), r.val.([]Resp)[1].val)
 
 	// Test that two bulks in a row read correctly
 	r = pretendRead("*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n")
 	assert.Equal(t, Array, r.typ)
-	assert.Equal(t, 2, len(r.val.([]*Resp)))
-	assert.Equal(t, BulkStr, r.val.([]*Resp)[0].typ)
-	assert.Exactly(t, []byte("foo"), r.val.([]*Resp)[0].val)
-	assert.Equal(t, BulkStr, r.val.([]*Resp)[1].typ)
-	assert.Exactly(t, []byte("bar"), r.val.([]*Resp)[1].val)
+	assert.Equal(t, 2, len(r.val.([]Resp)))
+	assert.Equal(t, BulkStr, r.val.([]Resp)[0].typ)
+	assert.Exactly(t, []byte("foo"), r.val.([]Resp)[0].val)
+	assert.Equal(t, BulkStr, r.val.([]Resp)[1].typ)
+	assert.Exactly(t, []byte("bar"), r.val.([]Resp)[1].val)
 }
 
 type arbitraryTest struct {
