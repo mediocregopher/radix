@@ -52,7 +52,7 @@ func TestRead(t *T) {
 	assert.Exactly(t, int64(1024), r.val)
 	i, err := r.Int()
 	assert.Nil(t, err)
-	assert.Equal(t, int64(1024), i)
+	assert.Equal(t, 1024, i)
 
 	// Bulk string
 	r = pretendRead("$3\r\nfoo\r\n")
