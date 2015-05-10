@@ -451,36 +451,49 @@ func (r *Resp) String() string {
 
 var typeOfBytes = reflect.TypeOf([]byte(nil))
 
-func flattenedLength(m interface{}) int {
-	t := reflect.TypeOf(m)
-
-	// If it's a byte-slice we don't want to flatten
-	if t == typeOfBytes {
-		return 1
-	}
+func flattenedLength(mm ...interface{}) int {
 
 	total := 0
 
-	switch t.Kind() {
-	case reflect.Slice:
-		rm := reflect.ValueOf(m)
-		l := rm.Len()
-		for i := 0; i < l; i++ {
-			total += flattenedLength(rm.Index(i).Interface())
-		}
+	for _, m := range mm {
+		switch m.(type) {
+		case []byte, string, bool, nil, int, int8, int16, int32, int64, uint,
+			uint8, uint16, uint32, uint64, float32, float64, error:
+			total++
 
-	case reflect.Map:
-		rm := reflect.ValueOf(m)
-		keys := rm.MapKeys()
-		for _, k := range keys {
-			kv := k.Interface()
-			vv := rm.MapIndex(k).Interface()
-			total += flattenedLength(kv)
-			total += flattenedLength(vv)
-		}
+		case Resp:
+			total += flattenedLength(m.(Resp).val)
+		case *Resp:
+			total += flattenedLength(m.(*Resp).val)
 
-	default:
-		total++
+		case []interface{}:
+			total += flattenedLength(m.([]interface{})...)
+
+		default:
+			t := reflect.TypeOf(m)
+
+			switch t.Kind() {
+			case reflect.Slice:
+				rm := reflect.ValueOf(m)
+				l := rm.Len()
+				for i := 0; i < l; i++ {
+					total += flattenedLength(rm.Index(i).Interface())
+				}
+
+			case reflect.Map:
+				rm := reflect.ValueOf(m)
+				keys := rm.MapKeys()
+				for _, k := range keys {
+					kv := k.Interface()
+					vv := rm.MapIndex(k).Interface()
+					total += flattenedLength(kv)
+					total += flattenedLength(vv)
+				}
+
+			default:
+				total++
+			}
+		}
 	}
 
 	return total

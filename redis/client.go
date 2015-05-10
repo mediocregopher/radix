@@ -151,7 +151,7 @@ func (c *Client) writeRequest(requests ...request) error {
 outer:
 	for i := range requests {
 		c.writeBuf.Reset()
-		elems := flattenedLength(requests[i].args) + 1
+		elems := flattenedLength(requests[i].args...) + 1
 		_, err = writeArrayHeader(c.writeBuf, c.writeScratch, int64(elems))
 		if err != nil {
 			break
