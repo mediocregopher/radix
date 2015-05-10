@@ -570,6 +570,15 @@ func writeArrayHeader(w io.Writer, buf []byte, l int64) (int64, error) {
 	return written, err
 }
 
+// Given a preallocated byte buffer and a string, this will copy the string's
+// contents into buf starting at index 0, and returns two slices from buf: The
+// first is a slice of the string data, the second is a slice of the "rest" of
+// buf following the first slice
+func stringSlicer(buf []byte, s string) ([]byte, []byte) {
+	sbuf := append(buf[:0], s...)
+	return sbuf, sbuf[len(sbuf):]
+}
+
 // takes in something, m, and encodes it and writes it to w. buf is used as a
 // pre-alloated byte buffer for encoding integers (expected to have a length of
 // 0), so we don't have to re-allocate a new one every time we convert an
@@ -585,26 +594,27 @@ func writeTo(
 	case []byte:
 		return writeStr(w, buf, mt)
 	case string:
-		return writeStr(w, buf, []byte(mt))
+		sbuf, buf := stringSlicer(buf, mt)
+		return writeStr(w, buf, sbuf)
 	case bool:
 		if mt {
-			return writeStr(w, buf, []byte("1"))
+			buf[0] = '1'
+		} else {
+			buf[0] = '0'
 		}
-		return writeStr(w, buf, []byte("0"))
+		return writeStr(w, buf[1:], buf[:1])
 	case nil:
 		if forceString {
-			return writeStr(w, buf, []byte{})
+			return writeStr(w, buf, nil)
 		}
 		return writeNil(w)
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		i := anyIntToInt64(mt)
 		return writeInt(w, buf, i, forceString)
 	case float32:
-		ft := strconv.FormatFloat(float64(mt), 'f', -1, 32)
-		return writeStr(w, buf, []byte(ft))
+		return writeFloat(w, buf, float64(mt), 32)
 	case float64:
-		ft := strconv.FormatFloat(mt, 'f', -1, 64)
-		return writeStr(w, buf, []byte(ft))
+		return writeFloat(w, buf, mt, 64)
 	case error:
 		return writeErr(w, buf, mt, forceString)
 
@@ -744,6 +754,11 @@ func writeInt(
 	written, err = writeBytesHelper(w, buf, written, err)
 	written, err = writeBytesHelper(w, delim, written, err)
 	return written, err
+}
+
+func writeFloat(w io.Writer, buf []byte, f float64, bits int) (int64, error) {
+	buf = strconv.AppendFloat(buf[:0], f, 'f', -1, bits)
+	return writeStr(w, buf[len(buf):], buf)
 }
 
 func writeNil(w io.Writer) (int64, error) {
