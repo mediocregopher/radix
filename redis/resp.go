@@ -42,12 +42,13 @@ const (
 	Err = IOErr | AppErr
 )
 
-const (
-	simpleStrPrefix = '+'
-	errPrefix       = '-'
-	intPrefix       = ':'
-	bulkStrPrefix   = '$'
-	arrayPrefix     = '*'
+var (
+	simpleStrPrefix = []byte{'+'}
+	errPrefix       = []byte{'-'}
+	intPrefix       = []byte{':'}
+	bulkStrPrefix   = []byte{'$'}
+	arrayPrefix     = []byte{'*'}
+	nilFormatted    = []byte("$-1\r\n")
 )
 
 // Parse errors
@@ -65,7 +66,6 @@ var (
 type Resp struct {
 	typ RespType
 	val interface{}
-	raw []byte
 
 	// Err indicates that this Resp signals some kind of error, either on the
 	// connection level or the application level. Use IsType if you need to
@@ -83,13 +83,9 @@ func NewResp(v interface{}) *Resp {
 // NewRespSimple is like NewResp except it encodes its string as a resp
 // SimpleStr type, whereas NewResp will encode all strings as BulkStr
 func NewRespSimple(s string) *Resp {
-	b := append(make([]byte, 0, len(s)+3), '+')
-	b = append(b, []byte(s)...)
-	b = append(b, '\r', '\n')
 	return &Resp{
 		typ: SimpleStr,
 		val: []byte(s),
-		raw: b,
 	}
 }
 
@@ -134,8 +130,7 @@ func NewRespReader(r io.Reader) *RespReader {
 func (rr *RespReader) Read() *Resp {
 	res, err := bufioReadResp(rr.r)
 	if err != nil {
-		res = formatErr(err)
-		res.typ = IOErr
+		res = Resp{typ: IOErr, val: err, Err: err}
 	}
 	return &res
 }
@@ -146,15 +141,15 @@ func bufioReadResp(r *bufio.Reader) (Resp, error) {
 		return Resp{}, err
 	}
 	switch b[0] {
-	case simpleStrPrefix:
+	case simpleStrPrefix[0]:
 		return readSimpleStr(r)
-	case errPrefix:
+	case errPrefix[0]:
 		return readError(r)
-	case intPrefix:
+	case intPrefix[0]:
 		return readInt(r)
-	case bulkStrPrefix:
+	case bulkStrPrefix[0]:
 		return readBulkStr(r)
-	case arrayPrefix:
+	case arrayPrefix[0]:
 		return readArray(r)
 	default:
 		return Resp{}, errBadType
@@ -166,7 +161,7 @@ func readSimpleStr(r *bufio.Reader) (Resp, error) {
 	if err != nil {
 		return Resp{}, err
 	}
-	return Resp{typ: SimpleStr, val: b[1 : len(b)-2], raw: b}, nil
+	return Resp{typ: SimpleStr, val: b[1 : len(b)-2]}, nil
 }
 
 func readError(r *bufio.Reader) (Resp, error) {
@@ -175,7 +170,7 @@ func readError(r *bufio.Reader) (Resp, error) {
 		return Resp{}, err
 	}
 	err = errors.New(string(b[1 : len(b)-2]))
-	return Resp{typ: AppErr, val: err, raw: b, Err: err}, nil
+	return Resp{typ: AppErr, val: err, Err: err}, nil
 }
 
 func readInt(r *bufio.Reader) (Resp, error) {
@@ -187,7 +182,7 @@ func readInt(r *bufio.Reader) (Resp, error) {
 	if err != nil {
 		return Resp{}, errParse
 	}
-	return Resp{typ: Int, val: i, raw: b}, nil
+	return Resp{typ: Int, val: i}, nil
 }
 
 func readBulkStr(r *bufio.Reader) (Resp, error) {
@@ -200,7 +195,7 @@ func readBulkStr(r *bufio.Reader) (Resp, error) {
 		return Resp{}, errParse
 	}
 	if size < 0 {
-		return Resp{typ: Nil, raw: b}, nil
+		return Resp{typ: Nil}, nil
 	}
 	total := make([]byte, size)
 	b2 := total
@@ -223,12 +218,7 @@ func readBulkStr(r *bufio.Reader) (Resp, error) {
 		trail[i] = c
 	}
 
-	blens := len(b) + len(total)
-	raw := make([]byte, 0, blens+2)
-	raw = append(raw, b...)
-	raw = append(raw, total...)
-	raw = append(raw, trail...)
-	return Resp{typ: BulkStr, val: total, raw: raw}, nil
+	return Resp{typ: BulkStr, val: total}, nil
 }
 
 func readArray(r *bufio.Reader) (Resp, error) {
@@ -241,7 +231,7 @@ func readArray(r *bufio.Reader) (Resp, error) {
 		return Resp{}, errParse
 	}
 	if size < 0 {
-		return Resp{typ: Nil, raw: b}, nil
+		return Resp{typ: Nil}, nil
 	}
 
 	arr := make([]Resp, size)
@@ -251,9 +241,8 @@ func readArray(r *bufio.Reader) (Resp, error) {
 			return Resp{}, err
 		}
 		arr[i] = m
-		b = append(b, m.raw...)
 	}
-	return Resp{typ: Array, val: arr, raw: b}, nil
+	return Resp{typ: Array, val: arr}, nil
 }
 
 // IsType returns whether or or not the reply is of a given type
@@ -271,8 +260,19 @@ func (r *Resp) IsType(t RespType) bool {
 // WriteTo writes the resp encoded form of the Resp to the given writer,
 // implementing the WriterTo interface
 func (r *Resp) WriteTo(w io.Writer) (int64, error) {
-	i, err := w.Write(r.raw)
-	return int64(i), err
+
+	// SimpleStr is a special case, writeTo always writes strings as BulkStrs,
+	// so we just manually do SimpleStr here
+	if r.typ == SimpleStr {
+		s := r.val.([]byte)
+		b := append(make([]byte, 0, len(s)+3), simpleStrPrefix...)
+		b = append(b, s...)
+		b = append(b, delim...)
+		written, err := w.Write(b)
+		return int64(written), err
+	}
+
+	return writeTo(w, nil, r.val, false, false)
 }
 
 // Bytes returns a byte slice representing the value of the Resp. Only valid for
@@ -451,6 +451,41 @@ func (r *Resp) String() string {
 
 var typeOfBytes = reflect.TypeOf([]byte(nil))
 
+func flattenedLength(m interface{}) int {
+	t := reflect.TypeOf(m)
+
+	// If it's a byte-slice we don't want to flatten
+	if t == typeOfBytes {
+		return 1
+	}
+
+	total := 0
+
+	switch t.Kind() {
+	case reflect.Slice:
+		rm := reflect.ValueOf(m)
+		l := rm.Len()
+		for i := 0; i < l; i++ {
+			total += flattenedLength(rm.Index(i).Interface())
+		}
+
+	case reflect.Map:
+		rm := reflect.ValueOf(m)
+		keys := rm.MapKeys()
+		for _, k := range keys {
+			kv := k.Interface()
+			vv := rm.MapIndex(k).Interface()
+			total += flattenedLength(kv)
+			total += flattenedLength(vv)
+		}
+
+	default:
+		total++
+	}
+
+	return total
+}
+
 func flatten(m interface{}) []interface{} {
 	t := reflect.TypeOf(m)
 
@@ -487,72 +522,119 @@ func flatten(m interface{}) []interface{} {
 	}
 }
 
-func format(m interface{}, forceString bool) Resp {
+func anyIntToInt64(m interface{}) int64 {
+	switch mt := m.(type) {
+	case int:
+		return int64(mt)
+	case int8:
+		return int64(mt)
+	case int16:
+		return int64(mt)
+	case int32:
+		return int64(mt)
+	case int64:
+		return mt
+	case uint:
+		return int64(mt)
+	case uint8:
+		return int64(mt)
+	case uint16:
+		return int64(mt)
+	case uint32:
+		return int64(mt)
+	case uint64:
+		return int64(mt)
+	}
+	panic(fmt.Sprintf("anyIntToInt64 got bad arg: %#v", m))
+}
+
+func writeBytesHelper(
+	w io.Writer, b []byte, lastWritten int64, lastErr error,
+) (
+	int64, error,
+) {
+	if lastErr != nil {
+		return lastWritten, lastErr
+	}
+	i, err := w.Write(b)
+	return int64(i) + lastWritten, err
+}
+
+func writeArrayHeader(w io.Writer, buf []byte, l int64) (int64, error) {
+	buf = strconv.AppendInt(buf, l, 10)
+	var err error
+	var written int64
+	written, err = writeBytesHelper(w, arrayPrefix, written, err)
+	written, err = writeBytesHelper(w, buf, written, err)
+	written, err = writeBytesHelper(w, delim, written, err)
+	return written, err
+}
+
+// takes in something, m, and encodes it and writes it to w. buf is used as a
+// pre-alloated byte buffer for encoding integers (expected to have a length of
+// 0), so we don't have to re-allocate a new one every time we convert an
+// integer to a string.  forceString means all types will be converted to
+// strings, noArrayHeader means don't write out the headers to any arrays, just
+// inline all the elements in the array
+func writeTo(
+	w io.Writer, buf []byte, m interface{}, forceString, noArrayHeader bool,
+) (
+	int64, error,
+) {
 	switch mt := m.(type) {
 	case []byte:
-		return formatStr(mt)
+		return writeStr(w, buf, mt)
 	case string:
-		return formatStr([]byte(mt))
+		return writeStr(w, buf, []byte(mt))
 	case bool:
 		if mt {
-			return formatStr([]byte("1"))
+			return writeStr(w, buf, []byte("1"))
 		}
-		return formatStr([]byte("0"))
+		return writeStr(w, buf, []byte("0"))
 	case nil:
 		if forceString {
-			return formatStr([]byte{})
+			return writeStr(w, buf, []byte{})
 		}
-		return formatNil()
-	case int:
-		return formatInt(int64(mt), forceString)
-	case int8:
-		return formatInt(int64(mt), forceString)
-	case int16:
-		return formatInt(int64(mt), forceString)
-	case int32:
-		return formatInt(int64(mt), forceString)
-	case int64:
-		return formatInt(mt, forceString)
-	case uint:
-		return formatInt(int64(mt), forceString)
-	case uint8:
-		return formatInt(int64(mt), forceString)
-	case uint16:
-		return formatInt(int64(mt), forceString)
-	case uint32:
-		return formatInt(int64(mt), forceString)
-	case uint64:
-		return formatInt(int64(mt), forceString)
+		return writeNil(w)
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		i := anyIntToInt64(mt)
+		return writeInt(w, buf, i, forceString)
 	case float32:
 		ft := strconv.FormatFloat(float64(mt), 'f', -1, 32)
-		return formatStr([]byte(ft))
+		return writeStr(w, buf, []byte(ft))
 	case float64:
 		ft := strconv.FormatFloat(mt, 'f', -1, 64)
-		return formatStr([]byte(ft))
+		return writeStr(w, buf, []byte(ft))
 	case error:
-		if forceString {
-			return formatStr([]byte(mt.Error()))
-		}
-		return formatErr(mt)
+		return writeErr(w, buf, mt, forceString)
 
 	// We duplicate the below code here a bit, since this is the common case and
 	// it'd be better to not get the reflect package involved here
 	case []interface{}:
 		l := len(mt)
-		rl := make([]Resp, 0, l)
-		b := make([]byte, 0, l*1024)
-		b = append(b, '*')
-		b = append(b, []byte(strconv.Itoa(l))...)
-		b = append(b, []byte("\r\n")...)
-		for i := 0; i < l; i++ {
-			r := format(mt[i], forceString)
-			b = append(b, r.raw...)
-			rl = append(rl, r)
+		var totalWritten int64
+
+		if !noArrayHeader {
+			written, err := writeArrayHeader(w, buf, int64(l))
+			totalWritten += written
+			if err != nil {
+				return totalWritten, err
+			}
 		}
-		return Resp{typ: Array, val: rl, raw: b}
+		for i := 0; i < l; i++ {
+			written, err := writeTo(w, buf, mt[i], forceString, noArrayHeader)
+			totalWritten += written
+			if err != nil {
+				return totalWritten, err
+			}
+		}
+		return totalWritten, nil
 
 	case *Resp:
-		return *mt
+		return writeTo(w, buf, mt.val, forceString, noArrayHeader)
+
+	case Resp:
+		return writeTo(w, buf, mt.val, forceString, noArrayHeader)
 
 	default:
 		// Fallback to reflect-based.
@@ -560,84 +642,113 @@ func format(m interface{}, forceString bool) Resp {
 		case reflect.Slice:
 			rm := reflect.ValueOf(mt)
 			l := rm.Len()
-			rl := make([]Resp, 0, l)
-			b := make([]byte, 0, l*1024)
-			b = append(b, '*')
-			b = append(b, []byte(strconv.Itoa(l))...)
-			b = append(b, []byte("\r\n")...)
+			var totalWritten, written int64
+			var err error
+
+			if !noArrayHeader {
+				written, err = writeArrayHeader(w, buf, int64(l))
+				totalWritten += written
+				if err != nil {
+					return totalWritten, err
+				}
+			}
 			for i := 0; i < l; i++ {
 				vv := rm.Index(i).Interface()
-				r := format(vv, forceString)
-				rl = append(rl, r)
-				b = append(b, r.raw...)
+				written, err = writeTo(w, buf, vv, forceString, noArrayHeader)
+				totalWritten += written
+				if err != nil {
+					return totalWritten, err
+				}
 			}
-			return Resp{typ: Array, val: rl, raw: b}
+			return totalWritten, nil
 
 		case reflect.Map:
 			rm := reflect.ValueOf(mt)
 			l := rm.Len() * 2
-			rl := make([]Resp, 0, l)
-			b := make([]byte, 0, l*1024)
-			b = append(b, '*')
-			b = append(b, []byte(strconv.Itoa(l))...)
-			b = append(b, []byte("\r\n")...)
+			var totalWritten, written int64
+			var err error
+
+			if !noArrayHeader {
+				written, err = writeArrayHeader(w, buf, int64(l))
+				totalWritten += written
+				if err != nil {
+					return totalWritten, err
+				}
+			}
 			keys := rm.MapKeys()
 			for _, k := range keys {
 				kv := k.Interface()
+				written, err = writeTo(w, buf, kv, forceString, noArrayHeader)
+				totalWritten += written
+				if err != nil {
+					return totalWritten, err
+				}
+
 				vv := rm.MapIndex(k).Interface()
-
-				kr := format(kv, forceString)
-				rl = append(rl, kr)
-				b = append(b, kr.raw...)
-
-				vr := format(vv, forceString)
-				rl = append(rl, vr)
-				b = append(b, vr.raw...)
+				written, err = writeTo(w, buf, vv, forceString, noArrayHeader)
+				if err != nil {
+					return totalWritten, err
+				}
 			}
-			return Resp{typ: Array, val: rl, raw: b}
+			return totalWritten, nil
 
 		default:
-			return formatStr([]byte(fmt.Sprint(m)))
+			return writeStr(w, buf, []byte(fmt.Sprint(m)))
 		}
 	}
 }
 
-func formatStr(b []byte) Resp {
-	l := strconv.Itoa(len(b))
-	bs := make([]byte, 0, len(l)+len(b)+5)
-	bs = append(bs, bulkStrPrefix)
-	bs = append(bs, []byte(l)...)
-	bs = append(bs, delim...)
-	bs = append(bs, b...)
-	bs = append(bs, delim...)
-	return Resp{typ: BulkStr, val: b, raw: bs}
+func writeStr(w io.Writer, buf, b []byte) (int64, error) {
+	var err error
+	var written int64
+	buf = strconv.AppendInt(buf[:0], int64(len(b)), 10)
+
+	written, err = writeBytesHelper(w, bulkStrPrefix, written, err)
+	written, err = writeBytesHelper(w, buf, written, err)
+	written, err = writeBytesHelper(w, delim, written, err)
+	written, err = writeBytesHelper(w, b, written, err)
+	written, err = writeBytesHelper(w, delim, written, err)
+	return written, err
 }
 
-func formatErr(ierr error) Resp {
-	ierrstr := []byte(ierr.Error())
-	bs := make([]byte, 0, len(ierrstr)+3)
-	bs = append(bs, errPrefix)
-	bs = append(bs, ierrstr...)
-	bs = append(bs, delim...)
-	return Resp{typ: AppErr, val: ierr, raw: bs, Err: ierr}
-}
-
-func formatInt(i int64, forceString bool) Resp {
-	istr := strconv.FormatInt(i, 10)
+func writeErr(
+	w io.Writer, buf []byte, ierr error, forceString bool,
+) (
+	int64, error,
+) {
+	ierrStr := []byte(ierr.Error())
 	if forceString {
-		return formatStr([]byte(istr))
+		return writeStr(w, buf, ierrStr)
 	}
-	bs := make([]byte, 0, len(istr)+3)
-	bs = append(bs, intPrefix)
-	bs = append(bs, istr...)
-	bs = append(bs, delim...)
-	return Resp{typ: Int, val: i, raw: bs}
+	var err error
+	var written int64
+	written, err = writeBytesHelper(w, errPrefix, written, err)
+	written, err = writeBytesHelper(w, []byte(ierr.Error()), written, err)
+	written, err = writeBytesHelper(w, delim, written, err)
+	return written, err
 }
 
-var nilFormatted = []byte("$-1\r\n")
+func writeInt(
+	w io.Writer, buf []byte, i int64, forceString bool,
+) (
+	int64, error,
+) {
+	buf = strconv.AppendInt(buf[:0], i, 10)
+	if forceString {
+		return writeStr(w, buf[len(buf):], buf)
+	}
 
-func formatNil() Resp {
-	return Resp{typ: Nil, val: nil, raw: nilFormatted}
+	var err error
+	var written int64
+	written, err = writeBytesHelper(w, intPrefix, written, err)
+	written, err = writeBytesHelper(w, buf, written, err)
+	written, err = writeBytesHelper(w, delim, written, err)
+	return written, err
+}
+
+func writeNil(w io.Writer) (int64, error) {
+	written, err := w.Write(nilFormatted)
+	return int64(written), err
 }
 
 // IsTimeout is a helper function for determining if an IOErr Resp was caused by
@@ -648,4 +759,96 @@ func IsTimeout(r *Resp) bool {
 		return ok && t.Timeout()
 	}
 	return false
+}
+
+// format takes any data structure and attempts to turn it into a Resp or
+// multiple embedded Resps in the form of an Array. This is only used for
+// NewResp and NewRespFlattenedStrings
+func format(m interface{}, forceString bool) Resp {
+	switch mt := m.(type) {
+	case []byte:
+		return Resp{typ: BulkStr, val: mt}
+	case string:
+		return Resp{typ: BulkStr, val: []byte(mt)}
+	case bool:
+		if mt {
+			return Resp{typ: BulkStr, val: []byte{'1'}}
+		}
+		return Resp{typ: BulkStr, val: []byte{'0'}}
+	case nil:
+		if forceString {
+			return Resp{typ: BulkStr, val: []byte{'0'}}
+		}
+		return Resp{typ: Nil}
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		i := anyIntToInt64(mt)
+		if forceString {
+			istr := strconv.FormatInt(i, 10)
+			return Resp{typ: BulkStr, val: []byte(istr)}
+		}
+		return Resp{typ: Int, val: i}
+	case float32:
+		ft := strconv.FormatFloat(float64(mt), 'f', -1, 32)
+		return Resp{typ: BulkStr, val: []byte(ft)}
+	case float64:
+		ft := strconv.FormatFloat(mt, 'f', -1, 64)
+		return Resp{typ: BulkStr, val: []byte(ft)}
+	case error:
+		if forceString {
+			return Resp{typ: BulkStr, val: []byte(mt.Error())}
+		}
+		return Resp{typ: AppErr, val: mt, Err: mt}
+
+	// We duplicate the below code here a bit, since this is the common case and
+	// it'd be better to not get the reflect package involved here
+	case []interface{}:
+		l := len(mt)
+		rl := make([]Resp, 0, l)
+		for i := 0; i < l; i++ {
+			r := format(mt[i], forceString)
+			rl = append(rl, r)
+		}
+		return Resp{typ: Array, val: rl}
+
+	case *Resp:
+		return *mt
+
+	case Resp:
+		return mt
+
+	default:
+		// Fallback to reflect-based.
+		switch reflect.TypeOf(m).Kind() {
+		case reflect.Slice:
+			rm := reflect.ValueOf(mt)
+			l := rm.Len()
+			rl := make([]Resp, 0, l)
+			for i := 0; i < l; i++ {
+				vv := rm.Index(i).Interface()
+				r := format(vv, forceString)
+				rl = append(rl, r)
+			}
+			return Resp{typ: Array, val: rl}
+
+		case reflect.Map:
+			rm := reflect.ValueOf(mt)
+			l := rm.Len() * 2
+			rl := make([]Resp, 0, l)
+			keys := rm.MapKeys()
+			for _, k := range keys {
+				kv := k.Interface()
+				vv := rm.MapIndex(k).Interface()
+
+				kr := format(kv, forceString)
+				rl = append(rl, kr)
+
+				vr := format(vv, forceString)
+				rl = append(rl, vr)
+			}
+			return Resp{typ: Array, val: rl}
+
+		default:
+			return Resp{typ: BulkStr, val: []byte(fmt.Sprint(m))}
+		}
+	}
 }

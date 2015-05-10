@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -18,10 +19,12 @@ var ErrPipelineEmpty = errors.New("pipeline queue empty")
 
 // Client describes a Redis client.
 type Client struct {
-	conn       net.Conn
-	respReader *RespReader
-	timeout    time.Duration
-	pending    []*request
+	conn         net.Conn
+	respReader   *RespReader
+	timeout      time.Duration
+	pending      []*request
+	writeScratch []byte
+	writeBuf     *bytes.Buffer
 
 	completed, completedHead []*Resp
 
@@ -58,6 +61,8 @@ func DialTimeout(network, addr string, timeout time.Duration) (*Client, error) {
 		conn:          conn,
 		respReader:    NewRespReader(conn),
 		timeout:       timeout,
+		writeScratch:  make([]byte, 0, 128),
+		writeBuf:      bytes.NewBuffer(make([]byte, 0, 128)),
 		completed:     completed,
 		completedHead: completed,
 		Network:       network,
@@ -142,16 +147,36 @@ func (c *Client) writeRequest(requests ...*request) error {
 	if c.timeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
 	}
+	var err error
+outer:
 	for i := range requests {
-		req := make([]interface{}, 0, len(requests[i].args)+1)
-		req = append(req, requests[i].cmd)
-		req = append(req, requests[i].args...)
-		_, err := NewRespFlattenedStrings(req).WriteTo(c.conn)
+		c.writeBuf.Reset()
+		elems := flattenedLength(requests[i].args) + 1
+		_, err = writeArrayHeader(c.writeBuf, c.writeScratch, int64(elems))
 		if err != nil {
-			c.LastCritical = err
-			c.Close()
-			return err
+			break
 		}
+
+		_, err = writeTo(c.writeBuf, c.writeScratch, requests[i].cmd, true, true)
+		if err != nil {
+			break
+		}
+
+		for _, arg := range requests[i].args {
+			_, err = writeTo(c.writeBuf, c.writeScratch, arg, true, true)
+			if err != nil {
+				break outer
+			}
+		}
+
+		if _, err = c.writeBuf.WriteTo(c.conn); err != nil {
+			break
+		}
+	}
+	if err != nil {
+		c.LastCritical = err
+		c.Close()
+		return err
 	}
 	return nil
 }
