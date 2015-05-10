@@ -22,7 +22,7 @@ type Client struct {
 	conn         net.Conn
 	respReader   *RespReader
 	timeout      time.Duration
-	pending      []*request
+	pending      []request
 	writeScratch []byte
 	writeBuf     *bytes.Buffer
 
@@ -82,7 +82,7 @@ func (c *Client) Close() error {
 
 // Cmd calls the given Redis command.
 func (c *Client) Cmd(cmd string, args ...interface{}) *Resp {
-	err := c.writeRequest(&request{cmd, args})
+	err := c.writeRequest(request{cmd, args})
 	if err != nil {
 		return newRespIOErr(err)
 	}
@@ -92,7 +92,7 @@ func (c *Client) Cmd(cmd string, args ...interface{}) *Resp {
 // PipeAppend adds the given call to the pipeline queue.
 // Use PipeResp() to read the response.
 func (c *Client) PipeAppend(cmd string, args ...interface{}) {
-	c.pending = append(c.pending, &request{cmd, args})
+	c.pending = append(c.pending, request{cmd, args})
 }
 
 // PipeResp returns the reply for the next request in the pipeline queue. Err
@@ -143,7 +143,7 @@ func (c *Client) ReadResp() *Resp {
 	return r
 }
 
-func (c *Client) writeRequest(requests ...*request) error {
+func (c *Client) writeRequest(requests ...request) error {
 	if c.timeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
 	}
