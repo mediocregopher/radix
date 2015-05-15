@@ -3,6 +3,7 @@ package redis
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	. "testing"
 
 	"github.com/stretchr/testify/assert"
@@ -204,4 +205,25 @@ func TestWriteArbitraryAsFlattenedStrings(t *T) {
 		assert.Nil(t, err)
 		assert.Equal(t, test.expect, buf.Bytes())
 	}
+}
+
+func TestFloat64(t *T) {
+	r := NewResp(4)
+	_, err := r.Float64()
+	assert.NotNil(t, err)
+
+	testErr := fmt.Errorf("test")
+	r = NewResp(testErr)
+	_, err = r.Float64()
+	assert.Equal(t, testErr, err)
+
+	r = NewResp("test")
+	_, err = r.Float64()
+	assert.NotNil(t, err)
+
+	r = NewResp("5.0")
+	f, err := r.Float64()
+	assert.Nil(t, err)
+	assert.Equal(t, float64(5.0), f)
+
 }

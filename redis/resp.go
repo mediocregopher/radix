@@ -318,6 +318,23 @@ func (r *Resp) Int64() (int64, error) {
 	return 0, errNotInt
 }
 
+// Float64 returns a float64 representing the value of the Resp. Only valud for
+// a Resp of type Str which represents an actual float. If r.Err != nil that
+// will be returned
+func (r *Resp) Float64() (float64, error) {
+	if r.Err != nil {
+		return 0, r.Err
+	}
+	if b, ok := r.val.([]byte); ok {
+		f, err := strconv.ParseFloat(string(b), 64)
+		if err != nil {
+			return 0, err
+		}
+		return f, nil
+	}
+	return 0, errNotStr
+}
+
 func (r *Resp) betterArray() ([]Resp, error) {
 	if r.Err != nil {
 		return nil, r.Err
