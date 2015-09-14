@@ -55,6 +55,21 @@ func TestRead(t *T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 1024, i)
 
+	// Int (from string)
+	r = pretendRead("+50\r\n")
+	assert.Equal(t, SimpleStr, r.typ)
+	assert.Exactly(t, []byte("50"), r.val)
+	i, err = r.Int()
+	assert.Nil(t, err)
+	assert.Equal(t, 50, i)
+
+	// Int (from string, can't parse)
+	r = pretendRead("+ImADuck\r\n")
+	assert.Equal(t, SimpleStr, r.typ)
+	assert.Exactly(t, []byte("ImADuck"), r.val)
+	i, err = r.Int()
+	assert.NotNil(t, err)
+
 	// Bulk string
 	r = pretendRead("$3\r\nfoo\r\n")
 	assert.Equal(t, BulkStr, r.typ)

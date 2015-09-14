@@ -300,8 +300,10 @@ func (r *Resp) Str() (string, error) {
 	return string(b), nil
 }
 
-// Int returns an int representing the value of the Resp. Only valid for a
-// Resp of type Int. If r.Err != nil that will be returned
+// Int returns an int representing the value of the Resp. For a Resp of type Int
+// the integer value will be returned directly. For a Resp of type Str the
+// string will attempt to be parsed as a base-10 integer, returning the parsing
+// error if any. If r.Err != nil that will be returned
 func (r *Resp) Int() (int, error) {
 	i, err := r.Int64()
 	return int(i), err
@@ -313,6 +315,13 @@ func (r *Resp) Int64() (int64, error) {
 		return 0, r.Err
 	}
 	if i, ok := r.val.(int64); ok {
+		return i, nil
+	}
+	if s, err := r.Str(); err == nil {
+		i, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return 0, err
+		}
 		return i, nil
 	}
 	return 0, errNotInt
