@@ -6,11 +6,12 @@ Radix is a minimalistic [Redis][redis] client for Go. It is broken up into
 small, single-purpose packages for ease of use.
 
 * [redis](http://godoc.org/github.com/mediocregopher/radix.v2/redis) - A wrapper
-  around a single redis connection. Supports normal commands/response as well as
-  pipelining.
+  around a single, *non-thread-safe* redis connection. Supports normal
+  commands/response as well as pipelining.
 
 * [pool](http://godoc.org/github.com/mediocregopher/radix.v2/pool) - a simple,
-  automatically expanding/cleaning connection pool.
+  automatically expanding/cleaning connection pool. If you have multiple
+  go-routines using the same redis instance you'll need this.
 
 * [pubsub](http://godoc.org/github.com/mediocregopher/radix.v2/pubsub) - a
   simple wrapper providing convenient access to Redis Pub/Sub functionality.
