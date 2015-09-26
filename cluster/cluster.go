@@ -43,6 +43,10 @@ var (
 	errNoPools = errors.New("no pools to pull from")
 )
 
+// DialFunc is a function which can be incorporated into Opts. Note that network
+// will always be "tcp" in Cluster.
+type DialFunc func(network, addr string) (*redis.Client, error)
+
 // Cluster wraps a Client and accounts for all redis cluster logic
 type Cluster struct {
 	o Opts
@@ -72,7 +76,8 @@ type Opts struct {
 	Addr string
 
 	// Read and write timeout which should be used on individual redis clients.
-	// Default is to not set the timeout and let the connection use it's default
+	// Default is to not set the timeout and let the connection use it's
+	// default. This will be ignored if the Dialer field is set.
 	Timeout time.Duration
 
 	// The size of the connection pool to use for each host. Default is 10
@@ -86,6 +91,11 @@ type Opts struct {
 	// The time which must elapse between subsequent calls to Reset(). The
 	// default is 500 milliseconds
 	ResetThrottle time.Duration
+
+	// The function which will be used to create connections within the pool for
+	// each redis cluster instance. The common use-case is to do authentication
+	// for new connections. Defaults to using redis.DialTimeout if not set.
+	Dialer DialFunc
 }
 
 // New will perform the following steps to initialize:
@@ -118,6 +128,11 @@ func NewWithOpts(o Opts) (*Cluster, error) {
 	}
 	if o.ResetThrottle == 0 {
 		o.ResetThrottle = 500 * time.Millisecond
+	}
+	if o.Dialer == nil {
+		o.Dialer = func(_, addr string) (*redis.Client, error) {
+			return redis.DialTimeout("tcp", addr, o.Timeout)
+		}
 	}
 
 	c := Cluster{
@@ -157,7 +172,7 @@ func (c *Cluster) newPool(addr string, clearThrottle bool) (*pool.Pool, error) {
 	}
 
 	df := func(network, addr string) (*redis.Client, error) {
-		return redis.DialTimeout(network, addr, c.o.Timeout)
+		return c.o.Dialer(network, addr)
 	}
 	p, err := pool.NewCustom("tcp", addr, c.o.PoolSize, df)
 	if err != nil {
