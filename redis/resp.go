@@ -459,18 +459,20 @@ func (r *Resp) String() string {
 	case IOErr:
 		inner = fmt.Sprintf("IOErr %s", r.Err)
 	case BulkStr, SimpleStr:
-		inner = fmt.Sprintf("Str %s", string(r.val.([]byte)))
+		inner = fmt.Sprintf("Str %q", string(r.val.([]byte)))
 	case Int:
 		inner = fmt.Sprintf("Int %d", r.val.(int64))
 	case Nil:
 		inner = fmt.Sprintf("Nil")
 	case Array:
-		kids := r.val.([]*Resp)
+		kids := r.val.([]Resp)
 		kidsStr := make([]string, len(kids))
 		for i := range kids {
 			kidsStr[i] = kids[i].String()
 		}
 		inner = strings.Join(kidsStr, " ")
+	default:
+		inner = "UNKNOWN"
 	}
 	return fmt.Sprintf("Resp(%s)", inner)
 }
