@@ -211,7 +211,9 @@ func (c *Cluster) getConn(key, addr string) (*redis.Client, error) {
 		var err error
 		p, ok := c.pools[addr]
 		if !ok {
-			p, err = c.newPool(addr, false)
+			if p, err = c.newPool(addr, false); err == nil {
+				c.pools[addr] = p
+			}
 		}
 
 		var conn *redis.Client
