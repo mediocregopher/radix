@@ -170,27 +170,6 @@ var arbitraryTests = []arbitraryTest{
 	{NewRespSimple("OK"), []byte("+OK\r\n")},
 }
 
-var arbitraryAsStringTests = []arbitraryTest{
-	{[]byte("OHAI"), []byte("$4\r\nOHAI\r\n")},
-	{"OHAI", []byte("$4\r\nOHAI\r\n")},
-	{true, []byte("$1\r\n1\r\n")},
-	{false, []byte("$1\r\n0\r\n")},
-	{nil, []byte("$0\r\n\r\n")},
-	{80, []byte("$2\r\n80\r\n")},
-	{int64(-80), []byte("$3\r\n-80\r\n")},
-	{uint64(80), []byte("$2\r\n80\r\n")},
-	{float32(0.1234), []byte("$6\r\n0.1234\r\n")},
-	{float64(0.1234), []byte("$6\r\n0.1234\r\n")},
-	{errors.New("hi"), []byte("$2\r\nhi\r\n")},
-
-	{nilResp, []byte("$-1\r\n")},
-
-	{[]int{1, 2, 3}, []byte("*3\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n")},
-	{map[int]int{1: 2}, []byte("*2\r\n$1\r\n1\r\n$1\r\n2\r\n")},
-
-	{NewRespSimple("OK"), []byte("+OK\r\n")},
-}
-
 var arbitraryAsFlattenedStringsTests = []arbitraryTest{
 	{
 		[]interface{}{"wat", map[string]interface{}{
