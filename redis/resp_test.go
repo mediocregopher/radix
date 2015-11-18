@@ -177,6 +177,7 @@ var arbitraryAsFlattenedStringsTests = []arbitraryTest{
 		}},
 		[]byte("*3\r\n$3\r\nwat\r\n$3\r\nfoo\r\n$1\r\n1\r\n"),
 	},
+	{map[string]interface{}{"foo": true}, []byte("*2\r\n$3\r\nfoo\r\n$1\r\n1\r\n")},
 }
 
 func TestWriteArbitrary(t *T) {

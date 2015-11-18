@@ -29,6 +29,19 @@ func TestCmd(t *T) {
 	require.Nil(t, c.Cmd("sadd", "foo", "bar").Err)
 	_, err = c.Cmd("get", "foo").Str()
 	assert.NotNil(t, "", err)
+
+	// Test flattening out maps
+	args := map[string]interface{}{
+		"someBytes":  []byte("blah"),
+		"someString": "foo",
+		"someInt":    10,
+		"someBool":   false,
+	}
+	require.Nil(t, c.Cmd("HMSET", "somestuff", args).Err)
+	l, err := c.Cmd("HMGET", "somestuff", "someBytes", "someString", "someInt", "someBool").List()
+	require.Nil(t, err)
+	assert.Equal(t, []string{"blah", "foo", "10", "0"}, l)
+
 }
 
 func TestPipeline(t *T) {

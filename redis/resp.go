@@ -638,10 +638,11 @@ func writeTo(
 		sbuf, buf := stringSlicer(buf, mt)
 		return writeStr(w, buf, sbuf)
 	case bool:
+		buf = buf[:0]
 		if mt {
-			buf[0] = '1'
+			buf = append(buf, '1')
 		} else {
-			buf[0] = '0'
+			buf = append(buf, '0')
 		}
 		return writeStr(w, buf[1:], buf[:1])
 	case nil:
