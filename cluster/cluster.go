@@ -590,6 +590,9 @@ func (c *Cluster) GetEvery() (map[string]*redis.Client, error) {
 		for addr, p := range c.pools {
 			client, err := p.Get()
 			if err != nil {
+				for addr, client := range m {
+					c.pools[addr].Put(client)
+				}
 				respCh <- resp{nil, err}
 				return
 			}
