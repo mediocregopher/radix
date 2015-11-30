@@ -70,6 +70,68 @@ func TestPipeline(t *T) {
 	}
 }
 
+func TestPipelineClear(t *T) {
+	c := dial(t)
+	// Do this multiple times to make sure pipeline resetting happens correctly
+	for i := 0; i < 10; i++ {
+
+		// Clearing an empty pipeline will return 0
+		val := c.PipeClear()
+		assert.Equal(t, 0, val)
+
+		// Clearing pending calls
+		c.PipeAppend("echo", "foo")
+		c.PipeAppend("echo", "bar")
+		val = c.PipeClear()
+		assert.Equal(t, 2, val)
+
+		r := c.PipeResp()
+		assert.Equal(t, AppErr, r.typ)
+		assert.Equal(t, ErrPipelineEmpty, r.Err)
+
+		// Clearing pending replies
+		c.PipeAppend("echo", "foo")
+		c.PipeAppend("echo", "bar")
+		c.PipeAppend("echo", "zot")
+
+		v, err := c.PipeResp().Str()
+		require.Nil(t, err)
+		assert.Equal(t, "foo", v)
+
+		v, err = c.PipeResp().Str()
+		require.Nil(t, err)
+		assert.Equal(t, "bar", v)
+
+		val = c.PipeClear()
+		assert.Equal(t, -1, val)
+
+		r = c.PipeResp()
+		assert.Equal(t, AppErr, r.typ)
+		assert.Equal(t, ErrPipelineEmpty, r.Err)
+
+		// Normal pipeline execution should succeed after PipeClear
+		c.PipeAppend("echo", "foo")
+		c.PipeAppend("echo", "bar")
+		c.PipeAppend("echo", "zot")
+
+		v, err = c.PipeResp().Str()
+		require.Nil(t, err)
+		assert.Equal(t, "foo", v)
+
+		v, err = c.PipeResp().Str()
+		require.Nil(t, err)
+		assert.Equal(t, "bar", v)
+
+		v, err = c.PipeResp().Str()
+		require.Nil(t, err)
+		assert.Equal(t, "zot", v)
+
+		r = c.PipeResp()
+		assert.Equal(t, AppErr, r.typ)
+		assert.Equal(t, ErrPipelineEmpty, r.Err)
+	}
+}
+
 func TestLastCritical(t *T) {
 	c := dial(t)
 
