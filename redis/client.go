@@ -125,26 +125,20 @@ func (c *Client) PipeResp() *Resp {
 }
 
 // PipeClear clears all the content in the current pipeline queue, including
-// calls batched by PipeAppend but haven't been sent or replies from the redis
+// calls batched by PipeAppend but haven't been sent and replies from the redis
 // server but haven't been returned by PipeResp.
-//
-// 0 is returned if there is nothing in the pipeline queue.
-// A positive value is returned if any pending call is cleared;
-// A negative value is returned if any pending reply is cleared.
-// The absolute value of the return-value indicates the number of
-// calls/replies that have been cleared.
-func (c *Client) PipeClear() int {
-	r := len(c.completed)
-	if r > 0 {
-		c.completed = nil
-		return -r
-	}
-	r = len(c.pending)
-	if r > 0 {
+// The return value is a pair of integers (callCount, replyCount), indicating
+// the number of pending calls and pending replies that have been cleared by
+// this PipeClear call.
+func (c *Client) PipeClear() (int, int) {
+	callCount, replyCount := len(c.pending), len(c.completed)
+	if callCount > 0 {
 		c.pending = nil
-		return r
 	}
-	return 0
+	if replyCount > 0 {
+		c.completed = nil
+	}
+	return callCount, replyCount
 }
 
 // ReadResp will read a Resp off of the connection without sending anything

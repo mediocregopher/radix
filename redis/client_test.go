@@ -76,14 +76,16 @@ func TestPipelineClear(t *T) {
 	for i := 0; i < 10; i++ {
 
 		// Clearing an empty pipeline will return 0
-		val := c.PipeClear()
-		assert.Equal(t, 0, val)
+		call, reply := c.PipeClear()
+		assert.Equal(t, 0, call)
+		assert.Equal(t, 0, reply)
 
 		// Clearing pending calls
 		c.PipeAppend("echo", "foo")
 		c.PipeAppend("echo", "bar")
-		val = c.PipeClear()
-		assert.Equal(t, 2, val)
+		call, reply = c.PipeClear()
+		assert.Equal(t, 2, call)
+		assert.Equal(t, 0, reply)
 
 		r := c.PipeResp()
 		assert.Equal(t, AppErr, r.typ)
@@ -102,8 +104,9 @@ func TestPipelineClear(t *T) {
 		require.Nil(t, err)
 		assert.Equal(t, "bar", v)
 
-		val = c.PipeClear()
-		assert.Equal(t, -1, val)
+		call, reply = c.PipeClear()
+		assert.Equal(t, 0, call)
+		assert.Equal(t, 1, reply)
 
 		r = c.PipeResp()
 		assert.Equal(t, AppErr, r.typ)
