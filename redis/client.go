@@ -124,12 +124,11 @@ func (c *Client) PipeResp() *Resp {
 	return c.PipeResp()
 }
 
-// PipeClear clears all the content in the current pipeline queue, including
-// calls batched by PipeAppend but haven't been sent and replies from the redis
-// server but haven't been returned by PipeResp.
-// The return value is a pair of integers (callCount, replyCount), indicating
-// the number of pending calls and pending replies that have been cleared by
-// this PipeClear call.
+// PipeClient clears the contents of the current pipeline queue, both commands
+// queued by PipeAppend which have yet to be sent and responses which have yet
+// to be retrieved through PipeResp. The first returned int will be the number
+// of pending commands dropped, the second will be the number of pending
+// responses dropped
 func (c *Client) PipeClear() (int, int) {
 	callCount, replyCount := len(c.pending), len(c.completed)
 	if callCount > 0 {
