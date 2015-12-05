@@ -124,6 +124,22 @@ func (c *Client) PipeResp() *Resp {
 	return c.PipeResp()
 }
 
+// PipeClient clears the contents of the current pipeline queue, both commands
+// queued by PipeAppend which have yet to be sent and responses which have yet
+// to be retrieved through PipeResp. The first returned int will be the number
+// of pending commands dropped, the second will be the number of pending
+// responses dropped
+func (c *Client) PipeClear() (int, int) {
+	callCount, replyCount := len(c.pending), len(c.completed)
+	if callCount > 0 {
+		c.pending = nil
+	}
+	if replyCount > 0 {
+		c.completed = nil
+	}
+	return callCount, replyCount
+}
+
 // ReadResp will read a Resp off of the connection without sending anything
 // first (useful after you've sent a SUSBSCRIBE command). This will block until
 // a reply is received or the timeout is reached (returning the IOErr). You can
