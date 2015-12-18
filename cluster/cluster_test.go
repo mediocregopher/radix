@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"strings"
 	. "testing"
 
@@ -16,6 +18,8 @@ import (
 //
 // It is also assumed that there is an unrelated redis instance on port 6379,
 // which will be connected to but not modified in any way
+//
+// You can use `make start` to automatically set these up.
 
 func getCluster(t *T) *Cluster {
 	cluster, err := New("127.0.0.1:7000")
@@ -29,12 +33,34 @@ func getCluster(t *T) *Cluster {
 	return cluster
 }
 
+func randStr() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+func keyForNode(c *Cluster, addr string) string {
+	for {
+		k := randStr()
+		if addr == keyToAddr(k, c.mapping) {
+			return k
+		}
+	}
+}
+
+const (
+	addr1 = "127.0.0.1:7000"
+	addr2 = "127.0.0.1:7001"
+)
+
 func TestReset(t *T) {
 	// Simply initializing a cluster proves Reset works to some degree, since
 	// NewCluster calls Reset
 	cluster := getCluster(t)
-	old7000Pool := cluster.pools["127.0.0.1:7000"]
-	old7001Pool := cluster.pools["127.0.0.1:7001"]
+	old7000Pool := cluster.pools[addr1]
+	old7001Pool := cluster.pools[addr2]
 
 	// We make a bogus client and add it to the cluster to prove that it gets
 	// removed, since it's not needed
@@ -60,59 +86,61 @@ func TestReset(t *T) {
 	// Prove that the remaining two addresses are still in clients, were not
 	// reconnected, and still work
 	assert.Equal(t, 2, len(cluster.pools))
-	assert.Equal(t, old7000Pool, cluster.pools["127.0.0.1:7000"])
-	assert.Equal(t, old7001Pool, cluster.pools["127.0.0.1:7001"])
-	assert.Nil(t, cluster.Cmd("GET", "foo").Err)
-	assert.Nil(t, cluster.Cmd("GET", "bar").Err)
+	assert.Equal(t, old7000Pool, cluster.pools[addr1])
+	assert.Equal(t, old7001Pool, cluster.pools[addr2])
+	assert.Nil(t, cluster.Cmd("GET", keyForNode(cluster, addr1)).Err)
+	assert.Nil(t, cluster.Cmd("GET", keyForNode(cluster, addr2)).Err)
 }
 
 func TestCmd(t *T) {
 	cluster := getCluster(t)
-	assert.Nil(t, cluster.Cmd("SET", "foo", "bar").Err)
-	assert.Nil(t, cluster.Cmd("SET", "bar", "foo").Err)
+	k1 := keyForNode(cluster, addr1)
+	k2 := keyForNode(cluster, addr2)
+	assert.Nil(t, cluster.Cmd("SET", k1, "bar").Err)
+	assert.Nil(t, cluster.Cmd("SET", k2, "foo").Err)
 
-	s, err := cluster.Cmd("GET", "foo").Str()
+	s, err := cluster.Cmd("GET", k1).Str()
 	assert.Nil(t, err)
 	assert.Equal(t, "bar", s)
 
-	s, err = cluster.Cmd("GET", "bar").Str()
+	s, err = cluster.Cmd("GET", k2).Str()
 	assert.Nil(t, err)
 	assert.Equal(t, "foo", s)
 }
 
 func TestCmdMiss(t *T) {
 	cluster := getCluster(t)
-	// foo and bar are on different nodes in our configuration. We set foo to
-	// something, then try to retrieve it with a client pointed at a different
-	// node. It should be redirected and returned correctly
+	key := keyForNode(cluster, addr1)
 
-	assert.Nil(t, cluster.Cmd("SET", "foo", "baz").Err)
+	// We set key to something, then try to retrieve it with a client pointed at
+	// a different node. It should be redirected and returned correctly
 
-	barClient, err := cluster.GetForKey("bar")
+	assert.Nil(t, cluster.Cmd("SET", key, "baz").Err)
+
+	client, err := cluster.getConn("", addr2)
 	assert.Nil(t, err)
 
-	args := []interface{}{"foo"}
-	r := cluster.clientCmd(barClient, "GET", args, false, nil, false)
+	args := []interface{}{key}
+	r := cluster.clientCmd(client, "GET", args, false, nil, false)
 	s, err := r.Str()
 	assert.Nil(t, err)
 	assert.Equal(t, "baz", s)
 }
 
-// This one is kind of a toughy. We have to set a certain slot (which isn't
-// being used anywhere else) to be migrating, and test that it does the right
-// thing. We'll use a key which isn't set so that we don't have to actually
-// migrate the key to get an ASK response
+// This one is kind of a toughy. We have to set a certain slot to be migrating,
+// and test that it does the right thing. We'll use a key which isn't set so
+// that we don't have to actually migrate the key to get an ASK response
 func TestCmdAsk(t *T) {
 	cluster := getCluster(t)
-	key := "wat"
+	key := keyForNode(cluster, addr1)
 	slot := CRC16([]byte(key)) % numSlots
 
+	// just in case
 	assert.Nil(t, cluster.Cmd("DEL", key).Err)
 
-	// the key "wat" originally belongs on 7000
-	src, err := cluster.getConn("", "127.0.0.1:7000")
+	src, err := cluster.getConn("", addr1)
 	assert.Nil(t, err)
-	dst, err := cluster.getConn("", "127.0.0.1:7001")
+	dst, err := cluster.getConn("", addr2)
 	assert.Nil(t, err)
 
 	// We need the node ids. Unfortunately, this is the best way to get them
@@ -139,7 +167,7 @@ func TestCmdAsk(t *T) {
 	// Make sure we can still "get" the value
 	assert.Equal(t, true, cluster.Cmd("GET", key).IsType(redis.Nil))
 
-	// Bail on the migration TODO this doesn't totally bail for some reason
+	// Bail on the migration
 	assert.Nil(t, dst.Cmd("CLUSTER", "SETSLOT", slot, "NODE", srcID).Err)
 	assert.Nil(t, src.Cmd("CLUSTER", "SETSLOT", slot, "NODE", srcID).Err)
 }
