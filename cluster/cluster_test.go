@@ -12,9 +12,7 @@ import (
 
 // These tests assume there is a cluster running on ports 7000 and 7001, with
 // the first half of the slots assigned to 7000 and the second half assigned to
-// 7001. Calling `make up` inside of extra/cluster/testconfs will set this up
-// for you. This is automatically done if you are just calling `make test` in
-// the project root.
+// 7001.
 //
 // It is also assumed that there is an unrelated redis instance on port 6379,
 // which will be connected to but not modified in any way

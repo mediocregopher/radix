@@ -1,14 +1,1 @@
-# Generic
-*~
-[._]*
-
-# Go
-*.[ao]
-*.[568vq]
-[568vq].out
-main
-*.test
-
-# Cgo
-*.cgo*
-*.so
+test-tmp

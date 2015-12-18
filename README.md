@@ -1,5 +1,6 @@
 # Radix
 
+[![Build Status](https://travis-ci.org/mediocregopher/radix.v2.svg)](https://travis-ci.org/mediocregopher/radix.v2)
 [![GoDoc](https://godoc.org/github.com/mediocregopher/radix.v2?status.svg)](https://godoc.org/github.com/mediocregopher/radix.v2)
 
 Radix is a minimalistic [Redis][redis] client for Go. It is broken up into
