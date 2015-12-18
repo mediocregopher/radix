@@ -1,12 +1,22 @@
 package redis
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	. "testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func randStr() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
 
 func dial(t *T) *Client {
 	client, err := DialTimeout("tcp", "127.0.0.1:6379", 10*time.Second)
@@ -16,9 +26,10 @@ func dial(t *T) *Client {
 
 func TestCmd(t *T) {
 	c := dial(t)
-	v, err := c.Cmd("echo", "Hello, World!").Str()
+	echo := randStr()
+	v, err := c.Cmd("echo", echo).Str()
 	require.Nil(t, err)
-	assert.Equal(t, "Hello, World!", v)
+	assert.Equal(t, echo, v)
 
 	// Test that a bad command properly returns an AppErr
 	r := c.Cmd("non-existant-cmd")
@@ -26,19 +37,21 @@ func TestCmd(t *T) {
 	assert.NotNil(t, r.Err)
 
 	// Test that application level errors propagate correctly
-	require.Nil(t, c.Cmd("sadd", "foo", "bar").Err)
-	_, err = c.Cmd("get", "foo").Str()
+	k := randStr()
+	require.Nil(t, c.Cmd("sadd", k, randStr()).Err)
+	_, err = c.Cmd("get", k).Str()
 	assert.NotNil(t, "", err)
 
 	// Test flattening out maps
+	k = randStr()
 	args := map[string]interface{}{
 		"someBytes":  []byte("blah"),
 		"someString": "foo",
 		"someInt":    10,
 		"someBool":   false,
 	}
-	require.Nil(t, c.Cmd("HMSET", "somestuff", args).Err)
-	l, err := c.Cmd("HMGET", "somestuff", "someBytes", "someString", "someInt", "someBool").List()
+	require.Nil(t, c.Cmd("HMSET", k, args).Err)
+	l, err := c.Cmd("HMGET", k, "someBytes", "someString", "someInt", "someBool").List()
 	require.Nil(t, err)
 	assert.Equal(t, []string{"blah", "foo", "10", "0"}, l)
 
