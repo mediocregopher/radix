@@ -51,8 +51,18 @@ The test action assumes you have the following running:
 
 * A redis cluster node listening on port 7001, handling slots 8192 through 16383
 
+* A redis server listening on port 8000
+
+* A redis server listening on port 8001, slaved to the one on 8000
+
+* A redis sentinel listening on port 28000, watching the one on port 8000 as a
+  master named `test`.
+
 The slot number are particularly important as the tests for the cluster package
 do some trickery which depends on certain keys being assigned to certain nodes
+
+You can do `make start` and `make stop` to automatically start and stop a test
+environment matching these requirements.
 
 ## Why is this V2?
 
