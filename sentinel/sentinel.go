@@ -103,6 +103,11 @@ type Client struct {
 	masterPools map[string]*pool.Pool
 	subClient   *pubsub.SubClient
 
+	// This is pool.DialFunc instead of the package's DialFunc
+	// as it's only used when calling pool.NewCustom. Otherwise it
+	// will have to be cast on each invocation.
+	dialFunc pool.DialFunc
+
 	getCh   chan *getReq
 	putCh   chan *putReq
 	closeCh chan struct{}
@@ -112,6 +117,9 @@ type Client struct {
 	switchMasterCh chan *switchMaster
 }
 
+// DialFunc is a function which can be passed into NewClientCustom
+type DialFunc func(network, addr string) (*redis.Client, error)
+
 // NewClient creates a sentinel client. Connects to the given sentinel instance,
 // pulls the information for the masters of the given names, and creates an
 // intial pool of connections for each master. The client will automatically
@@ -119,6 +127,17 @@ type Client struct {
 // over. The returned error is a *ClientError.
 func NewClient(
 	network, address string, poolSize int, names ...string,
+) (
+	*Client, error,
+) {
+	return NewClientCustom(network, address, poolSize, redis.Dial, names...)
+}
+
+// NewClientCustom is the same as NewClient, except it takes in a DialFunc which
+// will be used to create all new connections to the master instances. This can
+// be used to implement authentication, custom timeouts, etc...
+func NewClientCustom(
+	network, address string, poolSize int, df DialFunc, names ...string,
 ) (
 	*Client, error,
 ) {
@@ -138,7 +157,7 @@ func NewClient(
 			return nil, &ClientError{err: err, SentinelErr: true}
 		}
 		addr := l[3] + ":" + l[5]
-		pool, err := pool.New("tcp", addr, poolSize)
+		pool, err := pool.NewCustom("tcp", addr, poolSize, (pool.DialFunc)(df))
 		if err != nil {
 			return nil, &ClientError{err: err}
 		}
@@ -155,6 +174,7 @@ func NewClient(
 		poolSize:       poolSize,
 		masterPools:    masterPools,
 		subClient:      subClient,
+		dialFunc:       (pool.DialFunc)(df),
 		getCh:          make(chan *getReq),
 		putCh:          make(chan *putReq),
 		closeCh:        make(chan struct{}),
@@ -223,7 +243,7 @@ func (c *Client) spin() {
 		case sm := <-c.switchMasterCh:
 			if p, ok := c.masterPools[sm.name]; ok {
 				p.Empty()
-				p, _ = pool.New("tcp", sm.addr, c.poolSize)
+				p, _ = pool.NewCustom("tcp", sm.addr, c.poolSize, c.dialFunc)
 				c.masterPools[sm.name] = p
 			}
 
