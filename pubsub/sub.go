@@ -29,7 +29,7 @@ type SubClient struct {
 	messages *list.List
 }
 
-// SubResp wraps a Redis resp and provides convienient access to Pub/Sub info.
+// SubResp wraps a Redis resp and provides convenient access to Pub/Sub info.
 type SubResp struct {
 	*redis.Resp // Original Redis resp
 

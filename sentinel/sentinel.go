@@ -38,7 +38,7 @@
 //		return nil
 //	}
 //
-// This package only gaurantees that when GetMaster is called the returned
+// This package only guarantees that when GetMaster is called the returned
 // connection will be a connection to the master as of the moment that method is
 // called. It is still possible that there is a failover as that connection is
 // being used by the application.
@@ -122,7 +122,7 @@ type DialFunc func(network, addr string) (*redis.Client, error)
 
 // NewClient creates a sentinel client. Connects to the given sentinel instance,
 // pulls the information for the masters of the given names, and creates an
-// intial pool of connections for each master. The client will automatically
+// initial pool of connections for each master. The client will automatically
 // replace the pool for any master should sentinel decide to fail the master
 // over. The returned error is a *ClientError.
 func NewClient(

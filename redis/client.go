@@ -29,11 +29,11 @@ type Client struct {
 	completed, completedHead []*Resp
 
 	// The network/address of the redis instance this client is connected to.
-	// These will be wahtever strings were passed into the Dial function when
+	// These will be whatever strings were passed into the Dial function when
 	// creating this connection
 	Network, Addr string
 
-	// The most recent critical network error which occured when either reading
+	// The most recent critical network error which occurred when either reading
 	// or writing. A critical network error is one in which the connection was
 	// found to be no longer usable; in essence, any error except a timeout.
 	// Close is automatically called on the client when it encounters a critical
@@ -124,7 +124,7 @@ func (c *Client) PipeResp() *Resp {
 	return c.PipeResp()
 }
 
-// PipeClient clears the contents of the current pipeline queue, both commands
+// PipeClear clears the contents of the current pipeline queue, both commands
 // queued by PipeAppend which have yet to be sent and responses which have yet
 // to be retrieved through PipeResp. The first returned int will be the number
 // of pending commands dropped, the second will be the number of pending
