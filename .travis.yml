@@ -1,6 +1,4 @@
 ---
-notifications:
-    email: false
 language: go
 go:
     - 1.4
@@ -21,7 +19,10 @@ install:
 
 before_script:
     # sleep a bit to allow things to get set up
-    - sleep 5
+    - sleep 10
 
 script:
     - go test -v ./...
+
+after_failure:
+    - tail -n100 ./*.log
