@@ -9,10 +9,6 @@ import (
 	"time"
 )
 
-const (
-	bufSize int = 4096
-)
-
 // ErrPipelineEmpty is returned from PipeResp() to indicate that all commands
 // which were put into the pipeline have had their responses read
 var ErrPipelineEmpty = errors.New("pipeline queue empty")
@@ -33,11 +29,10 @@ type Client struct {
 	// creating this connection
 	Network, Addr string
 
-	// The most recent critical network error which occurred when either reading
-	// or writing. A critical network error is one in which the connection was
-	// found to be no longer usable; in essence, any error except a timeout.
-	// Close is automatically called on the client when it encounters a critical
-	// network error
+	// The most recent network error which occurred when either reading
+	// or writing. A critical network error is basically any non-application
+	// level error, e.g. a timeout, disconnect, etc... Close is automatically
+	// called on the client when it encounters a network error
 	LastCritical error
 }
 
@@ -152,7 +147,7 @@ func (c *Client) ReadResp() *Resp {
 		c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	}
 	r := c.respReader.Read()
-	if r.IsType(IOErr) && !IsTimeout(r) {
+	if r.IsType(IOErr) {
 		c.LastCritical = r.Err
 		c.Close()
 	}
