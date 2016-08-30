@@ -101,8 +101,9 @@ func NewRespFlattenedStrings(v interface{}) *Resp {
 	return &r
 }
 
-// newRespIOErr is a convenience method for making Resps to wrap io errors
-func newRespIOErr(err error) *Resp {
+// NewRespIOErr takes an error and creates an IOErr response. Use NewResp
+// instead to create an AppErr response.
+func NewRespIOErr(err error) *Resp {
 	r := NewResp(err)
 	r.typ = IOErr
 	return r
