@@ -32,7 +32,12 @@ type Client struct {
 	// The most recent network error which occurred when either reading
 	// or writing. A critical network error is basically any non-application
 	// level error, e.g. a timeout, disconnect, etc... Close is automatically
-	// called on the client when it encounters a network error
+	// called on the client when it encounters a critical network error
+	//
+	// NOTE: The ReadResp method does *not* consider a timeout to be a critical
+	// network error, and will not set this field in the event of one. Other
+	// methods which deal with a command-then-response (e.g. Cmd, PipeResp) do
+	// set this and close the connection in the event of a timeout
 	LastCritical error
 }
 
@@ -81,7 +86,7 @@ func (c *Client) Cmd(cmd string, args ...interface{}) *Resp {
 	if err != nil {
 		return NewRespIOErr(err)
 	}
-	return c.ReadResp()
+	return c.readResp(true)
 }
 
 // PipeAppend adds the given call to the pipeline queue.
@@ -111,7 +116,7 @@ func (c *Client) PipeResp() *Resp {
 	}
 	c.completed = c.completedHead
 	for i := 0; i < nreqs; i++ {
-		r := c.ReadResp()
+		r := c.readResp(true)
 		c.completed = append(c.completed, r)
 	}
 
@@ -143,11 +148,17 @@ func (c *Client) PipeClear() (int, int) {
 // Note: this is a more low-level function, you really shouldn't have to
 // actually use it unless you're writing your own pub/sub code
 func (c *Client) ReadResp() *Resp {
+	return c.readResp(false)
+}
+
+// strict indicates whether or not to consider timeouts as critical network
+// errors
+func (c *Client) readResp(strict bool) *Resp {
 	if c.timeout != 0 {
 		c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	}
 	r := c.respReader.Read()
-	if r.IsType(IOErr) {
+	if r.IsType(IOErr) && (strict || !IsTimeout(r)) {
 		c.LastCritical = r.Err
 		c.Close()
 	}
