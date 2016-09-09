@@ -6,7 +6,49 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix.v2/redis"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func testClients(t *testing.T, timeout time.Duration) (*redis.Client, *SubClient) {
+	pub, err := redis.DialTimeout("tcp", "localhost:6379", timeout)
+	require.Nil(t, err)
+
+	sub, err := redis.DialTimeout("tcp", "localhost:6379", timeout)
+	require.Nil(t, err)
+
+	return pub, NewSubClient(sub)
+}
+
+// Test that pubsub is still usable after a timeout
+func TestTimeout(t *testing.T) {
+	go func() {
+		time.Sleep(10 * time.Second)
+		t.Fatal()
+	}()
+
+	pub, sub := testClients(t, 500*time.Millisecond)
+	require.Nil(t, sub.Subscribe("timeoutTestChannel").Err)
+
+	r := sub.Receive() // should timeout after a second
+	assert.Equal(t, Error, r.Type)
+	assert.NotNil(t, r.Err)
+	assert.True(t, r.Timeout())
+
+	waitCh := make(chan struct{})
+	go func() {
+		r = sub.Receive()
+		close(waitCh)
+	}()
+	require.Nil(t, pub.Cmd("PUBLISH", "timeoutTestChannel", "foo").Err)
+	<-waitCh
+
+	assert.Equal(t, Message, r.Type)
+	assert.Equal(t, "timeoutTestChannel", r.Channel)
+	assert.Equal(t, "foo", r.Message)
+	assert.Nil(t, r.Err, "%s", r.Err)
+	assert.False(t, r.Timeout())
+}
 
 func TestSubscribe(t *testing.T) {
 	pub, err := redis.DialTimeout("tcp", "localhost:6379", time.Duration(10)*time.Second)
