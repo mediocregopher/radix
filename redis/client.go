@@ -79,7 +79,7 @@ func (c *Client) Close() error {
 func (c *Client) Cmd(cmd string, args ...interface{}) *Resp {
 	err := c.writeRequest(request{cmd, args})
 	if err != nil {
-		return newRespIOErr(err)
+		return NewRespIOErr(err)
 	}
 	return c.ReadResp()
 }
@@ -107,7 +107,7 @@ func (c *Client) PipeResp() *Resp {
 	err := c.writeRequest(c.pending...)
 	c.pending = nil
 	if err != nil {
-		return newRespIOErr(err)
+		return NewRespIOErr(err)
 	}
 	c.completed = c.completedHead
 	for i := 0; i < nreqs; i++ {
