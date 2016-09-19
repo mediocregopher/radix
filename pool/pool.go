@@ -109,3 +109,8 @@ func (p *Pool) Empty() {
 		}
 	}
 }
+
+// Avail return the number of connections intho the pool
+func (p *Pool) Avail() int {
+	return len(p.pool)
+}
