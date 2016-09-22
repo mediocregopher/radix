@@ -110,7 +110,9 @@ func (p *Pool) Empty() {
 	}
 }
 
-// Avail return the number of connections intho the pool
+// Avail returns the number of connections currently available to be gotten from
+// the Pool using Get. If the number is zero then subsequent calls to Get will
+// be creating new connections on the fly
 func (p *Pool) Avail() int {
 	return len(p.pool)
 }
