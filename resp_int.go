@@ -101,6 +101,42 @@ func (rib *respIntBuf) srcResp(r Resp) {
 	}
 }
 
+func (rib *respIntBuf) srcCmd(c Cmd) {
+	// <hacky af>
+	// we first write a single array header to the buffer, keeping track of the
+	// index into which is was written. The array size is left as -1, we will
+	// fill it in later
+	rib.write(respInt{riType: riArray, arrayHeaderSize: -1})
+	arrHeaderI := len(*rib) - 1
+
+	// We now write the command and arguments as is, they will be converted into
+	// respInts but not actually flattened
+	rib.srcAny(c.Cmd)
+	for _, arg := range c.Args {
+		rib.srcAny(arg)
+	}
+
+	// We now go through every respInt after our array header. If any are array
+	// headers they are discarded, the rest are converted to riBulkStrs. This is
+	// all done in place.
+	afterArrHeader := (*rib)[arrHeaderI+1:]
+	toAppend := afterArrHeader[:0]
+	for _, ri := range afterArrHeader {
+		if ri.riType == riArray {
+			continue
+		}
+		ri.riType = riBulkStr
+		ri.isNil = false
+		toAppend = append(toAppend, ri)
+	}
+
+	// Now that we know the actual number of respInts in our cmd we go back and
+	// update the array header
+	(*rib)[arrHeaderI].arrayHeaderSize = len(toAppend)
+
+	// </hacky af>
+}
+
 func (rib *respIntBuf) srcReader(r *bufio.Reader) error {
 	var ri respInt
 
@@ -200,10 +236,12 @@ func (rib *respIntBuf) srcAny(m interface{}) {
 			rib.srcAny(mt[i])
 		}
 
-	case *Resp:
-		rib.srcResp(*mt)
 	case Resp:
 		rib.srcResp(mt)
+	case Cmd:
+		rib.srcCmd(mt)
+	case *Resp:
+		rib.srcResp(*mt)
 
 	case []Resp:
 		rib.write(respInt{riType: riArray, arrayHeaderSize: len(mt)})
@@ -322,38 +360,4 @@ func (rib *respIntBuf) dstResp() Resp {
 	}
 
 	return r
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// util
-
-func cpFlattened(dst, src respIntBuf) {
-	var total int
-	for _, ri := range src {
-		if ri.riType == riArray {
-			continue
-		}
-		total++
-	}
-
-	dst.write(respInt{riType: riArray, arrayHeaderSize: total})
-	for _, ri := range src {
-		if ri.riType == riArray {
-			continue
-		}
-		dst.write(ri)
-	}
-}
-
-func mapToStrs(rip respIntBuf) {
-	for i, ri := range rip {
-		// all types are simply held in body, and don't need any extra logic
-		// done to them except to change the riType field, except array which is
-		// a problem child
-		if ri.riType == riArray {
-			panic("can't translate resp array to resp string")
-		}
-		ri.riType = riBulkStr
-		rip[i] = ri
-	}
 }

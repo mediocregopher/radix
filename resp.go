@@ -38,7 +38,7 @@ type Resp struct {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Creating
+// Reading/Writing
 
 // NewResp takes the given value and interprets it into a Resp instance of the
 // appropriate type.
@@ -112,8 +112,6 @@ func NewRespWriter(w io.Writer) *RespWriter {
 	}
 }
 
-// TODO make a single Write method, and a RespCmd type?
-
 // Write writes the encoded Resp to the underlying io.Writer
 func (rw *RespWriter) Write(r Resp) error {
 	rw.rib.reset()
@@ -122,26 +120,25 @@ func (rw *RespWriter) Write(r Resp) error {
 }
 
 // WriteAny translates whatever is given into a Resp and writes the encoded form
-// to the underlying io.Writer
-// TODO docs could be more explicit about how things get translated
+// to the underlying io.Writer.
+//
+// Most types encountered are converted into strings, with the following
+// exceptions:
+//  * Bools are converted to int (1 or 0)
+//  * nil is sent as the nil type
+//  * error is sent as the error type
+//  * Resps are sent as-is
+//	* Slices are sent as arrays, with each element in the slice also being
+//	  converted
+//  * Maps are sent as arrays, alternating key then value, and with each also
+//    being converted
+//  * Cmds are flattened into a single array of strings, after the normal
+//    conversion process has been done on each of their members
+//
 func (rw *RespWriter) WriteAny(m interface{}) error {
 	rw.rib.reset()
 	rw.rib.srcAny(m)
 	return rw.rib.dstWriter(rw.bw)
-}
-
-// WriteCmd does some stuff that I should document
-// TODO document it
-func (rw *RespWriter) WriteCmd(cmd string, args ...interface{}) error {
-	rw.rib.reset()
-	rw.rib.srcAny(cmd)
-	for _, arg := range args {
-		rw.rib.srcAny(arg)
-	}
-	rw.ribCmd.reset()
-	cpFlattened(rw.ribCmd, rw.rib)
-	mapToStrs(rw.ribCmd)
-	return rw.ribCmd.dstWriter(rw.bw)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -347,4 +344,31 @@ func (r *Resp) String() string {
 	default:
 		return fmt.Sprintf("Resp(UNKNOWN)")
 	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Casting
+
+// Cmd describes a single redis command to be performed. In general you won't
+// have to use this directly, and instead can just use the Cmd method on most
+// things. This is mostly useful for lower level operations.
+type Cmd struct {
+	Cmd  string
+	Args []interface{}
+}
+
+// NewCmd is a convenient helper for creating Cmd structs
+func NewCmd(cmd string, args ...interface{}) Cmd {
+	return Cmd{
+		Cmd:  cmd,
+		Args: args,
+	}
+}
+
+// Resp returns the Resp which would be send to redis if this Cmd was to be
+// written. See RespWriter.WriteAny for more on how that works.
+func (c Cmd) Resp() Resp {
+	rib := &respIntBuf{}
+	rib.srcCmd(c)
+	return rib.dstResp()
 }

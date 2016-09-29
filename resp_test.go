@@ -228,72 +228,84 @@ func TestReadCast(t *T) {
 	assertTypeBody(r.arr[1], riBulkStr, []byte("bar"))
 }
 
-type arbitraryTest struct {
+type writeTest struct {
 	val    interface{}
-	expect []byte
+	expect string
 }
 
-var arbitraryTests = []arbitraryTest{
-	{[]byte("OHAI"), []byte("$4\r\nOHAI\r\n")},
-	{"OHAI", []byte("$4\r\nOHAI\r\n")},
-	{true, []byte(":1\r\n")},
-	{false, []byte(":0\r\n")},
-	{nil, []byte("$-1\r\n")},
-	{80, []byte(":80\r\n")},
-	{int64(-80), []byte(":-80\r\n")},
-	{uint64(80), []byte(":80\r\n")},
-	{float32(0.1234), []byte("$6\r\n0.1234\r\n")},
-	{float64(0.1234), []byte("$6\r\n0.1234\r\n")},
-	{errors.New("hi"), []byte("-hi\r\n")},
+var writeTests = []writeTest{
+	// Basic types
+	{[]byte("OHAI"), "$4\r\nOHAI\r\n"},
+	{"OHAI", "$4\r\nOHAI\r\n"},
+	{true, ":1\r\n"},
+	{false, ":0\r\n"},
+	{nil, "$-1\r\n"},
+	{80, ":80\r\n"},
+	{int64(-80), ":-80\r\n"},
+	{uint64(80), ":80\r\n"},
+	{float32(0.1234), "$6\r\n0.1234\r\n"},
+	{float64(0.1234), "$6\r\n0.1234\r\n"},
+	{errors.New("hi"), "-hi\r\n"},
 
-	{NewResp(nil), []byte("$-1\r\n")},
+	// Special types (non-Cmd)
+	{NewResp(nil), "$-1\r\n"},
+	{NewSimpleString("OK"), "+OK\r\n"},
 
-	{[]int{1, 2, 3}, []byte("*3\r\n:1\r\n:2\r\n:3\r\n")},
-	{map[int]int{1: 2}, []byte("*2\r\n:1\r\n:2\r\n")},
-
-	{NewSimpleString("OK"), []byte("+OK\r\n")},
+	// Data structure types
+	{[]int{1, 2, 3}, "*3\r\n:1\r\n:2\r\n:3\r\n"},
+	{map[int]int{1: 2}, "*2\r\n:1\r\n:2\r\n"},
 	{
 		[]Resp{NewSimpleString("foo"), NewSimpleString("bar")},
-		[]byte("*2\r\n+foo\r\n+bar\r\n"),
+		"*2\r\n+foo\r\n+bar\r\n",
 	},
-}
-
-var arbitraryAsFlattenedStringsTests = []arbitraryTest{
 	{
 		[]interface{}{"wat", map[string]interface{}{
 			"foo": 1,
 		}},
-		[]byte("*3\r\n$3\r\nwat\r\n$3\r\nfoo\r\n$1\r\n1\r\n"),
+		"*2\r\n$3\r\nwat\r\n*2\r\n$3\r\nfoo\r\n:1\r\n",
 	},
-	{map[string]interface{}{"foo": true}, []byte("*2\r\n$3\r\nfoo\r\n$1\r\n1\r\n")},
+	{
+		map[string]interface{}{"foo": true},
+		"*2\r\n$3\r\nfoo\r\n:1\r\n",
+	},
+
+	// Cmd
+	{
+		NewCmd("foo", "bar", "baz"),
+		"*3\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n",
+	},
+	{
+		NewCmd("foo"),
+		"*1\r\n$3\r\nfoo\r\n",
+	},
+	{
+		NewCmd("foo", []string{"bar", "baz"}, 1),
+		"*4\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n$1\r\n1\r\n",
+	},
+	{
+		NewCmd("foo", 4.2, map[string]interface{}{"bar": "baz", "buz": nil}),
+		"*6\r\n$3\r\nfoo\r\n$3\r\n4.2\r\n$3\r\nbar\r\n$3\r\nbaz\r\n$3\r\nbuz\r\n$0\r\n\r\n",
+	},
+	{
+		[]interface{}{"foo", NewCmd("bar", "baz", "buz")},
+		"*2\r\n$3\r\nfoo\r\n*3\r\n$3\r\nbar\r\n$3\r\nbaz\r\n$3\r\nbuz\r\n",
+	},
 }
 
 func TestWrite(t *T) {
 	var err error
 	buf := bytes.NewBuffer([]byte{})
-	for _, test := range arbitraryTests {
+	for _, test := range writeTests {
 		buf.Reset()
 		rw := NewRespWriter(buf)
 		err = rw.Write(NewResp(test.val))
 		assert.Nil(t, err)
-		assert.Equal(t, test.expect, buf.Bytes())
+		assert.Equal(t, test.expect, buf.String())
 
 		buf.Reset()
 		rw = NewRespWriter(buf)
 		err = rw.WriteAny(test.val)
 		assert.Nil(t, err)
-		assert.Equal(t, test.expect, buf.Bytes())
+		assert.Equal(t, test.expect, buf.String())
 	}
 }
-
-// TODO
-//func TestWriteArbitraryAsFlattenedStrings(t *T) {
-//	var err error
-//	buf := bytes.NewBuffer([]byte{})
-//	for _, test := range arbitraryAsFlattenedStringsTests {
-//		buf.Reset()
-//		_, err = NewRespFlattenedStrings(test.val).WriteTo(buf)
-//		assert.Nil(t, err)
-//		assert.Equal(t, test.expect, buf.Bytes())
-//	}
-//}

@@ -44,17 +44,17 @@ func ConnCmder(c Conn) Cmder {
 }
 
 func (cc connCmder) Cmd(cmd string, args ...interface{}) redis.Resp {
-	if err := cc.c.Write(NewCmd(cmd, args...)); err != nil {
+	if err := cc.c.Write(NewCmdOld(cmd, args...)); err != nil {
 		return *redis.NewRespIOErr(err)
 	}
 
 	return cc.c.Read()
 }
 
-// NewCmd returns a Resp which can be used as a command when talking to a redis
+// NewCmdOld returns a Resp which can be used as a command when talking to a redis
 // server. This is called implicitly by Cmders, but is needed for cases like
 // Pipeline
-func NewCmd(cmd string, args ...interface{}) redis.Resp {
+func NewCmdOld(cmd string, args ...interface{}) redis.Resp {
 	// TODO this is hella inefficient
 	return *redis.NewRespFlattenedStrings([2]interface{}{cmd, args})
 }
