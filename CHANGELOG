@@ -1,0 +1,4 @@
+* Remove Type field from Resp
+* Make Resp casting more flexible
+* Make IOErr be an error type which can be cast to when needed
+* For non Cmd cases, a boolean is converted into an int resp, not a string
