@@ -309,3 +309,37 @@ func TestWrite(t *T) {
 		assert.Equal(t, test.expect, buf.String())
 	}
 }
+
+func loopWriteTests() chan writeTest {
+	ch := make(chan writeTest)
+	go func() {
+		for {
+			for _, wt := range writeTests {
+				ch <- wt
+			}
+		}
+	}()
+	return ch
+}
+
+func BenchmarkRead(b *B) {
+	ch := loopWriteTests()
+	buf := new(bytes.Buffer)
+	r := NewRespReader(buf)
+
+	for i := 0; i < b.N; i++ {
+		buf.WriteString((<-ch).expect)
+		r.Read()
+	}
+}
+
+func BenchmarkWrite(b *B) {
+	ch := loopWriteTests()
+	buf := new(bytes.Buffer)
+	w := NewRespWriter(buf)
+
+	for i := 0; i < b.N; i++ {
+		w.Write((<-ch).val)
+		buf.Reset()
+	}
+}
