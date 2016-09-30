@@ -73,6 +73,10 @@ type staticPool struct {
 // way spikes are handled rather well, but sustained over-use will cause
 // connection churn and will need the size to be increased.
 func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
+	if df == nil {
+		df = Dial
+	}
+
 	// First make as many Conns as we can to initialize the pool. If we hit an
 	// error bail entirely, we'll return an empty pool
 	var c Conn
@@ -88,8 +92,6 @@ func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
 		}
 		pool = append(pool, c)
 	}
-
-	// TODO if df is nil, use Dial
 
 	sp := staticPool{
 		network: network,

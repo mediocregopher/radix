@@ -1,6 +1,12 @@
 // Package radix is a simple redis driver. It needs better docs
 package radix
 
+import (
+	"io"
+	"net"
+	"time"
+)
+
 // Conn is an entity which reads/writes raw redis resp messages. The methods are
 // synchronous. Read and Write may be called at the same time by two different
 // go-routines, but each should only be called once at a time (i.e. two routines
@@ -39,6 +45,86 @@ type Conn interface {
 // Conn implementations, etc...
 type DialFunc func(network, addr string) (Conn, error)
 
+type conn struct {
+	c net.Conn
+	*RespReader
+	*RespWriter
+
+	timeout time.Duration
+}
+
+// Dial creates a network connection using net.Dial and wraps it to support the
+// Conn interface.
+func Dial(network, addr string) (Conn, error) {
+	c, err := net.Dial(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn{
+		c:          c,
+		RespReader: NewRespReader(c),
+		RespWriter: NewRespWriter(c),
+	}, nil
+}
+
+// DialTimeout is like Dial, but the given timeout is used to set read/write
+// deadlines on all reads/writes
+func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
+	c, err := net.DialTimeout(network, addr, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn{
+		c:          c,
+		RespReader: NewRespReader(c),
+		RespWriter: NewRespWriter(c),
+		timeout:    timeout,
+	}, nil
+}
+
+func (c conn) setDeadline() {
+	if c.timeout > 0 {
+		c.c.SetDeadline(time.Now().Add(c.timeout))
+	}
+}
+
+func (c conn) Write(m interface{}) error {
+	c.setDeadline()
+	return c.RespWriter.Write(m)
+}
+
+func (c conn) Read() Resp {
+	c.setDeadline()
+	return c.RespReader.Read()
+}
+
+func (c conn) Close() error {
+	return c.c.Close()
+}
+
+type rwcWrap struct {
+	rwc io.ReadWriteCloser
+	*RespReader
+	*RespWriter
+}
+
+// NewConn takes an existing io.ReadWriteCloser and wraps it to support the Conn
+// interface. The original io.ReadWriteCloser should not be used after calling
+// this.
+func NewConn(rwc io.ReadWriteCloser) Conn {
+	return rwcWrap{
+		rwc:        rwc,
+		RespReader: NewRespReader(rwc),
+		RespWriter: NewRespWriter(rwc),
+	}
+}
+
+func (rwc rwcWrap) Close() error {
+	return rwc.Close()
+}
+
 // Cmder is an entity which performs a single redis command. TODO better docs
 type Cmder interface {
 	Cmd(cmd string, args ...interface{}) Resp
@@ -57,10 +143,15 @@ func ConnCmder(c Conn) Cmder {
 
 func (cc connCmder) Cmd(cmd string, args ...interface{}) Resp {
 	if err := cc.c.Write(NewCmd(cmd, args...)); err != nil {
+		cc.c.Close()
 		return ioErrResp(err)
 	}
 
-	return cc.c.Read()
+	r := cc.c.Read()
+	if _, ok := r.Err.(IOErr); ok {
+		cc.c.Close()
+	}
+	return r
 }
 
 // Pipeline writes the given command Resps (returned from NewCmd) all at once to
