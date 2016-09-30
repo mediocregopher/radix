@@ -1,7 +1,5 @@
 package radix
 
-import "github.com/mediocregopher/radix.v2/redis"
-
 // Pool is an entity which can be used to manage a set of open Conns which can
 // be used by multiple go-routines.
 type Pool interface {
@@ -32,25 +30,25 @@ type lastCritConn struct {
 	lastIOErr error
 }
 
-func (lc lastCritConn) Write(r redis.Resp) error {
+func (lc lastCritConn) Write(m interface{}) error {
 	if lc.lastIOErr != nil {
 		return lc.lastIOErr
 	}
 
-	err := lc.Conn.Write(r)
+	err := lc.Conn.Write(m)
 	if err != nil {
 		lc.lastIOErr = err
 	}
 	return err
 }
 
-func (lc lastCritConn) Read() redis.Resp {
+func (lc lastCritConn) Read() Resp {
 	if lc.lastIOErr != nil {
-		return *redis.NewRespIOErr(lc.lastIOErr)
+		return ioErrResp(lc.lastIOErr)
 	}
 
 	r := lc.Conn.Read()
-	if r.IsType(redis.IOErr) {
+	if _, ok := r.Err.(IOErr); ok {
 		lc.lastIOErr = r.Err
 	}
 	return r
@@ -158,10 +156,10 @@ func PoolCmder(p Pool) Cmder {
 	return poolCmder{p: p}
 }
 
-func (pc poolCmder) Cmd(cmd string, args ...interface{}) redis.Resp {
+func (pc poolCmder) Cmd(cmd string, args ...interface{}) Resp {
 	c, err := pc.p.Get()
 	if err != nil {
-		return *redis.NewResp(err)
+		return ioErrResp(err)
 	}
 	defer pc.p.Put(c)
 

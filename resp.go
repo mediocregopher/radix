@@ -10,6 +10,16 @@ import (
 	"strings"
 )
 
+// Resp represents a single response or message being sent to/from a redis
+// server. Each Resp has a type (see RespType) and a value. Values can be
+// retrieved using any of the casting methods on this type (e.g. Str)
+type Resp struct {
+	Err error
+
+	respInt
+	arr []Resp
+}
+
 // most of the encoding/decoding logic is actually in resp_int.go, this just
 // puts it all together
 
@@ -27,14 +37,8 @@ func (ie IOErr) Timeout() bool {
 	return ok && t.Timeout()
 }
 
-// Resp represents a single response or message being sent to/from a redis
-// server. Each Resp has a type (see RespType) and a value. Values can be
-// retrieved using any of the casting methods on this type (e.g. Str)
-type Resp struct {
-	Err error
-
-	respInt
-	arr []Resp
+func ioErrResp(err error) Resp {
+	return Resp{Err: IOErr{err}}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +88,7 @@ func NewRespReader(r io.Reader) *RespReader {
 func (rr *RespReader) Read() Resp {
 	rr.rib.reset()
 	if err := rr.rib.srcReader(rr.br); err != nil {
-		return Resp{Err: IOErr{err}}
+		return ioErrResp(err)
 	}
 
 	return rr.rib.dstResp()
@@ -112,30 +116,10 @@ func NewRespWriter(w io.Writer) *RespWriter {
 	}
 }
 
-// Write writes the encoded Resp to the underlying io.Writer
-func (rw *RespWriter) Write(r Resp) error {
-	rw.rib.reset()
-	rw.rib.srcResp(r)
-	return rw.rib.dstWriter(rw.bw)
-}
-
-// WriteAny translates whatever is given into a Resp and writes the encoded form
-// to the underlying io.Writer.
-//
-// Most types encountered are converted into strings, with the following
-// exceptions:
-//  * Bools are converted to int (1 or 0)
-//  * nil is sent as the nil type
-//  * error is sent as the error type
-//  * Resps are sent as-is
-//	* Slices are sent as arrays, with each element in the slice also being
-//	  converted
-//  * Maps are sent as arrays, alternating key then value, and with each also
-//    being converted
-//  * Cmds are flattened into a single array of strings, after the normal
-//    conversion process has been done on each of their members
-//
-func (rw *RespWriter) WriteAny(m interface{}) error {
+// Write translates whatever is given into a Resp and writes the encoded form to
+// the underlying io.Writer. See the Conn interface for more on how this does
+// its conversions.
+func (rw *RespWriter) Write(m interface{}) error {
 	rw.rib.reset()
 	rw.rib.srcAny(m)
 	return rw.rib.dstWriter(rw.bw)
@@ -366,7 +350,7 @@ func NewCmd(cmd string, args ...interface{}) Cmd {
 }
 
 // Resp returns the Resp which would be send to redis if this Cmd was to be
-// written. See RespWriter.WriteAny for more on how that works.
+// written. See the Conn interface for more on how that conversion works.
 func (c Cmd) Resp() Resp {
 	rib := &respIntBuf{}
 	rib.srcCmd(c)

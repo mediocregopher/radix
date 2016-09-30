@@ -1,23 +1,35 @@
 // Package radix is a simple redis driver. It needs better docs
 package radix
 
-import "github.com/mediocregopher/radix.v2/redis"
-
 // Conn is an entity which reads/writes raw redis resp messages. The methods are
 // synchronous. Read and Write may be called at the same time by two different
 // go-routines, but each should only be called once at a time (i.e. two routines
 // shouldn't call Read at the same time, same with Write).
 type Conn interface {
+	// WriteAny translates whatever is given into a Resp and writes the encoded
+	// form to the connection.
+	//
+	// Most types encountered are converted into strings, with the following
+	// exceptions:
+	//  * Bools are converted to int (1 or 0)
+	//  * nil is sent as the nil type
+	//  * error is sent as the error type
+	//  * Resps are sent as-is
+	//	* Slices are sent as arrays, with each element in the slice also being
+	//	  converted
+	//  * Maps are sent as arrays, alternating key then value, and with each
+	//    also being converted
+	//  * Cmds are flattened into a single array of strings, after the normal
+	//    conversion process has been done on each of their members
+	//
+	Write(m interface{}) error
 
-	// Write writes the given Resp to the connection, returning any network (or
-	// other IO related) errors.
-	Write(redis.Resp) error
+	// Read reads a Resp off the connection and returns it. The Resp may be have
+	// IOErr as its Err field if there was an error reading.
+	Read() Resp
 
-	// Read reads a Resp off the connection and returns it. The Resp may be an
-	// IOErr if there was an error reading.
-	Read() redis.Resp
-
-	// Close closes the connection
+	// Close closes the conn and cleans up its resources. No methods may be
+	// called after Close.
 	Close() error
 }
 
@@ -29,7 +41,7 @@ type DialFunc func(network, addr string) (Conn, error)
 
 // Cmder is an entity which performs a single redis command. TODO better docs
 type Cmder interface {
-	Cmd(cmd string, args ...interface{}) redis.Resp
+	Cmd(cmd string, args ...interface{}) Resp
 }
 
 type connCmder struct {
@@ -43,20 +55,12 @@ func ConnCmder(c Conn) Cmder {
 	return connCmder{c: c}
 }
 
-func (cc connCmder) Cmd(cmd string, args ...interface{}) redis.Resp {
-	if err := cc.c.Write(NewCmdOld(cmd, args...)); err != nil {
-		return *redis.NewRespIOErr(err)
+func (cc connCmder) Cmd(cmd string, args ...interface{}) Resp {
+	if err := cc.c.Write(NewCmd(cmd, args...)); err != nil {
+		return ioErrResp(err)
 	}
 
 	return cc.c.Read()
-}
-
-// NewCmdOld returns a Resp which can be used as a command when talking to a redis
-// server. This is called implicitly by Cmders, but is needed for cases like
-// Pipeline
-func NewCmdOld(cmd string, args ...interface{}) redis.Resp {
-	// TODO this is hella inefficient
-	return *redis.NewRespFlattenedStrings([2]interface{}{cmd, args})
 }
 
 // Pipeline writes the given command Resps (returned from NewCmd) all at once to
@@ -76,10 +80,10 @@ func NewCmdOld(cmd string, args ...interface{}) redis.Resp {
 //	returned for that response and all subsequent responses, and the Conn will
 //	be Close'd.
 //
-func Pipeline(c Conn, cmds ...redis.Resp) []redis.Resp {
-	resps := make([]redis.Resp, 0, len(cmds))
+func Pipeline(c Conn, cmds ...Cmd) []Resp {
+	resps := make([]Resp, 0, len(cmds))
 
-	errFill := func(errResp redis.Resp) {
+	errFill := func(errResp Resp) {
 		for len(resps) < cap(resps) {
 			resps = append(resps, errResp)
 		}
@@ -88,14 +92,14 @@ func Pipeline(c Conn, cmds ...redis.Resp) []redis.Resp {
 
 	for _, cmd := range cmds {
 		if err := c.Write(cmd); err != nil {
-			errFill(*redis.NewRespIOErr(err))
+			errFill(ioErrResp(err))
 			return resps
 		}
 	}
 
 	for range cmds {
 		r := c.Read()
-		if r.IsType(redis.IOErr) {
+		if _, ok := r.Err.(IOErr); ok {
 			errFill(r)
 			return resps
 		}
