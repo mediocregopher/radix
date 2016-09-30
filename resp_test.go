@@ -283,8 +283,8 @@ var writeTests = []writeTest{
 		"*4\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n$1\r\n1\r\n",
 	},
 	{
-		NewCmd("foo", 4.2, map[string]interface{}{"bar": "baz", "buz": nil}),
-		"*6\r\n$3\r\nfoo\r\n$3\r\n4.2\r\n$3\r\nbar\r\n$3\r\nbaz\r\n$3\r\nbuz\r\n$0\r\n\r\n",
+		NewCmd("foo", 4.2, map[string]interface{}{"bar": nil}),
+		"*4\r\n$3\r\nfoo\r\n$3\r\n4.2\r\n$3\r\nbar\r\n$0\r\n\r\n",
 	},
 	{
 		[]interface{}{"foo", NewCmd("bar", "baz", "buz")},
@@ -304,7 +304,7 @@ func TestWrite(t *T) {
 
 		buf.Reset()
 		rw = NewRespWriter(buf)
-		err = rw.WriteAny(test.val)
+		err = rw.Write(test.val)
 		assert.Nil(t, err)
 		assert.Equal(t, test.expect, buf.String())
 	}
