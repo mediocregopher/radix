@@ -3,25 +3,26 @@ package radix
 // Pool is an entity which can be used to manage a set of open Conns which can
 // be used by multiple go-routines.
 type Pool interface {
-	// Get retrieves an available Conn for use by a single go-routine (until a
-	// subsequent call to Put), or returns an error if that's not possible.
-	Get() (Conn, error)
+	// Get retrieves an available ConnCmder for use by a single go-routine
+	// (until a subsequent call to Put), or returns an error if that's not
+	// possible.
+	Get() (ConnCmder, error)
 
-	// Put takes in a Conn previously returned by Put and returns to the Pool. A
-	// defunct Conn (i.e. one which has been closed or encountered an IOErr) may
-	// be passed in, so Put needs to handle that case.
+	// Put takes in a ConnCmder previously returned by Put and returns to the
+	// Pool. A defunct ConnCmder (i.e. one which has been closed or encountered
+	// an IOErr) may be passed in, so Put needs to handle that case.
 	//
-	// Only Conns obtained through Get should be passed into Put.
-	Put(Conn)
+	// Only ConnCmders obtained through Get should be passed into Put.
+	Put(ConnCmder)
 
-	// Close closes all Conns owned by the Pool and cleans up the Pool's
+	// Close closes all ConnCmders owned by the Pool and cleans up the Pool's
 	// resources. Once Close is called no other methods should be called on the
 	// Pool.
 	Close()
 }
 
 type lastCritConn struct {
-	Conn
+	ConnCmder
 
 	// The most recent network error which occurred when either reading
 	// or writing. A critical network error is basically any non-application
@@ -35,7 +36,7 @@ func (lc lastCritConn) Write(m interface{}) error {
 		return lc.lastIOErr
 	}
 
-	err := lc.Conn.Write(m)
+	err := lc.ConnCmder.Write(m)
 	if err != nil {
 		lc.lastIOErr = err
 	}
@@ -47,15 +48,17 @@ func (lc lastCritConn) Read() Resp {
 		return ioErrResp(lc.lastIOErr)
 	}
 
-	r := lc.Conn.Read()
+	r := lc.ConnCmder.Read()
 	if _, ok := r.Err.(IOErr); ok {
 		lc.lastIOErr = r.Err
 	}
 	return r
 }
 
+// TODO expose Avail for the pool
+
 type staticPool struct {
-	pool          chan Conn
+	pool          chan ConnCmder
 	df            DialFunc
 	network, addr string
 }
@@ -66,8 +69,8 @@ type staticPool struct {
 // moment. If an error is encountered an empty (but still usable) pool is
 // returned alongside that error
 //
-// The implementation of Pool returned here is a semi-dynamic pool. It holds a fixed
-// number of connections open. If Get is called and there are no available
+// The implementation of Pool returned here is a semi-dynamic pool. It holds a
+// fixed number of connections open. If Get is called and there are no available
 // Conns it will create a new one on the spot (using the DialFunc). If Put is
 // called and the Pool is full that Conn will be closed and discarded. In this
 // way spikes are handled rather well, but sustained over-use will cause
@@ -96,50 +99,50 @@ func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
 	sp := staticPool{
 		network: network,
 		addr:    addr,
-		pool:    make(chan Conn, size),
+		pool:    make(chan ConnCmder, size),
 		df:      df,
 	}
 	for i := range pool {
-		sp.pool <- pool[i]
+		sp.pool <- NewConnCmder(pool[i])
 	}
 	return sp, err
 }
 
-func (sp staticPool) Get() (Conn, error) {
+func (sp staticPool) Get() (ConnCmder, error) {
 	select {
-	case c := <-sp.pool:
-		return c, nil
+	case cc := <-sp.pool:
+		return cc, nil
 	default:
 		c, err := sp.df(sp.network, sp.addr)
 		if err != nil {
 			return nil, err
 		}
-		return lastCritConn{Conn: c}, nil
+		return lastCritConn{ConnCmder: NewConnCmder(c)}, nil
 	}
 }
 
-func (sp staticPool) Put(c Conn) {
-	lc, ok := c.(lastCritConn)
+func (sp staticPool) Put(cc ConnCmder) {
+	lc, ok := cc.(lastCritConn)
 	// !ok is a weird edge-case that could theoretically happen, even
 	// though the docs disallow it. We have no idea if the connection is ok
 	// to use or not, so just Close it and move on
 	if !ok || lc.lastIOErr != nil {
-		c.Close()
+		cc.Close()
 		return
 	}
 
 	select {
-	case sp.pool <- c:
+	case sp.pool <- cc:
 	default:
-		c.Close()
+		cc.Close()
 	}
 }
 
 func (sp staticPool) Close() {
 	for {
 		select {
-		case c := <-sp.pool:
-			c.Close()
+		case cc := <-sp.pool:
+			cc.Close()
 		default:
 			close(sp.pool)
 			return
@@ -151,10 +154,10 @@ type poolCmder struct {
 	p Pool
 }
 
-// PoolCmder takes a Pool and wraps it to support the Cmd method. When Cmd is
+// NewPoolCmder takes a Pool and wraps it to support the Cmd method. When Cmd is
 // called the PoolCmder will call Get, then run the command on the returned
 // Conn, then call Put on the Conn.
-func PoolCmder(p Pool) Cmder {
+func NewPoolCmder(p Pool) Cmder {
 	return poolCmder{p: p}
 }
 

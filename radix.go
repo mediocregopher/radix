@@ -130,26 +130,34 @@ type Cmder interface {
 	Cmd(cmd string, args ...interface{}) Resp
 }
 
-type connCmder struct {
-	c Conn
+// ConnCmder implements both the Conn and Cmder interfaces. This interface
+// mostly exists for convenience, a Conn can easily be made into a ConnCmder
+// through the NewConnCmder function.
+type ConnCmder interface {
+	Conn
+	Cmder
 }
 
-// ConnCmder takes a Conn and wraps it to support the Cmd method, using a basic
-// Write then Read. If an IOErr is encountered during either writing or reading
-// the Conn will be Close'd
-func ConnCmder(c Conn) Cmder {
-	return connCmder{c: c}
+type connCmder struct {
+	Conn
+}
+
+// NewConnCmder takes a Conn and wraps it to support the Cmd method, using a
+// basic Write then Read. If an IOErr is encountered during either writing or
+// reading in Cmd the Conn will be Close'd
+func NewConnCmder(c Conn) ConnCmder {
+	return connCmder{Conn: c}
 }
 
 func (cc connCmder) Cmd(cmd string, args ...interface{}) Resp {
-	if err := cc.c.Write(NewCmd(cmd, args...)); err != nil {
-		cc.c.Close()
+	if err := cc.Write(NewCmd(cmd, args...)); err != nil {
+		cc.Close()
 		return ioErrResp(err)
 	}
 
-	r := cc.c.Read()
+	r := cc.Read()
 	if _, ok := r.Err.(IOErr); ok {
-		cc.c.Close()
+		cc.Close()
 	}
 	return r
 }
