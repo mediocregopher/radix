@@ -1,5 +1,7 @@
 package radix
 
+import "time"
+
 // Pool is an entity which can be used to manage a set of open Conns which can
 // be used by multiple go-routines.
 type Pool interface {
@@ -169,4 +171,42 @@ func (pc poolCmder) Cmd(cmd string, args ...interface{}) Resp {
 	defer pc.p.Put(c)
 
 	return ConnCmder(c).Cmd(cmd, args...)
+}
+
+type poolPinger struct {
+	Pool
+	closeCh chan struct{}
+	doneCh  chan struct{}
+}
+
+// NewPoolPinger will periodically call Get on the given Pool, do a PING
+// command, then return the connection to the Pool. This effectively tests the
+// connections and cleans our the dead ones.
+//
+// Close must be called on the returned Pool in order to properly clean up.
+func NewPoolPinger(p Pool, period time.Duration) Pool {
+	closeCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	go func() {
+		pc := NewPoolCmder(p)
+		t := time.NewTicker(period)
+		for {
+			select {
+			case <-t.C:
+				pc.Cmd("PING")
+			case <-closeCh:
+				t.Stop()
+				close(doneCh)
+				return
+			}
+		}
+	}()
+
+	return poolPinger{Pool: p, closeCh: closeCh, doneCh: doneCh}
+}
+
+func (pp poolPinger) Close() {
+	close(pp.closeCh)
+	<-pp.doneCh
+	pp.Pool.Close()
 }

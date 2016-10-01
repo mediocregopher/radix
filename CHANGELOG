@@ -1,3 +1,4 @@
+* Make many types into interfaces
 * Remove Type field from Resp
 * Make Resp casting more flexible
 * Make IOErr be an error type which can be cast to when needed
