@@ -2,25 +2,45 @@ package radix
 
 import "time"
 
-// Pool is an entity which can be used to manage a set of open Conns which can
-// be used by multiple go-routines.
+// Pool is an entity which can be used to manage a set of open ConnCmders which
+// can be used by multiple go-routines.
 type Pool interface {
 	// Get retrieves an available ConnCmder for use by a single go-routine
 	// (until a subsequent call to Put), or returns an error if that's not
 	// possible.
-	Get() (ConnCmder, error)
-
-	// Put takes in a ConnCmder previously returned by Put and returns to the
-	// Pool. A defunct ConnCmder (i.e. one which has been closed or encountered
-	// an IOErr) may be passed in, so Put needs to handle that case.
 	//
-	// Only ConnCmders obtained through Get should be passed into Put.
+	// The key passed in should be one of the keys involved in the
+	// command/commands being performed. This is helps to support cluster, for
+	// normal pool implementations this key may be ignored.
+	Get(forKey string) (ConnCmder, error)
+
+	// Put takes in a ConnCmder previously returned by Get and returns it to the
+	// Pool. A defunct ConnCmder (i.e. one which has been closed or encountered
+	// an IOErr) may be passed in, so Put needs to handle that case (probably by
+	// discarding it).
+	//
+	// Only ConnCmders obtained through Get should be passed into the same
+	// Pool's Put.
 	Put(ConnCmder)
 
 	// Close closes all ConnCmders owned by the Pool and cleans up the Pool's
 	// resources. Once Close is called no other methods should be called on the
 	// Pool.
 	Close()
+
+	// Stats returns any runtime stats that the implementation of Pool wishes to
+	// return, or nil if it doesn't want to return any. This method aims to help
+	// support logging and debugging, not necessarily to give any actionable
+	// information to the program during runtime.
+	//
+	// Examples of useful runtime stats might be: number of connections
+	// currently available, number of connections currently lent out, number of
+	// connections ever created, number of connections ever closed, average time
+	// to create a new connection, and so on.
+	//
+	// TODO I'm not sure if I actually like this
+	//
+	//Stats() map[string]interface{}
 }
 
 type lastCritConn struct {
@@ -77,6 +97,7 @@ type staticPool struct {
 // called and the Pool is full that Conn will be closed and discarded. In this
 // way spikes are handled rather well, but sustained over-use will cause
 // connection churn and will need the size to be increased.
+// TODO make this return a PoolCmder
 func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
 	if df == nil {
 		df = Dial
@@ -110,7 +131,7 @@ func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
 	return sp, err
 }
 
-func (sp staticPool) Get() (ConnCmder, error) {
+func (sp staticPool) Get(forkey string) (ConnCmder, error) {
 	select {
 	case cc := <-sp.pool:
 		return cc, nil
@@ -164,13 +185,14 @@ func NewPoolCmder(p Pool) Cmder {
 }
 
 func (pc poolCmder) Cmd(cmd string, args ...interface{}) Resp {
-	c, err := pc.p.Get()
+	// TODO properly determine the first key
+	c, err := pc.p.Get("")
 	if err != nil {
 		return ioErrResp(err)
 	}
 	defer pc.p.Put(c)
 
-	return ConnCmder(c).Cmd(cmd, args...)
+	return c.Cmd(cmd, args...)
 }
 
 type poolPinger struct {

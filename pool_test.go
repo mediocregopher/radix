@@ -32,7 +32,7 @@ func TestPool(t *T) {
 		wg.Add(1)
 		go func() {
 			for i := 0; i < 100; i++ {
-				conn, err := pool.Get()
+				conn, err := pool.Get("")
 				assert.Nil(t, err)
 				testEcho(conn)
 				pool.Put(conn)
@@ -63,7 +63,7 @@ func TestPut(t *T) {
 	// TODO if there's ever an avail method it'd be good to use it here
 	sp := pool.(staticPool)
 
-	conn, err := pool.Get()
+	conn, err := pool.Get("")
 	require.Nil(t, err)
 	assert.Equal(t, 9, len(sp.pool))
 

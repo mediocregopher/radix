@@ -2,8 +2,11 @@
 package radix
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"io"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -206,4 +209,22 @@ func Pipeline(c Conn, cmds ...Cmd) []Resp {
 	}
 
 	return resps
+}
+
+// LuaEval calls EVAL on the given Cmder for the given script, passing the key
+// count and argument list in as well. See http://redis.io/commands/eval for
+// more on how EVAL works and for the meaning of the keys argument.
+//
+// LuaEval will automatically try to call EVALSHA first in order to preserve
+// bandwidth, and only falls back on EVAL if the script has never been used
+// before.
+func LuaEval(c Cmder, script string, keys int, args ...interface{}) Resp {
+	sumRaw := sha1.Sum([]byte(script))
+	sum := hex.EncodeToString(sumRaw[:])
+
+	r := c.Cmd("EVALSHA", sum, keys, args)
+	if r.Err != nil && strings.HasPrefix(r.Err.Error(), "NOSCRIPT") {
+		r = c.Cmd("EVAL", script, keys, args)
+	}
+	return r
 }
