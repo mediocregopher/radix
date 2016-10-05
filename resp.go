@@ -47,9 +47,12 @@ func ioErrResp(err error) Resp {
 // NewResp takes the given value and interprets it into a Resp instance of the
 // appropriate type.
 func NewResp(m interface{}) Resp {
-	rib := &respIntBuf{}
-	rib.srcAny(m)
-	return rib.dstResp()
+	var r Resp
+	withRib(func(rib *respIntBuf) {
+		rib.srcAny(m)
+		r = rib.dstResp()
+	})
+	return r
 }
 
 // NewSimpleString returns a simple string type Resp for the given string.
@@ -65,8 +68,7 @@ func NewSimpleString(s string) Resp {
 // RespReader is a wrapper around an io.Reader which will read Resp messages off
 // of the io.Reader
 type RespReader struct {
-	br  *bufio.Reader
-	rib respIntBuf
+	br *bufio.Reader
 }
 
 // NewRespReader creates and returns a new RespReader which will read from the
@@ -78,20 +80,22 @@ func NewRespReader(r io.Reader) *RespReader {
 		br = bufio.NewReader(r)
 	}
 	return &RespReader{
-		br:  br,
-		rib: make(respIntBuf, 16),
+		br: br,
 	}
 }
 
 // Read will read a single Resp off of the underlying io.Reader. The Resp's Err
 // field will be an IOErr if there was an error reading or parsing
 func (rr *RespReader) Read() Resp {
-	rr.rib.reset()
-	if err := rr.rib.srcReader(rr.br); err != nil {
-		return ioErrResp(err)
-	}
+	var r Resp
+	withRib(func(rib *respIntBuf) {
+		if err := rib.srcReader(rr.br); err != nil {
+			r = ioErrResp(err)
+		}
+		r = rib.dstResp()
+	})
 
-	return rr.rib.dstResp()
+	return r
 }
 
 // RespWriter is a wrapper around an io.Writer which will write Resp messages to
@@ -120,9 +124,13 @@ func NewRespWriter(w io.Writer) *RespWriter {
 // the underlying io.Writer. See the Conn interface for more on how this does
 // its conversions.
 func (rw *RespWriter) Write(m interface{}) error {
-	rw.rib.reset()
-	rw.rib.srcAny(m)
-	return rw.rib.dstWriter(rw.bw)
+	var err error
+	withRib(func(rib *respIntBuf) {
+		rib.reset()
+		rib.srcAny(m)
+		err = rib.dstWriter(rw.bw)
+	})
+	return err
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -352,7 +360,10 @@ func NewCmd(cmd string, args ...interface{}) Cmd {
 // Resp returns the Resp which would be send to redis if this Cmd was to be
 // written. See the Conn interface for more on how that conversion works.
 func (c Cmd) Resp() Resp {
-	rib := &respIntBuf{}
-	rib.srcCmd(c)
-	return rib.dstResp()
+	var r Resp
+	withRib(func(rib *respIntBuf) {
+		rib.srcCmd(c)
+		r = rib.dstResp()
+	})
+	return r
 }

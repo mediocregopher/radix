@@ -7,6 +7,7 @@ import (
 	"io"
 	"reflect"
 	"strconv"
+	"sync"
 )
 
 var (
@@ -63,6 +64,20 @@ func (rib *respIntBuf) pop() respInt {
 
 func (rib *respIntBuf) reset() {
 	*rib = (*rib)[:0]
+}
+
+var ribPool = sync.Pool{
+	New: func() interface{} {
+		rib := make(respIntBuf, 0, 16)
+		return &rib
+	},
+}
+
+func withRib(fn func(*respIntBuf)) {
+	rib := ribPool.Get().(*respIntBuf)
+	fn(rib)
+	rib.reset()
+	ribPool.Put(rib)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
