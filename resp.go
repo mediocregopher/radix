@@ -367,3 +367,26 @@ func (c Cmd) Resp() Resp {
 	})
 	return r
 }
+
+// FirstArg returns the first argument which would be sent to redis for this
+// Cmd (usually the key). This is useful because of radix's argument flattening
+// feature (see the package docs for more).
+//
+// Returns empty string if there are no arguments.
+//
+// Note that if the first argument is coming from a map in the Args slice then
+// it may change on every call.
+func (c Cmd) FirstArg() string {
+	if len(c.Args) == 0 {
+		return ""
+	}
+
+	var s string
+	withRib(func(rib *respIntBuf) {
+		rib.srcCmd(c)
+		// rib[0] is array header
+		// rib[1] is the command
+		s = string((*rib)[2].body)
+	})
+	return s
+}

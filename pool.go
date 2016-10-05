@@ -185,8 +185,8 @@ func NewPoolCmder(p Pool) Cmder {
 }
 
 func (pc poolCmder) Cmd(cmd string, args ...interface{}) Resp {
-	// TODO properly determine the first key
-	c, err := pc.p.Get("")
+	k := NewCmd(cmd, args...).FirstArg()
+	c, err := pc.p.Get(k)
 	if err != nil {
 		return ioErrResp(err)
 	}

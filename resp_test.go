@@ -310,6 +310,18 @@ func TestWrite(t *T) {
 	}
 }
 
+func TestFirstArg(t *T) {
+	assertFirstArg := func(exp string, args ...interface{}) {
+		out := NewCmd(randStr(), args...).FirstArg()
+		assert.Equal(t, exp, out)
+	}
+
+	assertFirstArg("foo", "foo", "bar", "baz")
+	assertFirstArg("1", 1, 2, 3)
+	assertFirstArg("foo", []string{"foo", "bar", "baz"})
+	assertFirstArg("1", []int{1, 2, 3})
+}
+
 func loopWriteTests() chan writeTest {
 	ch := make(chan writeTest)
 	go func() {
