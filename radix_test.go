@@ -18,12 +18,12 @@ func randStr() string {
 	return hex.EncodeToString(b)
 }
 
-func dial() Conn {
+func dial() ConnCmder {
 	c, err := Dial("tcp", "127.0.0.1:6379")
 	if err != nil {
 		panic(err)
 	}
-	return c
+	return NewConnCmder(c)
 }
 
 func TestPipeline(t *T) {
