@@ -171,12 +171,13 @@ func (r Resp) Nil() (bool, error) {
 
 // Bytes returns a byte slice representing the value of the Resp.
 // * If the Resp is a string type it returns that.
+// * If the Resp is an int type it returns the string form of the int
 // * If the Resp is a nil type it returns nil.
 // * If the Resp's Err field is set it returns that.
 func (r Resp) Bytes() ([]byte, error) {
 	if r.isNil {
 		return nil, nil
-	} else if r.riType&riStr > 0 {
+	} else if r.riType&(riStr|riInt) > 0 {
 		return r.body, nil
 	} else if r.Err != nil {
 		return nil, r.Err
@@ -248,7 +249,7 @@ func (r Resp) Array() ([]Resp, error) {
 // List is a wrapper around Array which returns the result as a list of strings,
 // calling Str() on each Resp which Array returns. Any errors encountered are
 // immediately returned.
-func (r *Resp) List() ([]string, error) {
+func (r Resp) List() ([]string, error) {
 	arr, err := r.Array()
 	if arr == nil || err != nil {
 		return nil, err
@@ -266,7 +267,7 @@ func (r *Resp) List() ([]string, error) {
 // ListBytes is a wrapper around Array which returns the result as a list of
 // byte slices, calling Bytes() on each Resp which Array returns. Any errors
 // encountered are immediately returned.
-func (r *Resp) ListBytes() ([][]byte, error) {
+func (r Resp) ListBytes() ([][]byte, error) {
 	arr, err := r.Array()
 	if arr == nil || err != nil {
 		return nil, err
@@ -283,7 +284,7 @@ func (r *Resp) ListBytes() ([][]byte, error) {
 
 // Map is a wrapper around Array which returns the result as a map of strings,
 // calling Str() on alternating key/values for the map.
-func (r *Resp) Map() (map[string]string, error) {
+func (r Resp) Map() (map[string]string, error) {
 	arr, err := r.Array()
 	if arr == nil || err != nil {
 		return nil, err
@@ -317,7 +318,7 @@ func (r *Resp) Map() (map[string]string, error) {
 
 // String returns a string representation of the Resp. This method is for
 // debugging, use Str() for reading a Str reply
-func (r *Resp) String() string {
+func (r Resp) String() string {
 	switch {
 	case r.Err != nil:
 		return fmt.Sprintf("Resp(%s %s)", r.typeStr(), r.Err)

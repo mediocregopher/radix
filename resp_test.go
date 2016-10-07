@@ -124,7 +124,7 @@ func TestReadCast(t *T) {
 	r = readTest(":1024\r\n", riInt, []byte("1024"))
 	castTest(r, castExp{
 		onNil:     false,
-		onBytes:   doesErr,
+		onBytes:   []byte("1024"),
 		onInt64:   int64(1024),
 		onFloat64: float64(1024),
 		onArray:   doesErr,
