@@ -2,17 +2,31 @@ package radix
 
 import "time"
 
+// PoolConnCmder is a ConnCmder which came from a Pool, and which has the
+// special property of being able to be returned to the Pool it came from
+type PoolConnCmder interface {
+	ConnCmder
+
+	// Done, when called, indicates that the PoolConnCmder will no longer be
+	// used by its current borrower and should be returned to the Pool it came
+	// from. This _must_ be called by all borrowers, or their PoolConnCmders
+	// will never be put back in their Pools.
+	//
+	// May not be called after Close is called on the PoolConnCmder
+	Done()
+}
+
 // Pool is an entity which can be used to manage a set of open ConnCmders which
 // can be used by multiple go-routines.
 type Pool interface {
-	// Get retrieves an available ConnCmder for use by a single go-routine
-	// (until a subsequent call to Put), or returns an error if that's not
-	// possible.
+	// Get retrieves an available PoolConnCmder for use by a single go-routine
+	// (until a subsequent call to Done on it), or returns an error if that's
+	// not possible.
 	//
 	// The key passed in should be one of the keys involved in the
 	// command/commands being performed. This is helps to support cluster, for
 	// normal pool implementations this key may be ignored.
-	Get(forKey string) (ConnCmder, error)
+	Get(forKey string) (PoolConnCmder, error)
 
 	// Put takes in a ConnCmder previously returned by Get and returns it to the
 	// Pool. A defunct ConnCmder (i.e. one which has been closed or encountered
@@ -21,11 +35,12 @@ type Pool interface {
 	//
 	// Only ConnCmders obtained through Get should be passed into the same
 	// Pool's Put.
-	Put(ConnCmder)
+	//Put(ConnCmder)
 
-	// Close closes all ConnCmders owned by the Pool and cleans up the Pool's
+	// Close closes all PoolConnCmders in the Pool and cleans up the Pool's
 	// resources. Once Close is called no other methods should be called on the
-	// Pool.
+	// Pool, though Done may still be called on PoolConnCmders which haven't
+	// been returned yet (these will be closed at that point as well).
 	Close()
 
 	// Stats returns any runtime stats that the implementation of Pool wishes to
@@ -43,8 +58,15 @@ type Pool interface {
 	//Stats() map[string]interface{}
 }
 
-type lastCritConn struct {
+// PoolFunc is a function which can be used to create a Pool of connections to
+// the redis instance on the given network/address.
+type PoolFunc func(network, addr string) (Pool, error)
+
+// TODO expose Avail for the pool
+
+type staticPoolConn struct {
 	ConnCmder
+	sp *staticPool
 
 	// The most recent network error which occurred when either reading
 	// or writing. A critical network error is basically any non-application
@@ -53,42 +75,55 @@ type lastCritConn struct {
 	lastIOErr error
 }
 
-func (lc lastCritConn) Write(m interface{}) error {
-	if lc.lastIOErr != nil {
-		return lc.lastIOErr
+func (spc *staticPoolConn) Done() {
+	if spc.sp == nil {
+		panic("Done called on Closed PoolConnCmder")
+	}
+	spc.sp.put(spc)
+}
+
+func (spc *staticPoolConn) Write(m interface{}) error {
+	if spc.lastIOErr != nil {
+		return spc.lastIOErr
 	}
 
-	err := lc.ConnCmder.Write(m)
+	err := spc.ConnCmder.Write(m)
 	if err != nil {
-		lc.lastIOErr = err
+		spc.lastIOErr = err
 	}
 	return err
 }
 
-func (lc lastCritConn) Read() Resp {
-	if lc.lastIOErr != nil {
-		return ioErrResp(lc.lastIOErr)
+func (spc *staticPoolConn) Read() Resp {
+	if spc.lastIOErr != nil {
+		return ioErrResp(spc.lastIOErr)
 	}
 
-	r := lc.ConnCmder.Read()
+	r := spc.ConnCmder.Read()
 	if _, ok := r.Err.(IOErr); ok {
-		lc.lastIOErr = r.Err
+		spc.lastIOErr = r.Err
 	}
 	return r
 }
 
-// TODO expose Avail for the pool
+func (spc *staticPoolConn) Close() error {
+	// in case there's some kind of problem with circular reference and gc, also
+	// prevents Done from being called
+	spc.sp = nil
+	return spc.ConnCmder.Close()
+}
 
 type staticPool struct {
-	pool          chan ConnCmder
+	pool          chan *staticPoolConn
 	df            DialFunc
 	network, addr string
+	closed        chan struct{}
 }
 
 // NewPool creates a new Pool whose connections are all created using the given
 // DialFunc (or Dial, if the given DialFunc is nil).  The size indicates the
 // maximum number of idle connections to have waiting to be used at any given
-// moment. If an error is encountered an empty (but still usable) pool is
+// moment. If an error is encountered an empty (but still usable) Pool is
 // returned alongside that error
 //
 // The implementation of Pool returned here is a semi-dynamic pool. It holds a
@@ -99,73 +134,85 @@ type staticPool struct {
 // connection churn and will need the size to be increased.
 // TODO make this return a PoolCmder
 func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
-	if df == nil {
-		df = Dial
+	sp := &staticPool{
+		network: network,
+		addr:    addr,
+		df:      df,
+		pool:    make(chan *staticPoolConn, size),
+		closed:  make(chan struct{}),
+	}
+	if sp.df == nil {
+		sp.df = Dial
 	}
 
 	// First make as many Conns as we can to initialize the pool. If we hit an
 	// error bail entirely, we'll return an empty pool
-	var c Conn
+	var spc *staticPoolConn
 	var err error
-	pool := make([]Conn, 0, size)
+	pool := make([]*staticPoolConn, 0, size)
 	for i := 0; i < size; i++ {
-		if c, err = df(network, addr); err != nil {
-			for _, c = range pool {
-				c.Close()
+		if spc, err = sp.newConn(); err != nil {
+			for _, spc := range pool {
+				spc.Close()
 			}
 			pool = pool[0:]
 			break
 		}
-		pool = append(pool, c)
+		pool = append(pool, spc)
 	}
 
-	sp := staticPool{
-		network: network,
-		addr:    addr,
-		pool:    make(chan ConnCmder, size),
-		df:      df,
-	}
 	for i := range pool {
-		sp.pool <- NewConnCmder(pool[i])
+		sp.pool <- pool[i]
 	}
 	return sp, err
 }
 
-func (sp staticPool) Get(forkey string) (ConnCmder, error) {
+func (sp *staticPool) newConn() (*staticPoolConn, error) {
+	c, err := sp.df(sp.network, sp.addr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &staticPoolConn{
+		ConnCmder: NewConnCmder(c),
+		sp:        sp,
+	}, nil
+}
+
+func (sp *staticPool) Get(forkey string) (PoolConnCmder, error) {
 	select {
-	case cc := <-sp.pool:
-		return cc, nil
+	case spc := <-sp.pool:
+		return spc, nil
 	default:
-		c, err := sp.df(sp.network, sp.addr)
-		if err != nil {
-			return nil, err
-		}
-		return lastCritConn{ConnCmder: NewConnCmder(c)}, nil
+		return sp.newConn()
 	}
 }
 
-func (sp staticPool) Put(cc ConnCmder) {
-	lc, ok := cc.(lastCritConn)
-	// !ok is a weird edge-case that could theoretically happen, even
-	// though the docs disallow it. We have no idea if the connection is ok
-	// to use or not, so just Close it and move on
-	if !ok || lc.lastIOErr != nil {
-		cc.Close()
+func (sp *staticPool) put(spc *staticPoolConn) {
+	if spc.lastIOErr != nil {
+		spc.Close()
 		return
 	}
 
 	select {
-	case sp.pool <- cc:
+	case <-sp.closed:
+		spc.Close()
+		return
 	default:
-		cc.Close()
+		select {
+		case sp.pool <- spc:
+		default:
+			spc.Close()
+		}
 	}
 }
 
-func (sp staticPool) Close() {
+func (sp *staticPool) Close() {
+	close(sp.closed)
 	for {
 		select {
-		case cc := <-sp.pool:
-			cc.Close()
+		case spc := <-sp.pool:
+			spc.Close()
 		default:
 			close(sp.pool)
 			return
@@ -190,7 +237,7 @@ func (pc poolCmder) Cmd(cmd string, args ...interface{}) Resp {
 	if err != nil {
 		return ioErrResp(err)
 	}
-	defer pc.p.Put(c)
+	defer c.Done()
 
 	return c.Cmd(cmd, args...)
 }

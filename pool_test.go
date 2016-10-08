@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"io"
 	"sync"
 	. "testing"
 
@@ -35,7 +36,7 @@ func TestPool(t *T) {
 				conn, err := pool.Get("")
 				assert.Nil(t, err)
 				testEcho(conn)
-				pool.Put(conn)
+				conn.Done()
 			}
 			wg.Done()
 		}()
@@ -49,7 +50,7 @@ func TestPool(t *T) {
 	wg.Wait()
 
 	// TODO if there's ever an avail method it'd be good to use it here
-	sp := pool.(staticPool)
+	sp := pool.(*staticPool)
 	assert.Equal(t, size, len(sp.pool))
 
 	pool.Close()
@@ -61,17 +62,26 @@ func TestPut(t *T) {
 	pool := testPool(size)
 
 	// TODO if there's ever an avail method it'd be good to use it here
-	sp := pool.(staticPool)
+	sp := pool.(*staticPool)
 
 	conn, err := pool.Get("")
 	require.Nil(t, err)
 	assert.Equal(t, 9, len(sp.pool))
 
-	conn.Close()
-	assert.NotNil(t, conn.Cmd("PING").Err)
-	pool.Put(conn)
+	conn.(*staticPoolConn).lastIOErr = io.EOF
+	conn.Done()
 
-	// Make sure that Put does not accept a connection which has had a critical
+	// Make sure that put does not accept a connection which has had a critical
 	// network error
 	assert.Equal(t, 9, len(sp.pool))
+
+	// Make sure that closing the pool closes outstanding connections as well
+	conn, err = pool.Get("")
+	require.Nil(t, err)
+	assert.Equal(t, 8, len(sp.pool))
+
+	sp.Close()
+	assert.Equal(t, 0, len(sp.pool))
+	conn.Done()
+	assert.Equal(t, 0, len(sp.pool))
 }
