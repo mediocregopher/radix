@@ -2,31 +2,31 @@ package radix
 
 import "time"
 
-// PoolConnCmder is a ConnCmder which came from a Pool, and which has the
+// PoolCmder is a ConnCmder which came from a Pool, and which has the
 // special property of being able to be returned to the Pool it came from
-type PoolConnCmder interface {
-	ConnCmder
+type PoolCmder interface {
+	Cmder
 
-	// Done, when called, indicates that the PoolConnCmder will no longer be
+	// Done, when called, indicates that the PoolCmder will no longer be
 	// used by its current borrower and should be returned to the Pool it came
-	// from. This _must_ be called by all borrowers, or their PoolConnCmders
+	// from. This _must_ be called by all borrowers, or their PoolCmders
 	// will never be put back in their Pools.
 	//
-	// May not be called after Close is called on the PoolConnCmder
+	// May not be called after Close is called on the PoolCmder
 	Done()
 }
 
 // Pool is an entity which can be used to manage a set of open ConnCmders which
 // can be used by multiple go-routines.
 type Pool interface {
-	// Get retrieves an available PoolConnCmder for use by a single go-routine
+	// Get retrieves an available PoolCmder for use by a single go-routine
 	// (until a subsequent call to Done on it), or returns an error if that's
 	// not possible.
 	//
 	// The key passed in should be one of the keys involved in the
 	// command/commands being performed. This is helps to support cluster, for
 	// normal pool implementations this key may be ignored.
-	Get(forKey string) (PoolConnCmder, error)
+	Get(forKey string) (PoolCmder, error)
 
 	// Put takes in a ConnCmder previously returned by Get and returns it to the
 	// Pool. A defunct ConnCmder (i.e. one which has been closed or encountered
@@ -37,9 +37,9 @@ type Pool interface {
 	// Pool's Put.
 	//Put(ConnCmder)
 
-	// Close closes all PoolConnCmders in the Pool and cleans up the Pool's
+	// Close closes all PoolCmders in the Pool and cleans up the Pool's
 	// resources. Once Close is called no other methods should be called on the
-	// Pool, though Done may still be called on PoolConnCmders which haven't
+	// Pool, though Done may still be called on PoolCmders which haven't
 	// been returned yet (these will be closed at that point as well).
 	Close()
 
@@ -77,7 +77,7 @@ type staticPoolConn struct {
 
 func (spc *staticPoolConn) Done() {
 	if spc.sp == nil {
-		panic("Done called on Closed PoolConnCmder")
+		panic("Done called on Closed PoolCmder")
 	}
 	spc.sp.put(spc)
 }
@@ -179,7 +179,7 @@ func (sp *staticPool) newConn() (*staticPoolConn, error) {
 	}, nil
 }
 
-func (sp *staticPool) Get(forkey string) (PoolConnCmder, error) {
+func (sp *staticPool) Get(forkey string) (PoolCmder, error) {
 	select {
 	case spc := <-sp.pool:
 		return spc, nil
