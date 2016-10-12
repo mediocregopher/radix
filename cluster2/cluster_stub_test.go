@@ -1,7 +1,9 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	. "testing"
@@ -12,7 +14,7 @@ import (
 )
 
 type stubCluster struct {
-	stubs []*stub
+	stubs map[string]*stub // addr -> stub
 }
 
 // stubDataset describes a dataset hosted by a stub instance. This is separated
@@ -74,16 +76,14 @@ func (sc *stubConn) Done() {
 }
 
 func (s *stub) Get(k string) (radix.PoolCmder, error) {
+	if s.stubCluster == nil {
+		return nil, errors.New("stub has been closed")
+	}
 	return &stubConn{s}, nil
 }
 
 func (s *stub) Close() {
-	s.stubDataset = nil
-}
-
-func (s *stub) hostPort() (string, string) {
-	pp := strings.Split(s.addr, ":")
-	return pp[0], pp[1]
+	*s = stub{}
 }
 
 func (s *stub) maybeMoved(k string) (radix.Resp, bool) {
@@ -104,17 +104,17 @@ func newStubCluster(tt topo) *stubCluster {
 	// map of slots to dataset
 	m := map[[2]uint16]*stubDataset{}
 	sc := &stubCluster{
-		stubs: make([]*stub, len(tt)),
+		stubs: make(map[string]*stub, len(tt)),
 	}
 
-	for i, t := range tt {
+	for _, t := range tt {
 		sd, ok := m[t.slots]
 		if !ok {
 			sd = &stubDataset{slots: t.slots, kv: map[string]string{}}
 			m[t.slots] = sd
 		}
 
-		sc.stubs[i] = &stub{
+		sc.stubs[t.addr] = &stub{
 			addr:        t.addr,
 			id:          t.id,
 			slave:       t.slave,
@@ -128,17 +128,17 @@ func newStubCluster(tt topo) *stubCluster {
 
 func (scl *stubCluster) slotsResp() radix.Resp {
 	type respArr []interface{}
-	m := map[[2]uint16][]*stub{}
+	m := map[[2]uint16][]topoNode{}
 
-	for _, s := range scl.stubs {
-		m[s.slots] = append(m[s.slots], s)
+	for _, t := range scl.topo() {
+		m[t.slots] = append(m[t.slots], t)
 	}
 
-	stubRespArr := func(s *stub) respArr {
-		host, port := s.hostPort()
-		r := respArr{host, port}
-		if s.id != "" {
-			r = append(r, s.id)
+	topoNodeRespArr := func(t topoNode) respArr {
+		addrParts := strings.Split(t.addr, ":")
+		r := respArr{addrParts[0], addrParts[1]}
+		if t.id != "" {
+			r = append(r, t.id)
 		}
 		return r
 	}
@@ -147,12 +147,26 @@ func (scl *stubCluster) slotsResp() radix.Resp {
 	for slots, stubs := range m {
 		r := respArr{slots[0], slots[1] - 1}
 		for _, s := range stubs {
-			r = append(r, stubRespArr(s))
+			r = append(r, topoNodeRespArr(s))
 		}
 		out = append(out, r)
 	}
 
 	return radix.NewResp(out)
+}
+
+func (scl *stubCluster) topo() topo {
+	var tt topo
+	for _, s := range scl.stubs {
+		tt = append(tt, topoNode{
+			addr:  s.addr,
+			id:    s.id,
+			slots: s.slots,
+			slave: s.slave,
+		})
+	}
+	sort.Sort(tt)
+	return tt
 }
 
 func (scl *stubCluster) poolFunc() radix.PoolFunc {
@@ -174,11 +188,36 @@ func (scl *stubCluster) addrs() []string {
 	return res
 }
 
+func (scl *stubCluster) randStub() *stub {
+	for _, s := range scl.stubs {
+		return s
+	}
+	panic("cluster is empty?")
+}
+
+// TODO what's actually needed here is a way of moving slots from one address to
+// another, somehow checking on the master/slave status too maybe
+
+// removes the fromAddr from the cluster, initiating a new stub at toAddr with
+// the same dataset and slots (and no id cause fuck it)
+func (scl *stubCluster) move(toAddr, fromAddr string) {
+	oldS := scl.stubs[fromAddr]
+	newS := &stub{
+		addr:        toAddr,
+		slave:       oldS.slave,
+		stubDataset: oldS.stubDataset,
+		stubCluster: oldS.stubCluster,
+	}
+	oldS.Close()
+	delete(scl.stubs, fromAddr)
+	scl.stubs[toAddr] = newS
+}
+
 // Who watches the watchmen?
 func TestStub(t *T) {
 	scl := newStubCluster(testTopo)
 	// TODO properly use Get or something here
-	sc, err := scl.stubs[0].Get("")
+	sc, err := scl.randStub().Get("")
 	require.Nil(t, err)
 	defer sc.Done()
 
