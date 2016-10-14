@@ -101,8 +101,7 @@ func (rr *RespReader) Read() Resp {
 // RespWriter is a wrapper around an io.Writer which will write Resp messages to
 // the io.Reader
 type RespWriter struct {
-	bw          *bufio.Writer
-	rib, ribCmd respIntBuf
+	bw *bufio.Writer
 }
 
 // NewRespWriter creates and returns a new RespWriter which will write to the
@@ -114,9 +113,7 @@ func NewRespWriter(w io.Writer) *RespWriter {
 		bw = bufio.NewWriter(w)
 	}
 	return &RespWriter{
-		bw:     bw,
-		rib:    make(respIntBuf, 16),
-		ribCmd: make(respIntBuf, 16),
+		bw: bw,
 	}
 }
 
@@ -387,7 +384,7 @@ func (c Cmd) FirstArg() string {
 		rib.srcCmd(c)
 		// rib[0] is array header
 		// rib[1] is the command
-		s = string((*rib)[2].body)
+		s = string(rib.l[2].body)
 	})
 	return s
 }

@@ -50,25 +50,29 @@ type respInt struct {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type respIntBuf []respInt
+type respIntBuf struct {
+	l []respInt
+}
 
 func (rib *respIntBuf) write(ri respInt) {
-	*rib = append(*rib, ri)
+	rib.l = append(rib.l, ri)
 }
 
 func (rib *respIntBuf) pop() respInt {
-	ri := (*rib)[0]
-	*rib = (*rib)[1:]
+	ri := rib.l[0]
+	rib.l = rib.l[1:]
 	return ri
 }
 
 func (rib *respIntBuf) reset() {
-	*rib = (*rib)[:0]
+	rib.l = rib.l[:0]
 }
 
 var ribPool = sync.Pool{
 	New: func() interface{} {
-		rib := make(respIntBuf, 0, 16)
+		rib := respIntBuf{
+			l: make([]respInt, 0, 16),
+		}
 		return &rib
 	},
 }
@@ -122,7 +126,7 @@ func (rib *respIntBuf) srcCmd(c Cmd) {
 	// index into which is was written. The array size is left as -1, we will
 	// fill it in later
 	rib.write(respInt{riType: riArray, arrayHeaderSize: -1})
-	arrHeaderI := len(*rib) - 1
+	arrHeaderI := len(rib.l) - 1
 
 	// We now write the command and arguments as is, they will be converted into
 	// respInts but not actually flattened
@@ -134,7 +138,7 @@ func (rib *respIntBuf) srcCmd(c Cmd) {
 	// We now go through every respInt after our array header. If any are array
 	// headers they are discarded, the rest are converted to riBulkStrs. This is
 	// all done in place.
-	afterArrHeader := (*rib)[arrHeaderI+1:]
+	afterArrHeader := rib.l[arrHeaderI+1:]
 	toAppend := afterArrHeader[:0]
 	for _, ri := range afterArrHeader {
 		if ri.riType == riArray {
@@ -147,7 +151,7 @@ func (rib *respIntBuf) srcCmd(c Cmd) {
 
 	// Now that we know the actual number of respInts in our cmd we go back and
 	// update the array header
-	(*rib)[arrHeaderI].arrayHeaderSize = len(toAppend)
+	rib.l[arrHeaderI].arrayHeaderSize = len(toAppend)
 
 	// </hacky af>
 }
