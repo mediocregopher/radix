@@ -3,6 +3,7 @@ package radix
 import (
 	"bytes"
 	"errors"
+	"reflect"
 	. "testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,22 +27,24 @@ func (cu *binCPUnmarshaller) UnmarshalBinary(b []byte) error {
 }
 
 var decodeTests = []struct {
-	in, out string
-	outI    int64
-	outF    float64
+	in   string
+	out  interface{}
+	outS string
+	outI int64
+	outF float64
 }{
 	// Simple string
-	//{in: "+\r\n", out: ""},
-	//{in: "+ohey\r\n", out: "ohey"},
-	//{in: "+10\r\n", out: "10", outI: 10, outF: 10},
-	//{in: "+10.5\r\n", out: "10.5", outF: 10.5},
+	{in: "+\r\n", out: "", outS: ""},
+	{in: "+ohey\r\n", out: "ohey", outS: "ohey"},
+	{in: "+10\r\n", out: "10", outS: "10", outI: 10, outF: 10},
+	{in: "+10.5\r\n", out: "10.5", outS: "10.5", outF: 10.5},
 
 	// Int
-	//{in: ":1024\r\n", out: "1024", outI: 1024, outF: 1024},
+	{in: ":1024\r\n", out: int64(1024), outS: "1024", outI: 1024, outF: 1024},
 
 	// Bulk string
-	//{in: "$0\r\n\r\n", out: ""},
-	{in: "$4\r\nohey\r\n", out: "ohey"},
+	{in: "$0\r\n\r\n", out: "", outS: ""},
+	{in: "$4\r\nohey\r\n", out: "ohey", outS: "ohey"},
 }
 
 func TestDecode(t *T) {
@@ -62,13 +65,28 @@ func TestDecode(t *T) {
 		{
 			w := new(bytes.Buffer)
 			doDecode(w)
-			assert.Equal(t, dt.out, w.String())
+			assert.Equal(t, dt.outS, w.String())
+		}
+
+		// empty interface
+		{
+			var i interface{}
+			doDecode(&i)
+			assert.Equal(t, dt.out, i)
+		}
+
+		// interface with a string in it already, even the non-string inputs
+		// should still scan as strings
+		{
+			i := interface{}("")
+			doDecode(&i)
+			assert.Equal(t, dt.outS, i)
 		}
 
 		{
 			var s string
 			doDecode(&s)
-			assert.Equal(t, dt.out, s)
+			assert.Equal(t, dt.outS, s)
 		}
 
 		{
@@ -79,7 +97,7 @@ func TestDecode(t *T) {
 			bTail := b[1:]
 			doDecode(&bTail)
 			b = b[:1+len(bTail)] // expand b to encompass the tail
-			assert.Equal(t, "_"+dt.out, string(b))
+			assert.Equal(t, "_"+dt.outS, string(b))
 		}
 
 		{
@@ -87,19 +105,19 @@ func TestDecode(t *T) {
 			// (usually)
 			b := make([]byte, 0, 1)
 			doDecode(&b)
-			assert.Equal(t, dt.out, string(b))
+			assert.Equal(t, dt.outS, string(b))
 		}
 
 		{
 			var cu textCPUnmarshaller
 			doDecode(&cu)
-			assert.Equal(t, dt.out, string(cu))
+			assert.Equal(t, dt.outS, string(cu))
 		}
 
 		{
 			var cu binCPUnmarshaller
 			doDecode(&cu)
-			assert.Equal(t, dt.out, string(cu))
+			assert.Equal(t, dt.outS, string(cu))
 		}
 
 		if dt.outI > 0 {
@@ -121,6 +139,110 @@ func TestDecode(t *T) {
 			doDecode(&f64)
 			assert.Equal(t, dt.outF, f64)
 		}
+	}
+}
+
+var decodeArrayTests = []struct {
+	in        string
+	into, out interface{}
+}{
+	// Empty arrays
+	{in: "*0\r\n", out: []interface{}{}},
+	{in: "*0\r\n", into: []string(nil), out: []string{}},
+	{in: "*0\r\n", into: []string{"a"}, out: []string{}},
+
+	// Simple arrays
+	{in: "*2\r\n+foo\r\n+bar\r\n", into: []string(nil), out: []string{"foo", "bar"}},
+	{in: "*2\r\n+foo\r\n+bar\r\n", into: []string{"a", "b", "c"}, out: []string{"foo", "bar"}},
+	{in: "*2\r\n+foo\r\n+bar\r\n", into: []string{"a"}, out: []string{"foo", "bar"}},
+
+	// Simple arrays with integers
+	{in: "*2\r\n:1\r\n:2\r\n", into: []int(nil), out: []int{1, 2}},
+	{in: "*2\r\n:1\r\n:2\r\n", into: []int{5, 6, 7}, out: []int{1, 2}},
+	{in: "*2\r\n:1\r\n:2\r\n", into: []int{5}, out: []int{1, 2}},
+	{in: "*2\r\n:1\r\n:2\r\n", into: []string(nil), out: []string{"1", "2"}},
+
+	// Simple arrays into interfaces
+	{in: "*2\r\n+foo\r\n+bar\r\n", out: []interface{}{"foo", "bar"}},
+	{
+		in:   "*2\r\n+1\r\n+2\r\n",
+		into: []interface{}{0, 0},
+		out:  []interface{}{1, 2},
+	},
+	{in: "*2\r\n:1\r\n:2\r\n", out: []interface{}{int64(1), int64(2)}},
+	{
+		in:   "*2\r\n:1\r\n:2\r\n",
+		into: []interface{}{"", ""},
+		out:  []interface{}{"1", "2"},
+	},
+
+	// Complex array (multiple types)
+	{in: "*2\r\n:1\r\n+2\r\n", out: []interface{}{int64(1), "2"}},
+	{in: "*2\r\n:1\r\n+2\r\n", into: []interface{}{int64(0), ""}, out: []interface{}{int64(1), "2"}},
+	{in: "*2\r\n:1\r\n+2\r\n", into: []interface{}{"", int64(0)}, out: []interface{}{"1", int64(2)}},
+
+	// Embedded (and complex) arrays
+	{
+		in: "*2\r\n*2\r\n+foo\r\n+bar\r\n*1\r\n+baz\r\n",
+		out: []interface{}{
+			[]interface{}{"foo", "bar"},
+			[]interface{}{"baz"},
+		},
+	},
+	{
+		in:   "*2\r\n*2\r\n+foo\r\n+bar\r\n*1\r\n+baz\r\n",
+		into: [][]string(nil),
+		out:  [][]string{{"foo", "bar"}, {"baz"}},
+	},
+	{
+		in:   "*2\r\n*2\r\n+foo\r\n+bar\r\n*1\r\n+baz\r\n",
+		into: [][]string{nil, {"wut", "ok"}, nil},
+		out:  [][]string{{"foo", "bar"}, {"baz"}},
+	},
+	{
+		in: "*3\r\n*2\r\n+foo\r\n+bar\r\n*1\r\n:5\r\n:6\r\n",
+		out: []interface{}{
+			[]interface{}{"foo", "bar"},
+			[]interface{}{int64(5)},
+			int64(6),
+		},
+	},
+	{
+		in: "*4\r\n*2\r\n+foo\r\n+4\r\n*2\r\n+bar\r\n+3\r\n*1\r\n:5\r\n:6\r\n",
+		into: []interface{}{
+			[]interface{}{nil, int64(0), "2cool4scool"}, // should shrink
+			[]interface{}{""},                           // should grow
+			nil,                                         // should be created
+			"",                                          // should cast
+		},
+		out: []interface{}{
+			[]interface{}{"foo", int64(4)},
+			[]interface{}{"bar", "3"},
+			[]interface{}{int64(5)},
+			"6",
+		},
+	},
+}
+
+func TestDecodeArray(t *T) {
+	buf := new(bytes.Buffer)
+	d := NewDecoder(buf)
+
+	for _, dt := range decodeArrayTests {
+		buf.WriteString(dt.in)
+		var into interface{}
+		if dt.into != nil {
+			dtintov := reflect.ValueOf(dt.into)
+			intov := reflect.New(dtintov.Type())
+			intov.Elem().Set(dtintov)
+			into = intov.Interface()
+		} else {
+			var i interface{}
+			into = &i
+		}
+		require.Nil(t, d.Decode(into))
+		out := reflect.ValueOf(into).Elem().Interface()
+		assert.Equal(t, dt.out, out)
 	}
 }
 

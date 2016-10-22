@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"reflect"
 	"strconv"
 )
 
@@ -74,6 +75,14 @@ func NewDecoder(r io.Reader) *Decoder {
 	}
 }
 
+var typePrefixMap = map[byte]riType{
+	simpleStrPrefix[0]: riSimpleStr,
+	errPrefix[0]:       riAppErr,
+	intPrefix[0]:       riInt,
+	bulkStrPrefix[0]:   riBulkStr,
+	arrayPrefix[0]:     riArray,
+}
+
 // Decode reads a single message off of the underlying io.Reader and unmarshals
 // it into the given receiver, which should be a pointer or reference type.
 func (d *Decoder) Decode(v interface{}) error {
@@ -85,29 +94,37 @@ func (d *Decoder) Decode(v interface{}) error {
 	}
 	body := b[1 : len(b)-delimLen]
 
-	var size int64
-	switch b[0] {
-	case simpleStrPrefix[0], intPrefix[0]:
-		return d.scanInto(v, bytes.NewReader(body))
+	typ, ok := typePrefixMap[b[0]]
+	if !ok {
+		return fmt.Errorf("Unknown type prefix %q", string(b))
+	}
 
-	case bulkStrPrefix[0]:
+	var size int64
+	switch typ {
+	case riSimpleStr, riInt:
+		return d.scanInto(v, bytes.NewReader(body), typ)
+
+	case riBulkStr:
 		if size, err = strconv.ParseInt(string(body), 10, 64); err != nil {
 			return err
 		}
-		return d.scanInto(v, newLimitedReaderPlus(d.r, size, d.discard))
+		return d.scanInto(v, newLimitedReaderPlus(d.r, size, d.discard), typ)
 
-	case errPrefix[0]:
+	case riAppErr:
 		return AppErr{errors.New(string(body))}
 
-	case arrayPrefix[0]:
-		panic("TODO")
-
-	default:
-		return fmt.Errorf("Unknown type prefix %q", string(b))
+	case riArray:
+		if size, err = strconv.ParseInt(string(body), 10, 64); err != nil {
+			return err
+		}
+		return d.scanArrayInto(reflect.ValueOf(v), d.r, int(size))
 	}
+
+	// shouldn't ever get here
+	panic(fmt.Sprintf("weird type: %#v", typ))
 }
 
-func (d *Decoder) scanInto(dst interface{}, r io.Reader) error {
+func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ riType) error {
 	var (
 		err error
 		i   int64
@@ -181,6 +198,30 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader) error {
 			break
 		}
 		err = dstt.UnmarshalBinary(d.scratch)
+	case *interface{}: // this case is more or less black magic
+		v := reflect.Indirect(reflect.ValueOf(dstt))
+		if !v.CanSet() {
+			err = fmt.Errorf("cannot decode into type %T", dstt)
+			break
+		}
+		var rcvT reflect.Type
+		if v.IsNil() {
+			switch typ {
+			case riSimpleStr, riBulkStr:
+				rcvT = reflect.TypeOf("")
+			case riInt:
+				rcvT = reflect.TypeOf(int64(0))
+			default:
+				// errors don't get scanned, arrays get scanned in a different
+				// method
+				panic(fmt.Sprintf("weird typ value: %#v", typ))
+			}
+		} else {
+			rcvT = v.Elem().Type()
+		}
+		rcv := reflect.New(rcvT)
+		err = d.scanInto(rcv.Interface(), r, typ)
+		v.Set(rcv.Elem())
 	default:
 		err = fmt.Errorf("cannot decode into type %T", dstt)
 	}
@@ -194,6 +235,67 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader) error {
 	}
 
 	return err
+}
+
+var emptyInterface = reflect.TypeOf([]interface{}(nil)).Elem()
+var emptyInterfaceSlice = reflect.SliceOf(emptyInterface)
+
+//func dv(v reflect.Value) string {
+//	return fmt.Sprintf("type:%q val:%v canSet:%v canAddr:%v", v.Type().String(), v, v.CanSet(), v.CanAddr())
+//}
+
+func (d *Decoder) scanArrayInto(v reflect.Value, r io.Reader, size int) error {
+	v = reflect.Indirect(v)
+	if !v.CanSet() {
+		// TODO we still need to read in all the data and discard it
+		// and test that we're doing that
+		return fmt.Errorf("cannot decode redis array into %v, can't set", v.Type())
+
+	} else if v.Type() == emptyInterface {
+		if v.IsNil() {
+			vslice := reflect.MakeSlice(emptyInterfaceSlice, size, size)
+			v.Set(vslice)
+			// we can't do SetLen or SetCap from this point on, but vslice is the
+			// exact length and capacity needed already so it shouldn't matter too
+			// much
+			v = vslice
+		} else {
+			// v.Elem isn't settable, but we can't use v because it's an empty
+			// interface. So make a new pointer to v.Elem (which we can modify)
+			// and use that.
+			vcp := reflect.New(v.Elem().Type())
+			vcp.Elem().Set(v.Elem())
+			if err := d.scanArrayInto(vcp, r, size); err != nil {
+				return err
+			}
+			v.Set(vcp.Elem())
+			return nil
+		}
+	}
+
+	switch v.Kind() {
+	case reflect.Slice:
+		if size > v.Cap() || v.IsNil() {
+			newV := reflect.MakeSlice(v.Type(), size, size)
+			// we copy only because there might be some preset values in there
+			// already that we're intended to decode into,
+			// e.g.  []interface{}{int8(0), ""}
+			reflect.Copy(newV, v)
+			v.Set(newV)
+		} else if size != v.Len() {
+			v.SetLen(size)
+		}
+
+		for i := 0; i < size; i++ {
+			vindex := v.Index(i).Addr().Interface()
+			if err := d.Decode(vindex); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("cannot decode redis array into %v", v.Type())
+	}
+	return nil
 }
 
 func (d *Decoder) readInt(r io.Reader) (int64, error) {

@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+// AppErr wraps the error type. It is used to indicate that the error being
+// returned is an application level error (e.g. "WRONGTYPE" for a key) as
+// opposed to a network level error (e.g. timeout or io.EOF)
+//
+// TODO example
+type AppErr struct {
+	error
+}
+
 // Conn is an entity which reads/writes raw redis resp messages. The methods are
 // synchronous. Read and Write may be called at the same time by two different
 // go-routines, but each should only be called once at a time (i.e. two routines
