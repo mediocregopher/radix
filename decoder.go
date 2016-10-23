@@ -62,8 +62,8 @@ type Decoder struct {
 	discard *bufio.Writer // used to just outright discard data
 }
 
-// NewDecoder initialized a Decoder instance which will read from the given
-// io.Reader. The io.Reader should not be used after this
+// NewDecoder initializes a Decoder instance which will read from the given
+// io.Reader. The io.Reader should not be used outside of the Decoder after this
 func NewDecoder(r io.Reader) *Decoder {
 	bufSize := 1024
 	return &Decoder{
@@ -92,6 +92,7 @@ var (
 
 // Decode reads a single message off of the underlying io.Reader and unmarshals
 // it into the given receiver, which should be a pointer or reference type.
+// TODO more docs on how that happens
 func (d *Decoder) Decode(v interface{}) error {
 	// the slice returned here should not be stored or modified, it's internal
 	// to the bufio.Reader
