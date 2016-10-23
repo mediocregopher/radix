@@ -83,6 +83,13 @@ var typePrefixMap = map[byte]riType{
 	arrayPrefix[0]:     riArray,
 }
 
+var (
+	emptyInterfaceT      = reflect.TypeOf([]interface{}(nil)).Elem()
+	emptyInterfaceSliceT = reflect.SliceOf(emptyInterfaceT)
+	stringT              = reflect.TypeOf("")
+	intT                 = reflect.TypeOf(int64(0))
+)
+
 // Decode reads a single message off of the underlying io.Reader and unmarshals
 // it into the given receiver, which should be a pointer or reference type.
 func (d *Decoder) Decode(v interface{}) error {
@@ -117,7 +124,7 @@ func (d *Decoder) Decode(v interface{}) error {
 		if size, err = strconv.ParseInt(string(body), 10, 64); err != nil {
 			return err
 		}
-		return d.scanArrayInto(reflect.ValueOf(v), d.r, int(size))
+		return d.scanArrayInto(reflect.ValueOf(v), int(size))
 	}
 
 	// shouldn't ever get here
@@ -208,9 +215,9 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ riType) error {
 		if v.IsNil() {
 			switch typ {
 			case riSimpleStr, riBulkStr:
-				rcvT = reflect.TypeOf("")
+				rcvT = stringT
 			case riInt:
-				rcvT = reflect.TypeOf(int64(0))
+				rcvT = intT
 			default:
 				// errors don't get scanned, arrays get scanned in a different
 				// method
@@ -237,23 +244,38 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ riType) error {
 	return err
 }
 
-var emptyInterface = reflect.TypeOf([]interface{}(nil)).Elem()
-var emptyInterfaceSlice = reflect.SliceOf(emptyInterface)
-
 //func dv(v reflect.Value) string {
 //	return fmt.Sprintf("type:%q val:%v canSet:%v canAddr:%v", v.Type().String(), v, v.CanSet(), v.CanAddr())
 //}
 
-func (d *Decoder) scanArrayInto(v reflect.Value, r io.Reader, size int) error {
+func (d *Decoder) scanArrayInto(v reflect.Value, size int) error {
+	// set up some logic so we can make sure we discard all remaining elements
+	// in an array in the event of a decoding error part-way through. If there's
+	// a network error we're kind of screwed no matter what
+	var decoded int
+	dDecode := func(v interface{}) error {
+		decoded++
+		return d.Decode(v)
+	}
+	defer func() {
+		for i := decoded; i < size; i++ {
+			d.Decode(nil)
+		}
+	}()
+
 	v = reflect.Indirect(v)
-	if !v.CanSet() {
-		// TODO we still need to read in all the data and discard it
-		// and test that we're doing that
+	if !v.IsValid() {
+		// not valid means a straight up nil was passed in, so we return
+		// immediately, the defer will discard everything
+		return nil
+
+	} else if !v.CanSet() {
+		// this will also use the defer to discard everything
 		return fmt.Errorf("cannot decode redis array into %v, can't set", v.Type())
 
-	} else if v.Type() == emptyInterface {
+	} else if v.Type() == emptyInterfaceT {
 		if v.IsNil() {
-			vslice := reflect.MakeSlice(emptyInterfaceSlice, size, size)
+			vslice := reflect.MakeSlice(emptyInterfaceSliceT, size, size)
 			v.Set(vslice)
 			// we can't do SetLen or SetCap from this point on, but vslice is the
 			// exact length and capacity needed already so it shouldn't matter too
@@ -265,7 +287,8 @@ func (d *Decoder) scanArrayInto(v reflect.Value, r io.Reader, size int) error {
 			// and use that.
 			vcp := reflect.New(v.Elem().Type())
 			vcp.Elem().Set(v.Elem())
-			if err := d.scanArrayInto(vcp, r, size); err != nil {
+			decoded = size // the scanArrayInto call will have taken care of this
+			if err := d.scanArrayInto(vcp, size); err != nil {
 				return err
 			}
 			v.Set(vcp.Elem())
@@ -288,7 +311,7 @@ func (d *Decoder) scanArrayInto(v reflect.Value, r io.Reader, size int) error {
 
 		for i := 0; i < size; i++ {
 			vindex := v.Index(i).Addr().Interface()
-			if err := d.Decode(vindex); err != nil {
+			if err := dDecode(vindex); err != nil {
 				return err
 			}
 		}
@@ -302,7 +325,7 @@ func (d *Decoder) scanArrayInto(v reflect.Value, r io.Reader, size int) error {
 
 		for i := 0; i < size; i += 2 {
 			kv := reflect.New(v.Type().Key())
-			if err := d.Decode(kv.Interface()); err != nil {
+			if err := dDecode(kv.Interface()); err != nil {
 				return err
 			}
 
@@ -314,7 +337,7 @@ func (d *Decoder) scanArrayInto(v reflect.Value, r io.Reader, size int) error {
 				vvcp.Elem().Set(vv.Elem())
 				vv = vvcp
 			}
-			if err := d.Decode(vv.Interface()); err != nil {
+			if err := dDecode(vv.Interface()); err != nil {
 				return err
 			}
 			v.SetMapIndex(kv.Elem(), vv.Elem())

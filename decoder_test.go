@@ -152,6 +152,7 @@ var decodeArrayTests = []struct {
 	{in: "*0\r\n", into: []string{"a"}, out: []string{}},
 
 	// Simple arrays
+	{in: "*2\r\n+foo\r\n+bar\r\n", into: nil, out: nil},
 	{in: "*2\r\n+foo\r\n+bar\r\n", into: []string(nil), out: []string{"foo", "bar"}},
 	{in: "*2\r\n+foo\r\n+bar\r\n", into: []string{"a", "b", "c"}, out: []string{"foo", "bar"}},
 	{in: "*2\r\n+foo\r\n+bar\r\n", into: []string{"a"}, out: []string{"foo", "bar"}},
@@ -259,7 +260,6 @@ var decodeArrayTests = []struct {
 func TestDecodeArray(t *T) {
 	buf := new(bytes.Buffer)
 	d := NewDecoder(buf)
-
 	for _, dt := range decodeArrayTests {
 		buf.WriteString(dt.in)
 		var into interface{}
@@ -268,13 +268,68 @@ func TestDecodeArray(t *T) {
 			intov := reflect.New(dtintov.Type())
 			intov.Elem().Set(dtintov)
 			into = intov.Interface()
-		} else {
+		} else if dt.out != nil {
 			var i interface{}
 			into = &i
 		}
 		require.Nil(t, d.Decode(into))
-		out := reflect.ValueOf(into).Elem().Interface()
-		assert.Equal(t, dt.out, out)
+		if dt.out != nil {
+			out := reflect.ValueOf(into).Elem().Interface()
+			assert.Equal(t, dt.out, out)
+		}
+	}
+}
+
+// used to test that, in the case of a type decode error, we are still
+// discarding the remaining data that was not consumed for that response. this
+// applies mostly for arrays, but could also apply for a bulk string
+var decodeDiscardTests = []struct {
+	in1, in2 string
+	into1    interface{} // decode in1 into this, should cause a type error
+	out2     interface{} // what we expect out2 to be anyway
+}{
+	{
+		in1:   "$5\r\nhello\r\n",
+		in2:   "$5\r\nworld\r\n",
+		into1: nil,
+		out2:  "world",
+	},
+	{
+		in1:   "$5\r\nhello\r\n",
+		in2:   "$5\r\nworld\r\n",
+		into1: []string{},
+		out2:  "world",
+	},
+	{
+		in1:   "*2\r\n+foo\r\n+bar\r\n",
+		in2:   "*2\r\n+baz\r\n+buz\r\n",
+		into1: "no dice",
+		out2:  []interface{}{"baz", "buz"},
+	},
+	{
+		in1:   "*2\r\n+foo\r\n+bar\r\n",
+		in2:   "*2\r\n+baz\r\n+buz\r\n",
+		into1: []interface{}{int(0), nil},
+		out2:  []interface{}{"baz", "buz"},
+	},
+	{
+		in1:   "*2\r\n+foo\r\n+bar\r\n",
+		in2:   "*2\r\n+baz\r\n+buz\r\n",
+		into1: map[string]int{},
+		out2:  []interface{}{"baz", "buz"},
+	},
+}
+
+func TestDecodeDiscard(t *T) {
+	buf := new(bytes.Buffer)
+	d := NewDecoder(buf)
+	for _, dt := range decodeDiscardTests {
+		buf.WriteString(dt.in1)
+		buf.WriteString(dt.in2)
+		d.Decode(&dt.into1)
+		var i interface{}
+		require.Nil(t, d.Decode(&i))
+		assert.Equal(t, dt.out2, i)
 	}
 }
 
