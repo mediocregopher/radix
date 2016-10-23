@@ -222,6 +222,38 @@ var decodeArrayTests = []struct {
 			"6",
 		},
 	},
+
+	// Maps
+	{
+		in:   "*2\r\n:1\r\n:2\r\n",
+		into: map[string]string(nil),
+		out:  map[string]string{"1": "2"},
+	},
+	{
+		in:   "*2\r\n:1\r\n:2\r\n",
+		into: map[string]string{},
+		out:  map[string]string{"1": "2"},
+	},
+	{
+		in:   "*2\r\n:1\r\n:2\r\n",
+		into: map[string]string{"1": "5"},
+		out:  map[string]string{"1": "2"},
+	},
+	{
+		in:   "*2\r\n:1\r\n:2\r\n",
+		into: map[string]int{},
+		out:  map[string]int{"1": 2},
+	},
+	{
+		in:   "*2\r\n:1\r\n:2\r\n",
+		into: map[int]interface{}{},
+		out:  map[int]interface{}{1: int64(2)},
+	},
+	{
+		in:   "*2\r\n:1\r\n:2\r\n",
+		into: map[int]interface{}{1: ""},
+		out:  map[int]interface{}{1: "2"},
+	},
 }
 
 func TestDecodeArray(t *T) {

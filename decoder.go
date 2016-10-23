@@ -292,6 +292,34 @@ func (d *Decoder) scanArrayInto(v reflect.Value, r io.Reader, size int) error {
 				return err
 			}
 		}
+
+	case reflect.Map:
+		if size%2 != 0 {
+			return fmt.Errorf("cannot decode redis array with odd number of elements into map")
+		} else if v.IsNil() {
+			v.Set(reflect.MakeMap(v.Type()))
+		}
+
+		for i := 0; i < size; i += 2 {
+			kv := reflect.New(v.Type().Key())
+			if err := d.Decode(kv.Interface()); err != nil {
+				return err
+			}
+
+			vv := v.MapIndex(kv.Elem())
+			if !vv.IsValid() || vv.Kind() != reflect.Interface {
+				vv = reflect.New(v.Type().Elem())
+			} else {
+				vvcp := reflect.New(vv.Elem().Type())
+				vvcp.Elem().Set(vv.Elem())
+				vv = vvcp
+			}
+			if err := d.Decode(vv.Interface()); err != nil {
+				return err
+			}
+			v.SetMapIndex(kv.Elem(), vv.Elem())
+		}
+
 	default:
 		return fmt.Errorf("cannot decode redis array into %v", v.Type())
 	}
