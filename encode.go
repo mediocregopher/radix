@@ -52,6 +52,10 @@ func (e *Encoder) Encode(v interface{}) error {
 	return err
 }
 
+// TODO it might make more sense to have walk also deal explicitly with the
+// types enumerated in write, so it doesn't have to do random one-off checks for
+// []byte and Marshalers and stuff
+
 // fn is called on all "single" elements. arrFn is called with the length of
 // all arrays found, before the individual elements of the array are sent to fn.
 // either can be nil. called in depth-first order.
@@ -77,6 +81,16 @@ func (e *Encoder) walk(v interface{}, fn func(interface{}) error, arrFn func(int
 	if _, ok := v.([]byte); ok {
 		// make sure we never walk a byte slice, that's just a single element
 		doFn(v)
+		return
+
+		// We check these two specifically because they could be implemented by
+		// a []byte, which would match as a Slice down below and things would
+		// get weird. This is pretty hacky to have this here too though
+	} else if tm, ok := v.(encoding.TextMarshaler); ok {
+		doFn(tm)
+		return
+	} else if bm, ok := v.(encoding.BinaryMarshaler); ok {
+		doFn(bm)
 		return
 
 	} else if ii, ok := v.([]interface{}); ok {
@@ -235,8 +249,14 @@ func (e *Encoder) writeInt(i int64) error {
 }
 
 func (e *Encoder) writeFloat(f float64, bits int) error {
+	// writeBulkStrBytes also uses scratch, gotta make sure we don't overlap by
+	// accident, so temporarily overwrite scratch
+	ogScratch := e.scratch
 	b := strconv.AppendFloat(e.scratch[:0], f, 'f', -1, bits)
-	return e.writeBulkStrBytes(b)
+	e.scratch = e.scratch[len(b):]
+	err := e.writeBulkStrBytes(b)
+	e.scratch = ogScratch
+	return err
 }
 
 func (e *Encoder) writeSimpleStr(s string) error {

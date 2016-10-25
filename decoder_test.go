@@ -10,17 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type textCPUnmarshaller []byte
+type textCPUnmarshaler []byte
 
-func (cu *textCPUnmarshaller) UnmarshalText(b []byte) error {
+func (cu *textCPUnmarshaler) UnmarshalText(b []byte) error {
 	*cu = (*cu)[:0]
 	*cu = append(*cu, b...)
 	return nil
 }
 
-type binCPUnmarshaller []byte
+type binCPUnmarshaler []byte
 
-func (cu *binCPUnmarshaller) UnmarshalBinary(b []byte) error {
+func (cu *binCPUnmarshaler) UnmarshalBinary(b []byte) error {
 	*cu = (*cu)[:0]
 	*cu = append(*cu, b...)
 	return nil
@@ -109,13 +109,13 @@ func TestDecode(t *T) {
 		}
 
 		{
-			var cu textCPUnmarshaller
+			var cu textCPUnmarshaler
 			doDecode(&cu)
 			assert.Equal(t, dt.outS, string(cu))
 		}
 
 		{
-			var cu binCPUnmarshaller
+			var cu binCPUnmarshaler
 			doDecode(&cu)
 			assert.Equal(t, dt.outS, string(cu))
 		}
