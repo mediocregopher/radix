@@ -36,13 +36,9 @@ func BenchmarkRead(b *B) {
 	buf := new(bytes.Buffer)
 	r := NewDecoder(buf)
 
-	var into interface{}
 	for i := 0; i < b.N; i++ {
 		buf.WriteString((<-ch).s)
-		if err := r.Decode(&into); err != nil {
-			panic(err)
-		}
-		into = nil
+		r.Decode(nil)
 	}
 }
 
