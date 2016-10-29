@@ -10,11 +10,30 @@ import (
 	"strconv"
 )
 
-// LenReader adds an additional method to io.Reader, returning how many bytes
-// are left till be read until an io.EOF is reached.
-type LenReader interface {
-	io.Reader
-	Len() int
+func anyIntToInt64(m interface{}) int64 {
+	switch mt := m.(type) {
+	case int:
+		return int64(mt)
+	case int8:
+		return int64(mt)
+	case int16:
+		return int64(mt)
+	case int32:
+		return int64(mt)
+	case int64:
+		return mt
+	case uint:
+		return int64(mt)
+	case uint8:
+		return int64(mt)
+	case uint16:
+		return int64(mt)
+	case uint32:
+		return int64(mt)
+	case uint64:
+		return int64(mt)
+	}
+	panic(fmt.Sprintf("anyIntToInt64 got bad arg: %#v", m))
 }
 
 // Encoder wraps an io.Writer and encodes Resp data onto it
@@ -51,10 +70,6 @@ func (e *Encoder) Encode(v interface{}) error {
 
 	return err
 }
-
-// TODO it might make more sense to have walk also deal explicitly with the
-// types enumerated in write, so it doesn't have to do random one-off checks for
-// []byte and Marshalers and stuff
 
 // fn is called on all "single" elements. arrFn is called with the length of
 // all arrays found, before the individual elements of the array are sent to fn.

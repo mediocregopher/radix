@@ -116,17 +116,15 @@ func (s *scanner) Next(res *string) bool {
 		}
 
 		cmd := s.cmd(s.cur)
-		var parts []Resp
-		if parts, s.err = s.Cmd(cmd.Cmd, cmd.Args...).Array(); s.err != nil {
+		parts := []interface{}{"", []string{}}
+		if s.err = s.Cmd(&parts, cmd.Cmd, cmd.Args...); s.err != nil {
 			return false
 		} else if len(parts) < 2 {
 			s.err = errors.New("not enough parts returned")
 			return false
-		} else if s.cur, s.err = parts[0].Str(); s.err != nil {
-			return false
-		} else if s.res, s.err = parts[1].List(); s.err != nil {
-			return false
 		}
+		s.cur = parts[0].(string)
+		s.res = parts[1].([]string)
 	}
 }
 

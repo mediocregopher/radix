@@ -35,17 +35,15 @@ func TestPipeline(t *T) {
 			testutil.RandStr(),
 			testutil.RandStr(),
 		}
-		rr := Pipeline(c,
-			NewCmd("ECHO", ss[0]),
-			NewCmd("ECHO", ss[1]),
-			NewCmd("ECHO", ss[2]),
-		)
+		out := make([]string, len(ss))
+		p := Pipeline{Conn: c}
+		for i := range ss {
+			p.Cmd(&out[i], "ECHO", ss[i])
+		}
+		require.Nil(t, p.Run())
 
 		for i := range ss {
-			exp := ss[i]
-			out, err := rr[i].Str()
-			require.Nil(t, err)
-			assert.Equal(t, exp, out)
+			assert.Equal(t, ss[i], out[i])
 		}
 	}
 }

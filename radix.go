@@ -19,36 +19,48 @@ type AppErr struct {
 	error
 }
 
-// Conn is an entity which reads/writes raw redis resp messages. The methods are
-// synchronous. Read and Write may be called at the same time by two different
-// go-routines, but each should only be called once at a time (i.e. two routines
-// shouldn't call Read at the same time, same with Write).
+// LenReader adds an additional method to io.Reader, returning how many bytes
+// are left till be read until an io.EOF is reached.
+type LenReader interface {
+	io.Reader
+	Len() int
+}
+
+// Conn is an entity which reads/writes data using the redis resp protocol. The
+// methods are synchronous. Encode and Decode may be called at the same time by
+// two different go-routines, but each should only be called once at a time
+// (i.e. two routines shouldn't call Encode at the same time, same with Decode).
 type Conn interface {
-	// WriteAny translates whatever is given into a Resp and writes the encoded
-	// form to the connection.
-	//
-	// Most types encountered are converted into strings, with the following
-	// exceptions:
-	//  * Bools are converted to int (1 or 0)
-	//  * nil is sent as the nil type
-	//  * error is sent as the error type
-	//  * Resps are sent as-is
-	//	* Slices are sent as arrays, with each element in the slice also being
-	//	  converted
-	//  * Maps are sent as arrays, alternating key then value, and with each
-	//    also being converted
-	//  * Cmds are flattened into a single array of strings, after the normal
-	//    conversion process has been done on each of their members
-	//
-	Write(m interface{}) error
+	// See the Encoder type's method for how this should behave
+	Encode(interface{}) error
 
-	// Read reads a Resp off the connection and returns it. The Resp may be have
-	// IOErr as its Err field if there was an error reading.
-	Read() Resp
+	// See the Decoder type's method for how this should behave
+	Decode(interface{}) error
 
-	// Close closes the conn and cleans up its resources. No methods may be
+	// Close closes the Conn and cleans up its resources. No methods may be
 	// called after Close.
 	Close() error
+}
+
+type rwcWrap struct {
+	rwc io.ReadWriteCloser
+	*Encoder
+	*Decoder
+}
+
+// NewConn takes an existing io.ReadWriteCloser and wraps it to support the Conn
+// interface. The original io.ReadWriteCloser should not be used after calling
+// this.
+func NewConn(rwc io.ReadWriteCloser) Conn {
+	return rwcWrap{
+		rwc:     rwc,
+		Encoder: NewEncoder(rwc),
+		Decoder: NewDecoder(rwc),
+	}
+}
+
+func (rwc rwcWrap) Close() error {
+	return rwc.rwc.Close()
 }
 
 // DialFunc is a function which returns an initialized, ready-to-be-used Conn.
@@ -57,14 +69,6 @@ type Conn interface {
 // Conn implementations, etc...
 type DialFunc func(network, addr string) (Conn, error)
 
-type conn struct {
-	c net.Conn
-	*RespReader
-	*RespWriter
-
-	timeout time.Duration
-}
-
 // Dial creates a network connection using net.Dial and wraps it to support the
 // Conn interface.
 func Dial(network, addr string) (Conn, error) {
@@ -72,12 +76,28 @@ func Dial(network, addr string) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	return NewConn(c), nil
+}
 
-	return conn{
-		c:          c,
-		RespReader: NewRespReader(c),
-		RespWriter: NewRespWriter(c),
-	}, nil
+type timeoutConn struct {
+	net.Conn
+	timeout time.Duration
+}
+
+func (tc *timeoutConn) setDeadline() {
+	if tc.timeout > 0 {
+		tc.Conn.SetDeadline(time.Now().Add(tc.timeout))
+	}
+}
+
+func (tc *timeoutConn) Read(b []byte) (int, error) {
+	tc.setDeadline()
+	return tc.Conn.Read(b)
+}
+
+func (tc *timeoutConn) Write(b []byte) (int, error) {
+	tc.setDeadline()
+	return tc.Conn.Write(b)
 }
 
 // DialTimeout is like Dial, but the given timeout is used to set read/write
@@ -87,59 +107,16 @@ func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return conn{
-		c:          c,
-		RespReader: NewRespReader(c),
-		RespWriter: NewRespWriter(c),
-		timeout:    timeout,
-	}, nil
+	return NewConn(&timeoutConn{Conn: c, timeout: timeout}), nil
 }
 
-func (c conn) setDeadline() {
-	if c.timeout > 0 {
-		c.c.SetDeadline(time.Now().Add(c.timeout))
-	}
-}
-
-func (c conn) Write(m interface{}) error {
-	c.setDeadline()
-	return c.RespWriter.Write(m)
-}
-
-func (c conn) Read() Resp {
-	c.setDeadline()
-	return c.RespReader.Read()
-}
-
-func (c conn) Close() error {
-	return c.c.Close()
-}
-
-type rwcWrap struct {
-	rwc io.ReadWriteCloser
-	*RespReader
-	*RespWriter
-}
-
-// NewConn takes an existing io.ReadWriteCloser and wraps it to support the Conn
-// interface. The original io.ReadWriteCloser should not be used after calling
-// this.
-func NewConn(rwc io.ReadWriteCloser) Conn {
-	return rwcWrap{
-		rwc:        rwc,
-		RespReader: NewRespReader(rwc),
-		RespWriter: NewRespWriter(rwc),
-	}
-}
-
-func (rwc rwcWrap) Close() error {
-	return rwc.Close()
-}
-
-// Cmder is an entity which performs a single redis command. TODO better docs
+// Cmder is an entity which performs a redis commands
 type Cmder interface {
-	Cmd(cmd string, args ...interface{}) Resp
+
+	// Cmd runs the given command with arguments, and unmarshals the result into
+	// the res variable (which should be a pointer to something).
+	// TODO flesh this out
+	Cmd(res interface{}, cmd string, args ...interface{}) error
 }
 
 // ConnCmder implements both the Conn and Cmder interfaces. This interface
@@ -161,63 +138,79 @@ func NewConnCmder(c Conn) ConnCmder {
 	return connCmder{Conn: c}
 }
 
-func (cc connCmder) Cmd(cmd string, args ...interface{}) Resp {
-	if err := cc.Write(NewCmd(cmd, args...)); err != nil {
+func (cc connCmder) Cmd(res interface{}, cmd string, args ...interface{}) error {
+	if err := cc.Encode(NewCmd(cmd, args...)); err != nil {
 		cc.Close()
-		return ioErrResp(err)
-	}
-
-	r := cc.Read()
-	if _, ok := r.Err.(IOErr); ok {
+		return err
+	} else if err := cc.Decode(res); err != nil {
 		cc.Close()
+		return err
 	}
-	return r
+	return nil
 }
 
-// Pipeline writes the given command Resps (returned from NewCmd) all at once to
-// the Conn, and subsequently reads off the responses all at once. This means
-// that only a single round trip is required to complete multiple commands,
-// which may help significantly in high latency situations.
+// Pipeline is used to write multiple commands to a Conn in a single operation,
+// and then read off all of their responses in a single operation, reducing
+// round-trip time. When Cmd is called the command and value to decode its
+// response into are stored until Run is called, and then all Cmd's called will
+// be performed at the same time.
 //
-//	rr := radix.Pipeline(conn,
-//		radix.NewCmd("GET", "foo"),
-//		radix.NewCmd("SET", "foo", "bar"),
-//	)
+// A single pipeline can be used multiple times, or only a single time. It is
+// very cheap to create a pipeline.
 //
-//	// rr[0] is the response to the GET
-//	// rr[1] is the response to the SET
+//  var fooVal string
+//	p := radix.Pipeline{Conn: c}
+//	p.Cmd(nil, "SET", "foo", "bar")
+//	p.Cmd(&fooVal, "GET", "foo")
 //
-//	When reading responses, if an IOErr is encountered then that will be
-//	returned for that response and all subsequent responses, and the Conn will
-//	be Close'd.
+//	if err := p.Run(); err != nil {
+//		panic(err)
+//	}
+//	fmt.Printf("fooVal: %q\n", fooVal)
 //
-func Pipeline(c Conn, cmds ...Cmd) []Resp {
-	resps := make([]Resp, 0, len(cmds))
+type Pipeline struct {
+	Conn
 
-	errFill := func(errResp Resp) {
-		for len(resps) < cap(resps) {
-			resps = append(resps, errResp)
+	cmds []struct {
+		res interface{}
+		cmd Cmd
+	}
+}
+
+// Cmd does not actually perform the command, but buffers it till Run is called.
+// It always returns nil
+func (p *Pipeline) Cmd(res interface{}, cmd string, args ...interface{}) error {
+	p.cmds = append(p.cmds, struct {
+		res interface{}
+		cmd Cmd
+	}{
+		res: res,
+		cmd: NewCmd(cmd, args...),
+	})
+	return nil
+}
+
+// Run will actually run all commands buffered by calls to Cmd so far, and
+// decode their responses into their given receivers. If a network error is
+// encountered the Conn will be Close'd and the error returned immediately.
+func (p *Pipeline) Run() error {
+	cmds := p.cmds
+	p.cmds = nil
+	for _, c := range cmds {
+		if err := p.Conn.Encode(c.cmd); err != nil {
+			p.Conn.Close()
+			return err
 		}
-		c.Close()
 	}
 
-	for _, cmd := range cmds {
-		if err := c.Write(cmd); err != nil {
-			errFill(ioErrResp(err))
-			return resps
+	for _, c := range cmds {
+		if err := p.Conn.Decode(c.res); err != nil {
+			p.Conn.Close()
+			return err
 		}
 	}
 
-	for range cmds {
-		r := c.Read()
-		if _, ok := r.Err.(IOErr); ok {
-			errFill(r)
-			return resps
-		}
-		resps = append(resps, r)
-	}
-
-	return resps
+	return nil
 }
 
 // LuaEval calls EVAL on the given Cmder for the given script, passing the key
@@ -227,13 +220,13 @@ func Pipeline(c Conn, cmds ...Cmd) []Resp {
 // LuaEval will automatically try to call EVALSHA first in order to preserve
 // bandwidth, and only falls back on EVAL if the script has never been used
 // before.
-func LuaEval(c Cmder, script string, keys int, args ...interface{}) Resp {
+func LuaEval(c Cmder, res interface{}, script string, keys int, args ...interface{}) error {
 	sumRaw := sha1.Sum([]byte(script))
 	sum := hex.EncodeToString(sumRaw[:])
 
-	r := c.Cmd("EVALSHA", sum, keys, args)
-	if r.Err != nil && strings.HasPrefix(r.Err.Error(), "NOSCRIPT") {
-		r = c.Cmd("EVAL", script, keys, args)
+	err := c.Cmd(res, "EVALSHA", sum, keys, args)
+	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
+		err = c.Cmd(res, "EVAL", script, keys, args)
 	}
-	return r
+	return err
 }

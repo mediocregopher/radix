@@ -2,8 +2,8 @@ package radix
 
 import "time"
 
-// PoolCmder is a ConnCmder which came from a Pool, and which has the
-// special property of being able to be returned to the Pool it came from
+// PoolCmder is a Cmder which came from a Pool, and which has the special
+// property of being able to be returned to the Pool it came from
 type PoolCmder interface {
 	Cmder
 
@@ -65,8 +65,9 @@ type PoolFunc func(network, addr string) (Pool, error)
 // TODO expose Avail for the pool
 
 type staticPoolConn struct {
-	ConnCmder
-	sp *staticPool
+	Conn
+	Cmder // actually itself, just for convenience
+	sp    *staticPool
 
 	// The most recent network error which occurred when either reading
 	// or writing. A critical network error is basically any non-application
@@ -82,35 +83,31 @@ func (spc *staticPoolConn) Done() {
 	spc.sp.put(spc)
 }
 
-func (spc *staticPoolConn) Write(m interface{}) error {
+func (spc *staticPoolConn) Encode(m interface{}) error {
 	if spc.lastIOErr != nil {
 		return spc.lastIOErr
-	}
-
-	err := spc.ConnCmder.Write(m)
-	if err != nil {
+	} else if err := spc.Conn.Encode(m); err != nil {
 		spc.lastIOErr = err
+		return err
 	}
-	return err
+	return nil
 }
 
-func (spc *staticPoolConn) Read() Resp {
+func (spc *staticPoolConn) Decode(m interface{}) error {
 	if spc.lastIOErr != nil {
-		return ioErrResp(spc.lastIOErr)
+		return spc.lastIOErr
+	} else if err := spc.Conn.Decode(m); err != nil {
+		spc.lastIOErr = err
+		return err
 	}
-
-	r := spc.ConnCmder.Read()
-	if _, ok := r.Err.(IOErr); ok {
-		spc.lastIOErr = r.Err
-	}
-	return r
+	return nil
 }
 
 func (spc *staticPoolConn) Close() error {
 	// in case there's some kind of problem with circular reference and gc, also
 	// prevents Done from being called
 	spc.sp = nil
-	return spc.ConnCmder.Close()
+	return spc.Conn.Close()
 }
 
 type staticPool struct {
@@ -173,10 +170,12 @@ func (sp *staticPool) newConn() (*staticPoolConn, error) {
 		return nil, err
 	}
 
-	return &staticPoolConn{
-		ConnCmder: NewConnCmder(c),
-		sp:        sp,
-	}, nil
+	spc := &staticPoolConn{
+		Conn: c,
+		sp:   sp,
+	}
+	spc.Cmder = NewConnCmder(spc)
+	return spc, nil
 }
 
 func (sp *staticPool) Get(forkey string) (PoolCmder, error) {
@@ -231,15 +230,15 @@ func NewPoolCmder(p Pool) Cmder {
 	return poolCmder{p: p}
 }
 
-func (pc poolCmder) Cmd(cmd string, args ...interface{}) Resp {
+func (pc poolCmder) Cmd(res interface{}, cmd string, args ...interface{}) error {
 	k := NewCmd(cmd, args...).FirstArg()
 	c, err := pc.p.Get(k)
 	if err != nil {
-		return ioErrResp(err)
+		return err
 	}
 	defer c.Done()
 
-	return c.Cmd(cmd, args...)
+	return c.Cmd(res, cmd, args...)
 }
 
 type poolPinger struct {
@@ -262,7 +261,7 @@ func NewPoolPinger(p Pool, period time.Duration) Pool {
 		for {
 			select {
 			case <-t.C:
-				pc.Cmd("PING")
+				pc.Cmd(nil, "PING")
 			case <-closeCh:
 				t.Stop()
 				close(doneCh)

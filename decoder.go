@@ -75,7 +75,7 @@ func NewDecoder(r io.Reader) *Decoder {
 	}
 }
 
-var typePrefixMap = map[byte]riType{
+var typePrefixMap = map[byte]int{
 	simpleStrPrefix[0]: riSimpleStr,
 	errPrefix[0]:       riAppErr,
 	intPrefix[0]:       riInt,
@@ -132,7 +132,7 @@ func (d *Decoder) Decode(v interface{}) error {
 	panic(fmt.Sprintf("weird type: %#v", typ))
 }
 
-func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ riType) error {
+func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 	var (
 		err error
 		i   int64
