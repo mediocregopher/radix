@@ -63,6 +63,32 @@ var encodeTests = []struct {
 	// Error
 	{in: errors.New(":("), out: "-:(\r\n"},
 
+	// Simple arrays
+	{in: []string{}, out: "*0\r\n"},
+	{in: []string{"a", "b"}, out: "*2\r\n$1\r\na\r\n$1\r\nb\r\n"},
+	{in: []int{1, 2}, out: "*2\r\n:1\r\n:2\r\n"},
+
+	// Complex arrays
+	{in: []interface{}{}, out: "*0\r\n"},
+	{in: []interface{}{"a", 1}, out: "*2\r\n$1\r\na\r\n:1\r\n"},
+
+	// Embedded arrays
+	{
+		in:  []interface{}{[]string{"a", "b"}, []int{1, 2}},
+		out: "*2\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n*2\r\n:1\r\n:2\r\n",
+	},
+
+	// Maps
+	{in: map[string]int{"one": 1}, out: "*2\r\n$3\r\none\r\n:1\r\n"},
+	{
+		in:  map[string]interface{}{"one": []byte("1")},
+		out: "*2\r\n$3\r\none\r\n$1\r\n1\r\n",
+	},
+	{
+		in:  map[string]interface{}{"one": []string{"1", "2"}},
+		out: "*2\r\n$3\r\none\r\n*2\r\n$1\r\n1\r\n$1\r\n2\r\n",
+	},
+
 	// Resp
 	{in: Resp{SimpleStr: []byte("")}, out: "+\r\n"},
 	{in: Resp{SimpleStr: []byte("ohey")}, out: "+ohey\r\n"},
