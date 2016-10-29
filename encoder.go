@@ -193,6 +193,8 @@ func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
 		return e.writeAppErr(AppErr{error: vt})
 	case Cmd:
 		return e.writeCmd(vt)
+	case Resp:
+		return e.writeResp(vt)
 	case LenReader:
 		return e.writeBulkStr(vt)
 	case encoding.TextMarshaler:
@@ -235,6 +237,33 @@ func (e *Encoder) writeCmd(c Cmd) error {
 	return e.walk(c.Args, func(v interface{}) error {
 		return e.write(v, true)
 	}, nil)
+}
+
+func (e *Encoder) writeResp(r Resp) error {
+	switch {
+	case r.SimpleStr != nil:
+		return e.writeSimpleStr(string(r.SimpleStr))
+	case r.BulkStr != nil:
+		return e.writeBulkStrBytes(r.BulkStr)
+	case r.Err != nil:
+		return e.writeAppErr(AppErr{error: r.Err})
+	case r.Arr != nil:
+		if err := e.writeArrayHeader(len(r.Arr)); err != nil {
+			return err
+		}
+		for i := range r.Arr {
+			if err := e.writeResp(r.Arr[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	case r.BulkStrNil:
+		return e.writeBulkNil()
+	case r.ArrNil:
+		return e.writeArrayNil()
+	default:
+		return e.writeInt(r.Int)
+	}
 }
 
 func (e *Encoder) writeBulkStrBytes(b []byte) error {

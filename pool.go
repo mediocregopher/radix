@@ -231,8 +231,8 @@ func NewPoolCmder(p Pool) Cmder {
 }
 
 func (pc poolCmder) Cmd(res interface{}, cmd string, args ...interface{}) error {
-	k := NewCmd(cmd, args...).FirstArg()
-	c, err := pc.p.Get(k)
+	// TODO this isn't right, we don't want pool to do this
+	c, err := pc.p.Get("")
 	if err != nil {
 		return err
 	}

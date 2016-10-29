@@ -51,6 +51,23 @@ var encodeTests = []struct {
 
 	// Error
 	{in: errors.New(":("), out: "-:(\r\n"},
+
+	// Resp
+	{in: Resp{SimpleStr: []byte("")}, out: "+\r\n"},
+	{in: Resp{SimpleStr: []byte("ohey")}, out: "+ohey\r\n"},
+	{in: Resp{BulkStr: []byte("")}, out: "$0\r\n\r\n"},
+	{in: Resp{BulkStr: []byte("ohey")}, out: "$4\r\nohey\r\n"},
+	{in: Resp{Err: errors.New("boo")}, out: "-boo\r\n"},
+	{in: Resp{BulkStrNil: true}, out: "$-1\r\n"},
+	{in: Resp{ArrNil: true}, out: "*-1\r\n"},
+	{in: Resp{Arr: []Resp{}}, out: "*0\r\n"},
+	{in: Resp{Arr: []Resp{
+		Resp{SimpleStr: []byte("ohey")},
+		Resp{Int: 5},
+	}}, out: "*2\r\n+ohey\r\n:5\r\n"},
+	{in: Resp{Int: 0}, out: ":0\r\n"},
+	{in: Resp{Int: 5}, out: ":5\r\n"},
+	{in: Resp{Int: -5}, out: ":-5\r\n"},
 }
 
 func TestEncode(t *T) {

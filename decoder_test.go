@@ -27,24 +27,30 @@ func (cu *binCPUnmarshaler) UnmarshalBinary(b []byte) error {
 }
 
 var decodeTests = []struct {
-	in   string
-	out  interface{}
-	outS string
-	outI int64
-	outF float64
+	in    string
+	out   interface{}
+	outS  string
+	outI  int64
+	outF  float64
+	Resp  Resp
+	isNil bool // nils get special treatment
 }{
 	// Simple string
-	{in: "+\r\n", out: "", outS: ""},
-	{in: "+ohey\r\n", out: "ohey", outS: "ohey"},
-	{in: "+10\r\n", out: "10", outS: "10", outI: 10, outF: 10},
-	{in: "+10.5\r\n", out: "10.5", outS: "10.5", outF: 10.5},
+	{in: "+\r\n", out: "", outS: "", Resp: Resp{SimpleStr: []byte("")}},
+	{in: "+ohey\r\n", out: "ohey", outS: "ohey", Resp: Resp{SimpleStr: []byte("ohey")}},
+	{in: "+10\r\n", out: "10", outS: "10", outI: 10, outF: 10, Resp: Resp{SimpleStr: []byte("10")}},
+	{in: "+10.5\r\n", out: "10.5", outS: "10.5", outF: 10.5, Resp: Resp{SimpleStr: []byte("10.5")}},
 
 	// Int
-	{in: ":1024\r\n", out: int64(1024), outS: "1024", outI: 1024, outF: 1024},
+	{in: ":1024\r\n", out: int64(1024), outS: "1024", outI: 1024, outF: 1024, Resp: Resp{Int: 1024}},
 
 	// Bulk string
-	{in: "$0\r\n\r\n", out: "", outS: ""},
-	{in: "$4\r\nohey\r\n", out: "ohey", outS: "ohey"},
+	{in: "$0\r\n\r\n", out: "", outS: "", Resp: Resp{BulkStr: []byte("")}},
+	{in: "$4\r\nohey\r\n", out: "ohey", outS: "ohey", Resp: Resp{BulkStr: []byte("ohey")}},
+
+	// Nils
+	{in: "$-1\r\n", out: nil, isNil: true, Resp: Resp{BulkStrNil: true}},
+	{in: "*-1\r\n", out: nil, isNil: true, Resp: Resp{ArrNil: true}},
 }
 
 func TestDecode(t *T) {
@@ -76,11 +82,15 @@ func TestDecode(t *T) {
 		}
 
 		// interface with a string in it already, even the non-string inputs
-		// should still scan as strings
+		// should still scan as strings (except the nils)
 		{
 			i := interface{}("")
 			doDecode(&i)
-			assert.Equal(t, dt.outS, i)
+			if dt.isNil {
+				assert.Nil(t, i)
+			} else {
+				assert.Equal(t, dt.outS, i)
+			}
 		}
 
 		{
@@ -120,7 +130,7 @@ func TestDecode(t *T) {
 			assert.Equal(t, dt.outS, string(cu))
 		}
 
-		if dt.outI > 0 {
+		if dt.outI > 0 || dt.isNil {
 			var i int64
 			doDecode(&i)
 			assert.Equal(t, dt.outI, i)
@@ -130,7 +140,7 @@ func TestDecode(t *T) {
 			assert.Equal(t, uint64(dt.outI), ui)
 		}
 
-		if dt.outF > 0 {
+		if dt.outF > 0 || dt.isNil {
 			var f32 float32
 			doDecode(&f32)
 			assert.Equal(t, float32(dt.outF), f32)
@@ -138,6 +148,12 @@ func TestDecode(t *T) {
 			var f64 float64
 			doDecode(&f64)
 			assert.Equal(t, dt.outF, f64)
+		}
+
+		{
+			var r Resp
+			doDecode(&r)
+			assert.Equal(t, dt.Resp, r)
 		}
 	}
 }

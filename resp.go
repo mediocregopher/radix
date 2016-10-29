@@ -16,6 +16,7 @@ var (
 	nilArray        = []byte("*-1\r\n")
 )
 
+// TODO rename these
 const (
 	riSimpleStr = iota
 	riBulkStr
@@ -40,32 +41,21 @@ func NewCmd(cmd string, args ...interface{}) Cmd {
 	}
 }
 
-// FirstArg returns the first argument (not the Cmd) in this Cmd. If there are
-// none it will return empty string.
-//
-// Since Cmd will automatically flatten all arguments into a flat slice of
-// strings during encoding it's not that easy to determine what the first
-// argument will be, so this method is provided as a convenience. In the case
-// where Args contains a map this command may return something different on
-// every call.
-func (c Cmd) FirstArg() string {
-	// TODO
-	return ""
-}
-
-// TODO I'm not super thrilled about this Resp type
-
 // Resp can be used to encode or decode exact values of the resp protocol (the
 // network protocol that redis uses). When encoding, the first non-nil field (or
 // one of the nil booleans) will be used as the resp value. When decoding the
 // value being read will be filled into the corresponding field based on its
 // type, the others being left nil.
+//
+// When all fields are their zero value (i.e. Resp{}) the Int field is the one
+// used, and the Resp will encode/decode as an int resp of the value 0.
 type Resp struct {
-	SimpleStr  *string
+	SimpleStr  []byte
 	BulkStr    []byte
-	Err        *AppErr
-	Int        *int64
+	Err        error
 	Arr        []Resp
 	BulkStrNil bool
 	ArrNil     bool
+
+	Int int64
 }

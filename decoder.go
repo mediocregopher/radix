@@ -115,6 +115,9 @@ func (d *Decoder) Decode(v interface{}) error {
 	case riBulkStr:
 		if size, err = strconv.ParseInt(string(body), 10, 64); err != nil {
 			return err
+		} else if size == -1 {
+			d.scanNilInto(v, typ)
+			return nil
 		}
 		return d.scanInto(v, newLimitedReaderPlus(d.r, size, d.discard), typ)
 
@@ -124,6 +127,9 @@ func (d *Decoder) Decode(v interface{}) error {
 	case riArray:
 		if size, err = strconv.ParseInt(string(body), 10, 64); err != nil {
 			return err
+		} else if size == -1 {
+			d.scanNilInto(v, typ)
+			return nil
 		}
 		return d.scanArrayInto(reflect.ValueOf(v), int(size))
 	}
@@ -196,6 +202,17 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 		*dstt = float32(f)
 	case *float64:
 		*dstt, err = d.readFloat(r, 64)
+
+	case *Resp:
+		switch typ {
+		case riSimpleStr:
+			dstt.SimpleStr, err = readAllAppend(r, dstt.SimpleStr[:0])
+		case riBulkStr:
+			dstt.BulkStr, err = readAllAppend(r, dstt.BulkStr[:0])
+		case riInt:
+			dstt.Int, err = d.readInt(r)
+		}
+
 	case encoding.TextUnmarshaler:
 		if d.scratch, err = readAllAppend(r, d.scratch[:0]); err != nil {
 			break
@@ -348,6 +365,27 @@ func (d *Decoder) scanArrayInto(v reflect.Value, size int) error {
 		return fmt.Errorf("cannot decode redis array into %v", v.Type())
 	}
 	return nil
+}
+
+// sets v to whatever its zero value is. For slices or interfaces this will be
+// nil
+func (d *Decoder) scanNilInto(v interface{}, typ int) {
+	if r, ok := v.(*Resp); ok && typ == riBulkStr {
+		r.BulkStrNil = true
+		return
+	} else if ok && typ == riArray {
+		r.ArrNil = true
+		return
+	}
+
+	vv := reflect.Indirect(reflect.ValueOf(v))
+	if !vv.IsValid() {
+		return
+	} else if vv.CanSet() {
+		vv.Set(reflect.Zero(vv.Type()))
+	}
+	// If we can't set I'm not sure what we should do. Nothing seems right
+	// though...
 }
 
 func (d *Decoder) readInt(r io.Reader) (int64, error) {
