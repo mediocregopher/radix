@@ -3,6 +3,7 @@ package radix
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	. "testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,16 @@ func (cm binCPMarshaler) MarshalBinary() ([]byte, error) {
 	b = append(b, cm...)
 	b = append(b, '_')
 	return b, nil
+}
+
+// because actually writing this out is a pain, especially for the Cmd tests
+func encodeStrArr(ss ...string) string {
+	var ret string
+	ret = fmt.Sprintf("*%d\r\n", len(ss))
+	for _, s := range ss {
+		ret += fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
+	}
+	return ret
 }
 
 var encodeTests = []struct {
@@ -68,6 +79,68 @@ var encodeTests = []struct {
 	{in: Resp{Int: 0}, out: ":0\r\n"},
 	{in: Resp{Int: 5}, out: ":5\r\n"},
 	{in: Resp{Int: -5}, out: ":-5\r\n"},
+
+	// Cmd
+	{
+		in:  NewCmd("foo"),
+		out: encodeStrArr("foo"),
+	},
+	{
+		in:  NewCmd("foo", "bar"),
+		out: encodeStrArr("foo", "bar"),
+	},
+	{
+		in:  NewCmd("foo", "bar", 1),
+		out: encodeStrArr("foo", "bar", "1"),
+	},
+	{
+		in:  NewCmd("foo", []string{}),
+		out: encodeStrArr("foo"),
+	},
+	{
+		in:  NewCmd("foo", []string{"bar"}),
+		out: encodeStrArr("foo", "bar"),
+	},
+	{
+		in:  NewCmd("foo", []string{}, []string{}),
+		out: encodeStrArr("foo"),
+	},
+	{
+		in:  NewCmd("foo", []string{"bar"}, []string{"baz"}),
+		out: encodeStrArr("foo", "bar", "baz"),
+	},
+	{
+		in:  NewCmd("foo", []interface{}{}),
+		out: encodeStrArr("foo"),
+	},
+	{
+		in:  NewCmd("foo", []interface{}{"bar"}),
+		out: encodeStrArr("foo", "bar"),
+	},
+	{
+		in:  NewCmd("foo", []interface{}{"bar", 1}),
+		out: encodeStrArr("foo", "bar", "1"),
+	},
+	{
+		in:  NewCmd("foo", []interface{}{"bar", []int{}, []interface{}{}}),
+		out: encodeStrArr("foo", "bar"),
+	},
+	{
+		in:  NewCmd("foo", []interface{}{"bar", []int{1}}),
+		out: encodeStrArr("foo", "bar", "1"),
+	},
+	{
+		in:  NewCmd("foo", map[string]int{}),
+		out: encodeStrArr("foo"),
+	},
+	{
+		in:  NewCmd("foo", map[string]int{"one": 1}),
+		out: encodeStrArr("foo", "one", "1"),
+	},
+	{
+		in:  NewCmd("foo", map[int]interface{}{1: "one"}),
+		out: encodeStrArr("foo", "1", "one"),
+	},
 }
 
 func TestEncode(t *T) {
@@ -79,5 +152,3 @@ func TestEncode(t *T) {
 		buf.Reset()
 	}
 }
-
-// TODO test Cmd

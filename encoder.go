@@ -118,14 +118,7 @@ func (e *Encoder) walk(v interface{}, fn func(interface{}) error, arrFn func(int
 		return
 
 	} else if c, ok := v.(Cmd); ok {
-		// this is kind of an unlikely case, I'm pretty sure it would only
-		// happen if a Cmd was embedded in another Cmd somehow. But might as
-		// well handle it
-		doArrFn(1 + len(c.Args))
-		doFn(c.Cmd)
-		for _, arg := range c.Args {
-			doWalk(arg)
-		}
+		doFn(c)
 		return
 	}
 
@@ -222,16 +215,18 @@ func (e *Encoder) writeCmd(c Cmd) error {
 	// first we need to figure out the size of this thing. The one is for the
 	// Cmd field
 	total := 1
-	if err := e.walk(c.Args, nil, func(l int) error {
-		total += l
+	if err := e.walk(c.Args, func(interface{}) error {
+		total++
 		return nil
-	}); err != nil {
+	}, nil); err != nil {
 		return err
 	}
 
 	// write the array header, then write every single non-array element as a
 	// string
 	if err := e.writeArrayHeader(total); err != nil {
+		return err
+	} else if err = e.write(c.Cmd, true); err != nil {
 		return err
 	}
 	return e.walk(c.Args, func(v interface{}) error {
