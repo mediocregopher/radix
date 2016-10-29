@@ -76,11 +76,11 @@ func NewDecoder(r io.Reader) *Decoder {
 }
 
 var typePrefixMap = map[byte]int{
-	simpleStrPrefix[0]: riSimpleStr,
-	errPrefix[0]:       riAppErr,
-	intPrefix[0]:       riInt,
-	bulkStrPrefix[0]:   riBulkStr,
-	arrayPrefix[0]:     riArray,
+	simpleStrPrefix[0]: rSimpleStr,
+	errPrefix[0]:       rAppErr,
+	intPrefix[0]:       rInt,
+	bulkStrPrefix[0]:   rBulkStr,
+	arrayPrefix[0]:     rArray,
 }
 
 var (
@@ -109,10 +109,10 @@ func (d *Decoder) Decode(v interface{}) error {
 
 	var size int64
 	switch typ {
-	case riSimpleStr, riInt:
+	case rSimpleStr, rInt:
 		return d.scanInto(v, bytes.NewReader(body), typ)
 
-	case riBulkStr:
+	case rBulkStr:
 		if size, err = strconv.ParseInt(string(body), 10, 64); err != nil {
 			return err
 		} else if size == -1 {
@@ -121,10 +121,10 @@ func (d *Decoder) Decode(v interface{}) error {
 		}
 		return d.scanInto(v, newLimitedReaderPlus(d.r, size, d.discard), typ)
 
-	case riAppErr:
+	case rAppErr:
 		return AppErr{errors.New(string(body))}
 
-	case riArray:
+	case rArray:
 		if size, err = strconv.ParseInt(string(body), 10, 64); err != nil {
 			return err
 		} else if size == -1 {
@@ -205,11 +205,11 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 
 	case *Resp:
 		switch typ {
-		case riSimpleStr:
+		case rSimpleStr:
 			dstt.SimpleStr, err = readAllAppend(r, dstt.SimpleStr[:0])
-		case riBulkStr:
+		case rBulkStr:
 			dstt.BulkStr, err = readAllAppend(r, dstt.BulkStr[:0])
-		case riInt:
+		case rInt:
 			dstt.Int, err = d.readInt(r)
 		}
 
@@ -232,9 +232,9 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 		var rcvT reflect.Type
 		if v.IsNil() {
 			switch typ {
-			case riSimpleStr, riBulkStr:
+			case rSimpleStr, rBulkStr:
 				rcvT = stringT
-			case riInt:
+			case rInt:
 				rcvT = intT
 			default:
 				// errors don't get scanned, arrays get scanned in a different
@@ -370,10 +370,10 @@ func (d *Decoder) scanArrayInto(v reflect.Value, size int) error {
 // sets v to whatever its zero value is. For slices or interfaces this will be
 // nil
 func (d *Decoder) scanNilInto(v interface{}, typ int) {
-	if r, ok := v.(*Resp); ok && typ == riBulkStr {
+	if r, ok := v.(*Resp); ok && typ == rBulkStr {
 		r.BulkStrNil = true
 		return
-	} else if ok && typ == riArray {
+	} else if ok && typ == rArray {
 		r.ArrNil = true
 		return
 	}

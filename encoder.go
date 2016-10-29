@@ -146,6 +146,11 @@ func (e *Encoder) walk(v interface{}, fn func(interface{}) error, arrFn func(int
 	return
 }
 
+var bools = [][]byte{
+	{'0'},
+	{'1'},
+}
+
 // write writes whatever arbitrary data it's given as a resp. It does not handle
 // any of the types which would be turned into arrays, those must be handled
 // through walk
@@ -156,11 +161,10 @@ func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
 	case string:
 		return e.writeBulkStrBytes([]byte(vt))
 	case bool:
-		// TODO predefine these
 		if vt {
-			return e.writeBulkStrBytes([]byte("1"))
+			return e.writeBulkStrBytes(bools[1])
 		}
-		return e.writeBulkStrBytes([]byte("0"))
+		return e.writeBulkStrBytes(bools[0])
 	case nil:
 		if forceBulkStr {
 			return e.writeBulkStrBytes(nil)

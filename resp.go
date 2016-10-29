@@ -16,13 +16,12 @@ var (
 	nilArray        = []byte("*-1\r\n")
 )
 
-// TODO rename these
 const (
-	riSimpleStr = iota
-	riBulkStr
-	riAppErr // An error returned by redis, e.g. WRONGTYPE
-	riInt
-	riArray
+	rSimpleStr = iota
+	rBulkStr
+	rAppErr // An error returned by redis, e.g. WRONGTYPE
+	rInt
+	rArray
 )
 
 // Cmd describes a single redis command to be performed. In general you won't
