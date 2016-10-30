@@ -33,10 +33,10 @@ func TestPool(t *T) {
 		wg.Add(1)
 		go func() {
 			for i := 0; i < 100; i++ {
-				conn, err := pool.Get("")
+				conn, err := pool.Get()
 				assert.Nil(t, err)
 				testEcho(conn)
-				conn.Done()
+				conn.Return()
 			}
 			wg.Done()
 		}()
@@ -64,24 +64,24 @@ func TestPut(t *T) {
 	// TODO if there's ever an avail method it'd be good to use it here
 	sp := pool.(*staticPool)
 
-	conn, err := pool.Get("")
+	conn, err := pool.Get()
 	require.Nil(t, err)
 	assert.Equal(t, 9, len(sp.pool))
 
 	conn.(*staticPoolConn).lastIOErr = io.EOF
-	conn.Done()
+	conn.Return()
 
 	// Make sure that put does not accept a connection which has had a critical
 	// network error
 	assert.Equal(t, 9, len(sp.pool))
 
 	// Make sure that closing the pool closes outstanding connections as well
-	conn, err = pool.Get("")
+	conn, err = pool.Get()
 	require.Nil(t, err)
 	assert.Equal(t, 8, len(sp.pool))
 
 	sp.Close()
 	assert.Equal(t, 0, len(sp.pool))
-	conn.Done()
+	conn.Return()
 	assert.Equal(t, 0, len(sp.pool))
 }

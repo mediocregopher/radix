@@ -7,26 +7,22 @@ import "time"
 type PoolCmder interface {
 	Cmder
 
-	// Done, when called, indicates that the PoolCmder will no longer be
+	// Return, when called, indicates that the PoolCmder will no longer be
 	// used by its current borrower and should be returned to the Pool it came
 	// from. This _must_ be called by all borrowers, or their PoolCmders
 	// will never be put back in their Pools.
 	//
 	// May not be called after Close is called on the PoolCmder
-	Done()
+	Return()
 }
 
 // Pool is an entity which can be used to manage a set of open ConnCmders which
 // can be used by multiple go-routines.
 type Pool interface {
 	// Get retrieves an available PoolCmder for use by a single go-routine
-	// (until a subsequent call to Done on it), or returns an error if that's
+	// (until a subsequent call to Return on it), or returns an error if that's
 	// not possible.
-	//
-	// The key passed in should be one of the keys involved in the
-	// command/commands being performed. This is helps to support cluster, for
-	// normal pool implementations this key may be ignored.
-	Get(forKey string) (PoolCmder, error)
+	Get() (PoolCmder, error)
 
 	// Put takes in a ConnCmder previously returned by Get and returns it to the
 	// Pool. A defunct ConnCmder (i.e. one which has been closed or encountered
@@ -39,7 +35,7 @@ type Pool interface {
 
 	// Close closes all PoolCmders in the Pool and cleans up the Pool's
 	// resources. Once Close is called no other methods should be called on the
-	// Pool, though Done may still be called on PoolCmders which haven't
+	// Pool, though Return may still be called on PoolCmders which haven't
 	// been returned yet (these will be closed at that point as well).
 	Close()
 
@@ -76,9 +72,9 @@ type staticPoolConn struct {
 	lastIOErr error
 }
 
-func (spc *staticPoolConn) Done() {
+func (spc *staticPoolConn) Return() {
 	if spc.sp == nil {
-		panic("Done called on Closed PoolCmder")
+		panic("Return called on Closed PoolCmder")
 	}
 	spc.sp.put(spc)
 }
@@ -105,7 +101,7 @@ func (spc *staticPoolConn) Decode(m interface{}) error {
 
 func (spc *staticPoolConn) Close() error {
 	// in case there's some kind of problem with circular reference and gc, also
-	// prevents Done from being called
+	// prevents Return from being called
 	spc.sp = nil
 	return spc.Conn.Close()
 }
@@ -178,7 +174,7 @@ func (sp *staticPool) newConn() (*staticPoolConn, error) {
 	return spc, nil
 }
 
-func (sp *staticPool) Get(forkey string) (PoolCmder, error) {
+func (sp *staticPool) Get() (PoolCmder, error) {
 	select {
 	case spc := <-sp.pool:
 		return spc, nil
@@ -231,12 +227,11 @@ func NewPoolCmder(p Pool) Cmder {
 }
 
 func (pc poolCmder) Cmd(res interface{}, cmd string, args ...interface{}) error {
-	// TODO this isn't right, we don't want pool to do this
-	c, err := pc.p.Get("")
+	c, err := pc.p.Get()
 	if err != nil {
 		return err
 	}
-	defer c.Done()
+	defer c.Return()
 
 	return c.Cmd(res, cmd, args...)
 }
