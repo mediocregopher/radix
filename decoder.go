@@ -94,6 +94,12 @@ var (
 // it into the given receiver, which should be a pointer or reference type.
 // TODO more docs on how that happens
 func (d *Decoder) Decode(v interface{}) error {
+	if u, ok := v.(Unmarshaler); ok {
+		return u.Unmarshal(func(newV interface{}) error {
+			return d.Decode(newV)
+		})
+	}
+
 	// the slice returned here should not be stored or modified, it's internal
 	// to the bufio.Reader
 	b, err := d.r.ReadSlice(delimEnd)
@@ -248,7 +254,19 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 		err = d.scanInto(rcv.Interface(), r, typ)
 		v.Set(rcv.Elem())
 	default:
-		err = fmt.Errorf("cannot decode into type %T", dstt)
+		v := reflect.ValueOf(dstt)
+		t := v.Type()
+		// currently we only know how to handle pointer to pointer (like
+		// **string), probably there will be other cases in here eventually as
+		// well
+		if t.Kind() != reflect.Ptr || t.Elem().Kind() != reflect.Ptr {
+			err = fmt.Errorf("cannot decode into type %T", dstt)
+			break
+		}
+		rcv := reflect.New(t.Elem())
+		rcv.Elem().Set(reflect.New(t.Elem().Elem()))
+		err = d.scanInto(rcv.Elem().Interface(), r, typ)
+		v.Elem().Set(rcv.Elem())
 	}
 
 	// no matter what we *must* finish reading the io.Reader. The io.Reader must
@@ -328,8 +346,11 @@ func (d *Decoder) scanArrayInto(v reflect.Value, size int) error {
 		}
 
 		for i := 0; i < size; i++ {
-			vindex := v.Index(i).Addr().Interface()
-			if err := dDecode(vindex); err != nil {
+			vindex := v.Index(i)
+			if vindex.Kind() != reflect.Ptr || vindex.IsNil() {
+				vindex = vindex.Addr()
+			}
+			if err := dDecode(vindex.Interface()); err != nil {
 				return err
 			}
 		}

@@ -62,13 +62,15 @@ func (e *Encoder) Encode(v interface{}) error {
 		}
 	}()
 
-	err = e.walk(v, func(v interface{}) error {
-		return e.write(v, false)
+	return e.encode(v, false)
+}
+
+func (e *Encoder) encode(v interface{}, forceBulkStr bool) error {
+	return e.walk(v, func(v interface{}) error {
+		return e.write(v, forceBulkStr)
 	}, func(l int) error {
 		return e.writeArrayHeader(l)
 	})
-
-	return err
 }
 
 // fn is called on all "single" elements. arrFn is called with the length of
@@ -194,6 +196,12 @@ func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
 		return e.writeResp(vt)
 	case LenReader:
 		return e.writeBulkStr(vt)
+	case Marshaler:
+		nv, err := vt.Marshal()
+		if err != nil {
+			return err
+		}
+		return e.encode(nv, forceBulkStr)
 	case encoding.TextMarshaler:
 		b, err := vt.MarshalText()
 		if err != nil {

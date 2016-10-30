@@ -30,6 +30,14 @@ func (cm binCPMarshaler) MarshalBinary() ([]byte, error) {
 	return b, nil
 }
 
+type marshaler struct {
+	a, b, c string
+}
+
+func (m *marshaler) Marshal() (interface{}, error) {
+	return []string{m.a, m.b, m.c}, nil
+}
+
 // because actually writing this out is a pain, especially for the Cmd tests
 func encodeStrArr(ss ...string) string {
 	var ret string
@@ -87,6 +95,12 @@ var encodeTests = []struct {
 	{
 		in:  map[string]interface{}{"one": []string{"1", "2"}},
 		out: "*2\r\n$3\r\none\r\n*2\r\n$1\r\n1\r\n$1\r\n2\r\n",
+	},
+
+	// Marshaler
+	{
+		in:  &marshaler{a: "aa", b: "bb", c: "cc"},
+		out: encodeStrArr("aa", "bb", "cc"),
 	},
 
 	// Resp

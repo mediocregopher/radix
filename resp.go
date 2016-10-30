@@ -58,3 +58,18 @@ type Resp struct {
 
 	Int int64
 }
+
+// Marshaler will be used by the Encoder when writing a type implementing it,
+// the value returned by Marshal will be used instead of the value itself.
+type Marshaler interface {
+	Marshal() (interface{}, error)
+}
+
+// Unmarshaler will be used by the Decoder when reading into a type implementing
+// it. The function given can be used to read the data into a separate temporary
+// value first.
+//
+// TODO example
+type Unmarshaler interface {
+	Unmarshal(func(interface{}) error) error
+}
