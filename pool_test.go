@@ -21,10 +21,10 @@ func TestPool(t *T) {
 	size := 10
 	pool := testPool(size)
 
-	testEcho := func(c Cmder) {
+	testEcho := func(c Conn) {
 		exp := randStr()
 		var out string
-		assert.Nil(t, c.Cmd(&out, "ECHO", exp))
+		assert.Nil(t, ConnCmd(c, &out, "ECHO", exp))
 		assert.Equal(t, exp, out)
 	}
 
@@ -40,11 +40,6 @@ func TestPool(t *T) {
 			}
 			wg.Done()
 		}()
-	}
-
-	pc := NewPoolCmder(pool)
-	for i := 0; i < size*4; i++ {
-		testEcho(pc)
 	}
 
 	wg.Wait()

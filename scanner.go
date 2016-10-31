@@ -57,19 +57,19 @@ var ScanAllKeys = ScanOpts{
 }
 
 type scanner struct {
-	Cmder
+	Conn
 	ScanOpts
 	res []string
 	cur string
 	err error
 }
 
-// NewScanner creates a new Scanner instance which will iterate over the Cmder
-// using the ScanOpts.
+// NewScanner creates a new Scanner instance which will iterate over the redis
+// instance's Conn using the ScanOpts.
 //
 // Example SCAN command
 //
-//	s := radix.NewScanner(cmder, radix.ScanAllKeys)
+//	s := radix.NewScanner(conn, radix.ScanAllKeys)
 //	var key string
 //	for s.Next(&key) {
 //		log.Printf("key: %q", key)
@@ -80,7 +80,7 @@ type scanner struct {
 //
 // Example HSCAN command
 //
-//	s := radix.NewScanner(cmder, radix.ScanOpts{Command: "HSCAN", Key: "somekey"})
+//	s := radix.NewScanner(conn, radix.ScanOpts{Command: "HSCAN", Key: "somekey"})
 //	var key string
 //	for s.Next(&key) {
 //		log.Printf("key", s.Next())
@@ -89,9 +89,9 @@ type scanner struct {
 //		log.Fatal(err)
 //	}
 //
-func NewScanner(c Cmder, o ScanOpts) Scanner {
+func NewScanner(c Conn, o ScanOpts) Scanner {
 	return &scanner{
-		Cmder:    c,
+		Conn:     c,
 		ScanOpts: o,
 		cur:      "0",
 	}
@@ -117,7 +117,7 @@ func (s *scanner) Next(res *string) bool {
 
 		cmd := s.cmd(s.cur)
 		parts := []interface{}{"", []string{}}
-		if s.err = s.Cmd(&parts, cmd.Cmd, cmd.Args...); s.err != nil {
+		if s.err = ConnCmd(s.Conn, &parts, cmd.Cmd, cmd.Args...); s.err != nil {
 			return false
 		} else if len(parts) < 2 {
 			s.err = errors.New("not enough parts returned")

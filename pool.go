@@ -2,40 +2,31 @@ package radix
 
 import "time"
 
-// PoolCmder is a Cmder which came from a Pool, and which has the special
+// PoolConn is a Conn which came from a Pool, and which has the special
 // property of being able to be returned to the Pool it came from
-type PoolCmder interface {
-	Cmder
+type PoolConn interface {
+	Conn
 
-	// Return, when called, indicates that the PoolCmder will no longer be
+	// Return, when called, indicates that the PoolConn will no longer be
 	// used by its current borrower and should be returned to the Pool it came
-	// from. This _must_ be called by all borrowers, or their PoolCmders
+	// from. This _must_ be called by all borrowers, or their PoolConns
 	// will never be put back in their Pools.
 	//
-	// May not be called after Close is called on the PoolCmder
+	// May not be called after Close is called on the PoolConn
 	Return()
 }
 
-// Pool is an entity which can be used to manage a set of open ConnCmders which
-// can be used by multiple go-routines.
+// Pool is an entity which can be used to manage a set of open Conns which can
+// be used by multiple go-routines.
 type Pool interface {
-	// Get retrieves an available PoolCmder for use by a single go-routine
+	// Get retrieves an available PoolConn for use by a single go-routine
 	// (until a subsequent call to Return on it), or returns an error if that's
 	// not possible.
-	Get() (PoolCmder, error)
+	Get() (PoolConn, error)
 
-	// Put takes in a ConnCmder previously returned by Get and returns it to the
-	// Pool. A defunct ConnCmder (i.e. one which has been closed or encountered
-	// an IOErr) may be passed in, so Put needs to handle that case (probably by
-	// discarding it).
-	//
-	// Only ConnCmders obtained through Get should be passed into the same
-	// Pool's Put.
-	//Put(ConnCmder)
-
-	// Close closes all PoolCmders in the Pool and cleans up the Pool's
+	// Close closes all PoolConns in the Pool and cleans up the Pool's
 	// resources. Once Close is called no other methods should be called on the
-	// Pool, though Return may still be called on PoolCmders which haven't
+	// Pool, though Return may still be called on PoolConns which haven't
 	// been returned yet (these will be closed at that point as well).
 	Close()
 
@@ -62,8 +53,7 @@ type PoolFunc func(network, addr string) (Pool, error)
 
 type staticPoolConn struct {
 	Conn
-	Cmder // actually itself, just for convenience
-	sp    *staticPool
+	sp *staticPool
 
 	// The most recent network error which occurred when either reading
 	// or writing. A critical network error is basically any non-application
@@ -74,7 +64,7 @@ type staticPoolConn struct {
 
 func (spc *staticPoolConn) Return() {
 	if spc.sp == nil {
-		panic("Return called on Closed PoolCmder")
+		panic("Return called on Closed PoolConn")
 	}
 	spc.sp.put(spc)
 }
@@ -125,7 +115,6 @@ type staticPool struct {
 // called and the Pool is full that Conn will be closed and discarded. In this
 // way spikes are handled rather well, but sustained over-use will cause
 // connection churn and will need the size to be increased.
-// TODO make this return a PoolCmder
 func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
 	sp := &staticPool{
 		network: network,
@@ -170,11 +159,10 @@ func (sp *staticPool) newConn() (*staticPoolConn, error) {
 		Conn: c,
 		sp:   sp,
 	}
-	spc.Cmder = NewConnCmder(spc)
 	return spc, nil
 }
 
-func (sp *staticPool) Get() (PoolCmder, error) {
+func (sp *staticPool) Get() (PoolConn, error) {
 	select {
 	case spc := <-sp.pool:
 		return spc, nil
@@ -215,25 +203,16 @@ func (sp *staticPool) Close() {
 	}
 }
 
-type poolCmder struct {
-	p Pool
-}
-
-// NewPoolCmder takes a Pool and wraps it to support the Cmd method. When Cmd is
-// called the PoolCmder will call Get, then run the command on the returned
-// Conn, then call Put on the Conn.
-func NewPoolCmder(p Pool) Cmder {
-	return poolCmder{p: p}
-}
-
-func (pc poolCmder) Cmd(res interface{}, cmd string, args ...interface{}) error {
-	c, err := pc.p.Get()
+// PoolCmd is a shortcut for doing a Get, performing a Cmd, then calling Return
+// on the Conn.
+func PoolCmd(p Pool, res interface{}, cmd string, args ...interface{}) error {
+	c, err := p.Get()
 	if err != nil {
 		return err
 	}
 	defer c.Return()
 
-	return c.Cmd(res, cmd, args...)
+	return ConnCmd(c, res, cmd, args...)
 }
 
 type poolPinger struct {
@@ -251,12 +230,11 @@ func NewPoolPinger(p Pool, period time.Duration) Pool {
 	closeCh := make(chan struct{})
 	doneCh := make(chan struct{})
 	go func() {
-		pc := NewPoolCmder(p)
 		t := time.NewTicker(period)
 		for {
 			select {
 			case <-t.C:
-				pc.Cmd(nil, "PING")
+				PoolCmd(p, nil, "PING")
 			case <-closeCh:
 				t.Stop()
 				close(doneCh)

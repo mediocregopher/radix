@@ -110,40 +110,16 @@ func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
 	return NewConn(&timeoutConn{Conn: c, timeout: timeout}), nil
 }
 
-// Cmder is an entity which performs a redis commands
-type Cmder interface {
-
-	// Cmd runs the given command with arguments, and unmarshals the result into
-	// the res variable (which should be a pointer to something).
-	// TODO flesh this out
-	Cmd(res interface{}, cmd string, args ...interface{}) error
-}
-
-// ConnCmder implements both the Conn and Cmder interfaces. This interface
-// mostly exists for convenience, a Conn can easily be made into a ConnCmder
-// through the NewConnCmder function.
-type ConnCmder interface {
-	Conn
-	Cmder
-}
-
-type connCmder struct {
-	Conn
-}
-
-// NewConnCmder takes a Conn and wraps it to support the Cmd method, using a
-// basic Write then Read. If an IOErr is encountered during either writing or
-// reading in Cmd the Conn will be Close'd
-func NewConnCmder(c Conn) ConnCmder {
-	return connCmder{Conn: c}
-}
-
-func (cc connCmder) Cmd(res interface{}, cmd string, args ...interface{}) error {
-	if err := cc.Encode(NewCmd(cmd, args...)); err != nil {
-		cc.Close()
+// ConnCmd runs the given command with arguments on the Conn, and unmarshals the
+// result into the res variable (which should be a pointer to something). It
+// calls Close on the Conn if any errors occur
+// TODO flesh this out
+func ConnCmd(c Conn, res interface{}, cmd string, args ...interface{}) error {
+	if err := c.Encode(NewCmd(cmd, args...)); err != nil {
+		c.Close()
 		return err
-	} else if err := cc.Decode(res); err != nil {
-		cc.Close()
+	} else if err := c.Decode(res); err != nil {
+		c.Close()
 		return err
 	}
 	return nil
@@ -178,8 +154,7 @@ type Pipeline struct {
 }
 
 // Cmd does not actually perform the command, but buffers it till Run is called.
-// It always returns nil
-func (p *Pipeline) Cmd(res interface{}, cmd string, args ...interface{}) error {
+func (p *Pipeline) Cmd(res interface{}, cmd string, args ...interface{}) {
 	p.cmds = append(p.cmds, struct {
 		res interface{}
 		cmd Cmd
@@ -187,7 +162,6 @@ func (p *Pipeline) Cmd(res interface{}, cmd string, args ...interface{}) error {
 		res: res,
 		cmd: NewCmd(cmd, args...),
 	})
-	return nil
 }
 
 // Run will actually run all commands buffered by calls to Cmd so far, and
@@ -195,7 +169,7 @@ func (p *Pipeline) Cmd(res interface{}, cmd string, args ...interface{}) error {
 // encountered the Conn will be Close'd and the error returned immediately.
 func (p *Pipeline) Run() error {
 	cmds := p.cmds
-	p.cmds = nil
+	p.cmds = p.cmds[:0]
 	for _, c := range cmds {
 		if err := p.Conn.Encode(c.cmd); err != nil {
 			p.Conn.Close()
@@ -213,20 +187,21 @@ func (p *Pipeline) Run() error {
 	return nil
 }
 
-// LuaEval calls EVAL on the given Cmder for the given script, passing the key
-// count and argument list in as well. See http://redis.io/commands/eval for
-// more on how EVAL works and for the meaning of the keys argument.
+// LuaEval calls the EVAL command on the given Conn for the given script,
+// passing the key count and argument list in as well. See
+// http://redis.io/commands/eval for more on how EVAL works and for the meaning
+// of the keys argument.
 //
 // LuaEval will automatically try to call EVALSHA first in order to preserve
 // bandwidth, and only falls back on EVAL if the script has never been used
 // before.
-func LuaEval(c Cmder, res interface{}, script string, keys int, args ...interface{}) error {
+func LuaEval(c Conn, res interface{}, script string, keys int, args ...interface{}) error {
 	sumRaw := sha1.Sum([]byte(script))
 	sum := hex.EncodeToString(sumRaw[:])
 
-	err := c.Cmd(res, "EVALSHA", sum, keys, args)
+	err := ConnCmd(c, res, "EVALSHA", sum, keys, args)
 	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
-		err = c.Cmd(res, "EVAL", script, keys, args)
+		err = ConnCmd(c, res, "EVAL", script, keys, args)
 	}
 	return err
 }
