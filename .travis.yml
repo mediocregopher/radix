@@ -1,4 +1,9 @@
 ---
+# we don't want to build v3 in travis
+branches:
+  except:
+  - v3
+
 language: go
 go:
   - 1.4
