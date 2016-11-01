@@ -39,6 +39,18 @@ func (u *unmarshaler) Unmarshal(fn func(interface{}) error) error {
 	return fn(&ss)
 }
 
+type mapUnmarshaler struct {
+	a, b string
+}
+
+func (mu *mapUnmarshaler) Unmarshal(fn func(interface{}) error) error {
+	m := map[string]*string{
+		"a": &mu.a,
+		"b": &mu.b,
+	}
+	return fn(&m)
+}
+
 func strPtr(s string) *string {
 	return &s
 }
@@ -334,6 +346,11 @@ func TestUnmarshaler(t *T) {
 	d := NewDecoder(buf)
 	require.Nil(t, d.Decode(&u))
 	assert.Equal(t, unmarshaler{a: "aa", b: "bb", c: "cc"}, u)
+
+	m := mapUnmarshaler{}
+	buf.WriteString(encodeStrArr("a", "aa", "b", "bb", "c", "cc"))
+	require.Nil(t, d.Decode(&m))
+	assert.Equal(t, mapUnmarshaler{a: "aa", b: "bb"}, m)
 }
 
 // used to test that, in the case of a type decode error, we are still

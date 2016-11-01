@@ -263,8 +263,17 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 			err = fmt.Errorf("cannot decode into type %T", dstt)
 			break
 		}
-		rcv := reflect.New(t.Elem())
-		rcv.Elem().Set(reflect.New(t.Elem().Elem()))
+		var rcv reflect.Value
+		if !v.IsNil() && v.Elem().CanSet() {
+			rcv = v
+		} else {
+			rcv = reflect.New(t.Elem())
+		}
+
+		if rcv.Elem().IsNil() {
+			rcv.Elem().Set(reflect.New(t.Elem().Elem()))
+		}
+
 		err = d.scanInto(rcv.Elem().Interface(), r, typ)
 		v.Elem().Set(rcv.Elem())
 	}
@@ -369,13 +378,12 @@ func (d *Decoder) scanArrayInto(v reflect.Value, size int) error {
 			}
 
 			vv := v.MapIndex(kv.Elem())
-			if !vv.IsValid() || vv.Kind() != reflect.Interface {
-				vv = reflect.New(v.Type().Elem())
-			} else {
-				vvcp := reflect.New(vv.Elem().Type())
-				vvcp.Elem().Set(vv.Elem())
-				vv = vvcp
+			vvcp := reflect.New(v.Type().Elem())
+			if vv.IsValid() {
+				vvcp.Elem().Set(vv)
 			}
+			vv = vvcp
+
 			if err := dDecode(vv.Interface()); err != nil {
 				return err
 			}
