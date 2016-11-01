@@ -1,6 +1,10 @@
 package radix
 
-import "time"
+import (
+	"errors"
+	"sync"
+	"time"
+)
 
 // PoolConn is a Conn which came from a Pool, and which has the special
 // property of being able to be returned to the Pool it came from
@@ -100,7 +104,9 @@ type staticPool struct {
 	pool          chan *staticPoolConn
 	df            DialFunc
 	network, addr string
-	closed        chan struct{}
+
+	closeL sync.RWMutex
+	closed bool
 }
 
 // NewPool creates a new Pool whose connections are all created using the given
@@ -121,7 +127,6 @@ func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
 		addr:    addr,
 		df:      df,
 		pool:    make(chan *staticPoolConn, size),
-		closed:  make(chan struct{}),
 	}
 	if sp.df == nil {
 		sp.df = Dial
@@ -162,7 +167,23 @@ func (sp *staticPool) newConn() (*staticPoolConn, error) {
 	return spc, nil
 }
 
+func (sp *staticPool) isClosed() bool {
+	sp.closeL.RLock()
+	defer sp.closeL.RUnlock()
+	return sp.closed
+}
+
+func (sp *staticPool) setClosed(to bool) {
+	sp.closeL.Lock()
+	defer sp.closeL.Unlock()
+	sp.closed = to
+}
+
 func (sp *staticPool) Get() (PoolConn, error) {
+	if sp.isClosed() {
+		return nil, errors.New("pool is closed")
+	}
+
 	select {
 	case spc := <-sp.pool:
 		return spc, nil
@@ -172,26 +193,20 @@ func (sp *staticPool) Get() (PoolConn, error) {
 }
 
 func (sp *staticPool) put(spc *staticPoolConn) {
-	if spc.lastIOErr != nil {
+	if spc.lastIOErr != nil || sp.isClosed() {
 		spc.Close()
 		return
 	}
 
 	select {
-	case <-sp.closed:
-		spc.Close()
-		return
+	case sp.pool <- spc:
 	default:
-		select {
-		case sp.pool <- spc:
-		default:
-			spc.Close()
-		}
+		spc.Close()
 	}
 }
 
 func (sp *staticPool) Close() {
-	close(sp.closed)
+	sp.setClosed(true)
 	for {
 		select {
 		case spc := <-sp.pool:
@@ -224,8 +239,6 @@ type poolPinger struct {
 // NewPoolPinger will periodically call Get on the given Pool, do a PING
 // command, then return the connection to the Pool. This effectively tests the
 // connections and cleans our the dead ones.
-//
-// Close must be called on the returned Pool in order to properly clean up.
 func NewPoolPinger(p Pool, period time.Duration) Pool {
 	closeCh := make(chan struct{})
 	doneCh := make(chan struct{})
