@@ -55,6 +55,10 @@ func strPtr(s string) *string {
 	return &s
 }
 
+func intPtr(i int64) *int64 {
+	return &i
+}
+
 var decodeTests = []struct {
 	in    string
 	out   interface{}
@@ -234,6 +238,11 @@ var decodeArrayTests = []struct {
 		into: []interface{}{"", ""},
 		out:  []interface{}{"1", "2"},
 	},
+	{
+		in:   "*2\r\n:1\r\n:2\r\n",
+		into: []interface{}{intPtr(0), intPtr(0)},
+		out:  []interface{}{intPtr(1), intPtr(2)},
+	},
 
 	// Complex array (multiple types)
 	{in: "*2\r\n:1\r\n+2\r\n", out: []interface{}{int64(1), "2"}},
@@ -351,6 +360,17 @@ func TestUnmarshaler(t *T) {
 	buf.WriteString(encodeStrArr("a", "aa", "b", "bb", "c", "cc"))
 	require.Nil(t, d.Decode(&m))
 	assert.Equal(t, mapUnmarshaler{a: "aa", b: "bb"}, m)
+}
+
+// make sure that when we use a []interface{} to unmarshal into existing
+// pointers it doesn't just overwrite them in the interface
+func TestDecodePtr(t *T) {
+	var a, b int
+	buf := bytes.NewBufferString("*2\r\n:1\r\n:2\r\n")
+	i := []interface{}{&a, &b}
+	require.Nil(t, NewDecoder(buf).Decode(&i))
+	assert.Equal(t, 1, a)
+	assert.Equal(t, 2, b)
 }
 
 // used to test that, in the case of a type decode error, we are still

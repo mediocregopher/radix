@@ -247,6 +247,9 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 				// method
 				panic(fmt.Sprintf("weird typ value: %#v", typ))
 			}
+		} else if v.Elem().Kind() == reflect.Ptr {
+			err = d.scanInto(v.Elem().Interface(), r, typ)
+			break
 		} else {
 			rcvT = v.Elem().Type()
 		}
