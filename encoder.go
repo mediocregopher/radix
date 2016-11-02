@@ -189,7 +189,7 @@ func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
 		}
 		// if we're writing an error we just assume that they want it as an
 		// error type on the wire
-		return e.writeAppErr(AppErr{error: vt})
+		return e.writeAppErr(AppErr{Err: vt})
 	case Cmd:
 		return e.writeCmd(vt)
 	case Resp:
@@ -253,7 +253,7 @@ func (e *Encoder) writeResp(r Resp) error {
 	case r.BulkStr != nil:
 		return e.writeBulkStrBytes(r.BulkStr)
 	case r.Err != nil:
-		return e.writeAppErr(AppErr{error: r.Err})
+		return e.writeAppErr(AppErr{Err: r.Err})
 	case r.Arr != nil:
 		if err := e.writeArrayHeader(len(r.Arr)); err != nil {
 			return err

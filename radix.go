@@ -16,7 +16,11 @@ import (
 //
 // TODO example
 type AppErr struct {
-	error
+	Err error
+}
+
+func (ae AppErr) Error() string {
+	return ae.Err.Error()
 }
 
 // LenReader adds an additional method to io.Reader, returning how many bytes
