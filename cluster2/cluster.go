@@ -67,11 +67,11 @@ func (c *cluster) newPool(addr string) (radix.Pool, error) {
 	return p, nil
 }
 
-func (c *cluster) anyConn() (radix.PoolCmder, error) {
+func (c *cluster) anyConn() (radix.PoolConn, error) {
 	c.RLock()
 	defer c.RUnlock()
 	for _, p := range c.pools {
-		pcc, err := p.Get("")
+		pcc, err := p.Get()
 		if err == nil {
 			return pcc, nil
 		}
@@ -84,15 +84,15 @@ func (c *cluster) sync() error {
 	if err != nil {
 		return err
 	}
-	defer pcc.Done()
+	defer pcc.Return()
+
+	var tt topo
+	if err := radix.ConnCmd(pcc, &tt, "CLUSTER", "SLOTS"); err != nil {
+		return err
+	}
 
 	c.Lock()
 	defer c.Unlock()
-
-	tt, err := parseTopo(pcc.Cmd("CLUSTER", "SLOTS"))
-	if err != nil {
-		return err
-	}
 
 	for _, t := range tt {
 		if _, err := c.newPool(t.addr); err != nil {

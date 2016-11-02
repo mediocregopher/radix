@@ -5,10 +5,8 @@
 package cluster
 
 import (
-	"errors"
 	"sort"
-
-	radix "github.com/mediocregopher/radix.v2"
+	"strconv"
 )
 
 type topoNode struct {
@@ -48,86 +46,63 @@ func (tt topo) toMap() map[string]topoNode {
 	return m
 }
 
-func parseTopo(r radix.Resp) (topo, error) {
-	elems, err := r.Array()
-	if err != nil {
-		return nil, err
+func (tt *topo) Unmarshal(fn func(interface{}) error) error {
+	var slotSets []topoSlotSet
+	if err := fn(&slotSets); err != nil {
+		return err
 	}
 
-	var tt topo
-	for _, elem := range elems {
-		elemTT, err := parseTopoElem(elem)
-		if err != nil {
-			return nil, err
+	*tt = (*tt)[:0]
+	for _, tss := range slotSets {
+		for i, n := range tss.nodes {
+			*tt = append(*tt, topoNode{
+				addr:  n.addr,
+				id:    n.id,
+				slots: tss.slots,
+				slave: i > 0,
+			})
 		}
-		tt = append(tt, elemTT...)
 	}
 
-	sort.Sort(tt)
+	sort.Sort(*tt)
 
-	return tt, nil
+	return nil
 }
 
-func parseTopoElem(r radix.Resp) ([]topoNode, error) {
-	var err error
+// we only use this type during unmarshalling, the topo Unmarshal method will
+// convert these into topoNodes
+type topoSlotSet struct {
+	slots [2]uint16
+	nodes []struct {
+		addr, id string
+	}
+}
 
-	rstr := func(r radix.Resp) string {
-		if err != nil {
-			return ""
-		}
-		var s string
-		s, err = r.Str()
-		return s
+func (tss *topoSlotSet) Unmarshal(fn func(interface{}) error) error {
+	i := []interface{}{
+		&tss.slots[0],
+		&tss.slots[1],
+	}
+	if err := fn(&i); err != nil {
+		return err
 	}
 
-	rint := func(r radix.Resp) int {
-		if err != nil {
-			return -1
+	tss.slots[1]++
+
+	for _, ii := range i[2:] {
+		node := ii.([]interface{})
+		ip := node[0].(string)
+		port := node[1].(int64)
+		portStr := strconv.FormatInt(port, 10)
+		var id string
+		if len(node) > 2 {
+			id = node[2].(string)
 		}
-		var i int
-		i, err = r.Int()
-		return i
+		tss.nodes = append(tss.nodes, struct{ addr, id string }{
+			addr: ip + ":" + portStr,
+			id:   id,
+		})
 	}
 
-	var tt []topoNode
-	aa, err := r.Array()
-	if err != nil {
-		return nil, err
-	} else if len(aa) < 3 {
-		return nil, errors.New("malformed slot returned")
-	}
-
-	slotStart := uint16(rint(aa[0]))
-	slotEnd := uint16(rint(aa[1]))
-	if err != nil {
-		return nil, err
-	}
-
-	var slave bool
-	for _, a := range aa[2:] {
-		aparts, err := a.Array()
-		if err != nil {
-			return nil, err
-		} else if len(aparts) < 2 {
-			return nil, errors.New("malformed slot node returned")
-		}
-
-		t := topoNode{
-			addr:  rstr(aparts[0]) + ":" + rstr(aparts[1]),
-			slots: [2]uint16{slotStart, slotEnd + 1},
-			slave: slave,
-		}
-		if len(aparts) > 2 {
-			t.id = rstr(aparts[2])
-		}
-
-		if err != nil {
-			return nil, err
-		}
-
-		tt = append(tt, t)
-		slave = true
-	}
-
-	return tt, nil
+	return nil
 }

@@ -1,9 +1,11 @@
 package cluster
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	. "testing"
@@ -36,50 +38,76 @@ type stub struct {
 
 type stubConn struct {
 	*stub
+	buf *bytes.Buffer
+	enc *radix.Encoder
+	dec *radix.Decoder
 }
 
-func (sc *stubConn) Cmd(cmd string, args ...interface{}) radix.Resp {
+func newStubConn(s *stub) *stubConn {
+	buf := new(bytes.Buffer)
+	return &stubConn{
+		stub: s,
+		buf:  buf,
+		enc:  radix.NewEncoder(buf),
+		dec:  radix.NewDecoder(buf),
+	}
+}
+
+func (sc *stubConn) Encode(i interface{}) error {
+	cmd := i.(radix.Cmd)
 	sc.Lock()
 	defer sc.Unlock()
-	switch strings.ToUpper(cmd) {
+
+	switch strings.ToUpper(cmd.Cmd) {
 	case "GET":
-		k := args[0].(string)
+		k := cmd.Args[0].(string)
 		if rerr, ok := sc.maybeMoved(k); ok {
-			return rerr
+			return sc.enc.Encode(rerr)
 		}
 		s, ok := sc.kv[k]
 		if !ok {
-			return radix.NewResp(nil)
+			return sc.enc.Encode(nil)
 		}
-		return radix.NewResp(s)
+		return sc.enc.Encode(s)
 	case "SET":
-		k := args[0].(string)
+		k := cmd.Args[0].(string)
 		if rerr, ok := sc.maybeMoved(k); ok {
-			return rerr
+			return sc.enc.Encode(rerr)
 		}
-		sc.kv[k] = args[1].(string)
-		return radix.NewSimpleString("OK")
+		sc.kv[k] = cmd.Args[1].(string)
+		return sc.enc.Encode(radix.Resp{SimpleStr: []byte("OK")})
 	case "PING":
-		return radix.NewSimpleString("PONG")
+		return sc.enc.Encode(radix.Resp{SimpleStr: []byte("PONG")})
 	case "CLUSTER":
-		if strings.ToUpper(args[0].(string)) == "SLOTS" {
-			return sc.slotsResp()
+		if strings.ToUpper(cmd.Args[0].(string)) == "SLOTS" {
+			return sc.enc.Encode(sc.slotsResp())
 		}
 	}
 
-	return radix.NewResp(fmt.Errorf("unknown command %q %v", cmd, args))
+	err := radix.AppErr{Err: fmt.Errorf("unknown command %q %v", cmd.Cmd, cmd.Args)}
+	return sc.enc.Encode(err)
 }
 
-func (sc *stubConn) Done() {
+func (sc *stubConn) Decode(i interface{}) error {
+	return sc.dec.Decode(i)
+}
+
+func (sc *stubConn) Close() error {
+	// set to nil to ensure this doesn't get used after Done is called
+	sc.stub = nil
+	return nil
+}
+
+func (sc *stubConn) Return() {
 	// set to nil to ensure this doesn't get used after Done is called
 	sc.stub = nil
 }
 
-func (s *stub) Get(k string) (radix.PoolCmder, error) {
+func (s *stub) Get() (radix.PoolConn, error) {
 	if s.stubCluster == nil {
 		return nil, errors.New("stub has been closed")
 	}
-	return &stubConn{s}, nil
+	return newStubConn(s), nil
 }
 
 func (s *stub) Close() {
@@ -94,7 +122,8 @@ func (s *stub) maybeMoved(k string) (radix.Resp, bool) {
 
 	for _, s := range s.stubs {
 		if slot >= s.slots[0] && slot < s.slots[1] && !s.slave {
-			return radix.NewResp(fmt.Errorf("MOVED %d %s", slot, s.addr)), true
+			ae := radix.AppErr{Err: fmt.Errorf("MOVED %d %s", slot, s.addr)}
+			return radix.Resp{Err: ae}, true
 		}
 	}
 	panic("no possible slots! wut")
@@ -127,32 +156,42 @@ func newStubCluster(tt topo) *stubCluster {
 }
 
 func (scl *stubCluster) slotsResp() radix.Resp {
-	type respArr []interface{}
 	m := map[[2]uint16][]topoNode{}
 
 	for _, t := range scl.topo() {
 		m[t.slots] = append(m[t.slots], t)
 	}
 
-	topoNodeRespArr := func(t topoNode) respArr {
+	topoNodeRespArr := func(t topoNode) radix.Resp {
+		var r radix.Resp
 		addrParts := strings.Split(t.addr, ":")
-		r := respArr{addrParts[0], addrParts[1]}
+
+		port, _ := strconv.ParseInt(addrParts[1], 10, 64)
+
+		r.Arr = append(r.Arr,
+			radix.Resp{BulkStr: []byte(addrParts[0])},
+			radix.Resp{Int: port},
+		)
 		if t.id != "" {
-			r = append(r, t.id)
+			r.Arr = append(r.Arr, radix.Resp{BulkStr: []byte(t.id)})
 		}
 		return r
 	}
 
-	var out respArr
+	var out radix.Resp
 	for slots, stubs := range m {
-		r := respArr{slots[0], slots[1] - 1}
+		var r radix.Resp
+		r.Arr = append(r.Arr,
+			radix.Resp{Int: int64(slots[0])},
+			radix.Resp{Int: int64(slots[1] - 1)},
+		)
 		for _, s := range stubs {
-			r = append(r, topoNodeRespArr(s))
+			r.Arr = append(r.Arr, topoNodeRespArr(s))
 		}
-		out = append(out, r)
+		out.Arr = append(out.Arr, r)
 	}
 
-	return radix.NewResp(out)
+	return out
 }
 
 func (scl *stubCluster) topo() topo {
@@ -216,12 +255,9 @@ func (scl *stubCluster) move(toAddr, fromAddr string) {
 // Who watches the watchmen?
 func TestStub(t *T) {
 	scl := newStubCluster(testTopo)
-	// TODO properly use Get or something here
-	sc, err := scl.randStub().Get("")
-	require.Nil(t, err)
-	defer sc.Done()
 
-	outTT, err := parseTopo(sc.Cmd("CLUSTER", "SLOTS"))
+	var outTT topo
+	err := radix.PoolCmd(scl.randStub(), &outTT, "CLUSTER", "SLOTS")
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 }
