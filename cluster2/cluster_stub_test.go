@@ -93,13 +93,13 @@ func (sc *stubConn) Decode(i interface{}) error {
 }
 
 func (sc *stubConn) Close() error {
-	// set to nil to ensure this doesn't get used after Done is called
+	// set to nil to ensure this doesn't get used after Close is called
 	sc.stub = nil
 	return nil
 }
 
 func (sc *stubConn) Return() {
-	// set to nil to ensure this doesn't get used after Done is called
+	// set to nil to ensure this doesn't get used after Return is called
 	sc.stub = nil
 }
 
