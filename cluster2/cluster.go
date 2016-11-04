@@ -157,6 +157,36 @@ func (c *Cluster) SyncEvery(d time.Duration, errCh chan<- error) {
 	}()
 }
 
+// Get returns a PoolConn which can be used to interact with the given key.
+// Return must be called on the PoolConn when done in order to prevent
+// connection leaks (same as with a normal Pool).
+//
+// Redis' key hash tags can be used to force keys to all be stored to the same
+// slot in the cluster. In cases where multiple keys with the same hash tag are
+// being interacted with at once only one of them needs to be given here.
+//
+// TODO figure out how to test this
+func (c *Cluster) Get(forKey string) (radix.PoolConn, error) {
+	s := Slot(forKey)
+
+	c.RLock()
+	defer c.RUnlock()
+
+	for _, t := range c.topo {
+		if s < t.slots[0] || s >= t.slots[1] {
+			continue
+		}
+		p, ok := c.pools[t.addr]
+		if !ok {
+			return nil, fmt.Errorf("unexpected: no pool for address %q", t.addr)
+		}
+		// TODO return a cluster Conn
+		return p.Get()
+	}
+
+	return nil, fmt.Errorf("unexpected: no known address for slot %d", s)
+}
+
 // Close cleans up all goroutines spawned by Cluster and closes all of its
 // Pools.
 func (c *Cluster) Close() {

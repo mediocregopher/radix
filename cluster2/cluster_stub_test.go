@@ -82,6 +82,8 @@ func (sc *stubConn) Encode(i interface{}) error {
 		if strings.ToUpper(cmd.Args[0].(string)) == "SLOTS" {
 			return sc.enc.Encode(sc.slotsResp())
 		}
+	case "CONNSLOTS":
+		return sc.enc.Encode(sc.slots[:])
 	}
 
 	err := radix.AppErr{Err: fmt.Errorf("unknown command %q %v", cmd.Cmd, cmd.Args)}

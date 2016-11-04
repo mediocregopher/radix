@@ -1,12 +1,47 @@
 package cluster
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	. "testing"
 	"time"
 
+	"github.com/levenlabs/golib/testutil"
+	radix "github.com/mediocregopher/radix.v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// slotKeys contains a random key for every slot. Unfortunately I haven't come
+// up with a better way to do this than brute force. It takes like 5 seconds on
+// my laptop, which isn't terrible.
+var slotKeys = func() [numSlots]string {
+	var a [numSlots]string
+	for {
+		k := testutil.RandStr()
+		a[Slot(k)] = k
+
+		var notFull bool
+		for _, k := range a {
+			if k == "" {
+				notFull = true
+				break
+			}
+		}
+
+		if !notFull {
+			return a
+		}
+	}
+}()
+
+func randStr() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
 
 func newTestCluster() (*Cluster, *stubCluster) {
 	scl := newStubCluster(testTopo)
@@ -46,4 +81,16 @@ func TestClusterSync(t *T) {
 	c.Close()
 	require.Nil(t, <-errCh)
 
+}
+
+func TestGet(t *T) {
+	c, _ := newTestCluster()
+	for s := uint16(0); s < numSlots; s++ {
+		conn, err := c.Get(slotKeys[s])
+		require.Nil(t, err)
+		var connSlots []uint16
+		require.Nil(t, radix.ConnCmd(conn, &connSlots, "CONNSLOTS"))
+		assert.True(t, s >= connSlots[0] && s < connSlots[1])
+		conn.Return()
+	}
 }

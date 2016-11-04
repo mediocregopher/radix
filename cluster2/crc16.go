@@ -1,5 +1,7 @@
 package cluster
 
+import "strings"
+
 var tab = [256]uint16{
 	0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
 	0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
@@ -35,6 +37,8 @@ var tab = [256]uint16{
 	0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0,
 }
 
+const numSlots = 16384
+
 // CRC16 returns checksum for a given set of bytes based on the crc algorithm
 // defined for hashing redis keys in a cluster setup
 func CRC16(buf []byte) uint16 {
@@ -44,4 +48,15 @@ func CRC16(buf []byte) uint16 {
 		crc = (crc << 8) ^ tab[index]
 	}
 	return crc
+}
+
+// Slot returns the slot number the given key belongs to, taking into account
+// key hash tags
+func Slot(key string) uint16 {
+	if start := strings.Index(key, "{"); start >= 0 {
+		if end := strings.Index(key[start+2:], "}"); end >= 0 {
+			key = key[start+1 : start+2+end]
+		}
+	}
+	return CRC16([]byte(key)) % numSlots
 }
