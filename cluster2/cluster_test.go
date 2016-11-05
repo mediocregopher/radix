@@ -55,6 +55,8 @@ func newTestCluster() (*Cluster, *stubCluster) {
 func TestClusterSync(t *T) {
 	c, scl := newTestCluster()
 	assertClusterState := func() {
+		c.RLock()
+		defer c.RUnlock()
 		assert.Len(t, c.pools, len(testTopo))
 		for addr := range c.pools {
 			assert.Contains(t, scl.stubs, addr)
