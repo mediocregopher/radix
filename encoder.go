@@ -66,86 +66,12 @@ func (e *Encoder) Encode(v interface{}) error {
 }
 
 func (e *Encoder) encode(v interface{}, forceBulkStr bool) error {
-	return e.walk(v, func(v interface{}) error {
-		return e.write(v, forceBulkStr)
-	}, func(l int) error {
-		return e.writeArrayHeader(l)
+	return walkForeach(v, func(n walkNode) error {
+		if n.vOk {
+			return e.write(n.v, forceBulkStr)
+		}
+		return e.writeArrayHeader(n.l)
 	})
-}
-
-// fn is called on all "single" elements. arrFn is called with the length of
-// all arrays found, before the individual elements of the array are sent to fn.
-// either can be nil. called in depth-first order.
-func (e *Encoder) walk(v interface{}, fn func(interface{}) error, arrFn func(int) error) (err error) {
-	doFn := func(v interface{}) {
-		if fn != nil && err == nil {
-			err = fn(v)
-		}
-	}
-
-	doArrFn := func(l int) {
-		if arrFn != nil && err == nil {
-			err = arrFn(l)
-		}
-	}
-
-	doWalk := func(v interface{}) {
-		if err == nil {
-			err = e.walk(v, fn, arrFn)
-		}
-	}
-
-	if _, ok := v.([]byte); ok {
-		// make sure we never walk a byte slice, that's just a single element
-		doFn(v)
-		return
-
-		// We check these two specifically because they could be implemented by
-		// a []byte, which would match as a Slice down below and things would
-		// get weird. This is pretty hacky to have this here too though
-	} else if tm, ok := v.(encoding.TextMarshaler); ok {
-		doFn(tm)
-		return
-	} else if bm, ok := v.(encoding.BinaryMarshaler); ok {
-		doFn(bm)
-		return
-
-	} else if ii, ok := v.([]interface{}); ok {
-		// this is a very common case, so we handle it without getting
-		// reflection involved.
-		doArrFn(len(ii))
-		for _, i := range ii {
-			doWalk(i)
-		}
-		return
-
-	} else if c, ok := v.(Cmd); ok {
-		doFn(c)
-		return
-	}
-
-	vv := reflect.ValueOf(v)
-	switch vv.Kind() {
-	case reflect.Slice, reflect.Array:
-		l := vv.Len()
-		doArrFn(l)
-		for i := 0; i < l; i++ {
-			doWalk(vv.Index(i).Interface())
-		}
-
-	case reflect.Map:
-		doArrFn(vv.Len() * 2)
-		for _, k := range vv.MapKeys() {
-			doWalk(k.Interface())
-			doWalk(vv.MapIndex(k).Interface())
-		}
-
-	default:
-		// for all else just assume the element is a single element
-		doFn(v)
-	}
-
-	return
 }
 
 var bools = [][]byte{
@@ -224,26 +150,27 @@ func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
 }
 
 func (e *Encoder) writeCmd(c Cmd) error {
-	// first we need to figure out the size of this thing. The one is for the
-	// Cmd field
-	total := 1
-	if err := e.walk(c.Args, func(interface{}) error {
-		total++
+	vv := make([]interface{}, 1, len(c.Args)+1) // use c.Args as a guess
+	vv[0] = c.Cmd
+
+	walkForeach(c.Args, func(n walkNode) error {
+		if n.vOk {
+			vv = append(vv, n.v)
+		}
 		return nil
-	}, nil); err != nil {
-		return err
-	}
+	})
 
 	// write the array header, then write every single non-array element as a
 	// string
-	if err := e.writeArrayHeader(total); err != nil {
-		return err
-	} else if err = e.write(c.Cmd, true); err != nil {
+	if err := e.writeArrayHeader(len(vv)); err != nil {
 		return err
 	}
-	return e.walk(c.Args, func(v interface{}) error {
-		return e.write(v, true)
-	}, nil)
+	for _, v := range vv {
+		if err := e.write(v, true); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (e *Encoder) writeResp(r Resp) error {

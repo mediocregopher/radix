@@ -1,5 +1,7 @@
 package radix
 
+import "errors"
+
 var (
 	delim    = []byte{'\r', '\n'}
 	delimEnd = delim[len(delim)-1]
@@ -38,6 +40,22 @@ func NewCmd(cmd string, args ...interface{}) Cmd {
 		Cmd:  cmd,
 		Args: args,
 	}
+}
+
+// used to short-circuit the walk in FirstArg
+var errStop = errors.New("stahp")
+
+// FirstArg returns the first argument to the command after flatterning and
+// being converted to a string. This is useful for determining which key a
+// command will operate on when the arguments make it ambiguous (like when
+// they're slices or maps).
+//
+// If the first argument is map then a random key will be picked from it as the
+// first argument.
+//
+// If the first argument is an Unmarshaler or LenReader then this will panic
+func (c Cmd) FirstArg() string {
+	return "TODO"
 }
 
 // Resp can be used to encode or decode exact values of the resp protocol (the
