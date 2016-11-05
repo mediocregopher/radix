@@ -1,7 +1,3 @@
-// Package cluster handles connecting to and interfacing with a redis cluster.
-// It also handles connecting to new nodes in the cluster as well as failover.
-//
-// TODO better docs
 package cluster
 
 import (
@@ -9,68 +5,78 @@ import (
 	"strconv"
 )
 
-type topoNode struct {
+// Node describes a single node in the cluster at a moment in time.
+type Node struct {
 	// older versions of redis might not actually send back the id, so it may be
 	// blank
-	addr, id string
-	// start is inclusive, end is exclusive. this differs from how redis returns
-	// it, so watch out
-	slots [2]uint16
-	slave bool
+	Addr, ID string
+	// start is inclusive, end is exclusive
+	Slots [2]uint16
+	Slave bool
 }
 
-type topo []topoNode
+// Topo describes the cluster topology at a given moment. It will be sorted
+// first by slot number of each node and then by slave status, so masters will
+// come before slaves.
+type Topo []Node
 
-func (tt topo) Len() int {
-	return len(tt)
-}
-
-func (tt topo) Swap(i, j int) {
-	tt[i], tt[j] = tt[j], tt[i]
-}
-
-func (tt topo) Less(i, j int) bool {
-	if tt[i].slots[0] != tt[j].slots[0] {
-		return tt[i].slots[0] < tt[j].slots[0]
-	}
-	// we want slaves to come after, which actually means they should be
-	// sorted as greater
-	return !tt[i].slave
-}
-
-func (tt topo) toMap() map[string]topoNode {
-	m := make(map[string]topoNode, len(tt))
-	for _, t := range tt {
-		m[t.addr] = t
-	}
-	return m
-}
-
-func (tt *topo) Unmarshal(fn func(interface{}) error) error {
+// Unmarshal implements the radix.Unmarshaler interface, but only supports
+// unmarsahling the return from CLUSTER SLOTS. The unmarshaled nodes will be
+// sorted before they are returned
+func (tt *Topo) Unmarshal(fn func(interface{}) error) error {
 	var slotSets []topoSlotSet
 	if err := fn(&slotSets); err != nil {
 		return err
 	}
 
-	*tt = (*tt)[:0]
+	var stt topoSort
 	for _, tss := range slotSets {
 		for i, n := range tss.nodes {
-			*tt = append(*tt, topoNode{
-				addr:  n.addr,
-				id:    n.id,
-				slots: tss.slots,
-				slave: i > 0,
+			stt = append(stt, Node{
+				Addr:  n.addr,
+				ID:    n.id,
+				Slots: tss.slots,
+				Slave: i > 0,
 			})
 		}
 	}
 
-	sort.Sort(*tt)
+	sort.Sort(stt)
+	*tt = Topo(stt)
 
 	return nil
 }
 
+// Map returns the topology as a mapping of node address to its Node
+func (tt Topo) Map() map[string]Node {
+	m := make(map[string]Node, len(tt))
+	for _, t := range tt {
+		m[t.Addr] = t
+	}
+	return m
+}
+
+type topoSort []Node
+
+func (tt topoSort) Len() int {
+	return len(tt)
+}
+
+func (tt topoSort) Swap(i, j int) {
+	tt[i], tt[j] = tt[j], tt[i]
+}
+
+func (tt topoSort) Less(i, j int) bool {
+	if tt[i].Slots[0] != tt[j].Slots[0] {
+		return tt[i].Slots[0] < tt[j].Slots[0]
+	}
+	// we want slaves to come after, which actually means they should be
+	// sorted as greater
+	return !tt[i].Slave
+}
+
 // we only use this type during unmarshalling, the topo Unmarshal method will
-// convert these into topoNodes
+// convert these into Nodes
 type topoSlotSet struct {
 	slots [2]uint16
 	nodes []struct {

@@ -131,7 +131,7 @@ func (s *stub) maybeMoved(k string) (radix.Resp, bool) {
 	panic("no possible slots! wut")
 }
 
-func newStubCluster(tt topo) *stubCluster {
+func newStubCluster(tt Topo) *stubCluster {
 	// map of slots to dataset
 	m := map[[2]uint16]*stubDataset{}
 	sc := &stubCluster{
@@ -139,16 +139,16 @@ func newStubCluster(tt topo) *stubCluster {
 	}
 
 	for _, t := range tt {
-		sd, ok := m[t.slots]
+		sd, ok := m[t.Slots]
 		if !ok {
-			sd = &stubDataset{slots: t.slots, kv: map[string]string{}}
-			m[t.slots] = sd
+			sd = &stubDataset{slots: t.Slots, kv: map[string]string{}}
+			m[t.Slots] = sd
 		}
 
-		sc.stubs[t.addr] = &stub{
-			addr:        t.addr,
-			id:          t.id,
-			slave:       t.slave,
+		sc.stubs[t.Addr] = &stub{
+			addr:        t.Addr,
+			id:          t.ID,
+			slave:       t.Slave,
 			stubDataset: sd,
 			stubCluster: sc,
 		}
@@ -158,15 +158,15 @@ func newStubCluster(tt topo) *stubCluster {
 }
 
 func (scl *stubCluster) slotsResp() radix.Resp {
-	m := map[[2]uint16][]topoNode{}
+	m := map[[2]uint16][]Node{}
 
 	for _, t := range scl.topo() {
-		m[t.slots] = append(m[t.slots], t)
+		m[t.Slots] = append(m[t.Slots], t)
 	}
 
-	topoNodeRespArr := func(t topoNode) radix.Resp {
+	NodeRespArr := func(t Node) radix.Resp {
 		var r radix.Resp
-		addrParts := strings.Split(t.addr, ":")
+		addrParts := strings.Split(t.Addr, ":")
 
 		port, _ := strconv.ParseInt(addrParts[1], 10, 64)
 
@@ -174,8 +174,8 @@ func (scl *stubCluster) slotsResp() radix.Resp {
 			radix.Resp{BulkStr: []byte(addrParts[0])},
 			radix.Resp{Int: port},
 		)
-		if t.id != "" {
-			r.Arr = append(r.Arr, radix.Resp{BulkStr: []byte(t.id)})
+		if t.ID != "" {
+			r.Arr = append(r.Arr, radix.Resp{BulkStr: []byte(t.ID)})
 		}
 		return r
 	}
@@ -188,7 +188,7 @@ func (scl *stubCluster) slotsResp() radix.Resp {
 			radix.Resp{Int: int64(slots[1] - 1)},
 		)
 		for _, s := range stubs {
-			r.Arr = append(r.Arr, topoNodeRespArr(s))
+			r.Arr = append(r.Arr, NodeRespArr(s))
 		}
 		out.Arr = append(out.Arr, r)
 	}
@@ -196,18 +196,18 @@ func (scl *stubCluster) slotsResp() radix.Resp {
 	return out
 }
 
-func (scl *stubCluster) topo() topo {
-	var tt topo
+func (scl *stubCluster) topo() Topo {
+	var tt topoSort
 	for _, s := range scl.stubs {
-		tt = append(tt, topoNode{
-			addr:  s.addr,
-			id:    s.id,
-			slots: s.slots,
-			slave: s.slave,
+		tt = append(tt, Node{
+			Addr:  s.addr,
+			ID:    s.id,
+			Slots: s.slots,
+			Slave: s.slave,
 		})
 	}
 	sort.Sort(tt)
-	return tt
+	return Topo(tt)
 }
 
 func (scl *stubCluster) poolFunc() radix.PoolFunc {
@@ -258,7 +258,7 @@ func (scl *stubCluster) move(toAddr, fromAddr string) {
 func TestStub(t *T) {
 	scl := newStubCluster(testTopo)
 
-	var outTT topo
+	var outTT Topo
 	err := radix.PoolCmd(scl.randStub(), &outTT, "CLUSTER", "SLOTS")
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)

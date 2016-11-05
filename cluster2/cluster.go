@@ -1,3 +1,7 @@
+// Package cluster handles connecting to and interfacing with a redis cluster.
+// It also handles connecting to new nodes in the cluster as well as failover.
+//
+// TODO better docs
 package cluster
 
 import (
@@ -24,7 +28,7 @@ type Cluster struct {
 
 	sync.RWMutex
 	pools map[string]radix.Pool
-	topo
+	tt    Topo
 
 	closeCh chan struct{}
 }
@@ -92,31 +96,42 @@ func (c *Cluster) anyConn() (radix.PoolConn, error) {
 	return nil, errors.New("could not get a valid connection with any known redis instances")
 }
 
+// Topo will pick a randdom node in the cluster, call CLUSTER SLOTS on it, and
+// unmarshal the result into a Topo instance, returning that instance
+func (c *Cluster) Topo() (Topo, error) {
+	pcc, err := c.anyConn()
+	if err != nil {
+		return nil, err
+	}
+	defer pcc.Return()
+
+	var tt Topo
+	if err := radix.ConnCmd(pcc, &tt, "CLUSTER", "SLOTS"); err != nil {
+		return nil, err
+	}
+	return tt, nil
+}
+
 // Sync will synchronize the Cluster with the actual cluster, making new pools
 // to new instances and removing ones from instances no longer in the cluster.
 // This must be called periodically, or SyncEvery can be used instead.
 func (c *Cluster) Sync() error {
-	pcc, err := c.anyConn()
+	tt, err := c.Topo()
 	if err != nil {
-		return err
-	}
-	defer pcc.Return()
-
-	var tt topo
-	if err := radix.ConnCmd(pcc, &tt, "CLUSTER", "SLOTS"); err != nil {
 		return err
 	}
 
 	c.Lock()
 	defer c.Unlock()
+	c.tt = tt
 
 	for _, t := range tt {
-		if _, err := c.dirtyNewPool(t.addr); err != nil {
-			return fmt.Errorf("error connecting to %s: %s", t.addr, err)
+		if _, err := c.dirtyNewPool(t.Addr); err != nil {
+			return fmt.Errorf("error connecting to %s: %s", t.Addr, err)
 		}
 	}
 
-	tm := tt.toMap()
+	tm := tt.Map()
 	for addr, p := range c.pools {
 		if _, ok := tm[addr]; !ok {
 			p.Close()
@@ -124,7 +139,6 @@ func (c *Cluster) Sync() error {
 		}
 	}
 
-	c.topo = tt
 	return nil
 }
 
@@ -164,21 +178,19 @@ func (c *Cluster) SyncEvery(d time.Duration, errCh chan<- error) {
 // Redis' key hash tags can be used to force keys to all be stored to the same
 // slot in the cluster. In cases where multiple keys with the same hash tag are
 // being interacted with at once only one of them needs to be given here.
-//
-// TODO figure out how to test this
 func (c *Cluster) Get(forKey string) (radix.PoolConn, error) {
 	s := Slot(forKey)
 
 	c.RLock()
 	defer c.RUnlock()
 
-	for _, t := range c.topo {
-		if s < t.slots[0] || s >= t.slots[1] {
+	for _, t := range c.tt {
+		if s < t.Slots[0] || s >= t.Slots[1] {
 			continue
 		}
-		p, ok := c.pools[t.addr]
+		p, ok := c.pools[t.Addr]
 		if !ok {
-			return nil, fmt.Errorf("unexpected: no pool for address %q", t.addr)
+			return nil, fmt.Errorf("unexpected: no pool for address %q", t.Addr)
 		}
 		// TODO return a cluster Conn
 		return p.Get()
