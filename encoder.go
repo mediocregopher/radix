@@ -2,7 +2,6 @@ package radix
 
 import (
 	"bufio"
-	"bytes"
 	"encoding"
 	"fmt"
 	"io"
@@ -201,7 +200,15 @@ func (e *Encoder) writeResp(r Resp) error {
 }
 
 func (e *Encoder) writeBulkStrBytes(b []byte) error {
-	return e.writeBulkStr(bytes.NewBuffer(b))
+	// implemented separately from writeBulkStrBytes to save an allocation of a
+	// bytes.Buffer
+	var err error
+	err = e.writeBytes(err, bulkStrPrefix)
+	err = e.writeBytes(err, strconv.AppendInt(e.scratch[:0], int64(len(b)), 10))
+	err = e.writeBytes(err, delim)
+	err = e.writeBytes(err, b)
+	err = e.writeBytes(err, delim)
+	return err
 }
 
 func (e *Encoder) writeBulkStr(lr LenReader) error {
