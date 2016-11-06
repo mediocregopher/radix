@@ -35,11 +35,8 @@ type LenReader interface {
 // two different go-routines, but each should only be called once at a time
 // (i.e. two routines shouldn't call Encode at the same time, same with Decode).
 type Conn interface {
-	// See the Encoder type's method for how this should behave
-	Encode(interface{}) error
-
-	// See the Decoder type's method for how this should behave
-	Decode(interface{}) error
+	Encoder
+	Decoder
 
 	// Close closes the Conn and cleans up its resources. No methods may be
 	// called after Close.
@@ -48,8 +45,8 @@ type Conn interface {
 
 type rwcWrap struct {
 	rwc io.ReadWriteCloser
-	*Encoder
-	*Decoder
+	Encoder
+	Decoder
 }
 
 // NewConn takes an existing io.ReadWriteCloser and wraps it to support the Conn

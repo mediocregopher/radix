@@ -46,17 +46,14 @@ func (lrp *limitedReaderPlus) Read(b []byte) (int, error) {
 }
 
 // Decoder wraps an io.Reader and decodes Resp data off of it.
-type Decoder struct {
+type Decoder interface {
+	// Decode reads a single message off of the underlying io.Reader and unmarshals
+	// it into the given receiver, which should be a pointer or reference type.
+	// TODO more docs on how that happens
+	Decode(interface{}) error
+}
 
-	// The size of the internal read buffer used for miscellaneous things. If
-	// the buffer grows larger it will be re-allocated at this size.
-	//
-	// This should rarely if ever need to be touched. If you're not sure if it
-	// needs to be changed assume it doesn't.
-	//
-	// Defaults to 1024
-	BufSize int
-
+type decoder struct {
 	r       *bufio.Reader
 	scratch []byte
 	discard *bufio.Writer // used to just outright discard data
@@ -64,14 +61,12 @@ type Decoder struct {
 
 // NewDecoder initializes a Decoder instance which will read from the given
 // io.Reader. The io.Reader should not be used outside of the Decoder after this
-func NewDecoder(r io.Reader) *Decoder {
-	bufSize := 1024
-	return &Decoder{
+func NewDecoder(r io.Reader) Decoder {
+	return &decoder{
 		r:       bufio.NewReader(r),
-		scratch: make([]byte, bufSize),
+		scratch: make([]byte, 1024),
 		// wrap in bufio so we get ReaderFrom, eliminates an allocation later
 		discard: bufio.NewWriter(ioutil.Discard),
-		BufSize: bufSize,
 	}
 }
 
@@ -90,10 +85,7 @@ var (
 	intT                 = reflect.TypeOf(int64(0))
 )
 
-// Decode reads a single message off of the underlying io.Reader and unmarshals
-// it into the given receiver, which should be a pointer or reference type.
-// TODO more docs on how that happens
-func (d *Decoder) Decode(v interface{}) error {
+func (d *decoder) Decode(v interface{}) error {
 	if u, ok := v.(Unmarshaler); ok {
 		return u.Unmarshal(func(newV interface{}) error {
 			return d.Decode(newV)
@@ -144,7 +136,7 @@ func (d *Decoder) Decode(v interface{}) error {
 	panic(fmt.Sprintf("weird type: %#v", typ))
 }
 
-func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
+func (d *decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 	var (
 		err error
 		i   int64
@@ -285,8 +277,11 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 	// allow for Read to be called on it after an io.EOF is hit.
 	io.Copy(d.discard, r)
 
-	if cap(d.scratch) > d.BufSize {
-		d.scratch = make([]byte, d.BufSize)
+	// TODO this is kind of janky, but at the same time we need to be able to
+	// limit scratch's size so it doesn't accidentally get some insanely large
+	// string read into it by accident
+	if cap(d.scratch) > 1024 {
+		d.scratch = make([]byte, 1024)
 	}
 
 	return err
@@ -296,7 +291,7 @@ func (d *Decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 //	return fmt.Sprintf("type:%q val:%v canSet:%v canAddr:%v", v.Type().String(), v, v.CanSet(), v.CanAddr())
 //}
 
-func (d *Decoder) scanArrayInto(v reflect.Value, size int) error {
+func (d *decoder) scanArrayInto(v reflect.Value, size int) error {
 	// set up some logic so we can make sure we discard all remaining elements
 	// in an array in the event of a decoding error part-way through. If there's
 	// a network error we're kind of screwed no matter what
@@ -401,7 +396,7 @@ func (d *Decoder) scanArrayInto(v reflect.Value, size int) error {
 
 // sets v to whatever its zero value is. For slices or interfaces this will be
 // nil
-func (d *Decoder) scanNilInto(v interface{}, typ int) {
+func (d *decoder) scanNilInto(v interface{}, typ int) {
 	if r, ok := v.(*Resp); ok && typ == rBulkStr {
 		r.BulkStrNil = true
 		return
@@ -420,7 +415,7 @@ func (d *Decoder) scanNilInto(v interface{}, typ int) {
 	// though...
 }
 
-func (d *Decoder) readInt(r io.Reader) (int64, error) {
+func (d *decoder) readInt(r io.Reader) (int64, error) {
 	var err error
 	if d.scratch, err = readAllAppend(r, d.scratch[:0]); err != nil {
 		return 0, err
@@ -428,7 +423,7 @@ func (d *Decoder) readInt(r io.Reader) (int64, error) {
 	return strconv.ParseInt(string(d.scratch), 10, 64)
 }
 
-func (d *Decoder) readUint(r io.Reader) (uint64, error) {
+func (d *decoder) readUint(r io.Reader) (uint64, error) {
 	var err error
 	if d.scratch, err = readAllAppend(r, d.scratch[:0]); err != nil {
 		return 0, err
@@ -436,7 +431,7 @@ func (d *Decoder) readUint(r io.Reader) (uint64, error) {
 	return strconv.ParseUint(string(d.scratch), 10, 64)
 }
 
-func (d *Decoder) readFloat(r io.Reader, precision int) (float64, error) {
+func (d *decoder) readFloat(r io.Reader, precision int) (float64, error) {
 	var err error
 	if d.scratch, err = readAllAppend(r, d.scratch[:0]); err != nil {
 		return 0, err

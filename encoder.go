@@ -38,17 +38,24 @@ func anyIntToInt64(m interface{}) int64 {
 }
 
 // Encoder wraps an io.Writer and encodes Resp data onto it
-type Encoder struct {
+type Encoder interface {
+	// Encode writes the given value to the underlying io.Writer, first encoding
+	// it into a Resp message.
+	// TODO more docs on how that happens
+	Encode(interface{}) error
+}
+
+type encoder struct {
 	w       *bufio.Writer
 	bodyBuf *bytes.Buffer
 	cmdBuf  []interface{} // TODO this needs some kind of ceiling
 	scratch []byte
 }
 
-// NewEncoder initializes an Encoder instance which will write to the given
-// io.Writer. The io.Writer should not be used outside of the Encoder after this
-func NewEncoder(w io.Writer) *Encoder {
-	return &Encoder{
+// NewEncoder initializes an encoder instance which will write to the given
+// io.Writer. The io.Writer should not be used outside of the encoder after this
+func NewEncoder(w io.Writer) Encoder {
+	return &encoder{
 		w:       bufio.NewWriter(w),
 		bodyBuf: bytes.NewBuffer(make([]byte, 0, 1024)),
 		cmdBuf:  make([]interface{}, 0, 128),
@@ -56,10 +63,7 @@ func NewEncoder(w io.Writer) *Encoder {
 	}
 }
 
-// Encode writes the given value to the underlying io.Writer, first encoding it
-// into a Resp message.
-// TODO more docs on how that happens
-func (e *Encoder) Encode(v interface{}) error {
+func (e *encoder) Encode(v interface{}) error {
 	var err error
 	defer func() {
 		if ferr := e.w.Flush(); ferr != nil && err == nil {
@@ -70,7 +74,7 @@ func (e *Encoder) Encode(v interface{}) error {
 	return e.encode(v, false)
 }
 
-func (e *Encoder) encode(v interface{}, forceBulkStr bool) error {
+func (e *encoder) encode(v interface{}, forceBulkStr bool) error {
 	return walkForeach(v, func(n walkNode) error {
 		if n.vOk {
 			return e.write(n.v, forceBulkStr)
@@ -87,7 +91,7 @@ var bools = [][]byte{
 // The returned byte slice may be backed by the encoder's scratch buffer, so it
 // may get corrupted the next time the encoder is used. The returned slice
 // should not be modified in any case
-func (e *Encoder) toBytes(v interface{}) (LenReader, error) {
+func (e *encoder) toBytes(v interface{}) (LenReader, error) {
 	e.bodyBuf.Reset()
 	switch vt := v.(type) {
 	case []byte:
@@ -164,7 +168,7 @@ func (e *Encoder) toBytes(v interface{}) (LenReader, error) {
 // write writes whatever arbitrary data it's given as a resp. It does not handle
 // any of the types which would be turned into arrays, those must be handled
 // through walk
-func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
+func (e *encoder) write(v interface{}, forceBulkStr bool) error {
 	var err error
 	if forceBulkStr {
 		if v, err = e.toBytes(v); err != nil {
@@ -209,7 +213,7 @@ func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
 	return fmt.Errorf("cannot encode %T as a redis type", v)
 }
 
-func (e *Encoder) writeCmd(c Cmd) error {
+func (e *encoder) writeCmd(c Cmd) error {
 	e.cmdBuf = append(e.cmdBuf[:0], c.Cmd)
 
 	walkForeach(c.Args, func(n walkNode) error {
@@ -232,7 +236,7 @@ func (e *Encoder) writeCmd(c Cmd) error {
 	return nil
 }
 
-func (e *Encoder) writeResp(r Resp) error {
+func (e *encoder) writeResp(r Resp) error {
 	switch {
 	case r.SimpleStr != nil:
 		return e.writeSimpleStr(string(r.SimpleStr))
@@ -261,7 +265,7 @@ func (e *Encoder) writeResp(r Resp) error {
 	}
 }
 
-func (e *Encoder) writeLenReader(lr LenReader) error {
+func (e *encoder) writeLenReader(lr LenReader) error {
 	var err error
 	err = e.writeBytes(err, bulkStrPrefix)
 	err = e.writeBytes(err, strconv.AppendInt(e.scratch[:0], int64(lr.Len()), 10))
@@ -275,7 +279,7 @@ func (e *Encoder) writeLenReader(lr LenReader) error {
 	return err
 }
 
-func (e *Encoder) writeInt(i int64) error {
+func (e *encoder) writeInt(i int64) error {
 	var err error
 	err = e.writeBytes(err, intPrefix)
 	err = e.writeBytes(err, strconv.AppendInt(e.scratch[:0], i, 10))
@@ -283,7 +287,7 @@ func (e *Encoder) writeInt(i int64) error {
 	return err
 }
 
-func (e *Encoder) writeSimpleStr(s string) error {
+func (e *encoder) writeSimpleStr(s string) error {
 	var err error
 	err = e.writeBytes(err, simpleStrPrefix)
 	err = e.writeBytes(err, append(e.scratch[:0], s...))
@@ -291,7 +295,7 @@ func (e *Encoder) writeSimpleStr(s string) error {
 	return err
 }
 
-func (e *Encoder) writeAppErr(ae AppErr) error {
+func (e *encoder) writeAppErr(ae AppErr) error {
 	var err error
 	err = e.writeBytes(err, errPrefix)
 	err = e.writeBytes(err, append(e.scratch[:0], ae.Error()...))
@@ -299,7 +303,7 @@ func (e *Encoder) writeAppErr(ae AppErr) error {
 	return err
 }
 
-func (e *Encoder) writeArrayHeader(l int) error {
+func (e *encoder) writeArrayHeader(l int) error {
 	var err error
 	err = e.writeBytes(err, arrayPrefix)
 	err = e.writeBytes(err, strconv.AppendInt(e.scratch[:0], int64(l), 10))
@@ -307,15 +311,15 @@ func (e *Encoder) writeArrayHeader(l int) error {
 	return err
 }
 
-func (e *Encoder) writeBulkNil() error {
+func (e *encoder) writeBulkNil() error {
 	return e.writeBytes(nil, nilBulkStr)
 }
 
-func (e *Encoder) writeArrayNil() error {
+func (e *encoder) writeArrayNil() error {
 	return e.writeBytes(nil, nilArray)
 }
 
-func (e *Encoder) writeBytes(prevErr error, b []byte) error {
+func (e *encoder) writeBytes(prevErr error, b []byte) error {
 	if prevErr != nil {
 		return prevErr
 	}
