@@ -41,6 +41,7 @@ func anyIntToInt64(m interface{}) int64 {
 type Encoder struct {
 	w       *bufio.Writer
 	bodyBuf *bytes.Buffer
+	cmdBuf  []interface{} // TODO this needs some kind of ceiling
 	scratch []byte
 }
 
@@ -50,6 +51,7 @@ func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{
 		w:       bufio.NewWriter(w),
 		bodyBuf: bytes.NewBuffer(make([]byte, 0, 1024)),
+		cmdBuf:  make([]interface{}, 0, 128),
 		scratch: make([]byte, 0, 1024),
 	}
 }
@@ -208,22 +210,21 @@ func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
 }
 
 func (e *Encoder) writeCmd(c Cmd) error {
-	vv := make([]interface{}, 1, len(c.Args)+1) // use c.Args as a guess
-	vv[0] = c.Cmd
+	e.cmdBuf = append(e.cmdBuf[:0], c.Cmd)
 
 	walkForeach(c.Args, func(n walkNode) error {
 		if n.vOk {
-			vv = append(vv, n.v)
+			e.cmdBuf = append(e.cmdBuf, n.v)
 		}
 		return nil
 	})
 
 	// write the array header, then write every single non-array element as a
 	// string
-	if err := e.writeArrayHeader(len(vv)); err != nil {
+	if err := e.writeArrayHeader(len(e.cmdBuf)); err != nil {
 		return err
 	}
-	for _, v := range vv {
+	for _, v := range e.cmdBuf {
 		if err := e.write(v, true); err != nil {
 			return err
 		}
