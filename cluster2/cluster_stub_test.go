@@ -39,8 +39,8 @@ type stub struct {
 type stubConn struct {
 	*stub
 	buf *bytes.Buffer
-	enc *radix.Encoder
-	dec *radix.Decoder
+	enc radix.Encoder
+	dec radix.Decoder
 }
 
 func newStubConn(s *stub) *stubConn {
@@ -58,7 +58,7 @@ func (sc *stubConn) Encode(i interface{}) error {
 	sc.Lock()
 	defer sc.Unlock()
 
-	switch strings.ToUpper(cmd.Cmd) {
+	switch strings.ToUpper(string(cmd.Cmd)) {
 	case "GET":
 		k := cmd.Args[0].(string)
 		if rerr, ok := sc.maybeMoved(k); ok {
@@ -259,7 +259,7 @@ func TestStub(t *T) {
 	scl := newStubCluster(testTopo)
 
 	var outTT Topo
-	err := radix.PoolCmd(scl.randStub(), &outTT, "CLUSTER", "SLOTS")
+	err := radix.PoolCmd(scl.randStub(), &outTT, radix.Cmd{}.C("CLUSTER").A("SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 }

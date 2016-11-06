@@ -1,7 +1,5 @@
 package radix
 
-import "errors"
-
 var (
 	delim    = []byte{'\r', '\n'}
 	delimEnd = delim[len(delim)-1]
@@ -25,38 +23,6 @@ const (
 	rInt
 	rArray
 )
-
-// Cmd describes a single redis command to be performed. In general you won't
-// have to use this directly, and instead can just use the Cmd method on most
-// things. This is mostly useful for lower level operations.
-type Cmd struct {
-	Cmd  string
-	Args []interface{}
-}
-
-// NewCmd is a convenient helper for creating Cmd structs
-func NewCmd(cmd string, args ...interface{}) Cmd {
-	return Cmd{
-		Cmd:  cmd,
-		Args: args,
-	}
-}
-
-// used to short-circuit the walk in FirstArg
-var errStop = errors.New("stahp")
-
-// FirstArg returns the first argument to the command after flatterning and
-// being converted to a string. This is useful for determining which key a
-// command will operate on when the arguments make it ambiguous (like when
-// they're slices or maps).
-//
-// If the first argument is map then a random key will be picked from it as the
-// first argument.
-//
-// If the first argument is an Unmarshaler or LenReader then this will panic
-func (c Cmd) FirstArg() string {
-	return "TODO"
-}
 
 // Resp can be used to encode or decode exact values of the resp protocol (the
 // network protocol that redis uses). When encoding, the first non-nil field (or

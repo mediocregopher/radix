@@ -36,19 +36,19 @@ type ScanOpts struct {
 }
 
 func (o ScanOpts) cmd(cursor string) Cmd {
-	cmd := strings.ToUpper(o.Command)
-	args := make([]interface{}, 0, 4)
-	if cmd != "SCAN" {
-		args = append(args, o.Key)
+	cmdStr := strings.ToUpper(o.Command)
+	cmd := Cmd{}.C(cmdStr)
+	if cmdStr != "SCAN" {
+		cmd = cmd.K(o.Key)
 	}
-	args = append(args, cursor)
+	cmd = cmd.A(cursor)
 	if o.Pattern != "" {
-		args = append(args, "MATCH", o.Pattern)
+		cmd = cmd.A("MATCH").A(o.Pattern)
 	}
 	if o.Count > 0 {
-		args = append(args, "COUNT", o.Count)
+		cmd = cmd.A("COUNT").A(o.Count)
 	}
-	return Cmd{Cmd: cmd, Args: args}
+	return cmd
 }
 
 // ScanAllKeys is a shortcut ScanOpts which can be used to scan all keys
@@ -117,7 +117,8 @@ func (s *scanner) Next(res *string) bool {
 
 		cmd := s.cmd(s.cur)
 		parts := []interface{}{"", []string{}}
-		if s.err = ConnCmd(s.Conn, &parts, cmd.Cmd, cmd.Args...); s.err != nil {
+		// TODO this needs to get redone
+		if s.err = ConnCmd(s.Conn, &parts, cmd); s.err != nil {
 			return false
 		} else if len(parts) < 2 {
 			s.err = errors.New("not enough parts returned")

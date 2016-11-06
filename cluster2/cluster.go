@@ -106,7 +106,7 @@ func (c *Cluster) Topo() (Topo, error) {
 	defer pcc.Return()
 
 	var tt Topo
-	if err := radix.ConnCmd(pcc, &tt, "CLUSTER", "SLOTS"); err != nil {
+	if err := radix.ConnCmd(pcc, &tt, radix.Cmd{}.C("CLUSTER").A("SLOTS")); err != nil {
 		return nil, err
 	}
 	return tt, nil

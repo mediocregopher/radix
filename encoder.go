@@ -215,6 +215,9 @@ func (e *encoder) write(v interface{}, forceBulkStr bool) error {
 
 func (e *encoder) writeCmd(c Cmd) error {
 	e.cmdBuf = append(e.cmdBuf[:0], c.Cmd)
+	for _, key := range c.Keys {
+		e.cmdBuf = append(e.cmdBuf, key)
+	}
 
 	walkForeach(c.Args, func(n walkNode) error {
 		if n.vOk {

@@ -111,12 +111,23 @@ func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
 	return NewConn(&timeoutConn{Conn: c, timeout: timeout}), nil
 }
 
-// ConnCmd runs the given command with arguments on the Conn, and unmarshals the
-// result into the res variable (which should be a pointer to something). It
-// calls Close on the Conn if any errors occur
-// TODO flesh this out
-func ConnCmd(c Conn, res interface{}, cmd string, args ...interface{}) error {
-	if err := c.Encode(NewCmd(cmd, args...)); err != nil {
+func newCmdLegacy(cmd string, args ...interface{}) Cmd {
+	cc := Cmd{}.C(cmd)
+	for _, a := range args {
+		cc = cc.A(a)
+	}
+	return cc
+}
+
+// ConnCmd writes the given command to the Conn, and unmarshals the result into
+// the res variable (which should be a pointer to something). It calls Close on
+// the Conn if any errors occur.
+//
+// See the Cmd docs for more on how Cmds are marshalled, see the Decoder docs
+// for more on how results are unmarshalled.
+func ConnCmd(c Conn, res interface{}, cmd Cmd) error {
+	// TODO this whole function needs to be refactored or it needs to go away
+	if err := c.Encode(cmd); err != nil {
 		c.Close()
 		return err
 	} else if err := c.Decode(res); err != nil {
@@ -161,7 +172,7 @@ func (p *Pipeline) Cmd(res interface{}, cmd string, args ...interface{}) {
 		cmd Cmd
 	}{
 		res: res,
-		cmd: NewCmd(cmd, args...),
+		cmd: newCmdLegacy(cmd, args...),
 	})
 }
 
@@ -200,9 +211,11 @@ func LuaEval(c Conn, res interface{}, script string, keys int, args ...interface
 	sumRaw := sha1.Sum([]byte(script))
 	sum := hex.EncodeToString(sumRaw[:])
 
-	err := ConnCmd(c, res, "EVALSHA", sum, keys, args)
+	cmd := Cmd{}.C("EVALSHA").A(sum).A(keys).A(args)
+	err := ConnCmd(c, res, cmd)
 	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
-		err = ConnCmd(c, res, "EVAL", script, keys, args)
+		cmd = cmd.Reset().C("EVAL").A(script).A(keys).A(args)
+		err = ConnCmd(c, res, cmd)
 	}
 	return err
 }
