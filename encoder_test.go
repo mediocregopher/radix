@@ -13,21 +13,15 @@ import (
 type textCPMarshaler []byte
 
 func (cm textCPMarshaler) MarshalText() ([]byte, error) {
-	var b []byte
-	b = append(b, '_')
-	b = append(b, cm...)
-	b = append(b, '_')
-	return b, nil
+	cm = append(cm, '_')
+	return cm, nil
 }
 
 type binCPMarshaler []byte
 
 func (cm binCPMarshaler) MarshalBinary() ([]byte, error) {
-	var b []byte
-	b = append(b, '_')
-	b = append(b, cm...)
-	b = append(b, '_')
-	return b, nil
+	cm = append(cm, '_')
+	return cm, nil
 }
 
 type marshaler struct {
@@ -60,8 +54,8 @@ var encodeTests = []struct {
 	{in: nil, out: "$-1\r\n"},
 	{in: float32(5.5), out: "$3\r\n5.5\r\n"},
 	{in: float64(5.5), out: "$3\r\n5.5\r\n"},
-	{in: textCPMarshaler("ohey"), out: "$6\r\n_ohey_\r\n"},
-	{in: binCPMarshaler("ohey"), out: "$6\r\n_ohey_\r\n"},
+	{in: textCPMarshaler("ohey"), out: "$5\r\nohey_\r\n"},
+	{in: binCPMarshaler("ohey"), out: "$5\r\nohey_\r\n"},
 
 	// Int
 	{in: 5, out: ":5\r\n"},
@@ -130,8 +124,8 @@ var encodeTests = []struct {
 		out: encodeStrArr("foo", "bar"),
 	},
 	{
-		in:  NewCmd("foo", "bar", 1),
-		out: encodeStrArr("foo", "bar", "1"),
+		in:  NewCmd("foo", "bar", 1, 7.2),
+		out: encodeStrArr("foo", "bar", "1", "7.2"),
 	},
 	{
 		in:  NewCmd("foo", []string{}),

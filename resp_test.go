@@ -31,7 +31,7 @@ func loopBenchTests() chan benchTest {
 	return ch
 }
 
-func BenchmarkRead(b *B) {
+func BenchmarkDecode(b *B) {
 	ch := loopBenchTests()
 	buf := new(bytes.Buffer)
 	r := NewDecoder(buf)
@@ -42,7 +42,7 @@ func BenchmarkRead(b *B) {
 	}
 }
 
-func BenchmarkWrite(b *B) {
+func BenchmarkEncode(b *B) {
 	ch := loopBenchTests()
 	buf := new(bytes.Buffer)
 	w := NewEncoder(buf)

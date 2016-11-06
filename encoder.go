@@ -2,7 +2,9 @@ package radix
 
 import (
 	"bufio"
+	"bytes"
 	"encoding"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -38,6 +40,7 @@ func anyIntToInt64(m interface{}) int64 {
 // Encoder wraps an io.Writer and encodes Resp data onto it
 type Encoder struct {
 	w       *bufio.Writer
+	bodyBuf *bytes.Buffer
 	scratch []byte
 }
 
@@ -46,7 +49,8 @@ type Encoder struct {
 func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{
 		w:       bufio.NewWriter(w),
-		scratch: make([]byte, 1024),
+		bodyBuf: bytes.NewBuffer(make([]byte, 0, 1024)),
+		scratch: make([]byte, 0, 1024),
 	}
 }
 
@@ -78,40 +82,109 @@ var bools = [][]byte{
 	{'1'},
 }
 
+// The returned byte slice may be backed by the encoder's scratch buffer, so it
+// may get corrupted the next time the encoder is used. The returned slice
+// should not be modified in any case
+func (e *Encoder) toBytes(v interface{}) (LenReader, error) {
+	e.bodyBuf.Reset()
+	switch vt := v.(type) {
+	case []byte:
+		e.bodyBuf.Write(vt)
+		return e.bodyBuf, nil
+	case string:
+		e.bodyBuf.WriteString(vt)
+		return e.bodyBuf, nil
+	case bool:
+		b := bools[0]
+		if vt {
+			b = bools[1]
+		}
+		e.bodyBuf.Write(b)
+		return e.bodyBuf, nil
+	case nil:
+		return e.bodyBuf, nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		i := anyIntToInt64(vt)
+		b := strconv.AppendInt(e.scratch[:0], i, 10)
+		e.bodyBuf.Write(b)
+		return e.bodyBuf, nil
+	case float32:
+		b := strconv.AppendFloat(e.scratch[:0], float64(vt), 'f', -1, 32)
+		e.bodyBuf.Write(b)
+		return e.bodyBuf, nil
+	case float64:
+		b := strconv.AppendFloat(e.scratch[:0], vt, 'f', -1, 64)
+		e.bodyBuf.Write(b)
+		return e.bodyBuf, nil
+	case error:
+		e.bodyBuf.WriteString(vt.Error())
+		return e.bodyBuf, nil
+	case Resp:
+		switch {
+		case vt.SimpleStr != nil:
+			return e.toBytes(vt.SimpleStr)
+		case vt.BulkStr != nil:
+			return e.toBytes(vt.BulkStr)
+		case vt.Err != nil:
+			return e.toBytes(vt.Err)
+		case vt.Arr != nil:
+			return nil, errors.New("can't convert array Resp to []byte")
+		case vt.BulkStrNil, vt.ArrNil:
+			return e.bodyBuf, nil
+		default:
+			return e.toBytes(vt.Int)
+		}
+	case LenReader:
+		return vt, nil
+	case Marshaler:
+		nv, err := vt.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		return e.toBytes(nv)
+	case encoding.TextMarshaler:
+		b, err := vt.MarshalText()
+		e.bodyBuf.Write(b)
+		return e.bodyBuf, err
+	case encoding.BinaryMarshaler:
+		b, err := vt.MarshalBinary()
+		e.bodyBuf.Write(b)
+		return e.bodyBuf, err
+	}
+
+	if vv := reflect.ValueOf(v); vv.Kind() == reflect.Ptr {
+		return e.toBytes(vv.Elem().Interface())
+	}
+
+	return nil, fmt.Errorf("cannot convert %T to []byte", v)
+}
+
 // write writes whatever arbitrary data it's given as a resp. It does not handle
 // any of the types which would be turned into arrays, those must be handled
 // through walk
 func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
+	var err error
+	if forceBulkStr {
+		if v, err = e.toBytes(v); err != nil {
+			return err
+		}
+	}
+
 	switch vt := v.(type) {
-	case []byte:
-		return e.writeBulkStrBytes(vt)
-	case string:
-		return e.writeBulkStrBytes([]byte(vt))
-	case bool:
-		if vt {
-			return e.writeBulkStrBytes(bools[1])
+	case LenReader:
+		return e.writeLenReader(vt)
+	case []byte, string, bool, float32, float64, encoding.TextMarshaler, encoding.BinaryMarshaler:
+		// these are covered by toBytes anyway
+		lr, err := e.toBytes(v)
+		if err != nil {
+			return err
 		}
-		return e.writeBulkStrBytes(bools[0])
+		return e.writeLenReader(lr)
 	case nil:
-		if forceBulkStr {
-			return e.writeBulkStrBytes(nil)
-		}
 		return e.writeBulkNil()
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		i := anyIntToInt64(vt)
-		if forceBulkStr {
-			b := strconv.AppendInt(e.scratch[:0], i, 10)
-			return e.writeBulkStrBytes(b)
-		}
-		return e.writeInt(i)
-	case float32:
-		return e.writeFloat(float64(vt), 32)
-	case float64:
-		return e.writeFloat(vt, 64)
+		return e.writeInt(anyIntToInt64(vt))
 	case error:
-		if forceBulkStr {
-			return e.writeBulkStrBytes([]byte(vt.Error()))
-		}
 		// if we're writing an error we just assume that they want it as an
 		// error type on the wire
 		return e.writeAppErr(AppErr{Err: vt})
@@ -119,26 +192,12 @@ func (e *Encoder) write(v interface{}, forceBulkStr bool) error {
 		return e.writeCmd(vt)
 	case Resp:
 		return e.writeResp(vt)
-	case LenReader:
-		return e.writeBulkStr(vt)
 	case Marshaler:
 		nv, err := vt.Marshal()
 		if err != nil {
 			return err
 		}
 		return e.encode(nv, forceBulkStr)
-	case encoding.TextMarshaler:
-		b, err := vt.MarshalText()
-		if err != nil {
-			return err
-		}
-		return e.writeBulkStrBytes(b)
-	case encoding.BinaryMarshaler:
-		b, err := vt.MarshalBinary()
-		if err != nil {
-			return err
-		}
-		return e.writeBulkStrBytes(b)
 	}
 
 	if vv := reflect.ValueOf(v); vv.Kind() == reflect.Ptr {
@@ -177,7 +236,9 @@ func (e *Encoder) writeResp(r Resp) error {
 	case r.SimpleStr != nil:
 		return e.writeSimpleStr(string(r.SimpleStr))
 	case r.BulkStr != nil:
-		return e.writeBulkStrBytes(r.BulkStr)
+		e.bodyBuf.Reset()
+		e.bodyBuf.Write(r.BulkStr)
+		return e.writeLenReader(e.bodyBuf)
 	case r.Err != nil:
 		return e.writeAppErr(AppErr{Err: r.Err})
 	case r.Arr != nil:
@@ -199,19 +260,7 @@ func (e *Encoder) writeResp(r Resp) error {
 	}
 }
 
-func (e *Encoder) writeBulkStrBytes(b []byte) error {
-	// implemented separately from writeBulkStrBytes to save an allocation of a
-	// bytes.Buffer
-	var err error
-	err = e.writeBytes(err, bulkStrPrefix)
-	err = e.writeBytes(err, strconv.AppendInt(e.scratch[:0], int64(len(b)), 10))
-	err = e.writeBytes(err, delim)
-	err = e.writeBytes(err, b)
-	err = e.writeBytes(err, delim)
-	return err
-}
-
-func (e *Encoder) writeBulkStr(lr LenReader) error {
+func (e *Encoder) writeLenReader(lr LenReader) error {
 	var err error
 	err = e.writeBytes(err, bulkStrPrefix)
 	err = e.writeBytes(err, strconv.AppendInt(e.scratch[:0], int64(lr.Len()), 10))
@@ -233,21 +282,10 @@ func (e *Encoder) writeInt(i int64) error {
 	return err
 }
 
-func (e *Encoder) writeFloat(f float64, bits int) error {
-	// writeBulkStrBytes also uses scratch, gotta make sure we don't overlap by
-	// accident, so temporarily overwrite scratch
-	ogScratch := e.scratch
-	b := strconv.AppendFloat(e.scratch[:0], f, 'f', -1, bits)
-	e.scratch = e.scratch[len(b):]
-	err := e.writeBulkStrBytes(b)
-	e.scratch = ogScratch
-	return err
-}
-
 func (e *Encoder) writeSimpleStr(s string) error {
 	var err error
 	err = e.writeBytes(err, simpleStrPrefix)
-	err = e.writeBytes(err, []byte(s))
+	err = e.writeBytes(err, append(e.scratch[:0], s...))
 	err = e.writeBytes(err, delim)
 	return err
 }
@@ -255,7 +293,7 @@ func (e *Encoder) writeSimpleStr(s string) error {
 func (e *Encoder) writeAppErr(ae AppErr) error {
 	var err error
 	err = e.writeBytes(err, errPrefix)
-	err = e.writeBytes(err, []byte(ae.Error()))
+	err = e.writeBytes(err, append(e.scratch[:0], ae.Error()...))
 	err = e.writeBytes(err, delim)
 	return err
 }
