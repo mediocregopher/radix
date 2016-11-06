@@ -111,61 +111,33 @@ func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
 	return NewConn(&timeoutConn{Conn: c, timeout: timeout}), nil
 }
 
-func newCmdLegacy(cmd string, args ...interface{}) Cmd {
-	cc := Cmd{}.C(cmd)
-	for _, a := range args {
-		cc = cc.A(a)
-	}
-	return cc
-}
-
-// ConnCmd writes the given command to the Conn, and unmarshals the result into
-// the res variable (which should be a pointer to something). It calls Close on
-// the Conn if any errors occur.
-//
-// See the Cmd docs for more on how Cmds are marshalled, see the Decoder docs
-// for more on how results are unmarshalled.
-func ConnCmd(c Conn, res interface{}, cmd Cmd) error {
-	// TODO this whole function needs to be refactored or it needs to go away
-	if err := c.Encode(cmd); err != nil {
-		c.Close()
-		return err
-	} else if err := c.Decode(res); err != nil {
-		c.Close()
-		return err
-	}
-	return nil
-}
-
 // Pipeline is used to write multiple commands to a Conn in a single operation,
 // and then read off all of their responses in a single operation, reducing
 // round-trip time. When Append is called the command and value to decode its
-// response into are stored until Run is called, and then all Cmd's appended
-// will be performed sequentially in one round-trip.
+// response into are stored until Do is called, and then all Cmd's appended will
+// be performed sequentially in one round-trip.
 //
 // A single Pipeline can be used multiple times, or only a single time. It is
 // very cheap to create a pipeline.
 //
 //  var fooVal string
-//	p := radix.Pipeline{Conn: c}
+// 	var p Pipeline
 //	p.Append(nil, radix.Cmd{}.C("SET").K("foo").A("bar"))
 //	p.Append(&fooVal, radix.Cmd{}.C("GET").K("foo"))
 //
-//	if err := p.Run(); err != nil {
+//	if err := p.Do(c); err != nil {
 //		panic(err)
 //	}
 //	fmt.Printf("fooVal: %q\n", fooVal)
 //
 type Pipeline struct {
-	Conn
-
 	cmds []struct {
 		res interface{}
 		cmd Cmd
 	}
 }
 
-// Append does not actually perform the command, but buffers it till Run is
+// Append does not actually perform the command, but buffers it till Do is
 // called.
 func (p *Pipeline) Append(res interface{}, cmd Cmd) {
 	p.cmds = append(p.cmds, struct {
@@ -177,24 +149,24 @@ func (p *Pipeline) Append(res interface{}, cmd Cmd) {
 	})
 }
 
-// Run will actually run all commands buffered by calls to Cmd so far, and
+// Do will actually run all commands buffered by calls to Cmd so far, and
 // decode their responses into their given receivers. If a network error is
 // encountered the Conn will be Close'd and the error returned immediately.
 //
 // Reset is automatically called after each run.
-func (p *Pipeline) Run() error {
+func (p *Pipeline) Do(c Conn) error {
 	defer p.Reset()
 	cmds := p.cmds
-	for _, c := range cmds {
-		if err := p.Conn.Encode(c.cmd); err != nil {
-			p.Conn.Close()
+	for _, cmd := range cmds {
+		if err := c.Encode(cmd.cmd); err != nil {
+			c.Close()
 			return err
 		}
 	}
 
-	for _, c := range cmds {
-		if err := p.Conn.Decode(c.res); err != nil {
-			p.Conn.Close()
+	for _, cmd := range cmds {
+		if err := c.Decode(cmd.res); err != nil {
+			c.Close()
 			return err
 		}
 	}
@@ -221,10 +193,9 @@ func LuaEval(c Conn, res interface{}, script string, keys int, args ...interface
 	sum := hex.EncodeToString(sumRaw[:])
 
 	cmd := Cmd{}.C("EVALSHA").A(sum).A(keys).A(args)
-	err := ConnCmd(c, res, cmd)
+	err := cmd.Do(c, res)
 	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
-		cmd = cmd.Reset().C("EVAL").A(script).A(keys).A(args)
-		err = ConnCmd(c, res, cmd)
+		err = cmd.Reset().C("EVAL").A(script).A(keys).A(args).Do(c, res)
 	}
 	return err
 }

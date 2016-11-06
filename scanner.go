@@ -117,8 +117,7 @@ func (s *scanner) Next(res *string) bool {
 
 		cmd := s.cmd(s.cur)
 		parts := []interface{}{"", []string{}}
-		// TODO this needs to get redone
-		if s.err = ConnCmd(s.Conn, &parts, cmd); s.err != nil {
+		if s.err = cmd.Do(s.Conn, &parts); s.err != nil {
 			return false
 		} else if len(parts) < 2 {
 			s.err = errors.New("not enough parts returned")

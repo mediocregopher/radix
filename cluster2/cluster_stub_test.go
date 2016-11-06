@@ -259,7 +259,7 @@ func TestStub(t *T) {
 	scl := newStubCluster(testTopo)
 
 	var outTT Topo
-	err := radix.PoolCmd(scl.randStub(), &outTT, radix.Cmd{}.C("CLUSTER").A("SLOTS"))
+	err := radix.PoolDo(scl.randStub(), &outTT, radix.Cmd{}.C("CLUSTER").A("SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 }

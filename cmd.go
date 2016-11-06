@@ -58,3 +58,19 @@ func (c Cmd) Reset() Cmd {
 	c.Args = c.Args[:0]
 	return c
 }
+
+// Do writes the Cmd to the Conn, and unmarshals the result into the res
+// variable (which should be a pointer to something). It calls Close on the Conn
+// if any errors occur.
+//
+// See the Decoder docs for more on how results are unmarshalled.
+func (c Cmd) Do(conn Conn, res interface{}) error {
+	if err := conn.Encode(c); err != nil {
+		conn.Close()
+		return err
+	} else if err := conn.Decode(res); err != nil {
+		conn.Close()
+		return err
+	}
+	return nil
+}

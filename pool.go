@@ -218,16 +218,16 @@ func (sp *staticPool) Close() {
 	}
 }
 
-// PoolCmd is a shortcut for doing a Get, performing a Cmd, then calling Return
-// on the Conn.
-func PoolCmd(p Pool, res interface{}, cmd Cmd) error {
+// PoolDo is a shortcut for Get-ing a PoolConn, calling Do on the Cmd with it,
+// then calling Return on the PoolConn.
+func PoolDo(p Pool, res interface{}, cmd Cmd) error {
 	c, err := p.Get()
 	if err != nil {
 		return err
 	}
 	defer c.Return()
 
-	return ConnCmd(c, res, cmd)
+	return cmd.Do(c, res)
 }
 
 type poolPinger struct {
@@ -248,7 +248,7 @@ func NewPoolPinger(p Pool, period time.Duration) Pool {
 		for {
 			select {
 			case <-t.C:
-				PoolCmd(p, nil, pingCmd)
+				PoolDo(p, nil, pingCmd)
 			case <-closeCh:
 				t.Stop()
 				close(doneCh)
