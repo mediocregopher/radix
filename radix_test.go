@@ -28,7 +28,6 @@ func dial() Conn {
 
 func TestPipeline(t *T) {
 	c := dial()
-	// Do this multiple times to make sure pipeline resetting happens correctly
 	for i := 0; i < 10; i++ {
 		ss := []string{
 			testutil.RandStr(),
@@ -38,9 +37,9 @@ func TestPipeline(t *T) {
 		out := make([]string, len(ss))
 		var p Pipeline
 		for i := range ss {
-			p.Append(&out[i], Cmd{}.C("ECHO").A(ss[i]))
+			p = append(p, Cmd{}.C("ECHO").A(ss[i]).R(&out[i]))
 		}
-		require.Nil(t, p.Do(c))
+		require.Nil(t, p.Run(c))
 
 		for i := range ss {
 			assert.Equal(t, ss[i], out[i])

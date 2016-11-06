@@ -18,7 +18,7 @@ func TestScanner(t *T) {
 	for i := 0; i < 100; i++ {
 		key := prefix + ":" + strconv.Itoa(i)
 		fullMap[key] = true
-		require.Nil(t, Cmd{}.C("SET").K(key).A("1").Do(c, nil))
+		require.Nil(t, Cmd{}.C("SET").K(key).A("1").Run(c))
 	}
 
 	// make sure we get all results when scanning with an existing prefix
@@ -46,7 +46,7 @@ func TestScannerSet(t *T) {
 	for i := 0; i < 100; i++ {
 		elem := strconv.Itoa(i)
 		fullMap[elem] = true
-		require.Nil(t, Cmd{}.C("SADD").K(key).A(elem).Do(c, nil))
+		require.Nil(t, Cmd{}.C("SADD").K(key).A(elem).Run(c))
 	}
 
 	// make sure we get all results when scanning an existing set

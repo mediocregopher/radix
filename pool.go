@@ -20,19 +20,15 @@ type PoolConn interface {
 	Return()
 }
 
-// Pool is an entity which can be used to manage a set of open Conns which can
-// be used by multiple go-routines.
+// Pool is a Client which can be used to manage a set of open Conns which can be
+// used by multiple go-routines.
 type Pool interface {
+	Client
+
 	// Get retrieves an available PoolConn for use by a single go-routine
 	// (until a subsequent call to Return on it), or returns an error if that's
 	// not possible.
 	Get() (PoolConn, error)
-
-	// Close closes all PoolConns in the Pool and cleans up the Pool's
-	// resources. Once Close is called no other methods should be called on the
-	// Pool, though Return may still be called on PoolConns which haven't
-	// been returned yet (these will be closed at that point as well).
-	Close()
 
 	// Stats returns any runtime stats that the implementation of Pool wishes to
 	// return, or nil if it doesn't want to return any. This method aims to help
@@ -205,7 +201,7 @@ func (sp *staticPool) put(spc *staticPoolConn) {
 	}
 }
 
-func (sp *staticPool) Close() {
+func (sp *staticPool) Close() error {
 	sp.setClosed(true)
 	for {
 		select {
@@ -213,21 +209,19 @@ func (sp *staticPool) Close() {
 			spc.Close()
 		default:
 			close(sp.pool)
-			return
+			return nil
 		}
 	}
 }
 
-// PoolDo is a shortcut for Get-ing a PoolConn, calling Do on the Cmd with it,
-// then calling Return on the PoolConn.
-func PoolDo(p Pool, res interface{}, cmd Cmd) error {
-	c, err := p.Get()
+func (sp *staticPool) Do(a Action) error {
+	c, err := sp.Get()
 	if err != nil {
 		return err
 	}
 	defer c.Return()
 
-	return cmd.Do(c, res)
+	return a.Run(c)
 }
 
 type poolPinger struct {
@@ -248,7 +242,7 @@ func NewPoolPinger(p Pool, period time.Duration) Pool {
 		for {
 			select {
 			case <-t.C:
-				PoolDo(p, nil, pingCmd)
+				p.Do(pingCmd)
 			case <-closeCh:
 				t.Stop()
 				close(doneCh)
@@ -260,8 +254,8 @@ func NewPoolPinger(p Pool, period time.Duration) Pool {
 	return poolPinger{Pool: p, closeCh: closeCh, doneCh: doneCh}
 }
 
-func (pp poolPinger) Close() {
+func (pp poolPinger) Close() error {
 	close(pp.closeCh)
 	<-pp.doneCh
-	pp.Pool.Close()
+	return pp.Pool.Close()
 }

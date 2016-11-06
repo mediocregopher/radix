@@ -1,20 +1,28 @@
 package radix
 
-// Cmd describes a single redis command to be performed.The Cmd field is the
-// name of the redis command to be performend and is always required. Keys are
-// the keys being operated on, and may be left empty if the command doesn't
-// operate on any specific key(s) (e.g. SCAN). Args are any extra arguments to
-// the command and can be almost any time (TODO flesh that statement out).
+// Cmd implements the Action interface and describes a single redis command to
+// be performed. The Cmd field is the name of the redis command to be performend
+// and is always required. Keys are the keys being operated on, and may be left
+// empty if the command doesn't operate on any specific key(s) (e.g. SCAN). Args
+// are any extra arguments to the command and can be almost any time (TODO flesh
+// that statement out).
+//
+// See the Decoder docs for more on how results are unmarshalled into Rcv.
 //
 // A Cmd can be filled in manually, or the shortcut methods may be used for more
 // convenience. For example to set a key:
 //
 //	cmd := radix.Cmd{}.C("SET").K("fooKey").A("will be set to this string")
 //
+// And then to retrieve that key:
+//
+//	var fooVal string
+//	cmd := radix.Cmd{}.C("GET").K("fooKey").R(&fooVal)
 type Cmd struct {
 	Cmd  []byte
 	Keys [][]byte
 	Args []interface{}
+	Rcv  interface{}
 }
 
 // C (short for "Cmd") sets the Cmd field to the given string and returns the
@@ -39,10 +47,28 @@ func (c Cmd) K(key string) Cmd {
 	return c
 }
 
+// Key implements the Key method for that Action interface.
+func (c Cmd) Key() []byte {
+	if len(c.Keys) == 0 {
+		return nil
+	}
+	return c.Keys[0]
+}
+
 // A (short for "Arg") appends the given argument to the Args slice and returns
-// the new Cmd objcet
+// the new Cmd object.
 func (c Cmd) A(arg interface{}) Cmd {
 	c.Args = append(c.Args, arg)
+	return c
+}
+
+// R (short for "Rcv") sets the Rcv field to the given receiver (which should be
+// a pointer) and returns the new Cmd object. The receiver is what the response
+// to the Cmd is unmarshalled into.
+//
+// If Rcv isn't set then the command's return value will be discarded.
+func (c Cmd) R(v interface{}) Cmd {
+	c.Rcv = v
 	return c
 }
 
@@ -56,19 +82,18 @@ func (c Cmd) Reset() Cmd {
 	c.Cmd = c.Cmd[:0]
 	c.Keys = c.Keys[:0]
 	c.Args = c.Args[:0]
+	c.Rcv = nil
 	return c
 }
 
-// Do writes the Cmd to the Conn, and unmarshals the result into the res
-// variable (which should be a pointer to something). It calls Close on the Conn
-// if any errors occur.
-//
-// See the Decoder docs for more on how results are unmarshalled.
-func (c Cmd) Do(conn Conn, res interface{}) error {
+// Run implements the Run method of the Action interface. It writes the Cmd to
+// the Conn, and unmarshals the result into the Rcv field (if set). It calls
+// Close on the Conn if any errors occur.
+func (c Cmd) Run(conn Conn) error {
 	if err := conn.Encode(c); err != nil {
 		conn.Close()
 		return err
-	} else if err := conn.Decode(res); err != nil {
+	} else if err := conn.Decode(c.Rcv); err != nil {
 		conn.Close()
 		return err
 	}

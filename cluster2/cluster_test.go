@@ -91,7 +91,7 @@ func TestGet(t *T) {
 		conn, err := c.Get(slotKeys[s])
 		require.Nil(t, err)
 		var connSlots []uint16
-		require.Nil(t, radix.Cmd{}.C("CONNSLOTS").Do(conn, &connSlots))
+		require.Nil(t, radix.Cmd{}.C("CONNSLOTS").R(&connSlots).Run(conn))
 		assert.True(t, s >= connSlots[0] && s < connSlots[1])
 		conn.Return()
 	}

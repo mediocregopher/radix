@@ -10,6 +10,24 @@ import (
 	"time"
 )
 
+// Action is an entity which can perform one or more tasks using a Conn
+type Action interface {
+	// Key returns a key which will be acted on. If the Action will act on more
+	// than one key than one can be returned at random. If no keys will be acted
+	// on then nil should be returned.
+	Key() []byte
+
+	// Run actually performs the action using the given Conn
+	Run(c Conn) error
+}
+
+// Client describes an entity which can carry out Actions, e.g. a connection
+// pool for a single redis instance or the cluster client.
+type Client interface {
+	Do(Action) error
+	Close() error
+}
+
 // AppErr wraps the error type. It is used to indicate that the error being
 // returned is an application level error (e.g. "WRONGTYPE" for a key) as
 // opposed to a network level error (e.g. timeout or io.EOF)
@@ -111,73 +129,43 @@ func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
 	return NewConn(&timeoutConn{Conn: c, timeout: timeout}), nil
 }
 
-// Pipeline is used to write multiple commands to a Conn in a single operation,
-// and then read off all of their responses in a single operation, reducing
-// round-trip time. When Append is called the command and value to decode its
-// response into are stored until Do is called, and then all Cmd's appended will
-// be performed sequentially in one round-trip.
+// Pipeline is an Action used to write multiple commands to a Conn in a single
+// operation, and then read off all of their responses in a single operation,
+// reducing round-trip time.
 //
-// A single Pipeline can be used multiple times, or only a single time. It is
-// very cheap to create a pipeline.
+//	var fooVal string
+//	p := Pipeline{
+//		radix.Cmd{}.C("SET").K("foo").A("bar"),
+//		radix.Cmd{}.C("GET").K("foo").R(&fooVal),
+//	}
 //
-//  var fooVal string
-// 	var p Pipeline
-//	p.Append(nil, radix.Cmd{}.C("SET").K("foo").A("bar"))
-//	p.Append(&fooVal, radix.Cmd{}.C("GET").K("foo"))
-//
-//	if err := p.Do(c); err != nil {
+//	if err := conn.Do(p); err != nil {
 //		panic(err)
 //	}
 //	fmt.Printf("fooVal: %q\n", fooVal)
 //
-type Pipeline struct {
-	cmds []struct {
-		res interface{}
-		cmd Cmd
-	}
-}
+type Pipeline []Cmd
 
-// Append does not actually perform the command, but buffers it till Do is
-// called.
-func (p *Pipeline) Append(res interface{}, cmd Cmd) {
-	p.cmds = append(p.cmds, struct {
-		res interface{}
-		cmd Cmd
-	}{
-		res: res,
-		cmd: cmd,
-	})
-}
-
-// Do will actually run all commands buffered by calls to Cmd so far, and
-// decode their responses into their given receivers. If a network error is
-// encountered the Conn will be Close'd and the error returned immediately.
-//
-// Reset is automatically called after each run.
-func (p *Pipeline) Do(c Conn) error {
-	defer p.Reset()
-	cmds := p.cmds
-	for _, cmd := range cmds {
-		if err := c.Encode(cmd.cmd); err != nil {
+// Run implements the method for the Action interface. It will actually run all
+// commands buffered by calls to Cmd so far and decode their responses into
+// their receivers. If a network error is encountered the Conn will be Close'd
+// and the error returned immediately.
+func (p Pipeline) Run(c Conn) error {
+	for _, cmd := range p {
+		if err := c.Encode(cmd); err != nil {
 			c.Close()
 			return err
 		}
 	}
 
-	for _, cmd := range cmds {
-		if err := c.Decode(cmd.res); err != nil {
+	for _, cmd := range p {
+		if err := c.Decode(cmd.Rcv); err != nil {
 			c.Close()
 			return err
 		}
 	}
 
 	return nil
-}
-
-// Reset undoes all Append calls that have been done so far on the Pipeline,
-// effectively making it as if it was just initialized.
-func (p *Pipeline) Reset() {
-	p.cmds = p.cmds[:0]
 }
 
 // LuaEval calls the EVAL command on the given Conn for the given script,
@@ -192,10 +180,10 @@ func LuaEval(c Conn, res interface{}, script string, keys int, args ...interface
 	sumRaw := sha1.Sum([]byte(script))
 	sum := hex.EncodeToString(sumRaw[:])
 
-	cmd := Cmd{}.C("EVALSHA").A(sum).A(keys).A(args)
-	err := cmd.Do(c, res)
+	cmd := Cmd{}.C("EVALSHA").A(sum).A(keys).A(args).R(res)
+	err := cmd.Run(c)
 	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
-		err = cmd.Reset().C("EVAL").A(script).A(keys).A(args).Do(c, res)
+		err = cmd.Reset().C("EVAL").A(script).A(keys).A(args).R(res).Run(c)
 	}
 	return err
 }

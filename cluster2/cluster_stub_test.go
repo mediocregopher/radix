@@ -112,8 +112,17 @@ func (s *stub) Get() (radix.PoolConn, error) {
 	return newStubConn(s), nil
 }
 
-func (s *stub) Close() {
+func (s *stub) Close() error {
 	*s = stub{}
+	return nil
+}
+
+func (s *stub) Do(a radix.Action) error {
+	if s.stubCluster == nil {
+		return errors.New("stub has been closed")
+	}
+	c := newStubConn(s)
+	return a.Run(c)
 }
 
 func (s *stub) maybeMoved(k string) (radix.Resp, bool) {
@@ -259,7 +268,7 @@ func TestStub(t *T) {
 	scl := newStubCluster(testTopo)
 
 	var outTT Topo
-	err := radix.PoolDo(scl.randStub(), &outTT, radix.Cmd{}.C("CLUSTER").A("SLOTS"))
+	err := scl.randStub().Do(radix.Cmd{}.C("CLUSTER").A("SLOTS").R(&outTT))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 }
