@@ -139,17 +139,17 @@ func ConnCmd(c Conn, res interface{}, cmd Cmd) error {
 
 // Pipeline is used to write multiple commands to a Conn in a single operation,
 // and then read off all of their responses in a single operation, reducing
-// round-trip time. When Cmd is called the command and value to decode its
-// response into are stored until Run is called, and then all Cmd's called will
-// be performed at the same time.
+// round-trip time. When Append is called the command and value to decode its
+// response into are stored until Run is called, and then all Cmd's appended
+// will be performed sequentially in one round-trip.
 //
-// A single pipeline can be used multiple times, or only a single time. It is
+// A single Pipeline can be used multiple times, or only a single time. It is
 // very cheap to create a pipeline.
 //
 //  var fooVal string
 //	p := radix.Pipeline{Conn: c}
-//	p.Cmd(nil, "SET", "foo", "bar")
-//	p.Cmd(&fooVal, "GET", "foo")
+//	p.Append(nil, radix.Cmd{}.C("SET").K("foo").A("bar"))
+//	p.Append(&fooVal, radix.Cmd{}.C("GET").K("foo"))
 //
 //	if err := p.Run(); err != nil {
 //		panic(err)
@@ -165,23 +165,26 @@ type Pipeline struct {
 	}
 }
 
-// Cmd does not actually perform the command, but buffers it till Run is called.
-func (p *Pipeline) Cmd(res interface{}, cmd string, args ...interface{}) {
+// Append does not actually perform the command, but buffers it till Run is
+// called.
+func (p *Pipeline) Append(res interface{}, cmd Cmd) {
 	p.cmds = append(p.cmds, struct {
 		res interface{}
 		cmd Cmd
 	}{
 		res: res,
-		cmd: newCmdLegacy(cmd, args...),
+		cmd: cmd,
 	})
 }
 
 // Run will actually run all commands buffered by calls to Cmd so far, and
 // decode their responses into their given receivers. If a network error is
 // encountered the Conn will be Close'd and the error returned immediately.
+//
+// Reset is automatically called after each run.
 func (p *Pipeline) Run() error {
+	defer p.Reset()
 	cmds := p.cmds
-	p.cmds = p.cmds[:0]
 	for _, c := range cmds {
 		if err := p.Conn.Encode(c.cmd); err != nil {
 			p.Conn.Close()
@@ -197,6 +200,12 @@ func (p *Pipeline) Run() error {
 	}
 
 	return nil
+}
+
+// Reset undoes all Append calls that have been done so far on the Pipeline,
+// effectively making it as if it was just initialized.
+func (p *Pipeline) Reset() {
+	p.cmds = p.cmds[:0]
 }
 
 // LuaEval calls the EVAL command on the given Conn for the given script,

@@ -38,7 +38,7 @@ func TestPipeline(t *T) {
 		out := make([]string, len(ss))
 		p := Pipeline{Conn: c}
 		for i := range ss {
-			p.Cmd(&out[i], "ECHO", ss[i])
+			p.Append(&out[i], Cmd{}.C("ECHO").A(ss[i]))
 		}
 		require.Nil(t, p.Run())
 
