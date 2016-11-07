@@ -2,11 +2,8 @@
 package radix
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"io"
 	"net"
-	"strings"
 	"time"
 )
 
@@ -39,6 +36,11 @@ type AppErr struct {
 
 func (ae AppErr) Error() string {
 	return ae.Err.Error()
+}
+
+func isAppErr(err error) bool {
+	_, ok := err.(AppErr)
+	return ok
 }
 
 // LenReader adds an additional method to io.Reader, returning how many bytes
@@ -160,30 +162,13 @@ func (p Pipeline) Run(c Conn) error {
 
 	for _, cmd := range p {
 		if err := c.Decode(cmd.Rcv); err != nil {
-			c.Close()
+			// TODO this isn't ideal
+			if !isAppErr(err) {
+				c.Close()
+			}
 			return err
 		}
 	}
 
 	return nil
-}
-
-// LuaEval calls the EVAL command on the given Conn for the given script,
-// passing the key count and argument list in as well. See
-// http://redis.io/commands/eval for more on how EVAL works and for the meaning
-// of the keys argument.
-//
-// LuaEval will automatically try to call EVALSHA first in order to preserve
-// bandwidth, and only falls back on EVAL if the script has never been used
-// before.
-func LuaEval(c Conn, res interface{}, script string, keys int, args ...interface{}) error {
-	sumRaw := sha1.Sum([]byte(script))
-	sum := hex.EncodeToString(sumRaw[:])
-
-	cmd := Cmd{}.C("EVALSHA").A(sum).A(keys).A(args).R(res)
-	err := cmd.Run(c)
-	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
-		err = cmd.Reset().C("EVAL").A(script).A(keys).A(args).R(res).Run(c)
-	}
-	return err
 }

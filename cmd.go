@@ -1,5 +1,11 @@
 package radix
 
+import (
+	"crypto/sha1"
+	"encoding/hex"
+	"strings"
+)
+
 // Cmd implements the Action interface and describes a single redis command to
 // be performed. The Cmd field is the name of the redis command to be performend
 // and is always required. Keys are the keys being operated on, and may be left
@@ -94,8 +100,71 @@ func (c Cmd) Run(conn Conn) error {
 		conn.Close()
 		return err
 	} else if err := conn.Decode(c.Rcv); err != nil {
-		conn.Close()
+		if !isAppErr(err) {
+			conn.Close()
+		}
 		return err
 	}
 	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// TODO this isn't really all that clean. A lot of the difficulty stems from how
+// Cmds are created (using the chaining thing). If they could be created in a
+// saner way it'd be easier to have a LuaCmd type or something that mirrors them
+// without adding a ton of API surface area.
+
+// Lua TODO
+func (c Cmd) Lua(script string) Action {
+	// TODO alloc here probably isn't necessary
+	sumRaw := sha1.Sum([]byte(script))
+	sum := hex.EncodeToString(sumRaw[:])
+
+	// shift the arguments in place to allow room for the script hash, key
+	// count, and keys themselves
+	// TODO this isn't great because if the Args are re-allocated we don't
+	// actually give back to the original Cmd
+	shiftBy := 2 + len(c.Keys)
+	for i := 0; i < shiftBy; i++ {
+		c.Args = append(c.Args, nil)
+	}
+	copy(c.Args[shiftBy:], c.Args)
+	c.Args[0] = sum
+	c.Args[1] = len(c.Keys)
+	for i := range c.Keys {
+		c.Args[i+2] = c.Keys[i]
+	}
+
+	return luaCmd{
+		Cmd: Cmd{
+			Cmd:  evalsha,
+			Keys: c.Keys,
+			Args: c.Args,
+			Rcv:  c.Rcv,
+		},
+		script: script,
+	}
+}
+
+type luaCmd struct {
+	Cmd
+	script string
+}
+
+var (
+	evalsha = []byte("EVALSHA")
+	eval    = []byte("EVAL")
+)
+
+func (l luaCmd) Run(conn Conn) error {
+	cmd := l.Cmd
+	cmd.Keys = nil
+	err := cmd.Run(conn)
+	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
+		cmd.Cmd = eval
+		cmd.Args[0] = l.script
+		err = cmd.Run(conn)
+	}
+	return err
 }
