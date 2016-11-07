@@ -6,6 +6,17 @@ import (
 	"strings"
 )
 
+// Action is an entity which can perform one or more tasks using a Conn
+type Action interface {
+	// Key returns a key which will be acted on. If the Action will act on more
+	// than one key than one can be returned at random. If no keys will be acted
+	// on then nil should be returned.
+	Key() []byte
+
+	// Run actually performs the action using the given Conn
+	Run(c Conn) error
+}
+
 // Cmd implements the Action interface and describes a single redis command to
 // be performed. The Cmd field is the name of the redis command to be performend
 // and is always required. Keys are the keys being operated on, and may be left
@@ -167,4 +178,48 @@ func (l luaCmd) Run(conn Conn) error {
 		err = cmd.Run(conn)
 	}
 	return err
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Pipeline is an Action used to write multiple commands to a Conn in a single
+// operation, and then read off all of their responses in a single operation,
+// reducing round-trip time.
+//
+//	var fooVal string
+//	p := Pipeline{
+//		radix.Cmd{}.C("SET").K("foo").A("bar"),
+//		radix.Cmd{}.C("GET").K("foo").R(&fooVal),
+//	}
+//
+//	if err := conn.Do(p); err != nil {
+//		panic(err)
+//	}
+//	fmt.Printf("fooVal: %q\n", fooVal)
+//
+type Pipeline []Cmd
+
+// Run implements the method for the Action interface. It will actually run all
+// commands buffered by calls to Cmd so far and decode their responses into
+// their receivers. If a network error is encountered the Conn will be Close'd
+// and the error returned immediately.
+func (p Pipeline) Run(c Conn) error {
+	for _, cmd := range p {
+		if err := c.Encode(cmd); err != nil {
+			c.Close()
+			return err
+		}
+	}
+
+	for _, cmd := range p {
+		if err := c.Decode(cmd.Rcv); err != nil {
+			// TODO this isn't ideal
+			if !isAppErr(err) {
+				c.Close()
+			}
+			return err
+		}
+	}
+
+	return nil
 }
