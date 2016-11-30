@@ -12,6 +12,22 @@ import (
 	"strconv"
 )
 
+// UnmarshalErr wraps the error type. It is used to indicate that the error
+// being returned is due to being unable to unmarshal a response into the
+// provided receiver value.
+type UnmarshalErr struct {
+	Err error
+}
+
+func (ue UnmarshalErr) Error() string {
+	return ue.Err.Error()
+}
+
+func unmarshalErrf(s string, args ...interface{}) error {
+	err := fmt.Errorf(s, args...)
+	return UnmarshalErr{Err: err}
+}
+
 // A special limited reader which will read an extra two bytes after the limit
 // has been reached
 
@@ -47,8 +63,10 @@ func (lrp *limitedReaderPlus) Read(b []byte) (int, error) {
 
 // Decoder wraps an io.Reader and decodes Resp data off of it.
 type Decoder interface {
-	// Decode reads a single message off of the underlying io.Reader and unmarshals
-	// it into the given receiver, which should be a pointer or reference type.
+	// Decode reads a single message off of the underlying io.Reader and
+	// unmarshals it into the given receiver, which should be a pointer or
+	// reference type. The returned error will be an UnmarshalErr if the error
+	// was caused by not being able to unmarshal into the receiver type.
 	// TODO more docs on how that happens
 	Decode(interface{}) error
 }
@@ -155,7 +173,7 @@ func (d *decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 		*dstt, err = readAllAppend(r, (*dstt)[:0])
 	case *bool:
 		if ui, err = d.readUint(r); err != nil {
-			err = fmt.Errorf("could not parse as bool: %s", err)
+			err = unmarshalErrf("could not parse as bool: %s", err)
 			break
 		}
 		if ui == 1 {
@@ -163,7 +181,7 @@ func (d *decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 		} else if ui == 0 {
 			*dstt = false
 		} else {
-			err = fmt.Errorf("invalid bool value: %d", ui)
+			err = unmarshalErrf("invalid bool value: %d", ui)
 		}
 
 	case *int:
@@ -224,7 +242,7 @@ func (d *decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 	case *interface{}: // this case is more or less black magic
 		v := reflect.Indirect(reflect.ValueOf(dstt))
 		if !v.CanSet() {
-			err = fmt.Errorf("cannot decode into type %T", dstt)
+			err = unmarshalErrf("cannot decode into type %T", dstt)
 			break
 		}
 		var rcvT reflect.Type
@@ -255,7 +273,7 @@ func (d *decoder) scanInto(dst interface{}, r io.Reader, typ int) error {
 		// **string), probably there will be other cases in here eventually as
 		// well
 		if t.Kind() != reflect.Ptr || t.Elem().Kind() != reflect.Ptr {
-			err = fmt.Errorf("cannot decode into type %T", dstt)
+			err = unmarshalErrf("cannot decode into type %T", dstt)
 			break
 		}
 		var rcv reflect.Value
@@ -314,7 +332,7 @@ func (d *decoder) scanArrayInto(v reflect.Value, size int) error {
 
 	} else if !v.CanSet() {
 		// this will also use the defer to discard everything
-		return fmt.Errorf("cannot decode redis array into %v, can't set", v.Type())
+		return unmarshalErrf("cannot decode redis array into %v, can't set", v.Type())
 
 	} else if v.Type() == emptyInterfaceT {
 		if v.IsNil() {
@@ -364,7 +382,7 @@ func (d *decoder) scanArrayInto(v reflect.Value, size int) error {
 
 	case reflect.Map:
 		if size%2 != 0 {
-			return fmt.Errorf("cannot decode redis array with odd number of elements into map")
+			return unmarshalErrf("cannot decode redis array with odd number of elements into map")
 		} else if v.IsNil() {
 			v.Set(reflect.MakeMap(v.Type()))
 		}
@@ -389,7 +407,7 @@ func (d *decoder) scanArrayInto(v reflect.Value, size int) error {
 		}
 
 	default:
-		return fmt.Errorf("cannot decode redis array into %v", v.Type())
+		return unmarshalErrf("cannot decode redis array into %v", v.Type())
 	}
 	return nil
 }

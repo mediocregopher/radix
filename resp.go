@@ -53,6 +53,9 @@ type Marshaler interface {
 // it. The function given can be used to read the data into a separate temporary
 // value first.
 //
+// Errors returned from Unmarshal will automatically be wrapped in the
+// UnmarshalErr type by the Decoder.
+//
 // TODO example
 type Unmarshaler interface {
 	Unmarshal(func(interface{}) error) error

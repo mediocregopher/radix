@@ -3,199 +3,172 @@
 package pubsub
 
 import (
-	"container/list"
+	"bytes"
 	"errors"
-	"fmt"
+	"net"
 
-	"github.com/mediocregopher/radix.v2/redis"
+	radix "github.com/mediocregopher/radix.v2"
 )
 
-// SubRespType describes the type of the response  being returned from one of
-// the methods in this package
-type SubRespType uint8
+// Message describes a message being published to a subscribed channel
+type Message struct {
+	Pattern string // will be set if PSUBSCRIBE was used
+	Channel string
+	Message []byte
+}
 
-// The different kinds of SubRespTypes
-const (
-	Error SubRespType = iota
-	Subscribe
-	Unsubscribe
+// takes in the array of returned data sans the first "message"/"pmessage"
+// argument. Assumes bb is correct size
+func (m *Message) fromArr(bb [][]byte, isPat bool) {
+	pop := func() []byte {
+		b := bb[0]
+		bb = bb[1:]
+		return b
+	}
+
+	if isPat {
+		m.Pattern = string(pop())
+	}
+	m.Channel = string(pop())
+	m.Message = pop()
+}
+
+// Unmarshal implements the radix.Unmarshaler interface
+func (m *Message) Unmarshal(fn func(interface{}) error) error {
+	bb := make([][]byte, 0, 4)
+	if err := fn(&bb); err != nil {
+		return err
+	}
+
+	if len(bb) < 3 {
+		return radix.UnmarshalErr{Err: errors.New("message has too few elements")}
+	}
+
+	typ := bytes.ToUpper(bb[0])
+	isPat := bytes.Equal(typ, []byte("PMESSAGE"))
+	if isPat && len(bb) < 4 {
+		return radix.UnmarshalErr{Err: errors.New("message has too few elements")}
+	} else if !bytes.Equal(typ, []byte("MESSAGE")) {
+		return radix.UnmarshalErr{Err: errors.New("not MESSAGE or PMESSAGE")}
+	}
+	m.fromArr(bb[1:], isPat)
+	return nil
+}
+
+type maybeMessage struct {
+	ok bool
 	Message
-)
-
-// SubClient wraps a Redis client to provide convenience methods for Pub/Sub
-// functionality.
-type SubClient struct {
-	Client   *redis.Client
-	messages *list.List
 }
 
-// SubResp wraps a Redis resp and provides convenient access to Pub/Sub info.
-type SubResp struct {
-	*redis.Resp // Original Redis resp
-
-	Type     SubRespType
-	Channel  string // Channel resp is on (Message)
-	Pattern  string // Pattern which was matched for publishes captured by a PSubscribe
-	SubCount int    // Count of subs active after this action (Subscribe or Unsubscribe)
-	Message  string // Publish message (Message)
-	Err      error  // SubResp error (Error)
-}
-
-// Timeout determines if this SubResp is an error type
-// due to a timeout reading from the network
-func (r *SubResp) Timeout() bool {
-	return redis.IsTimeout(r.Resp)
-}
-
-// NewSubClient takes an existing, connected redis.Client and wraps it in a
-// SubClient, returning that. The passed in redis.Client should not be used as
-// long as the SubClient is also being used
-func NewSubClient(client *redis.Client) *SubClient {
-	return &SubClient{client, &list.List{}}
-}
-
-// Subscribe makes a Redis "SUBSCRIBE" command on the provided channels
-func (c *SubClient) Subscribe(channels ...interface{}) *SubResp {
-	return c.filterMessages("SUBSCRIBE", channels...)
-}
-
-// PSubscribe makes a Redis "PSUBSCRIBE" command on the provided patterns
-func (c *SubClient) PSubscribe(patterns ...interface{}) *SubResp {
-	return c.filterMessages("PSUBSCRIBE", patterns...)
-}
-
-// Unsubscribe makes a Redis "UNSUBSCRIBE" command on the provided channels
-func (c *SubClient) Unsubscribe(channels ...interface{}) *SubResp {
-	return c.filterMessages("UNSUBSCRIBE", channels...)
-}
-
-// PUnsubscribe makes a Redis "PUNSUBSCRIBE" command on the provided patterns
-func (c *SubClient) PUnsubscribe(patterns ...interface{}) *SubResp {
-	return c.filterMessages("PUNSUBSCRIBE", patterns...)
-}
-
-// Receive returns the next publish resp on the Redis client. It is possible
-// Receive will timeout, and the *SubResp will be an Error. You can use the
-// Timeout() method on SubResp to easily determine if that is the case. If this
-// is the case you can call Receive again to continue listening for publishes
-func (c *SubClient) Receive() *SubResp {
-	return c.receive(false)
-}
-
-func (c *SubClient) receive(skipBuffer bool) *SubResp {
-	if c.messages.Len() > 0 && !skipBuffer {
-		v := c.messages.Remove(c.messages.Front())
-		return v.(*SubResp)
+func (mm *maybeMessage) Unmarshal(fn func(interface{}) error) error {
+	err := fn(&mm.Message)
+	if _, ok := err.(radix.UnmarshalErr); ok {
+		return nil
 	}
-	r := c.Client.ReadResp()
-	return c.parseResp(r)
+	mm.ok = err == nil
+	return err
 }
 
-func (c *SubClient) filterMessages(cmd string, names ...interface{}) *SubResp {
-	r := c.Client.Cmd(cmd, names...)
-	var sr *SubResp
-	for i := 0; i < len(names); i++ {
-		// If nil we know this is the first loop
-		if sr == nil {
-			sr = c.parseResp(r)
-		} else {
-			sr = c.receive(true)
-		}
-		if sr.Type == Message {
-			c.messages.PushBack(sr)
-			i--
-		}
-	}
-	return sr
+// SubConn wraps a radix.Conn in order to provide a channel to which messages
+// from subscribed channels will be written.
+type SubConn struct {
+	c         radix.Conn
+	lastErr   error
+	cmdDoneCh chan chan bool
+	closeCh   chan bool
+
+	// Ch is the channel to which all publish messages for subscribed channels
+	// will be written. It should be being read from at all times in a separate
+	// go-routine from the one making subscribe/unsubscribe calls on the Client.
+	//
+	// This channel will be closed if the Close method is called or an error is
+	// encountered. The Err method can be used to retrieve the last error.
+	Ch <-chan Message
 }
 
-func (c *SubClient) parseResp(resp *redis.Resp) *SubResp {
-	sr := &SubResp{Resp: resp}
-	var elems []*redis.Resp
-
-	switch {
-	case resp.IsType(redis.Array):
-		elems, _ = resp.Array()
-		if len(elems) < 3 {
-			sr.Err = errors.New("resp is not formatted as a subscription resp")
-			sr.Type = Error
-			return sr
-		}
-
-	case resp.IsType(redis.Err):
-		sr.Err = resp.Err
-		sr.Type = Error
-		return sr
-
-	default:
-		sr.Err = errors.New("resp is not formatted as a subscription resp")
-		sr.Type = Error
-		return sr
+// New returns an initizlied SubConn. Check the docs on the Ch field for how to
+// read publishes.
+func New(c radix.Conn) *SubConn {
+	ch := make(chan Message)
+	sc := &SubConn{
+		c:         c,
+		cmdDoneCh: make(chan chan bool, 1),
+		closeCh:   make(chan bool),
+		Ch:        ch,
 	}
+	go sc.readSpin(ch)
+	return sc
+}
 
-	rtype, err := elems[0].Str()
-	if err != nil {
-		sr.Err = fmt.Errorf("resp type: %s", err)
-		sr.Type = Error
-		return sr
+func (sc *SubConn) readSpin(ch chan Message) {
+	defer close(ch)
+	defer close(sc.closeCh)
+	defer sc.c.Close()
+	for {
+		select {
+		case <-sc.closeCh:
+			return
+		default:
+		}
+
+		var mm maybeMessage
+		err := sc.c.Decode(&mm)
+		if nerr, ok := err.(*net.OpError); ok && nerr.Timeout() {
+			continue
+		} else if err != nil {
+			sc.lastErr = err
+			return
+		} else if !mm.ok {
+			(<-sc.cmdDoneCh) <- true
+			continue
+		}
+
+		ch <- mm.Message
 	}
+}
 
-	//first element
-	switch rtype {
-	case "subscribe", "psubscribe":
-		sr.Type = Subscribe
-		count, err := elems[2].Int()
-		if err != nil {
-			sr.Err = fmt.Errorf("subscribe count: %s", err)
-			sr.Type = Error
-		} else {
-			sr.SubCount = int(count)
-		}
+// Err returns the error which caused the SubConn to close, if any. This should
+// only be called after Ch has been closed.
+func (sc *SubConn) Err() error {
+	return sc.lastErr
+}
 
-	case "unsubscribe", "punsubscribe":
-		sr.Type = Unsubscribe
-		count, err := elems[2].Int()
-		if err != nil {
-			sr.Err = fmt.Errorf("unsubscribe count: %s", err)
-			sr.Type = Error
-		} else {
-			sr.SubCount = int(count)
-		}
+// Close will clean up the resources taken by this SubConn and then call Close
+// on the underlying connection
+func (sc *SubConn) Close() error {
+	sc.closeCh <- true
+	return nil
+}
 
-	case "message", "pmessage":
-		var chanI, msgI int
+// Subscribe runs a Redis "SUBSCRIBE" command with the provided channels
+func (sc *SubConn) Subscribe(channels ...string) {
+	sc.doCmd("SUBSCRIBE", channels...)
+}
 
-		if rtype == "message" {
-			chanI, msgI = 1, 2
-		} else { // "pmessage"
-			chanI, msgI = 2, 3
-			pattern, err := elems[1].Str()
-			if err != nil {
-				sr.Err = fmt.Errorf("message pattern: %s", err)
-				sr.Type = Error
-				return sr
-			}
-			sr.Pattern = pattern
-		}
+// PSubscribe runs a Redis "PSUBSCRIBE" command with the provided patterns
+func (sc *SubConn) PSubscribe(patterns ...string) {
+	sc.doCmd("PSUBSCRIBE", patterns...)
+}
 
-		sr.Type = Message
-		channel, err := elems[chanI].Str()
-		if err != nil {
-			sr.Err = fmt.Errorf("message channel: %s", err)
-			sr.Type = Error
-			return sr
-		}
-		sr.Channel = channel
-		msg, err := elems[msgI].Str()
-		if err != nil {
-			sr.Err = fmt.Errorf("message msg: %s", err)
-			sr.Type = Error
-		} else {
-			sr.Message = msg
-		}
-	default:
-		sr.Err = errors.New("suscription multiresp has invalid type: " + rtype)
-		sr.Type = Error
-	}
-	return sr
+// Unsubscribe runs a Redis "UNSSUBSCRIBE" command with the provided channels
+func (sc *SubConn) Unsubscribe(channels ...string) {
+	sc.doCmd("UNSUBSCRIBE", channels...)
+}
+
+// PUnsubscribe runs a Redis "PUNSSUBSCRIBE" command with the provided patterns
+func (sc *SubConn) PUnsubscribe(patterns ...string) {
+	sc.doCmd("PUNSUBSCRIBE", patterns...)
+}
+
+// Ping writes a PING message to the connection, which can be used to unsure the
+// connection is still alive.
+func (sc *SubConn) Ping() {
+	sc.doCmd("PING")
+}
+
+func (sc *SubConn) doCmd(cmd string, args ...string) {
+	doneCh := make(chan bool)
+	sc.cmdDoneCh <- doneCh
+	sc.c.Encode(radix.Cmd{}.C(cmd).A(args))
+	<-doneCh
 }

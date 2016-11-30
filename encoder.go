@@ -88,9 +88,6 @@ var bools = [][]byte{
 	{'1'},
 }
 
-// The returned byte slice may be backed by the encoder's scratch buffer, so it
-// may get corrupted the next time the encoder is used. The returned slice
-// should not be modified in any case
 func (e *encoder) toBytes(v interface{}) (LenReader, error) {
 	e.bodyBuf.Reset()
 	switch vt := v.(type) {

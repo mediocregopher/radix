@@ -3,7 +3,6 @@ package radix
 import (
 	"crypto/rand"
 	"encoding/hex"
-	. "testing"
 )
 
 func randStr() string {

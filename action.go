@@ -9,20 +9,42 @@ import (
 // Action is an entity which can perform one or more tasks using a Conn
 type Action interface {
 	// Key returns a key which will be acted on. If the Action will act on more
-	// than one key than one can be returned at random. If no keys will be acted
-	// on then nil should be returned.
+	// than one key than any one can be returned. If no keys will be acted on
+	// then nil should be returned.
 	Key() []byte
 
 	// Run actually performs the action using the given Conn
 	Run(c Conn) error
 }
 
+// var c Action = Cmd(&rcv, "GET", args...)
+//	* can't set Key
+// var c Action = Cmd("GET", args...).Into(&rcv)
+//	* also doesn't set Key
+//	* too cute, not necessary
+// var c Action = Cmd(&rcv, `GET ?`, arg)
+//	* assume's first is key?
+// var c Action = Cmd(&rcv, `GET key:?`, arg)
+//	* Can't know key, can't flatten slices/maps
+// var c Action = C("GET").K("fooKey").R(&fooVal)
+//	* ugly as butt, bulky
+//	* lot's of api surface area
+//
+// * None of these would have a nice Cmd type that could be manually populated
+//   by speed freaks
+//
+// type CmdPart interface{ ... } // Key, Arg are CmdParts
+// var c Action = Cmd(&rcv, "SET", Key("foo"), Arg("bar"))
+//	* maybe confusing?
+//	* more api surface area
+//
+
 // Cmd implements the Action interface and describes a single redis command to
 // be performed. The Cmd field is the name of the redis command to be performend
 // and is always required. Keys are the keys being operated on, and may be left
 // empty if the command doesn't operate on any specific key(s) (e.g. SCAN). Args
-// are any extra arguments to the command and can be almost any time (TODO flesh
-// that statement out).
+// are any extra arguments to the command and can be almost any thing (TODO
+// flesh that statement out).
 //
 // See the Decoder docs for more on how results are unmarshalled into Rcv.
 //
