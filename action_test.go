@@ -8,7 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLuaAction(t *T) {
+func TestCmd(t *T) {
+	c := dial()
+	key, val := randStr(), randStr()
+
+	require.Nil(t, Cmd("SET", key, val).Run(c))
+	var got string
+	require.Nil(t, Cmd("GET", key).Into(&got).Run(c))
+	assert.Equal(t, val, got)
+}
+
+func TestLuaCmd(t *T) {
 	getset := `
 		local res = redis.call("GET", KEYS[1])
 		redis.call("SET", KEYS[1], ARGV[1])
@@ -22,14 +32,14 @@ func TestLuaAction(t *T) {
 
 	{
 		var res string
-		err := Cmd{}.K(key).A(val1).R(&res).Lua(getset).Run(c)
+		err := LuaCmd(getset, []string{key}, val1).Into(&res).Run(c)
 		require.Nil(t, err, "%s", err)
 		assert.Empty(t, res)
 	}
 
 	{
 		var res string
-		err := Cmd{}.K(key).A(val2).R(&res).Lua(getset).Run(c)
+		err := LuaCmd(getset, []string{key}, val2).Into(&res).Run(c)
 		require.Nil(t, err)
 		assert.Equal(t, val1, res)
 	}
@@ -46,7 +56,7 @@ func TestPipelineAction(t *T) {
 		out := make([]string, len(ss))
 		var p Pipeline
 		for i := range ss {
-			p = append(p, Cmd{}.C("ECHO").A(ss[i]).R(&out[i]))
+			p = append(p, CmdNoKey("ECHO", ss[i]).Into(&out[i]))
 		}
 		require.Nil(t, p.Run(c))
 

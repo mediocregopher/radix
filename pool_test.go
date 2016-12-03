@@ -24,7 +24,7 @@ func TestPool(t *T) {
 	testEcho := func(c Conn) {
 		exp := randStr()
 		var out string
-		assert.Nil(t, Cmd{}.C("ECHO").A(exp).R(&out).Run(c))
+		assert.Nil(t, CmdNoKey("ECHO", exp).Into(&out).Run(c))
 		assert.Equal(t, exp, out)
 	}
 

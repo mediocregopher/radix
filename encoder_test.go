@@ -116,68 +116,68 @@ var encodeTests = []struct {
 
 	// Cmd
 	{
-		in:  Cmd{}.C("foo"),
+		in:  CmdNoKey("foo"),
 		out: encodeStrArr("foo"),
 	},
 	{
-		in:  Cmd{}.C("foo").K("bar"),
+		in:  Cmd("foo", "bar"),
 		out: encodeStrArr("foo", "bar"),
 	},
 	{
-		in:  Cmd{}.C("foo").K("bar").A(1).A(7.2),
+		in:  Cmd("foo", "bar", 1, 7.2),
 		out: encodeStrArr("foo", "bar", "1", "7.2"),
 	},
 	{
-		in:  Cmd{}.C("foo").K("bar").K("baz").A(1).A(7.2),
+		in:  Cmd("foo", "bar", "baz", 1, 7.2),
 		out: encodeStrArr("foo", "bar", "baz", "1", "7.2"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]string{}),
-		out: encodeStrArr("foo"),
+		in:  Cmd("foo", "key", []string{}),
+		out: encodeStrArr("foo", "key"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]string{"bar"}),
-		out: encodeStrArr("foo", "bar"),
+		in:  Cmd("foo", "key", []string{"bar"}),
+		out: encodeStrArr("foo", "key", "bar"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]string{}).A([]string{}),
-		out: encodeStrArr("foo"),
+		in:  Cmd("foo", "key", []string{}, []string{}),
+		out: encodeStrArr("foo", "key"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]string{"bar"}).A([]string{"baz"}),
-		out: encodeStrArr("foo", "bar", "baz"),
+		in:  Cmd("foo", "key", []string{"bar"}, []string{"baz"}),
+		out: encodeStrArr("foo", "key", "bar", "baz"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]interface{}{}),
-		out: encodeStrArr("foo"),
+		in:  Cmd("foo", "key", []interface{}{}),
+		out: encodeStrArr("foo", "key"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]interface{}{"bar"}),
-		out: encodeStrArr("foo", "bar"),
+		in:  Cmd("foo", "key", []interface{}{"bar"}),
+		out: encodeStrArr("foo", "key", "bar"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]interface{}{"bar", 1}),
-		out: encodeStrArr("foo", "bar", "1"),
+		in:  Cmd("foo", "key", []interface{}{"bar", 1}),
+		out: encodeStrArr("foo", "key", "bar", "1"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]interface{}{"bar", []int{}, []interface{}{}}),
-		out: encodeStrArr("foo", "bar"),
+		in:  Cmd("foo", "key", []interface{}{"bar", []int{}, []interface{}{}}),
+		out: encodeStrArr("foo", "key", "bar"),
 	},
 	{
-		in:  Cmd{}.C("foo").A([]interface{}{"bar", []int{1}}),
-		out: encodeStrArr("foo", "bar", "1"),
+		in:  Cmd("foo", "key", []interface{}{"bar", []int{1}}),
+		out: encodeStrArr("foo", "key", "bar", "1"),
 	},
 	{
-		in:  Cmd{}.C("foo").A(map[string]int{}),
-		out: encodeStrArr("foo"),
+		in:  Cmd("foo", "key", map[string]int{}),
+		out: encodeStrArr("foo", "key"),
 	},
 	{
-		in:  Cmd{}.C("foo").A(map[string]int{"one": 1}),
-		out: encodeStrArr("foo", "one", "1"),
+		in:  Cmd("foo", "key", map[string]int{"one": 1}),
+		out: encodeStrArr("foo", "key", "one", "1"),
 	},
 	{
-		in:  Cmd{}.C("foo").A(map[int]interface{}{1: "one"}),
-		out: encodeStrArr("foo", "1", "one"),
+		in:  Cmd("foo", "key", map[int]interface{}{1: "one"}),
+		out: encodeStrArr("foo", "key", "1", "one"),
 	},
 }
 

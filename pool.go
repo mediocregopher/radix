@@ -236,7 +236,7 @@ type poolPinger struct {
 func NewPoolPinger(p Pool, period time.Duration) Pool {
 	closeCh := make(chan struct{})
 	doneCh := make(chan struct{})
-	pingCmd := Cmd{}.C("PING")
+	pingCmd := CmdNoKey("PING")
 	go func() {
 		t := time.NewTicker(period)
 		for {

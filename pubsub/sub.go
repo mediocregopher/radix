@@ -169,6 +169,6 @@ func (sc *SubConn) Ping() {
 func (sc *SubConn) doCmd(cmd string, args ...string) {
 	doneCh := make(chan bool)
 	sc.cmdDoneCh <- doneCh
-	sc.c.Encode(radix.Cmd{}.C(cmd).A(args))
+	sc.c.Encode(radix.CmdNoKey(cmd, args))
 	<-doneCh
 }

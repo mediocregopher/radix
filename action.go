@@ -17,122 +17,74 @@ type Action interface {
 	Run(c Conn) error
 }
 
-// var c Action = Cmd(&rcv, "GET", args...)
-//	* can't set Key
-// var c Action = Cmd("GET", args...).Into(&rcv)
-//	* also doesn't set Key
-//	* too cute, not necessary
-// var c Action = Cmd(&rcv, `GET ?`, arg)
-//	* assume's first is key?
-// var c Action = Cmd(&rcv, `GET key:?`, arg)
-//	* Can't know key, can't flatten slices/maps
-// var c Action = C("GET").K("fooKey").R(&fooVal)
-//	* ugly as butt, bulky
-//	* lot's of api surface area
-//
-// * None of these would have a nice Cmd type that could be manually populated
-//   by speed freaks
-//
-// type CmdPart interface{ ... } // Key, Arg are CmdParts
-// var c Action = Cmd(&rcv, "SET", Key("foo"), Arg("bar"))
-//	* maybe confusing?
-//	* more api surface area
-//
+// RawCmd implements the Action interface and describes a single redis command
+// to be performed.
+type RawCmd struct {
+	// The name of the redis command to be performed. Always required
+	Cmd []byte
 
-// Cmd implements the Action interface and describes a single redis command to
-// be performed. The Cmd field is the name of the redis command to be performend
-// and is always required. Keys are the keys being operated on, and may be left
-// empty if the command doesn't operate on any specific key(s) (e.g. SCAN). Args
-// are any extra arguments to the command and can be almost any thing (TODO
-// flesh that statement out).
-//
-// See the Decoder docs for more on how results are unmarshalled into Rcv.
-//
-// A Cmd can be filled in manually, or the shortcut methods may be used for more
-// convenience. For example to set a key:
-//
-//	cmd := radix.Cmd{}.C("SET").K("fooKey").A("will be set to this string")
-//
-// And then to retrieve that key:
-//
-//	var fooVal string
-//	cmd := radix.Cmd{}.C("GET").K("fooKey").R(&fooVal)
-type Cmd struct {
-	Cmd  []byte
+	// The keys being operated on, and may be left empty if the command doesn't
+	// operate on any specific key(s) (e.g.  SCAN)
 	Keys [][]byte
+
+	// Args are any extra arguments to the command and can be almost any thing
+	// TODO more deets
 	Args []interface{}
-	Rcv  interface{}
+
+	// Pointer value into which results from the command will be unmarshalled.
+	// The Into method can be used to set this as well. See the Decoder docs
+	// for more on unmarshalling
+	Rcv interface{}
 }
 
-// C (short for "Cmd") sets the Cmd field to the given string and returns the
-// new Cmd object
-func (c Cmd) C(cmd string) Cmd {
-	c.Cmd = append(c.Cmd[:0], cmd...)
-	return c
-}
-
-// K (short for "Key") appends the given key to the Keys field and returns the
-// new Cmd object
-func (c Cmd) K(key string) Cmd {
-	if len(c.Keys) == cap(c.Keys) {
-		// if keys is full we'll just have to bite the bullet and allocate the
-		// memory
-		c.Keys = append(c.Keys, []byte(key))
-		return c
+// Cmd returns an initialized RawCmd, populating the fields with the given
+// values. Use CmdNoKey for commands which don't have an actual key (e.g. MULTI
+// or PING). You can chain the Into method to conveniently set a result
+// receiver.
+func Cmd(cmd, key string, args ...interface{}) RawCmd {
+	return RawCmd{
+		Cmd:  []byte(cmd),
+		Keys: [][]byte{[]byte(key)},
+		Args: args,
 	}
-	i := len(c.Keys)
-	c.Keys = c.Keys[:i+1]
-	c.Keys[i] = append(c.Keys[i][:0], key...)
-	return c
 }
 
-// Key implements the Key method for that Action interface.
-func (c Cmd) Key() []byte {
-	if len(c.Keys) == 0 {
+// CmdNoKey is like Cmd, but the returned RawCmd will not have its Keys field
+// set.
+func CmdNoKey(cmd string, args ...interface{}) RawCmd {
+	return RawCmd{
+		Cmd:  []byte(cmd),
+		Args: args,
+	}
+}
+
+// Into returns a RawCmd with all the same fields as the original, except the
+// Rcv field set to the given value.
+func (rc RawCmd) Into(rcv interface{}) RawCmd {
+	rc.Rcv = rcv
+	return rc
+}
+
+// Key implements the Key method of the Action interface.
+func (rc RawCmd) Key() []byte {
+	if len(rc.Keys) == 0 {
 		return nil
 	}
-	return c.Keys[0]
+	return rc.Keys[0]
 }
 
-// A (short for "Arg") appends the given argument to the Args slice and returns
-// the new Cmd object.
-func (c Cmd) A(arg interface{}) Cmd {
-	c.Args = append(c.Args, arg)
-	return c
-}
-
-// R (short for "Rcv") sets the Rcv field to the given receiver (which should be
-// a pointer) and returns the new Cmd object. The receiver is what the response
-// to the Cmd is unmarshalled into.
-//
-// If Rcv isn't set then the command's return value will be discarded.
-func (c Cmd) R(v interface{}) Cmd {
-	c.Rcv = v
-	return c
-}
-
-// Reset can be used to reuse a Cmd object. In cases where memory allocations
-// are a concern this allows the user of radix to conserve them easily, either
-// by always using the same Cmd object within a go-routine or by creating a Cmd
-// pool.
-//
-// The returned Cmd object can be used as if it was just instantiated.
-func (c Cmd) Reset() Cmd {
-	c.Cmd = c.Cmd[:0]
-	c.Keys = c.Keys[:0]
-	c.Args = c.Args[:0]
-	c.Rcv = nil
-	return c
-}
-
-// Run implements the Run method of the Action interface. It writes the Cmd to
-// the Conn, and unmarshals the result into the Rcv field (if set). It calls
+// Run implements the Run method of the Action interface. It writes the RawCmd
+// to the Conn, and unmarshals the result into the Rcv field (if set). It calls
 // Close on the Conn if any errors occur.
-func (c Cmd) Run(conn Conn) error {
-	if err := conn.Encode(c); err != nil {
+func (rc RawCmd) Run(conn Conn) error {
+	// TODO if the Marshaler interface handled low-level operations then RawCmd
+	// wouldn't need a special case in the Encoder.
+	if err := conn.Encode(rc); err != nil {
 		conn.Close()
 		return err
-	} else if err := conn.Decode(c.Rcv); err != nil {
+	} else if err := conn.Decode(rc.Rcv); err != nil {
+		// TODO just make the rwcConn thing do this inside its Decode method and
+		// document it there
 		if !isAppErr(err) {
 			conn.Close()
 		}
@@ -143,88 +95,121 @@ func (c Cmd) Run(conn Conn) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// TODO this isn't really all that clean. A lot of the difficulty stems from how
-// Cmds are created (using the chaining thing). If they could be created in a
-// saner way it'd be easier to have a LuaCmd type or something that mirrors them
-// without adding a ton of API surface area.
+var (
+	evalsha = []byte("EVALSHA")
+	eval    = []byte("EVAL")
+)
 
-// Lua TODO
-func (c Cmd) Lua(script string) Action {
+// RawLuaCmd is an Action similar to RawCmd, but it runs a lua script on the
+// redis server instead of a single Cmd. See redis' EVAL docs for more on how
+// that works.
+type RawLuaCmd struct {
+	// The actual lua script which will be run.
+	Script string
+
+	// The keys being operated on, and may be left empty if the command doesn't
+	// operate on any specific key(s)
+	Keys []string
+
+	// Args are any extra arguments to the command and can be almost any thing
+	// TODO more deets
+	Args []interface{}
+
+	// Pointer value into which results from the command will be unmarshalled.
+	// The Into method can be used to set this as well. See the Decoder docs
+	// for more on unmarshalling
+	Rcv interface{}
+}
+
+// LuaCmd returns an initialized RawLuraCmd, populating the fields with the given
+// values. You can chain the Into method to conveniently set a result receiver.
+func LuaCmd(script string, keys []string, args ...interface{}) RawLuaCmd {
+	return RawLuaCmd{
+		Script: script,
+		Keys:   keys,
+		Args:   args,
+	}
+}
+
+// Into returns a RawLuaCmd with all the same fields as the original, except the
+// Rcv field set to the given value.
+func (rlc RawLuaCmd) Into(rcv interface{}) RawLuaCmd {
+	rlc.Rcv = rcv
+	return rlc
+}
+
+// Key implements the Key method of the Action interface.
+func (rlc RawLuaCmd) Key() []byte {
+	if len(rlc.Keys) == 0 {
+		return nil
+	}
+	return []byte(rlc.Keys[0])
+}
+
+// Run implements the Run method of the Action interface. It will first attempt
+// to perform the command using an EVALSHA, but will fallback to a normal EVAL
+// if that doesn't work.
+func (rlc RawLuaCmd) Run(conn Conn) error {
+	// TODO if the Marshaler interface handled low-level operations, like we need
+	// here, better then we could probably get rid of all this weird slice
+	// shifting nonsense.
+
+	rc := RawCmd{
+		Cmd:  evalsha,
+		Args: rlc.Args,
+		Rcv:  rlc.Rcv,
+	}
+
 	// TODO alloc here probably isn't necessary
-	sumRaw := sha1.Sum([]byte(script))
+	sumRaw := sha1.Sum([]byte(rlc.Script))
 	sum := hex.EncodeToString(sumRaw[:])
 
 	// shift the arguments in place to allow room for the script hash, key
 	// count, and keys themselves
 	// TODO this isn't great because if the Args are re-allocated we don't
 	// actually give back to the original Cmd
-	shiftBy := 2 + len(c.Keys)
+	shiftBy := 2 + len(rlc.Keys)
 	for i := 0; i < shiftBy; i++ {
-		c.Args = append(c.Args, nil)
+		rc.Args = append(rc.Args, nil)
 	}
-	copy(c.Args[shiftBy:], c.Args)
-	c.Args[0] = sum
-	c.Args[1] = len(c.Keys)
-	for i := range c.Keys {
-		c.Args[i+2] = c.Keys[i]
+	copy(rc.Args[shiftBy:], rc.Args)
+	rc.Args[0] = sum
+	rc.Args[1] = len(rlc.Keys)
+	for i := range rlc.Keys {
+		rc.Args[i+2] = rlc.Keys[i]
 	}
 
-	return luaCmd{
-		Cmd: Cmd{
-			Cmd:  evalsha,
-			Keys: c.Keys,
-			Args: c.Args,
-			Rcv:  c.Rcv,
-		},
-		script: script,
-	}
-}
-
-type luaCmd struct {
-	Cmd
-	script string
-}
-
-var (
-	evalsha = []byte("EVALSHA")
-	eval    = []byte("EVAL")
-)
-
-func (l luaCmd) Run(conn Conn) error {
-	cmd := l.Cmd
-	cmd.Keys = nil
-	err := cmd.Run(conn)
+	err := rc.Run(conn)
 	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
-		cmd.Cmd = eval
-		cmd.Args[0] = l.script
-		err = cmd.Run(conn)
+		rc.Cmd = eval
+		rc.Args[0] = rlc.Script
+		err = rc.Run(conn)
 	}
 	return err
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Pipeline is an Action used to write multiple commands to a Conn in a single
-// operation, and then read off all of their responses in a single operation,
-// reducing round-trip time.
+// Pipeline is an Action which first writes multiple commands to a Conn in a
+// single write, then reads their responses in a single step. This effectively
+// reduces network delay into a single round-trip
 //
 //	var fooVal string
 //	p := Pipeline{
-//		radix.Cmd{}.C("SET").K("foo").A("bar"),
-//		radix.Cmd{}.C("GET").K("foo").R(&fooVal),
+//		Cmd("SET", "foo", "bar"),
+//		Cmd("GET", "foo").Into(&fooVal),
 //	}
-//
 //	if err := conn.Do(p); err != nil {
 //		panic(err)
 //	}
 //	fmt.Printf("fooVal: %q\n", fooVal)
 //
-type Pipeline []Cmd
+type Pipeline []RawCmd
 
-// Run implements the method for the Action interface. It will actually run all
-// commands buffered by calls to Cmd so far and decode their responses into
-// their receivers. If a network error is encountered the Conn will be Close'd
-// and the error returned immediately.
+// Run implements the method for the Action interface. It will write all RawCmds
+// in it sequentially, then read all of their responses sequentially.
+//
+// If an error is encountered the error will be returned immediately.
 func (p Pipeline) Run(c Conn) error {
 	for _, cmd := range p {
 		if err := c.Encode(cmd); err != nil {
@@ -235,7 +220,8 @@ func (p Pipeline) Run(c Conn) error {
 
 	for _, cmd := range p {
 		if err := c.Decode(cmd.Rcv); err != nil {
-			// TODO this isn't ideal
+			// TODO this isn't ideal, we could just make the rwcConn do this
+			// always
 			if !isAppErr(err) {
 				c.Close()
 			}
@@ -243,5 +229,26 @@ func (p Pipeline) Run(c Conn) error {
 		}
 	}
 
+	return nil
+}
+
+// pipeConn is used by pipeline in order to "turn on" and "turn off" the
+// Encode/Decode methods on a Conn
+type pipeConn struct {
+	Conn
+	enc, dec bool
+}
+
+func (pc pipeConn) Encode(i interface{}) error {
+	if pc.enc {
+		return pc.Conn.Encode(i)
+	}
+	return nil
+}
+
+func (pc pipeConn) Decode(i interface{}) error {
+	if pc.dec {
+		return pc.Conn.Decode(i)
+	}
 	return nil
 }

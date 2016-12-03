@@ -35,18 +35,18 @@ type ScanOpts struct {
 	Count int
 }
 
-func (o ScanOpts) cmd(cursor string) Cmd {
+func (o ScanOpts) cmd(cursor string) RawCmd {
 	cmdStr := strings.ToUpper(o.Command)
-	cmd := Cmd{}.C(cmdStr)
+	cmd := RawCmd{Cmd: []byte(cmdStr)}
 	if cmdStr != "SCAN" {
-		cmd = cmd.K(o.Key)
+		cmd.Keys = [][]byte{[]byte(o.Key)}
 	}
-	cmd = cmd.A(cursor)
+	cmd.Args = append(cmd.Args, cursor)
 	if o.Pattern != "" {
-		cmd = cmd.A("MATCH").A(o.Pattern)
+		cmd.Args = append(cmd.Args, "MATCH", o.Pattern)
 	}
 	if o.Count > 0 {
-		cmd = cmd.A("COUNT").A(o.Count)
+		cmd.Args = append(cmd.Args, "COUNT", o.Count)
 	}
 	return cmd
 }
@@ -116,7 +116,7 @@ func (s *scanner) Next(res *string) bool {
 		}
 
 		parts := []interface{}{"", []string{}}
-		cmd := s.cmd(s.cur).R(&parts)
+		cmd := s.cmd(s.cur).Into(&parts)
 		if s.err = cmd.Run(s.Conn); s.err != nil {
 			return false
 		} else if len(parts) < 2 {

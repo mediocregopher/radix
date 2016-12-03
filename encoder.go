@@ -191,7 +191,7 @@ func (e *encoder) write(v interface{}, forceBulkStr bool) error {
 		// if we're writing an error we just assume that they want it as an
 		// error type on the wire
 		return e.writeAppErr(AppErr{Err: vt})
-	case Cmd:
+	case RawCmd:
 		return e.writeCmd(vt)
 	case Resp:
 		return e.writeResp(vt)
@@ -210,7 +210,7 @@ func (e *encoder) write(v interface{}, forceBulkStr bool) error {
 	return fmt.Errorf("cannot encode %T as a redis type", v)
 }
 
-func (e *encoder) writeCmd(c Cmd) error {
+func (e *encoder) writeCmd(c RawCmd) error {
 	e.cmdBuf = append(e.cmdBuf[:0], c.Cmd)
 	for _, key := range c.Keys {
 		e.cmdBuf = append(e.cmdBuf, key)

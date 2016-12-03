@@ -67,7 +67,7 @@ func TestTimeout(t *T) {
 	time.Sleep(1 * time.Second)
 	// the connection should have timed out at least by now
 
-	require.Nil(t, radix.Cmd{}.C("PUBLISH").K(channel).A("foo").Run(pub))
+	require.Nil(t, radix.Cmd("PUBLISH", channel, "foo").Run(pub))
 	m := assertRead(t, sub, 100*time.Millisecond)
 	assert.Equal(t, channel, m.Channel)
 	assert.Equal(t, []byte("foo"), m.Message)
@@ -82,13 +82,13 @@ func TestSubscribe(t *T) {
 		channel := randStr()
 		message := []byte(randStr())
 		sub.Subscribe(channel)
-		require.Nil(t, radix.Cmd{}.C("PUBLISH").K(channel).A(message).Run(pub))
+		require.Nil(t, radix.Cmd("PUBLISH", channel, message).Run(pub))
 		m := assertRead(t, sub, 100*time.Millisecond)
 		assert.Equal(t, channel, m.Channel)
 		assert.Equal(t, message, m.Message)
 
 		sub.Unsubscribe(channel)
-		require.Nil(t, radix.Cmd{}.C("PUBLISH").K(channel).A(message).Run(pub))
+		require.Nil(t, radix.Cmd("PUBLISH", channel, message).Run(pub))
 		// we don't bother waiting to read for a while to make sure the publish
 		// didn't work, if it did we'll find out next loop around
 
