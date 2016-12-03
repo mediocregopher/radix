@@ -74,23 +74,14 @@ func (rc RawCmd) Key() []byte {
 }
 
 // Run implements the Run method of the Action interface. It writes the RawCmd
-// to the Conn, and unmarshals the result into the Rcv field (if set). It calls
-// Close on the Conn if any errors occur.
+// to the Conn, and unmarshals the result into the Rcv field (if set).
 func (rc RawCmd) Run(conn Conn) error {
 	// TODO if the Marshaler interface handled low-level operations then RawCmd
 	// wouldn't need a special case in the Encoder.
 	if err := conn.Encode(rc); err != nil {
-		conn.Close()
-		return err
-	} else if err := conn.Decode(rc.Rcv); err != nil {
-		// TODO just make the rwcConn thing do this inside its Decode method and
-		// document it there
-		if !isAppErr(err) {
-			conn.Close()
-		}
 		return err
 	}
-	return nil
+	return conn.Decode(rc.Rcv)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -213,42 +204,15 @@ type Pipeline []RawCmd
 func (p Pipeline) Run(c Conn) error {
 	for _, cmd := range p {
 		if err := c.Encode(cmd); err != nil {
-			c.Close()
 			return err
 		}
 	}
 
 	for _, cmd := range p {
 		if err := c.Decode(cmd.Rcv); err != nil {
-			// TODO this isn't ideal, we could just make the rwcConn do this
-			// always
-			if !isAppErr(err) {
-				c.Close()
-			}
 			return err
 		}
 	}
 
-	return nil
-}
-
-// pipeConn is used by pipeline in order to "turn on" and "turn off" the
-// Encode/Decode methods on a Conn
-type pipeConn struct {
-	Conn
-	enc, dec bool
-}
-
-func (pc pipeConn) Encode(i interface{}) error {
-	if pc.enc {
-		return pc.Conn.Encode(i)
-	}
-	return nil
-}
-
-func (pc pipeConn) Decode(i interface{}) error {
-	if pc.dec {
-		return pc.Conn.Decode(i)
-	}
 	return nil
 }

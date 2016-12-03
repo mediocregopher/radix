@@ -91,7 +91,7 @@ type SubConn struct {
 func New(c radix.Conn) *SubConn {
 	ch := make(chan Message)
 	sc := &SubConn{
-		c:         c,
+		c:         radix.TimeoutOk(c),
 		cmdDoneCh: make(chan chan bool, 1),
 		closeCh:   make(chan bool),
 		Ch:        ch,
@@ -113,7 +113,7 @@ func (sc *SubConn) readSpin(ch chan Message) {
 
 		var mm maybeMessage
 		err := sc.c.Decode(&mm)
-		if nerr, ok := err.(*net.OpError); ok && nerr.Timeout() {
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 			continue
 		} else if err != nil {
 			sc.lastErr = err

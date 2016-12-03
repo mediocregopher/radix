@@ -4,6 +4,7 @@ package radix
 import (
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -25,11 +26,6 @@ type AppErr struct {
 
 func (ae AppErr) Error() string {
 	return ae.Err.Error()
-}
-
-func isAppErr(err error) bool {
-	_, ok := err.(AppErr)
-	return ok
 }
 
 // LenReader adds an additional method to io.Reader, returning how many bytes
@@ -54,23 +50,48 @@ type Conn interface {
 
 type rwcWrap struct {
 	rwc io.ReadWriteCloser
-	Encoder
-	Decoder
+	e   Encoder
+	d   Decoder
+	*sync.Once
 }
 
 // NewConn takes an existing io.ReadWriteCloser and wraps it to support the Conn
 // interface. The original io.ReadWriteCloser should not be used after calling
 // this.
+//
+// In both the Encode and Decode methods of the returned Conn, if a network
+// error is encountered the Conn will have Close called on it automatically.
 func NewConn(rwc io.ReadWriteCloser) Conn {
 	return rwcWrap{
-		rwc:     rwc,
-		Encoder: NewEncoder(rwc),
-		Decoder: NewDecoder(rwc),
+		rwc:  rwc,
+		e:    NewEncoder(rwc),
+		d:    NewDecoder(rwc),
+		Once: new(sync.Once),
 	}
 }
 
+func (rwc rwcWrap) Encode(i interface{}) error {
+	err := rwc.e.Encode(i)
+	if _, ok := err.(net.Error); ok {
+		rwc.Close()
+	}
+	return err
+}
+
+func (rwc rwcWrap) Decode(i interface{}) error {
+	err := rwc.d.Decode(i)
+	if _, ok := err.(net.Error); ok {
+		rwc.Close()
+	}
+	return err
+}
+
 func (rwc rwcWrap) Close() error {
-	return rwc.rwc.Close()
+	var err error
+	rwc.Once.Do(func() {
+		err = rwc.rwc.Close()
+	})
+	return err
 }
 
 // DialFunc is a function which returns an initialized, ready-to-be-used Conn.
@@ -79,8 +100,7 @@ func (rwc rwcWrap) Close() error {
 // Conn implementations, etc...
 type DialFunc func(network, addr string) (Conn, error)
 
-// Dial creates a network connection using net.Dial and wraps it to support the
-// Conn interface.
+// Dial creates a network connection using net.Dial and passes it into NewConn.
 func Dial(network, addr string) (Conn, error) {
 	c, err := net.Dial(network, addr)
 	if err != nil {
@@ -118,4 +138,46 @@ func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
 		return nil, err
 	}
 	return NewConn(&timeoutConn{Conn: c, timeout: timeout}), nil
+}
+
+type timeoutOkConn struct {
+	Conn
+}
+
+// TimeoutOk returns a Conn which will _not_ call Close on itself if it sees a
+// timeout error during a Decode call (though it will still return that error).
+// It will still do so for all other read/write errors, however.
+func TimeoutOk(c Conn) Conn {
+	return &timeoutOkConn{c}
+}
+
+func (toc *timeoutOkConn) Decode(i interface{}) error {
+	err := toc.Conn.Decode(timeoutOkUnmarshaler{i})
+	if err == nil {
+		return nil
+	}
+	if te, ok := err.(errTimeout); ok {
+		err = te.err
+	} else {
+		toc.Close()
+	}
+	return err
+}
+
+type timeoutOkUnmarshaler struct {
+	i interface{}
+}
+
+type errTimeout struct {
+	err error
+}
+
+func (et errTimeout) Error() string { return et.err.Error() }
+
+func (tou timeoutOkUnmarshaler) Unmarshal(fn func(interface{}) error) error {
+	err := fn(tou.i)
+	if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+		err = errTimeout{err}
+	}
+	return err
 }
