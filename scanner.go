@@ -115,16 +115,21 @@ func (s *scanner) Next(res *string) bool {
 			return false
 		}
 
-		parts := []interface{}{"", []string{}}
+		var parts []interface{}
 		cmd := s.cmd(s.cur).Into(&parts)
 		if s.err = cmd.Run(s.Conn); s.err != nil {
 			return false
 		} else if len(parts) < 2 {
 			s.err = errors.New("not enough parts returned")
 			return false
+		} else if s.res == nil {
+			s.res = make([]string, 0, len(parts[1].([]interface{})))
 		}
-		s.cur = parts[0].(string)
-		s.res = parts[1].([]string)
+		s.cur = string(parts[0].([]byte))
+		s.res = s.res[:0]
+		for _, res := range parts[1].([]interface{}) {
+			s.res = append(s.res, string(res.([]byte)))
+		}
 	}
 }
 

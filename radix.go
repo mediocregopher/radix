@@ -2,10 +2,13 @@
 package radix
 
 import (
+	"bufio"
 	"io"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/mediocregopher/radix.v2/resp"
 )
 
 // Client describes an entity which can carry out Actions, e.g. a connection
@@ -15,33 +18,13 @@ type Client interface {
 	Close() error
 }
 
-// AppErr wraps the error type. It is used to indicate that the error being
-// returned is an application level error (e.g. "WRONGTYPE" for a key) as
-// opposed to a network level error (e.g. timeout or io.EOF)
-//
-// TODO example
-type AppErr struct {
-	Err error
-}
-
-func (ae AppErr) Error() string {
-	return ae.Err.Error()
-}
-
-// LenReader adds an additional method to io.Reader, returning how many bytes
-// are left till be read until an io.EOF is reached.
-type LenReader interface {
-	io.Reader
-	Len() int
-}
-
 // Conn is an entity which reads/writes data using the redis resp protocol. The
 // methods are synchronous. Encode and Decode may be called at the same time by
 // two different go-routines, but each should only be called once at a time
 // (i.e. two routines shouldn't call Encode at the same time, same with Decode).
 type Conn interface {
-	Encoder
-	Decoder
+	Encode(resp.Marshaler) error
+	Decode(resp.Unmarshaler) error
 
 	// Close closes the Conn and cleans up its resources. No methods may be
 	// called after Close.
@@ -49,9 +32,9 @@ type Conn interface {
 }
 
 type rwcWrap struct {
-	rwc io.ReadWriteCloser
-	e   Encoder
-	d   Decoder
+	rwc    io.ReadWriteCloser
+	brw    *bufio.ReadWriter
+	rp, wp *resp.Pool
 	*sync.Once
 }
 
@@ -59,27 +42,35 @@ type rwcWrap struct {
 // interface. The original io.ReadWriteCloser should not be used after calling
 // this.
 //
-// In both the Encode and Decode methods of the returned Conn, if a network
-// error is encountered the Conn will have Close called on it automatically.
+// In both the Encode and Decode methods of the returned Conn, if a net.Error is
+// encountered the Conn will have Close called on it automatically.
 func NewConn(rwc io.ReadWriteCloser) Conn {
 	return rwcWrap{
 		rwc:  rwc,
-		e:    NewEncoder(rwc),
-		d:    NewDecoder(rwc),
+		brw:  bufio.NewReadWriter(bufio.NewReader(rwc), bufio.NewWriter(rwc)),
+		rp:   new(resp.Pool),
+		wp:   new(resp.Pool),
 		Once: new(sync.Once),
 	}
 }
 
-func (rwc rwcWrap) Encode(i interface{}) error {
-	err := rwc.e.Encode(i)
-	if _, ok := err.(net.Error); ok {
-		rwc.Close()
+func (rwc rwcWrap) Encode(m resp.Marshaler) error {
+	err := m.MarshalRESP(rwc.wp, rwc.brw)
+	defer func() {
+		if _, ok := err.(net.Error); ok {
+			rwc.Close()
+		}
+	}()
+
+	if err != nil {
+		return err
 	}
+	err = rwc.brw.Flush()
 	return err
 }
 
-func (rwc rwcWrap) Decode(i interface{}) error {
-	err := rwc.d.Decode(i)
+func (rwc rwcWrap) Decode(u resp.Unmarshaler) error {
+	err := u.UnmarshalRESP(rwc.rp, rwc.brw.Reader)
 	if _, ok := err.(net.Error); ok {
 		rwc.Close()
 	}
@@ -140,6 +131,8 @@ func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
 	return NewConn(&timeoutConn{Conn: c, timeout: timeout}), nil
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 type timeoutOkConn struct {
 	Conn
 }
@@ -151,8 +144,8 @@ func TimeoutOk(c Conn) Conn {
 	return &timeoutOkConn{c}
 }
 
-func (toc *timeoutOkConn) Decode(i interface{}) error {
-	err := toc.Conn.Decode(timeoutOkUnmarshaler{i})
+func (toc *timeoutOkConn) Decode(u resp.Unmarshaler) error {
+	err := toc.Conn.Decode(timeoutOkUnmarshaler{u})
 	if err == nil {
 		return nil
 	}
@@ -165,7 +158,7 @@ func (toc *timeoutOkConn) Decode(i interface{}) error {
 }
 
 type timeoutOkUnmarshaler struct {
-	i interface{}
+	u resp.Unmarshaler
 }
 
 type errTimeout struct {
@@ -174,8 +167,8 @@ type errTimeout struct {
 
 func (et errTimeout) Error() string { return et.err.Error() }
 
-func (tou timeoutOkUnmarshaler) Unmarshal(fn func(interface{}) error) error {
-	err := fn(tou.i)
+func (tou timeoutOkUnmarshaler) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
+	err := tou.u.UnmarshalRESP(p, br)
 	if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 		err = errTimeout{err}
 	}

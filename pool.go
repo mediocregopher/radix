@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/mediocregopher/radix.v2/resp"
 )
 
 // PoolConn is a Conn which came from a Pool, and which has the special
@@ -69,7 +71,7 @@ func (spc *staticPoolConn) Return() {
 	spc.sp.put(spc)
 }
 
-func (spc *staticPoolConn) Encode(m interface{}) error {
+func (spc *staticPoolConn) Encode(m resp.Marshaler) error {
 	if spc.lastIOErr != nil {
 		return spc.lastIOErr
 	} else if err := spc.Conn.Encode(m); err != nil {
@@ -79,7 +81,7 @@ func (spc *staticPoolConn) Encode(m interface{}) error {
 	return nil
 }
 
-func (spc *staticPoolConn) Decode(m interface{}) error {
+func (spc *staticPoolConn) Decode(m resp.Unmarshaler) error {
 	if spc.lastIOErr != nil {
 		return spc.lastIOErr
 	} else if err := spc.Conn.Decode(m); err != nil {

@@ -3,7 +3,10 @@ package radix
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"io"
 	"strings"
+
+	"github.com/mediocregopher/radix.v2/resp"
 )
 
 // Action is an entity which can perform one or more tasks using a Conn
@@ -25,6 +28,7 @@ type RawCmd struct {
 
 	// The keys being operated on, and may be left empty if the command doesn't
 	// operate on any specific key(s) (e.g.  SCAN)
+	// TODO singular?
 	Keys [][]byte
 
 	// Args are any extra arguments to the command and can be almost any thing
@@ -73,15 +77,41 @@ func (rc RawCmd) Key() []byte {
 	return rc.Keys[0]
 }
 
+// MarshalRESP implements the resp.Marshaler interface.
+// TODO describe how commands are written
+func (rc RawCmd) MarshalRESP(p *resp.Pool, w io.Writer) error {
+	var err error
+	marshal := func(m resp.Marshaler) {
+		if err != nil {
+			return
+		}
+		err = m.MarshalRESP(p, w)
+	}
+
+	a := resp.Any{
+		I:                     rc.Args,
+		MarshalBulkString:     true,
+		MarshalNoArrayHeaders: true,
+	}
+	marshal(resp.ArrayHeader{N: 1 + len(rc.Keys) + a.NumElems()})
+	marshal(resp.BulkString{B: rc.Cmd})
+	for _, k := range rc.Keys {
+		marshal(resp.BulkString{B: k})
+	}
+	marshal(a)
+	return err
+}
+
 // Run implements the Run method of the Action interface. It writes the RawCmd
 // to the Conn, and unmarshals the result into the Rcv field (if set).
 func (rc RawCmd) Run(conn Conn) error {
-	// TODO if the Marshaler interface handled low-level operations then RawCmd
-	// wouldn't need a special case in the Encoder.
 	if err := conn.Encode(rc); err != nil {
 		return err
 	}
-	return conn.Decode(rc.Rcv)
+
+	// Any will discard the data if its I is nil
+	rcva := resp.Any{I: rc.Rcv}
+	return conn.Decode(&rcva)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -209,7 +239,8 @@ func (p Pipeline) Run(c Conn) error {
 	}
 
 	for _, cmd := range p {
-		if err := c.Decode(cmd.Rcv); err != nil {
+		rcva := resp.Any{I: cmd.Rcv}
+		if err := c.Decode(&rcva); err != nil {
 			return err
 		}
 	}
