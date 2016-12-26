@@ -167,44 +167,62 @@ func (rlc RawLuaCmd) Key() []byte {
 	return []byte(rlc.Keys[0])
 }
 
+type mRawLuaCmd struct {
+	RawLuaCmd
+	eval bool
+}
+
+func (mrlc mRawLuaCmd) MarshalRESP(p *resp.Pool, w io.Writer) error {
+	var err error
+	marshal := func(m resp.Marshaler) {
+		if err != nil {
+			return
+		}
+		err = m.MarshalRESP(p, w)
+	}
+
+	a := resp.Any{
+		I:                     mrlc.Args,
+		MarshalBulkString:     true,
+		MarshalNoArrayHeaders: true,
+	}
+	numKeys := len(mrlc.Keys)
+
+	// EVAL(SHA) script/sum numkeys keys... args...
+	marshal(resp.ArrayHeader{N: 3 + numKeys + a.NumElems()})
+	if mrlc.eval {
+		marshal(resp.BulkString{B: eval})
+		marshal(resp.BulkString{B: []byte(mrlc.Script)})
+	} else {
+		// TODO alloc here isn't great
+		sumRaw := sha1.Sum([]byte(mrlc.Script))
+		sum := hex.EncodeToString(sumRaw[:])
+		marshal(resp.BulkString{B: evalsha})
+		marshal(resp.BulkString{B: []byte(sum)})
+	}
+	marshal(resp.Any{I: numKeys, MarshalBulkString: true})
+	for _, k := range mrlc.Keys {
+		marshal(resp.BulkString{B: []byte(k)})
+	}
+	marshal(a)
+	return err
+}
+
+func (mrlc mRawLuaCmd) Run(conn Conn) error {
+	if err := conn.Encode(mrlc); err != nil {
+		return err
+	}
+	rcva := resp.Any{I: mrlc.Rcv}
+	return conn.Decode(&rcva)
+}
+
 // Run implements the Run method of the Action interface. It will first attempt
 // to perform the command using an EVALSHA, but will fallback to a normal EVAL
 // if that doesn't work.
 func (rlc RawLuaCmd) Run(conn Conn) error {
-	// TODO if the Marshaler interface handled low-level operations, like we need
-	// here, better then we could probably get rid of all this weird slice
-	// shifting nonsense.
-
-	rc := RawCmd{
-		Cmd:  evalsha,
-		Args: rlc.Args,
-		Rcv:  rlc.Rcv,
-	}
-
-	// TODO alloc here probably isn't necessary
-	sumRaw := sha1.Sum([]byte(rlc.Script))
-	sum := hex.EncodeToString(sumRaw[:])
-
-	// shift the arguments in place to allow room for the script hash, key
-	// count, and keys themselves
-	// TODO this isn't great because if the Args are re-allocated we don't
-	// actually give back to the original Cmd
-	shiftBy := 2 + len(rlc.Keys)
-	for i := 0; i < shiftBy; i++ {
-		rc.Args = append(rc.Args, nil)
-	}
-	copy(rc.Args[shiftBy:], rc.Args)
-	rc.Args[0] = sum
-	rc.Args[1] = len(rlc.Keys)
-	for i := range rlc.Keys {
-		rc.Args[i+2] = rlc.Keys[i]
-	}
-
-	err := rc.Run(conn)
+	err := mRawLuaCmd{RawLuaCmd: rlc}.Run(conn)
 	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
-		rc.Cmd = eval
-		rc.Args[0] = rlc.Script
-		err = rc.Run(conn)
+		err = mRawLuaCmd{RawLuaCmd: rlc, eval: true}.Run(conn)
 	}
 	return err
 }
