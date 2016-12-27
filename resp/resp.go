@@ -424,6 +424,8 @@ func (a Any) cp(i interface{}) Any {
 	return a
 }
 
+var byteSliceT = reflect.TypeOf([]byte{})
+
 // NumElems returns the number of non-array elements which would be marshalled
 // based on I. For example:
 //
@@ -437,6 +439,10 @@ func (a Any) NumElems() int {
 	vv := reflect.ValueOf(a.I)
 	switch vv.Kind() {
 	case reflect.Slice, reflect.Array:
+		if vv.Type() == byteSliceT {
+			return 1
+		}
+
 		l := vv.Len()
 		var c int
 		for i := 0; i < l; i++ {
@@ -864,4 +870,13 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 	default:
 		return fmt.Errorf("unknown type prefix %q", b[0])
 	}
+}
+
+// UnmarshalInto is a shortcut for wrapping this RawMessage in a *bufio.Reader
+// and passing that into the given Unmarshaler's UnmarshalRESP method. Any error
+// from calling UnmarshalRESP is returned, and the RawMessage is unaffected in
+// all cases.
+func (rm RawMessage) UnmarshalInto(p *Pool, u Unmarshaler) error {
+	br := bufio.NewReader(bytes.NewBuffer(rm))
+	return u.UnmarshalRESP(nil, br)
 }
