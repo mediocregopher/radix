@@ -86,12 +86,12 @@ type SubConn struct {
 	Ch <-chan Message
 }
 
-// New returns an initizlied SubConn. Check the docs on the Ch field for how to
+// New returns an initialized SubConn. Check the docs on the Ch field for how to
 // read publishes.
 func New(c radix.Conn) *SubConn {
 	ch := make(chan Message)
 	sc := &SubConn{
-		c:         radix.TimeoutOk(c),
+		c:         TimeoutOk(c),
 		cmdDoneCh: make(chan chan bool, 1),
 		closeCh:   make(chan bool),
 		Ch:        ch,
