@@ -1,5 +1,5 @@
 // Package sentinel provides a convenient interface with a redis sentinel which
-// will automatically handle pooling connections and automatic failover.
+// will automatically handle pooling connections and failover.
 //
 // Here's an example of creating a sentinel client and then using it to perform
 // some commands
@@ -38,24 +38,16 @@
 //		return nil
 //	}
 //
-// This package only guarantees that when GetMaster is called the returned
-// connection will be a connection to the master as of the moment that method is
-// called. It is still possible that there is a failover as that connection is
-// being used by the application.
-//
-// As a final note, a Client can be interacted with from multiple routines at
-// once safely, except for the Close method. To safely Close, ensure that only
-// one routine ever makes the call and that once the call is made no other
-// methods are ever called by any routines.
+// This package only guarantees that when Do is called the used connection will
+// be a connection to the master as of the moment that method is called. It is
+// still possible that there is a failover in the middle of an Action.
 package sentinel
 
 import (
 	"errors"
 	"strings"
 
-	"github.com/mediocregopher/radix.v2/pool"
 	"github.com/mediocregopher/radix.v2/pubsub"
-	"github.com/mediocregopher/radix.v2/redis"
 )
 
 // ClientError is an error wrapper returned by operations in this package. It

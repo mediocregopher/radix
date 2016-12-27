@@ -8,6 +8,14 @@ import (
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
+// TODO might be possible to get rid of Pool and PoolConn interfaces entirely
+// If we do this then the PoolFunc type should be renamed to reflect that it's
+// meant for a pool to a single interface.
+
+// TODO decide behavior with lent Conns when Close is called on a Pool
+
+// TODO expose stats for Clients in some way
+
 // PoolConn is a Conn which came from a Pool, and which has the special
 // property of being able to be returned to the Pool it came from
 type PoolConn interface {
@@ -19,6 +27,7 @@ type PoolConn interface {
 	// will never be put back in their Pools.
 	//
 	// May not be called after Close is called on the PoolConn
+	// TODO why?
 	Return()
 }
 
@@ -50,8 +59,6 @@ type Pool interface {
 // PoolFunc is a function which can be used to create a Pool of connections to
 // the redis instance on the given network/address.
 type PoolFunc func(network, addr string) (Pool, error)
-
-// TODO expose Avail for the pool
 
 type staticPoolConn struct {
 	Conn
@@ -150,6 +157,16 @@ func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
 		sp.pool <- pool[i]
 	}
 	return sp, err
+}
+
+// NewPoolFunc returns a PoolFunc which will use this package's NewPool function
+// to create a Pool of the given size and using the given DialFunc.
+//
+// If the DialFunc is nil then this package's Dial function is used.
+func NewPoolFunc(size int, df DialFunc) PoolFunc {
+	return func(network, addr string) (Pool, error) {
+		return NewPool(network, addr, size, df)
+	}
 }
 
 func (sp *staticPool) newConn() (*staticPoolConn, error) {
