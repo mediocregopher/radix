@@ -11,10 +11,10 @@ import (
 
 // Action is an entity which can perform one or more tasks using a Conn
 type Action interface {
-	// Key returns a key which will be acted on. If the Action will act on more
-	// than one key than any one can be returned. If no keys will be acted on
-	// then nil should be returned.
-	Key() []byte
+	// OnKey returns a key which will be acted on. If the Action will act on
+	// more than one key then any one can be returned. If no keys will be acted
+	// on then nil should be returned.
+	OnKey() []byte
 
 	// Run actually performs the action using the given Conn
 	Run(c Conn) error
@@ -26,10 +26,9 @@ type RawCmd struct {
 	// The name of the redis command to be performed. Always required
 	Cmd []byte
 
-	// The keys being operated on, and may be left empty if the command doesn't
-	// operate on any specific key(s) (e.g.  SCAN)
-	// TODO singular?
-	Keys [][]byte
+	// The key being operated on. May be left nil if the command doesn't operate
+	// on any specific key (e.g.  SCAN)
+	Key []byte
 
 	// Args are any extra arguments to the command and can be almost any thing
 	// TODO more deets
@@ -48,7 +47,7 @@ type RawCmd struct {
 func Cmd(cmd, key string, args ...interface{}) RawCmd {
 	return RawCmd{
 		Cmd:  []byte(cmd),
-		Keys: [][]byte{[]byte(key)},
+		Key:  []byte(key),
 		Args: args,
 	}
 }
@@ -69,12 +68,9 @@ func (rc RawCmd) Into(rcv interface{}) RawCmd {
 	return rc
 }
 
-// Key implements the Key method of the Action interface.
-func (rc RawCmd) Key() []byte {
-	if len(rc.Keys) == 0 {
-		return nil
-	}
-	return rc.Keys[0]
+// OnKey implements the OnKey method of the Action interface.
+func (rc RawCmd) OnKey() []byte {
+	return rc.Key
 }
 
 // MarshalRESP implements the resp.Marshaler interface.
@@ -93,10 +89,14 @@ func (rc RawCmd) MarshalRESP(p *resp.Pool, w io.Writer) error {
 		MarshalBulkString:     true,
 		MarshalNoArrayHeaders: true,
 	}
-	marshal(resp.ArrayHeader{N: 1 + len(rc.Keys) + a.NumElems()})
+	arrL := 1 + a.NumElems()
+	if rc.Key != nil {
+		arrL++
+	}
+	marshal(resp.ArrayHeader{N: arrL})
 	marshal(resp.BulkString{B: rc.Cmd})
-	for _, k := range rc.Keys {
-		marshal(resp.BulkString{B: k})
+	if rc.Key != nil {
+		marshal(resp.BulkString{B: rc.Key})
 	}
 	marshal(a)
 	return err
@@ -159,8 +159,8 @@ func (rlc RawLuaCmd) Into(rcv interface{}) RawLuaCmd {
 	return rlc
 }
 
-// Key implements the Key method of the Action interface.
-func (rlc RawLuaCmd) Key() []byte {
+// OnKey implements the OnKey method of the Action interface.
+func (rlc RawLuaCmd) OnKey() []byte {
 	if len(rlc.Keys) == 0 {
 		return nil
 	}
@@ -244,6 +244,18 @@ func (rlc RawLuaCmd) Run(conn Conn) error {
 //	fmt.Printf("fooVal: %q\n", fooVal)
 //
 type Pipeline []RawCmd
+
+// OnKey implements the OnKey method of the Action interface. It will return the
+// first non-nil key from calling OnKey on each of its RawCmds sequentially. It
+// will return nil if they all return nil.
+func (p Pipeline) OnKey() []byte {
+	for _, rc := range p {
+		if k := rc.OnKey(); k != nil {
+			return k
+		}
+	}
+	return nil
+}
 
 // Run implements the method for the Action interface. It will write all RawCmds
 // in it sequentially, then read all of their responses sequentially.

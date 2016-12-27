@@ -39,7 +39,7 @@ func (o ScanOpts) cmd(cursor string) RawCmd {
 	cmdStr := strings.ToUpper(o.Command)
 	cmd := RawCmd{Cmd: []byte(cmdStr)}
 	if cmdStr != "SCAN" {
-		cmd.Keys = [][]byte{[]byte(o.Key)}
+		cmd.Key = []byte(o.Key)
 	}
 	cmd.Args = append(cmd.Args, cursor)
 	if o.Pattern != "" {
