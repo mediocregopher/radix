@@ -595,7 +595,7 @@ func saneDefault(prefix byte) interface{} {
 }
 
 // UnmarshalRESP implements the Unmarshaler method
-func (a *Any) UnmarshalRESP(p *Pool, br *bufio.Reader) error {
+func (a Any) UnmarshalRESP(p *Pool, br *bufio.Reader) error {
 	b, err := br.Peek(1)
 	if err != nil {
 		return err
@@ -647,7 +647,7 @@ func (a *Any) UnmarshalRESP(p *Pool, br *bufio.Reader) error {
 	}
 }
 
-func (a *Any) unmarshalSingle(p *Pool, body io.Reader) error {
+func (a Any) unmarshalSingle(p *Pool, body io.Reader) error {
 	var (
 		err error
 		i   int64
@@ -722,7 +722,7 @@ func (a *Any) unmarshalSingle(p *Pool, body io.Reader) error {
 	return err
 }
 
-func (a *Any) unmarshalNil() error {
+func (a Any) unmarshalNil() error {
 	vv := reflect.ValueOf(a.I)
 	if vv.Kind() != reflect.Ptr || !vv.Elem().CanSet() {
 		// If the type in I can't be set then just ignore it. This is kind of
@@ -735,7 +735,7 @@ func (a *Any) unmarshalNil() error {
 	return nil
 }
 
-func (a *Any) unmarshalArray(p *Pool, br *bufio.Reader, l int64) error {
+func (a Any) unmarshalArray(p *Pool, br *bufio.Reader, l int64) error {
 	if a.I == nil {
 		return a.discardArray(p, br, l)
 	}
@@ -777,14 +777,12 @@ func (a *Any) unmarshalArray(p *Pool, br *bufio.Reader, l int64) error {
 
 		for i := 0; i < size; i += 2 {
 			kv := reflect.New(v.Type().Key())
-			ak := Any{I: kv.Interface()}
-			if err := ak.UnmarshalRESP(p, br); err != nil {
+			if err := (Any{I: kv.Interface()}).UnmarshalRESP(p, br); err != nil {
 				return err
 			}
 
 			vv := reflect.New(v.Type().Elem())
-			av := Any{I: vv.Interface()}
-			if err := av.UnmarshalRESP(p, br); err != nil {
+			if err := (Any{I: vv.Interface()}).UnmarshalRESP(p, br); err != nil {
 				return err
 			}
 
@@ -797,10 +795,9 @@ func (a *Any) unmarshalArray(p *Pool, br *bufio.Reader, l int64) error {
 	}
 }
 
-func (a *Any) discardArray(p *Pool, br *bufio.Reader, l int64) error {
+func (a Any) discardArray(p *Pool, br *bufio.Reader, l int64) error {
 	for i := 0; i < int(l); i++ {
-		da := Any{}
-		if err := da.UnmarshalRESP(p, br); err != nil {
+		if err := (Any{}).UnmarshalRESP(p, br); err != nil {
 			return err
 		}
 	}

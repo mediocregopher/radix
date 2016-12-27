@@ -110,8 +110,7 @@ func (rc RawCmd) Run(conn Conn) error {
 	}
 
 	// Any will discard the data if its I is nil
-	rcva := resp.Any{I: rc.Rcv}
-	return conn.Decode(&rcva)
+	return conn.Decode(resp.Any{I: rc.Rcv})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -212,8 +211,7 @@ func (mrlc mRawLuaCmd) Run(conn Conn) error {
 	if err := conn.Encode(mrlc); err != nil {
 		return err
 	}
-	rcva := resp.Any{I: mrlc.Rcv}
-	return conn.Decode(&rcva)
+	return conn.Decode(resp.Any{I: mrlc.Rcv})
 }
 
 // Run implements the Run method of the Action interface. It will first attempt
@@ -269,8 +267,7 @@ func (p Pipeline) Run(c Conn) error {
 	}
 
 	for _, cmd := range p {
-		rcva := resp.Any{I: cmd.Rcv}
-		if err := c.Decode(&rcva); err != nil {
+		if err := c.Decode(resp.Any{I: cmd.Rcv}); err != nil {
 			return err
 		}
 	}

@@ -384,8 +384,7 @@ func TestAnyUnmarshal(t *T) {
 			into = reflect.New(reflect.TypeOf(dt.out)).Interface()
 		}
 
-		a := Any{I: into}
-		err := a.UnmarshalRESP(p, br)
+		err := Any{I: into}.UnmarshalRESP(p, br)
 		if dt.shouldErr != "" {
 			require.NotNil(t, err, debug...)
 			assert.Equal(t, dt.shouldErr, err.Error(), debug...)
@@ -394,10 +393,10 @@ func TestAnyUnmarshal(t *T) {
 
 		require.Nil(t, err, debug...)
 		if dt.out != nil {
-			aI := reflect.ValueOf(a.I).Elem().Interface()
+			aI := reflect.ValueOf(into).Elem().Interface()
 			assert.Equal(t, dt.out, aI, debug...)
 		} else {
-			assert.Nil(t, a.I)
+			assert.Nil(t, into)
 		}
 	}
 
