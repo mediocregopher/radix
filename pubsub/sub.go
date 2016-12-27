@@ -3,11 +3,13 @@
 package pubsub
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"net"
 
 	radix "github.com/mediocregopher/radix.v2"
+	"github.com/mediocregopher/radix.v2/resp"
 )
 
 // Message describes a message being published to a subscribed channel
@@ -17,41 +19,37 @@ type Message struct {
 	Message []byte
 }
 
-// takes in the array of returned data sans the first "message"/"pmessage"
-// argument. Assumes bb is correct size
-func (m *Message) fromArr(bb [][]byte, isPat bool) {
+// UnmarshalRESP implements the radix.Unmarshaler interface
+func (m *Message) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
+	bb := make([][]byte, 0, 4)
+	if err := (resp.Any{I: &bb}).UnmarshalRESP(p, br); err != nil {
+		return err
+	}
+
+	if len(bb) < 3 {
+		return errors.New("message has too few elements")
+	}
+
+	typ := bytes.ToUpper(bb[0])
+	isPat := bytes.Equal(typ, []byte("PMESSAGE"))
+	if isPat && len(bb) < 4 {
+		return errors.New("message has too few elements")
+	} else if !bytes.Equal(typ, []byte("MESSAGE")) {
+		return errors.New("not MESSAGE or PMESSAGE")
+	}
+
 	pop := func() []byte {
 		b := bb[0]
 		bb = bb[1:]
 		return b
 	}
 
+	pop() // discard (p)message
 	if isPat {
 		m.Pattern = string(pop())
 	}
 	m.Channel = string(pop())
 	m.Message = pop()
-}
-
-// Unmarshal implements the radix.Unmarshaler interface
-func (m *Message) Unmarshal(fn func(interface{}) error) error {
-	bb := make([][]byte, 0, 4)
-	if err := fn(&bb); err != nil {
-		return err
-	}
-
-	if len(bb) < 3 {
-		return radix.UnmarshalErr{Err: errors.New("message has too few elements")}
-	}
-
-	typ := bytes.ToUpper(bb[0])
-	isPat := bytes.Equal(typ, []byte("PMESSAGE"))
-	if isPat && len(bb) < 4 {
-		return radix.UnmarshalErr{Err: errors.New("message has too few elements")}
-	} else if !bytes.Equal(typ, []byte("MESSAGE")) {
-		return radix.UnmarshalErr{Err: errors.New("not MESSAGE or PMESSAGE")}
-	}
-	m.fromArr(bb[1:], isPat)
 	return nil
 }
 
@@ -60,13 +58,15 @@ type maybeMessage struct {
 	Message
 }
 
-func (mm *maybeMessage) Unmarshal(fn func(interface{}) error) error {
-	err := fn(&mm.Message)
-	if _, ok := err.(radix.UnmarshalErr); ok {
-		return nil
+func (mm *maybeMessage) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
+	var rm resp.RawMessage
+	if err := rm.UnmarshalRESP(p, br); err != nil {
+		return err
 	}
+
+	err := rm.UnmarshalInto(p, &mm.Message)
 	mm.ok = err == nil
-	return err
+	return nil
 }
 
 // SubConn wraps a radix.Conn in order to provide a channel to which messages
