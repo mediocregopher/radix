@@ -3,7 +3,6 @@ package radix
 
 import (
 	"bufio"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -22,66 +21,58 @@ type Client interface {
 // methods are synchronous. Encode and Decode may be called at the same time by
 // two different go-routines, but each should only be called once at a time
 // (i.e. two routines shouldn't call Encode at the same time, same with Decode).
+//
+// NOTE the Read/Write methods inherited from net.Conn should not be used
+// directly, though its other methods may.
 type Conn interface {
+	net.Conn
 	Encode(resp.Marshaler) error
 	Decode(resp.Unmarshaler) error
-
-	// Close closes the Conn and cleans up its resources. No methods may be
-	// called after Close.
-	Close() error
 }
 
-type rwcWrap struct {
-	rwc    io.ReadWriteCloser
+type connWrap struct {
+	net.Conn
 	brw    *bufio.ReadWriter
 	rp, wp *resp.Pool
 	*sync.Once
 }
 
-// NewConn takes an existing io.ReadWriteCloser and wraps it to support the Conn
-// interface. The original io.ReadWriteCloser should not be used after calling
-// this.
+// NewConn takes an existing net.Conn and wraps it to support the Conn interface
+// of this package. The Read and Write methods on the original net.Conn should
+// not be used after calling this method.
 //
 // In both the Encode and Decode methods of the returned Conn, if a net.Error is
 // encountered the Conn will have Close called on it automatically.
-func NewConn(rwc io.ReadWriteCloser) Conn {
-	return rwcWrap{
-		rwc:  rwc,
-		brw:  bufio.NewReadWriter(bufio.NewReader(rwc), bufio.NewWriter(rwc)),
+func NewConn(conn net.Conn) Conn {
+	return connWrap{
+		Conn: conn,
+		brw:  bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn)),
 		rp:   new(resp.Pool),
 		wp:   new(resp.Pool),
 		Once: new(sync.Once),
 	}
 }
 
-func (rwc rwcWrap) Encode(m resp.Marshaler) error {
-	err := m.MarshalRESP(rwc.wp, rwc.brw)
+func (cw connWrap) Encode(m resp.Marshaler) error {
+	err := m.MarshalRESP(cw.wp, cw.brw)
 	defer func() {
 		if _, ok := err.(net.Error); ok {
-			rwc.Close()
+			cw.Close()
 		}
 	}()
 
 	if err != nil {
 		return err
 	}
-	err = rwc.brw.Flush()
+	err = cw.brw.Flush()
 	return err
 }
 
-func (rwc rwcWrap) Decode(u resp.Unmarshaler) error {
-	err := u.UnmarshalRESP(rwc.rp, rwc.brw.Reader)
+func (cw connWrap) Decode(u resp.Unmarshaler) error {
+	err := u.UnmarshalRESP(cw.rp, cw.brw.Reader)
 	if _, ok := err.(net.Error); ok {
-		rwc.Close()
+		cw.Close()
 	}
-	return err
-}
-
-func (rwc rwcWrap) Close() error {
-	var err error
-	rwc.Once.Do(func() {
-		err = rwc.rwc.Close()
-	})
 	return err
 }
 
