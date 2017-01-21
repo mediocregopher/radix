@@ -141,6 +141,10 @@ type pubSubConn struct {
 	closeErr error
 }
 
+// TODO this is currently broken, because I forgot that when you subscribe to
+// multiple channels at once a different subscribe return message is written for
+// each one. So this whole scheme doesn't really work
+
 // New wraps the given Conn to support redis' pubsub. The returned Conn can be
 // used to perform (P)SUBSCRIBE, (P)UNSUBSCRIBE, and PING commands. The returned
 // Message channel _must_ be read until it is closed once a (P)SUBSCRIBE command

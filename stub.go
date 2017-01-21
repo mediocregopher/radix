@@ -79,6 +79,9 @@ func (s *stub) RemoteAddr() net.Addr {
 	return s.remoteAddr
 }
 
+// TODO need to lock buf/bufbr in encode/decode
+// TODO make decode block until encode is called, if empty?
+
 func (s *stub) Encode(m resp.Marshaler) error {
 	// first marshal into a RawMessage
 	buf := new(bytes.Buffer)
@@ -106,4 +109,8 @@ func (s *stub) Encode(m resp.Marshaler) error {
 
 func (s *stub) Decode(u resp.Unmarshaler) error {
 	return u.UnmarshalRESP(s.pool, s.bufbr)
+}
+
+func (s *stub) Close() error {
+	return nil
 }

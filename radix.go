@@ -28,6 +28,12 @@ type Conn interface {
 	net.Conn
 	Encode(resp.Marshaler) error
 	Decode(resp.Unmarshaler) error
+
+	// TODO the Close method needs some thought. I've been using sync.Once in a
+	// few places to allow it to be called more than once. I should check what
+	// net.Conn's behavior is and mimic this one's on that. If it allows for
+	// calling more than once, figure out what to do with the Close error on
+	// subsequent calls
 }
 
 type connWrap struct {
