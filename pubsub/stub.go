@@ -12,10 +12,25 @@ import (
 )
 
 /*
+
 	// TODO this is an example of using the Stub, but it doesn't currently work,
-	// probably because radix.Stub doesn't really do timeouts correctly so
-	// pubsub.New doesn't interact with it correctly. pubsub.New is also broken,
-	// so that probably isn't helping
+	// probably because pubsub.New is broke af, see the todo there
+
+	// TODO also broke because the Decode method in here isn't going to work the
+	// way I want it to. If there's no data in this buffer, it'll call Decode on
+	// the underlying one. But incoming messages are written to this outside
+	// one, and there's nothing to wake up that Decode call, so it blocks there
+	// forever even though this buffer is being filled up.
+	//
+	// The solution here I think lies in changing how radix.Stub works, so it
+	// can either use a callback or just be a buffer. Maybe making a
+	// radix.Buffer type which Stub can wrap around? Not sure yet. Either way,
+	// if we could do this we wouldn't need this outer buffer at all, and the
+	// wakeup stuff could work like we want.
+	//
+	// Alternatively, make Stub function look roughly like radix.Stub, but it
+	// also returns a chan<- Message. Then we can wrap the given callback to do
+	// the right thing.
 
 	// The channel we'll write our fake messages to. These writes shouldn't do
 	// anything, initially, since we haven't subscribed to anything
