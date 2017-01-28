@@ -160,6 +160,16 @@ func (cs chanSet) missing(ss []string) []string {
 	return out
 }
 
+func (cs chanSet) inverse() map[chan<- Message][]string {
+	inv := map[chan<- Message][]string{}
+	for s, m := range cs {
+		for ch := range m {
+			inv[ch] = append(inv[ch], s)
+		}
+	}
+	return inv
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Conn wraps a radix.Conn to support redis' pubsub system. User-created
@@ -167,7 +177,8 @@ func (cs chanSet) missing(ss []string) []string {
 // been published.
 //
 // If any methods return an error it means the Conn has been Close'd and
-// subscribed msgCh's will no longer receive Messages from it.
+// subscribed msgCh's will no longer receive Messages from it. All methods are
+// threadsafe.
 //
 // NOTE if any channels block when being written to they will block all other
 // channels from receiving a publish.
@@ -213,15 +224,25 @@ type conn struct {
 
 	close    sync.Once
 	closeErr error
+	// This one is optional, and kind of cheating. We use it in persistent to
+	// get on-the-fly updates of when the connection fails. Maybe one day this
+	// could be exposed if there's a clean way of doing so, or another way
+	// accomplishing the same thing could be done instead.
+	closeErrCh chan error
 }
 
 // New wraps the given radix.Conn so that it becomes a pubsub.Conn.
 func New(rc radix.Conn) Conn {
+	return newInner(rc, nil)
+}
+
+func newInner(rc radix.Conn, closeErrCh chan error) Conn {
 	c := &conn{
-		conn:     TimeoutOk(rc),
-		subs:     chanSet{},
-		psubs:    chanSet{},
-		cmdResCh: make(chan error, 1),
+		conn:       TimeoutOk(rc),
+		subs:       chanSet{},
+		psubs:      chanSet{},
+		cmdResCh:   make(chan error, 1),
+		closeErrCh: closeErrCh,
 	}
 	go c.spin()
 	return c
@@ -300,6 +321,10 @@ func (c *conn) closeInner(cmdResErr error) error {
 			case c.cmdResCh <- cmdResErr:
 			default:
 			}
+		}
+		if c.closeErrCh != nil {
+			c.closeErrCh <- cmdResErr
+			close(c.closeErrCh)
 		}
 		close(c.cmdResCh)
 	})

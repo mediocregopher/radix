@@ -3,6 +3,7 @@ package pubsub
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"strconv"
 	"sync"
 	. "testing"
 	"time"
@@ -52,33 +53,47 @@ func assertMsgNoRead(t *T, msgCh <-chan Message) {
 	}
 }
 
-func TestSubscribe(t *T) {
+func testSubscribe(t *T, c Conn, pubCh chan int) {
 	pubC := testConn(t)
-	c := New(testConn(t))
 	msgCh := make(chan Message, 1)
 
 	ch1, ch2, msgStr := randStr(), randStr(), randStr()
 	require.Nil(t, c.Subscribe(msgCh, ch1, ch2))
 
-	count := 100
-	wg := new(sync.WaitGroup)
+	pubChs := make([]chan int, 3)
+	{
+		for i := range pubChs {
+			pubChs[i] = make(chan int)
+		}
+		go func() {
+			for i := range pubCh {
+				for _, innerPubCh := range pubChs {
+					innerPubCh <- i
+				}
+			}
+			for _, innerPubCh := range pubChs {
+				close(innerPubCh)
+			}
+		}()
+	}
 
+	wg := new(sync.WaitGroup)
 	wg.Add(1)
 	go func() {
-		for i := 0; i < count; i++ {
-			publish(t, pubC, ch1, msgStr)
+		for i := range pubChs[0] {
+			publish(t, pubC, ch1, msgStr+"_"+strconv.Itoa(i))
 		}
 		wg.Done()
 	}()
 
 	wg.Add(1)
 	go func() {
-		for i := 0; i < count; i++ {
+		for i := range pubChs[1] {
 			msg := assertMsgRead(t, msgCh)
 			assert.Equal(t, Message{
 				Type:    "message",
 				Channel: ch1,
-				Message: []byte(msgStr),
+				Message: []byte(msgStr + "_" + strconv.Itoa(i)),
 			}, msg)
 		}
 		wg.Done()
@@ -86,7 +101,7 @@ func TestSubscribe(t *T) {
 
 	wg.Add(1)
 	go func() {
-		for i := 0; i < count; i++ {
+		for range pubChs[2] {
 			require.Nil(t, c.Ping())
 		}
 		wg.Done()
@@ -103,13 +118,23 @@ func TestSubscribe(t *T) {
 		Message: []byte(msgStr),
 	}, msg)
 
+}
+
+func TestSubscribe(t *T) {
+	pubCh := make(chan int)
+	go func() {
+		for i := 0; i < 1000; i++ {
+			pubCh <- i
+		}
+		close(pubCh)
+	}()
+	c := New(testConn(t))
+	testSubscribe(t, c, pubCh)
+
 	c.Close()
 	assert.NotNil(t, c.Ping())
 	assert.NotNil(t, c.Ping())
 	assert.NotNil(t, c.Ping())
-	publish(t, pubC, ch2, msgStr)
-	time.Sleep(250 * time.Millisecond)
-	assertMsgNoRead(t, msgCh)
 }
 
 func TestPSubscribe(t *T) {
@@ -121,7 +146,7 @@ func TestPSubscribe(t *T) {
 	ch1, ch2 := p1+"_"+randStr(), p2+"_"+randStr()
 	require.Nil(t, c.PSubscribe(msgCh, p1, p2))
 
-	count := 100
+	count := 1000
 	wg := new(sync.WaitGroup)
 
 	wg.Add(1)
