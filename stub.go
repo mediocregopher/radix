@@ -218,11 +218,14 @@ func (s *stub) Encode(m resp.Marshaler) error {
 		return err
 	}
 
-	// get return from callback
+	// get return from callback. Results implementing resp.Marshaler are assumed
+	// to be wanting to be written in all cases, otherwise if the result is an
+	// error it is assumed to want to be returned directly.
 	ret := s.fn(ss)
-	if err, _ := ret.(error); err != nil {
+	if m, ok := ret.(resp.Marshaler); ok {
+		return s.Conn.Encode(m)
+	} else if err, _ := ret.(error); err != nil {
 		return err
 	}
-
 	return s.Conn.Encode(resp.Any{I: ret})
 }

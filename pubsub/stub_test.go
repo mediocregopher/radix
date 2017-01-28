@@ -3,19 +3,15 @@ package pubsub
 import (
 	. "testing"
 
-	radix "github.com/mediocregopher/radix.v2"
 	"github.com/mediocregopher/radix.v2/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStub(t *T) {
-	conn := radix.Stub("tcp", "127.0.0.1:6379", func(in []string) interface{} {
+	conn, stubCh := Stub("tcp", "127.0.0.1:6379", func(in []string) interface{} {
 		return in
 	})
-
-	stubCh := make(chan Message)
-	conn = Stub(conn, stubCh)
 	message := func(channel, val string) {
 		stubCh <- Message{Channel: channel, Message: []byte(val)}
 		<-conn.(*stub).mDoneCh

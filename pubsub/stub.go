@@ -1,9 +1,9 @@
 package pubsub
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -11,213 +11,189 @@ import (
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
-/*
+var errPubSubMode = resp.Error{
+	E: errors.New("ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context"),
+}
 
-	// TODO broke because the Decode method in here isn't going to work the way
-	// I want it to. If there's no data in this buffer, it'll call Decode on the
-	// underlying one. But incoming messages are written to this outside one,
-	// and there's nothing to wake up that Decode call, so it blocks there
-	// forever even though this buffer is being filled up.
-	//
-	// The solution here I think lies in changing how radix.Stub works, so it
-	// can either use a callback or just be a buffer. Maybe making a
-	// radix.Buffer type which Stub can wrap around? Not sure yet. Either way,
-	// if we could do this we wouldn't need this outer buffer at all, and the
-	// wakeup stuff could work like we want.
-	//
-	// Alternatively, make Stub function look roughly like radix.Stub, but it
-	// also returns a chan<- Message. Then we can wrap the given callback to do
-	// the right thing.
+type multiMarshal []resp.Marshaler
 
-	// The channel we'll write our fake messages to. These writes shouldn't do
-	// anything, initially, since we haven't subscribed to anything
-	stubCh := make(chan pubsub.Message)
-	go func() {
-		for {
-			stubCh <- pubsub.Message{
-				Type:    "message",
-				Channel: "foo",
-				Message: []byte("bar"),
-			}
-			time.Sleep(1 * time.Second)
+func (mm multiMarshal) MarshalRESP(p *resp.Pool, w io.Writer) error {
+	for _, m := range mm {
+		if err := m.MarshalRESP(p, w); err != nil {
+			return err
 		}
-	}()
-
-	// Make an underlying stub conn which handles normal redis commands. This
-	// one return nil for everything. You _could_ use a real redis connection
-	// too if you wanted
-	conn := radix.Stub("tcp", "127.0.0.1:6379", func([]string) interface{} {
-		return nil
-	})
-	conn = pubsub.Stub(conn, stubCh)
-
-	// Wrap the conn like we would for a normal redis connection
-	pubsubConn, ch, errCh := pubsub.New(conn)
-
-	// Subscribe to "foo"
-	if err := radix.Cmd("SUBSCRIBE", "foo").Run(pubsubConn); err != nil {
-		log.Fatal(err)
 	}
-
-	for m := range ch {
-		log.Printf("read m: %#v", m)
-	}
-	if err := <-errCh; err != nil {
-		// this shouldn't really happen with a stub
-		log.Fatal(err)
-	}
-*/
-
-var errPubSubMode = errors.New("ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context")
+	return nil
+}
 
 type stub struct {
 	radix.Conn
-
+	fn   func([]string) interface{}
 	inCh <-chan Message
 
 	closeOnce sync.Once
 	closeCh   chan struct{}
+	closeErr  error
 
 	l               sync.Mutex
 	pubsubMode      bool
 	subbed, psubbed map[string]bool
-	buf             *bytes.Buffer
-	bufbr           *bufio.Reader
 
 	// this is only used for tests
 	mDoneCh chan struct{}
 }
 
-// Stub wraps an existing radix.Conn so that Messages read from the given
-// channel will be pushed onto it, if SUBSCRIBE or PSUBSCRIBE have been called
-// and match the message. Messages written to the channel nead only have their
-// Channel and Message fields set.
+// TODO probably make this into an example
+
+// Stub returns a Conn much like radix.Stub does. It differs in that Encode
+// calls for (P)SUBSCRIBE, (P)UNSUBSCRIBE, MESSAGE, and PING will be intercepted
+// and handled as per redis' expected pubsub functionality. A Message may be
+// written to the returned channel at any time, and if the Stub has had
+// (P)SUBSCRIBE called matching that Message it will be written to the Stub's
+// internal buffer as expected.
 //
-// Stub will intercept (P)SUBSCRIBE, (P)UNSUBSCRIBE, and PING commands so that
-// it will behave exactly like a normal redis call. When no channels or patterns
-// are subscribed to then all calls will be handled by the given Conn, otherwise
-// the Stub will remain in "pubsub mode", just like a normal redis connection.
+// This is intended to be used to so that it can mock services which can perform
+// both normal redis commands and pubsub (e.g. a real redis instance, redis
+// sentinel). Once created this Stub can be wrapped in a normal pubsub.Conn
+// using New and treated like a real connection. Here's an example:
 //
-// The given channel may be buffered, but should never be closed.
+//	// Make a pubsub stub conn which handles normal redis commands. This one
+//	// will return nil for everything except pubsub commands (which will be
+//	// handled automatically)
+//	stub, stubCh := pubsub.Stub("tcp", "127.0.0.1:6379", func([]string) interface{} {
+//		return nil
+//	})
 //
-func Stub(conn radix.Conn, ch <-chan Message) radix.Conn {
+//	// These writes shouldn't do anything, initially, since we haven't
+//	// subscribed to anything
+//	go func() {
+//		for {
+//			stubCh <- pubsub.Message{
+//				Channel: "foo",
+//				Message: []byte("bar"),
+//			}
+//			time.Sleep(1 * time.Second)
+//		}
+//	}()
+//
+//	// Wrap the stub like we would for a normal redis connection
+//	pstub := pubsub.New(stub)
+//	msgCh := make(chan pubsub.Message)
+//
+//	// Subscribe to "foo"
+//	if err := pstub.Subscribe(msgCh, "foo"); err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	// listen for messages and also periodically Ping the connection
+//	pingTick := time.Tick(10 * time.Second)
+//	for {
+//		select {
+//		case <-pingTick:
+//			if err := pstub.Ping(); err != nil {
+//				log.Fatal(err)
+//			}
+//		case m := <-msgCh:
+//			log.Printf("read m: %#v", m)
+//		}
+//	}
+//
+func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (radix.Conn, chan<- Message) {
+	ch := make(chan Message)
 	s := &stub{
-		Conn:    conn,
+		fn:      fn,
 		inCh:    ch,
 		closeCh: make(chan struct{}),
 		subbed:  map[string]bool{},
 		psubbed: map[string]bool{},
-		buf:     new(bytes.Buffer),
 		mDoneCh: make(chan struct{}, 1),
 	}
-	s.bufbr = bufio.NewReader(s.buf)
+	s.Conn = radix.Stub(remoteNetwork, remoteAddr, s.innerFn)
 	go s.spin()
-	return s
+	return s, ch
 }
 
-func (s *stub) Encode(m resp.Marshaler) error {
-	// first marshal into a RawMessage
-	buf := new(bytes.Buffer)
-	if err := m.MarshalRESP(nil, buf); err != nil {
-		return err
-	}
-	rm := resp.RawMessage(buf.Bytes())
+func (s *stub) innerFn(ss []string) interface{} {
+	s.l.Lock()
+	defer s.l.Unlock()
 
-	// unmarshal that into a string slice, if it's not a valid cmd then forward
-	// that to inner Encode
-	var ss []string
-	if err := rm.UnmarshalInto(nil, resp.Any{I: &ss}); err != nil {
-		return err
-	} else if len(ss) < 1 {
-		return s.Conn.Encode(rm)
-	}
-
-	// both write and writeRes assume they're locked
-
-	var err error
-	write := func(ii ...interface{}) {
-		if err == nil {
-			err = resp.Any{I: ii}.MarshalRESP(nil, s.buf)
-		}
-	}
-
-	writeRes := func(cmd, subj string) {
+	writeRes := func(mm multiMarshal, cmd, subj string) multiMarshal {
 		c := len(s.subbed) + len(s.psubbed)
-		write(cmd, subj, c)
 		s.pubsubMode = c > 0
+		return append(mm, resp.Any{I: []interface{}{cmd, subj, c}})
 	}
 
 	switch strings.ToUpper(ss[0]) {
 	case "PING":
-		s.l.Lock()
 		if !s.pubsubMode {
-			s.l.Unlock()
-			return s.Conn.Encode(rm)
+			return s.fn(ss)
 		}
-		write("pong", "")
-		s.l.Unlock()
+		return []string{"pong", ""}
 	case "SUBSCRIBE":
-		s.l.Lock()
+		var mm multiMarshal
 		for _, channel := range ss[1:] {
 			s.subbed[channel] = true
-			writeRes("subscribe", channel)
+			mm = writeRes(mm, "subscribe", channel)
 		}
-		s.l.Unlock()
+		return mm
 	case "UNSUBSCRIBE":
-		s.l.Lock()
+		var mm multiMarshal
 		for _, channel := range ss[1:] {
 			delete(s.subbed, channel)
-			writeRes("unsubscribe", channel)
+			mm = writeRes(mm, "unsubscribe", channel)
 		}
-		s.l.Unlock()
+		return mm
 	case "PSUBSCRIBE":
-		s.l.Lock()
+		var mm multiMarshal
 		for _, pattern := range ss[1:] {
 			s.psubbed[pattern] = true
-			writeRes("psubscribe", pattern)
+			mm = writeRes(mm, "psubscribe", pattern)
 		}
-		s.l.Unlock()
+		return mm
 	case "PUNSUBSCRIBE":
-		s.l.Lock()
+		var mm multiMarshal
 		for _, pattern := range ss[1:] {
 			delete(s.psubbed, pattern)
-			writeRes("punsubscribe", pattern)
+			mm = writeRes(mm, "punsubscribe", pattern)
 		}
-		s.l.Unlock()
+		return mm
+	case "MESSAGE":
+		m := Message{
+			Channel: ss[1],
+			Message: []byte(ss[2]),
+		}
+
+		var mm multiMarshal
+		for channel := range s.subbed {
+			if channel != m.Channel {
+				continue
+			}
+			m.Type = "message"
+			mm = append(mm, m)
+		}
+		for pattern := range s.psubbed {
+			if !globMatch(pattern, m.Channel) {
+				continue
+			}
+			m.Type = "pmessage"
+			m.Pattern = pattern
+			mm = append(mm, m)
+		}
+		return mm
 	default:
-		s.l.Lock()
 		if s.pubsubMode {
-			err = resp.Any{I: errPubSubMode}.MarshalRESP(nil, s.buf)
-			s.l.Unlock()
-		} else {
-			s.l.Unlock()
-			err = s.Conn.Encode(rm)
+			return errPubSubMode
 		}
+		return s.fn(ss)
 	}
-
-	return err
-}
-
-func (s *stub) Decode(u resp.Unmarshaler) error {
-	s.l.Lock()
-	var err error
-	if s.bufbr.Buffered() > 0 || s.buf.Len() > 0 {
-		err = u.UnmarshalRESP(nil, s.bufbr)
-		s.l.Unlock()
-		return err
-	}
-	s.l.Unlock()
-
-	return s.Conn.Decode(u)
 }
 
 func (s *stub) Close() error {
-	var err error
 	s.closeOnce.Do(func() {
 		close(s.closeCh)
-		err = s.Conn.Close()
+		s.closeErr = s.Conn.Close()
 	})
-	return err
+	return s.closeErr
 }
 
 func (s *stub) spin() {
@@ -227,29 +203,15 @@ func (s *stub) spin() {
 			if !ok {
 				panic("pubsub stub message channel was closed")
 			}
-			// we ignore marshal errors because Message is known to be reliable
-			// and it's a stub so whatever
-			s.l.Lock()
-			for channel := range s.subbed {
-				if channel != m.Channel {
-					continue
-				}
-				m.Type = "message"
-				m.MarshalRESP(nil, s.buf)
-			}
-			for pattern := range s.psubbed {
-				if !globMatch(pattern, m.Channel) {
-					continue
-				}
-				m.Type = "pmessage"
-				m.Pattern = pattern
-				m.MarshalRESP(nil, s.buf)
+			m.Type = "message"
+			m.Pattern = ""
+			if err := s.Conn.Encode(m); err != nil {
+				panic(fmt.Sprintf("error encoding message in stub: %s", err))
 			}
 			select {
 			case s.mDoneCh <- struct{}{}:
 			default:
 			}
-			s.l.Unlock()
 		case <-s.closeCh:
 			return
 		}

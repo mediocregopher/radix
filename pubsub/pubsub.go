@@ -218,7 +218,7 @@ type conn struct {
 // New wraps the given radix.Conn so that it becomes a pubsub.Conn.
 func New(rc radix.Conn) Conn {
 	c := &conn{
-		conn:     rc,
+		conn:     TimeoutOk(rc),
 		subs:     chanSet{},
 		psubs:    chanSet{},
 		cmdResCh: make(chan error, 1),
