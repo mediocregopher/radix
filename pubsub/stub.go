@@ -13,13 +13,10 @@ import (
 
 /*
 
-	// TODO this is an example of using the Stub, but it doesn't currently work,
-	// probably because pubsub.New is broke af, see the todo there
-
-	// TODO also broke because the Decode method in here isn't going to work the
-	// way I want it to. If there's no data in this buffer, it'll call Decode on
-	// the underlying one. But incoming messages are written to this outside
-	// one, and there's nothing to wake up that Decode call, so it blocks there
+	// TODO broke because the Decode method in here isn't going to work the way
+	// I want it to. If there's no data in this buffer, it'll call Decode on the
+	// underlying one. But incoming messages are written to this outside one,
+	// and there's nothing to wake up that Decode call, so it blocks there
 	// forever even though this buffer is being filled up.
 	//
 	// The solution here I think lies in changing how radix.Stub works, so it

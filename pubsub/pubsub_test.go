@@ -20,7 +20,7 @@ func randStr() string {
 	return hex.EncodeToString(b)
 }
 
-func conn(t *T) radix.Conn {
+func testConn(t *T) radix.Conn {
 	c, err := radix.Dial("tcp", "localhost:6379")
 	require.Nil(t, err)
 	return c
@@ -40,33 +40,33 @@ func assertMsgRead(t *T, msgCh <-chan Message) Message {
 	panic("shouldn't get here")
 }
 
-func assertErrNoRead(t *T, errCh <-chan error) {
+func assertMsgNoRead(t *T, msgCh <-chan Message) {
 	select {
-	case err, ok := <-errCh:
+	case msg, ok := <-msgCh:
 		if !ok {
-			assert.Fail(t, "errCh closed")
+			assert.Fail(t, "msgCh closed")
 		} else {
-			assert.Fail(t, "unexpected Message off errCh", "err:%#v", err)
+			assert.Fail(t, "unexpected Message off msgCh", "msg:%#v", msg)
 		}
 	default:
 	}
 }
 
-func TestPubSub(t *T) {
-	c, msgCh, errCh := New(conn(t))
+func TestSubscribe(t *T) {
+	pubC := testConn(t)
+	c := New(testConn(t))
+	msgCh := make(chan Message, 1)
 
-	ch, msgStr := randStr(), randStr()
-	err := radix.Cmd("SUBSCRIBE", ch).Run(c)
-	require.Nil(t, err)
+	ch1, ch2, msgStr := randStr(), randStr(), randStr()
+	require.Nil(t, c.Subscribe(msgCh, ch1, ch2))
 
 	count := 100
 	wg := new(sync.WaitGroup)
 
 	wg.Add(1)
 	go func() {
-		pubC := conn(t)
 		for i := 0; i < count; i++ {
-			publish(t, pubC, ch, msgStr)
+			publish(t, pubC, ch1, msgStr)
 		}
 		wg.Done()
 	}()
@@ -77,10 +77,9 @@ func TestPubSub(t *T) {
 			msg := assertMsgRead(t, msgCh)
 			assert.Equal(t, Message{
 				Type:    "message",
-				Channel: ch,
+				Channel: ch1,
 				Message: []byte(msgStr),
 			}, msg)
-			assertErrNoRead(t, errCh)
 		}
 		wg.Done()
 	}()
@@ -88,38 +87,91 @@ func TestPubSub(t *T) {
 	wg.Add(1)
 	go func() {
 		for i := 0; i < count; i++ {
-			var pingRes []string
-			err := radix.CmdNoKey("PING").Into(&pingRes).Run(c)
-			require.Nil(t, err)
-			assert.Equal(t, []string{"pong", ""}, pingRes)
+			require.Nil(t, c.Ping())
+		}
+		wg.Done()
+	}()
+	wg.Wait()
+
+	require.Nil(t, c.Unsubscribe(msgCh, ch1))
+	publish(t, pubC, ch1, msgStr)
+	publish(t, pubC, ch2, msgStr)
+	msg := assertMsgRead(t, msgCh)
+	assert.Equal(t, Message{
+		Type:    "message",
+		Channel: ch2,
+		Message: []byte(msgStr),
+	}, msg)
+
+	c.Close()
+	assert.NotNil(t, c.Ping())
+	assert.NotNil(t, c.Ping())
+	assert.NotNil(t, c.Ping())
+	publish(t, pubC, ch2, msgStr)
+	time.Sleep(250 * time.Millisecond)
+	assertMsgNoRead(t, msgCh)
+}
+
+func TestPSubscribe(t *T) {
+	pubC := testConn(t)
+	c := New(testConn(t))
+	msgCh := make(chan Message, 1)
+
+	p1, p2, msgStr := randStr()+"_*", randStr()+"_*", randStr()
+	ch1, ch2 := p1+"_"+randStr(), p2+"_"+randStr()
+	require.Nil(t, c.PSubscribe(msgCh, p1, p2))
+
+	count := 100
+	wg := new(sync.WaitGroup)
+
+	wg.Add(1)
+	go func() {
+		for i := 0; i < count; i++ {
+			publish(t, pubC, ch1, msgStr)
+		}
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		for i := 0; i < count; i++ {
+			msg := assertMsgRead(t, msgCh)
+			assert.Equal(t, Message{
+				Type:    "pmessage",
+				Pattern: p1,
+				Channel: ch1,
+				Message: []byte(msgStr),
+			}, msg)
+		}
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		for i := 0; i < count; i++ {
+			require.Nil(t, c.Ping())
 		}
 		wg.Done()
 	}()
 
 	wg.Wait()
 
+	require.Nil(t, c.PUnsubscribe(msgCh, p1))
+	publish(t, pubC, ch1, msgStr)
+	publish(t, pubC, ch2, msgStr)
+	msg := assertMsgRead(t, msgCh)
+	assert.Equal(t, Message{
+		Type:    "pmessage",
+		Pattern: p2,
+		Channel: ch2,
+		Message: []byte(msgStr),
+	}, msg)
+
 	c.Close()
-
-	select {
-	case _, ok := <-msgCh:
-		assert.False(t, ok)
-	case <-time.After(1 * time.Second):
-		t.Fatal("msgCh blocked")
-	}
-
-	select {
-	case err, ok := <-errCh:
-		assert.Nil(t, err)
-		assert.True(t, ok)
-	case <-time.After(1 * time.Second):
-		t.Fatal("errCh blocked")
-	}
-
-	select {
-	case err, ok := <-errCh:
-		assert.Nil(t, err)
-		assert.False(t, ok)
-	case <-time.After(1 * time.Second):
-		t.Fatal("errCh blocked")
-	}
+	assert.NotNil(t, c.Ping())
+	assert.NotNil(t, c.Ping())
+	assert.NotNil(t, c.Ping())
+	publish(t, pubC, ch2, msgStr)
+	time.Sleep(250 * time.Millisecond)
+	assertMsgNoRead(t, msgCh)
 }
