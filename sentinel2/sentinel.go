@@ -13,19 +13,30 @@ import (
 )
 
 type sentinelClient struct {
+	initAddrs []string
+
 	// we read lock when calling methods on p, and normal lock when swapping the
 	// value of p and pAddr
 	sync.RWMutex
 	p     radix.Pool
 	pAddr string
+	addrs map[string]bool // the known sentinel addresses
 
-	name  string
-	addrs []string       // the known sentinel addresses
-	dfn   radix.DialFunc // the function used to dial sentinel instances
-	pfn   radix.PoolFunc
+	name string
+	dfn  radix.DialFunc // the function used to dial sentinel instances
+	pfn  radix.PoolFunc
+
+	// We use a persistent pubsub.Conn here, so we don't need to do much after
+	// initialization. The pconn is only really kept around for closing
+	pconn   pubsub.Conn
+	pconnCh chan pubsub.Message
 
 	closeCh   chan bool
 	closeOnce sync.Once
+
+	// only used by tests to ensure certain actions have happened before
+	// continuing on during the test
+	testEventCh chan string
 }
 
 // New creates and returns a sentinel client which implements the radix.Pool
@@ -45,51 +56,85 @@ type sentinelClient struct {
 // createing a connection pool to the master instance.
 func New(masterName string, sentinelAddrs []string, dialFn radix.DialFunc, poolFn radix.PoolFunc) (radix.Pool, error) {
 	if dialFn == nil {
-		dialFn = radix.Dial
+		dialFn = func(net, addr string) (radix.Conn, error) {
+			return radix.DialTimeout(net, addr, 5*time.Second)
+		}
 	}
 	if poolFn == nil {
 		poolFn = radix.NewPoolFunc(10, nil)
 	}
 
-	sc := &sentinelClient{
-		name:    masterName,
-		addrs:   sentinelAddrs,
-		dfn:     dialFn,
-		pfn:     poolFn,
-		closeCh: make(chan bool),
+	addrs := map[string]bool{}
+	for _, addr := range sentinelAddrs {
+		addrs[addr] = true
 	}
 
-	// off the bat we want to try each address given and see if we can get a
-	// pool made, so we ensure there is a sane starting state and that the
-	// returned sentinelClient is usable immediately
-	//
-	// If none of the given addresses are connectable we return the most recent
-	// error.
-	//
-	// If any are we base everything off that, we don't get fancy with
-	// retry/continuation logic, cause life is too damn short
+	sc := &sentinelClient{
+		initAddrs:   sentinelAddrs,
+		name:        masterName,
+		addrs:       addrs,
+		dfn:         dialFn,
+		pfn:         poolFn,
+		pconnCh:     make(chan pubsub.Message),
+		closeCh:     make(chan bool),
+		testEventCh: make(chan string, 1),
+	}
+
+	// first thing is to retrieve the state and create a pool using the first
+	// connectable connection. This connection is only used during
+	// initialization, it gets closed right after
+	{
+		conn, err := sc.dial()
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+
+		if err := sc.ensureSentinelAddrs(conn); err != nil {
+			return nil, err
+		} else if err := sc.ensureMaster(conn); err != nil {
+			return nil, err
+		}
+	}
+
+	// because we're using persistent these can't _really_ fail
+	sc.pconn = pubsub.NewPersistent(sc.dial)
+	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
+
+	go sc.spin()
+	go sc.pubsubSpin()
+	return sc, nil
+}
+
+func (sc *sentinelClient) testEvent(event string) {
+	select {
+	case sc.testEventCh <- event:
+	default:
+	}
+}
+
+func (sc *sentinelClient) dial() (radix.Conn, error) {
+	sc.RLock()
+	defer sc.RUnlock()
 
 	var conn radix.Conn
 	var err error
-	for _, addr := range sc.addrs {
+	for addr := range sc.addrs {
 		conn, err = sc.dfn("tcp", addr)
 		if err == nil {
-			break
+			return conn, nil
 		}
 	}
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
 
-	if err := sc.ensureSentinelAddrs(conn); err != nil {
-		return nil, err
-	} else if err := sc.ensureMaster(conn); err != nil {
-		return nil, err
+	// try the initAddrs as a last ditch, but don't return their error if this
+	// doesn't work
+	for _, addr := range sc.initAddrs {
+		if conn, err := sc.dfn("tcp", addr); err == nil {
+			return conn, nil
+		}
 	}
 
-	go sc.spin()
-	return sc, nil
+	return nil, err
 }
 
 func (sc *sentinelClient) Do(a radix.Action) error {
@@ -102,8 +147,7 @@ func (sc *sentinelClient) Close() error {
 	sc.RLock()
 	defer sc.RUnlock()
 	sc.closeOnce.Do(func() {
-		sc.closeCh <- true
-		<-sc.closeCh
+		close(sc.closeCh)
 	})
 	return sc.p.Close()
 }
@@ -155,126 +199,91 @@ func (sc *sentinelClient) setMaster(newAddr string) error {
 // annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_
 // sentinel instance, only the others it knows about for that master
 func (sc *sentinelClient) ensureSentinelAddrs(conn radix.Conn) error {
-	addrs := []string{conn.RemoteAddr().String()}
 	var mm []map[string]string
 	err := radix.CmdNoKey("SENTINEL", "SENTINELS", sc.name).Into(&mm).Run(conn)
 	if err != nil {
 		return err
 	}
 
+	addrs := map[string]bool{conn.RemoteAddr().String(): true}
 	for _, m := range mm {
-		addrs = append(addrs, m["ip"]+":"+m["port"])
+		addrs[m["ip"]+":"+m["port"]] = true
 	}
 
+	sc.Lock()
 	sc.addrs = addrs
+	sc.Unlock()
 	return nil
 }
 
 func (sc *sentinelClient) spin() {
 	for {
-		for _, addr := range sc.addrs {
-			connected, err := sc.connSpin(addr)
-			if err != nil {
-				panic(err) // TODO obviously don't do this
-			}
-
-			// This also gets checked within connSpin to short-circuit that, but
-			// we also must check in here to short-circuit this
-			select {
-			case _, ok := <-sc.closeCh:
-				if ok {
-					close(sc.closeCh)
-				}
-				return
-			default:
-			}
-
-			// if we successfully connected in the last attempt we don't
-			// continue on to the next sentinel, we just start over so we can
-			// look at the sc.addrs list anew
-			if connected {
-				break
-			}
+		// TODO get error from innerSpin and do something with it
+		sc.innerSpin()
+		// This also gets checked within innerSpin to short-circuit that, but
+		// we also must check in here to short-circuit this
+		select {
+		case <-sc.closeCh:
+			return
+		default:
 		}
 	}
 }
 
-// given an address to a sentinel, makes connections to that address and handles
-// the sentinelClient until one of those connections goes bad. Returns whatever
-// error caused things to go bad. The boolean returned will be false if the
-// connections weren't able to be made in the first place.
+// makes connection to an address in sc.addrs and handles
+// the sentinelClient until that connection goes bad.
 //
 // Things this handles:
-// * Listening for switch-master events
+// * Listening for switch-master events (from pconn, which has reconnect logic
+//   external to this package)
 // * Periodically re-ensuring that the list of sentinel addresses is up-to-date
 // * Periodically re-chacking the current master, in case the switch-master was
 //   missed somehow
-func (sc *sentinelClient) connSpin(addr string) (bool, error) {
-	conn, err := sc.dfn("tcp", addr)
+func (sc *sentinelClient) innerSpin() {
+	conn, err := sc.dial()
 	if err != nil {
-		return false, err
+		return
 	}
 	defer conn.Close()
 
-	subConn, err := sc.dfn("tcp", addr)
-	if err != nil {
-		return false, err
+	tick := time.NewTicker(30 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-tick.C:
+			if err := sc.ensureSentinelAddrs(conn); err != nil {
+				return
+			}
+			if err := sc.ensureMaster(conn); err != nil {
+				return
+			}
+			sc.pconn.Ping()
+		case <-sc.closeCh:
+			return
+		}
 	}
-	subConn, msgCh, errCh := pubsub.New(subConn)
-	defer subConn.Close()
-	if err := radix.Cmd("SUBSCRIBE", "switch-master").Run(subConn); err != nil {
-		return true, err
-	}
+}
 
-	msgErrCh := make(chan error, 1)
-	go func() {
-		for msg := range msgCh {
+func (sc *sentinelClient) pubsubSpin() {
+	tick := time.NewTicker(30 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case msg := <-sc.pconnCh:
 			parts := strings.Split(string(msg.Message), " ")
-			if len(parts) < 5 || parts[0] != sc.name {
+			if len(parts) < 5 || parts[0] != sc.name || msg.Channel != "switch-master" {
 				continue
 			}
 			newAddr := parts[3] + ":" + parts[4]
 			if err := sc.setMaster(newAddr); err != nil {
-				msgErrCh <- err
-				return
+				panic(err) // TODO
 			}
-		}
-	}()
-
-	ensure := func() error {
-		if err := sc.ensureSentinelAddrs(conn); err != nil {
-			return err
-		} else if err := sc.ensureMaster(conn); err != nil {
-			return err
-		} else if err := radix.CmdNoKey("PING").Run(subConn); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	// Do the initial setup/sanity-checks
-	if err := ensure(); err != nil {
-		return true, err
-	}
-
-	tick := time.NewTicker(30 * time.Second)
-	defer tick.Stop()
-
-	for {
-		select {
+			sc.testEvent("switch-master completed")
 		case <-tick.C:
-			if err := ensure(); err != nil {
-				return true, err
-			}
-		case err := <-msgErrCh:
-			return true, err
-		case err := <-errCh:
-			return true, err
-		case _, ok := <-sc.closeCh:
-			if ok {
-				close(sc.closeCh)
-			}
-			return true, nil
+			sc.pconn.Ping()
+		case <-sc.closeCh:
+			sc.pconn.Close()
+			return
 		}
 	}
 }

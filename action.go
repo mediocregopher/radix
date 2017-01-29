@@ -113,6 +113,8 @@ func (rc RawCmd) Run(conn Conn) error {
 	return conn.Decode(resp.Any{I: rc.Rcv})
 }
 
+// TODO RawCmd.String() would be convenient
+
 ////////////////////////////////////////////////////////////////////////////////
 
 var (
