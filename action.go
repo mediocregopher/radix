@@ -227,26 +227,27 @@ func (rlc RawLuaCmd) Run(conn Conn) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Pipeline is an Action which first writes multiple commands to a Conn in a
-// single write, then reads their responses in a single step. This effectively
-// reduces network delay into a single round-trip
+type pipeline []RawCmd
+
+// Pipeline returns an Action which first writes multiple commands to a Conn in
+// a single write, then reads their responses in a single read. This reduces
+// network delay into a single round-trip.
 //
 //	var fooVal string
-//	p := Pipeline{
+//	p := Pipeline(
 //		Cmd("SET", "foo", "bar"),
 //		Cmd("GET", "foo").Into(&fooVal),
-//	}
-//	if err := conn.Do(p); err != nil {
+//	)
+//	if err := p.Run(conn); err != nil {
 //		panic(err)
 //	}
 //	fmt.Printf("fooVal: %q\n", fooVal)
 //
-type Pipeline []RawCmd
+func Pipeline(cmds ...RawCmd) Action {
+	return pipeline(cmds)
+}
 
-// OnKey implements the OnKey method of the Action interface. It will return the
-// first non-nil key from calling OnKey on each of its RawCmds sequentially. It
-// will return nil if they all return nil.
-func (p Pipeline) OnKey() []byte {
+func (p pipeline) OnKey() []byte {
 	for _, rc := range p {
 		if k := rc.OnKey(); k != nil {
 			return k
@@ -255,23 +256,17 @@ func (p Pipeline) OnKey() []byte {
 	return nil
 }
 
-// Run implements the method for the Action interface. It will write all RawCmds
-// in it sequentially, then read all of their responses sequentially.
-//
-// If an error is encountered the error will be returned immediately.
-func (p Pipeline) Run(c Conn) error {
+func (p pipeline) Run(c Conn) error {
 	for _, cmd := range p {
 		if err := c.Encode(cmd); err != nil {
 			return err
 		}
 	}
-
 	for _, cmd := range p {
 		if err := c.Decode(resp.Any{I: cmd.Rcv}); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 

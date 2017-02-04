@@ -56,11 +56,11 @@ func TestPipelineAction(t *T) {
 			testutil.RandStr(),
 		}
 		out := make([]string, len(ss))
-		var p Pipeline
+		var cmds []RawCmd
 		for i := range ss {
-			p = append(p, CmdNoKey("ECHO", ss[i]).Into(&out[i]))
+			cmds = append(cmds, CmdNoKey("ECHO", ss[i]).Into(&out[i]))
 		}
-		require.Nil(t, p.Run(c))
+		require.Nil(t, Pipeline(cmds...).Run(c))
 
 		for i := range ss {
 			assert.Equal(t, ss[i], out[i])
