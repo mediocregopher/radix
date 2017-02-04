@@ -3,7 +3,6 @@ package radix
 import (
 	. "testing"
 
-	"github.com/levenlabs/golib/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -45,15 +44,13 @@ func TestLuaCmd(t *T) {
 	}
 }
 
-// TODO don't use testutil
-
 func TestPipelineAction(t *T) {
 	c := dial()
 	for i := 0; i < 10; i++ {
 		ss := []string{
-			testutil.RandStr(),
-			testutil.RandStr(),
-			testutil.RandStr(),
+			randStr(),
+			randStr(),
+			randStr(),
 		}
 		out := make([]string, len(ss))
 		var cmds []RawCmd
@@ -70,7 +67,7 @@ func TestPipelineAction(t *T) {
 
 func TestWithConnAction(t *T) {
 	c := dial()
-	k, v := testutil.RandStr(), 10
+	k, v := randStr(), 10
 
 	err := WithConn([]byte(k), func(conn Conn) error {
 		require.Nil(t, Cmd("SET", k, v).Run(conn))

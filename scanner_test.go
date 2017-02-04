@@ -4,7 +4,6 @@ import (
 	"strconv"
 	. "testing"
 
-	"github.com/levenlabs/golib/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,7 +12,7 @@ func TestScanner(t *T) {
 	c := dial()
 
 	// Make a random dataset
-	prefix := testutil.RandStr()
+	prefix := randStr()
 	fullMap := map[string]bool{}
 	for i := 0; i < 100; i++ {
 		key := prefix + ":" + strconv.Itoa(i)
