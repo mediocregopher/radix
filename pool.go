@@ -2,6 +2,7 @@ package radix
 
 import (
 	"errors"
+	"net"
 	"sync"
 	"time"
 
@@ -12,8 +13,6 @@ import (
 // If we do this then the PoolFunc type should be renamed to reflect that it's
 // meant for a pool to a single interface.
 
-// TODO decide behavior with lent Conns when Close is called on a Pool
-
 // TODO expose stats for Clients in some way
 
 // PoolConn is a Conn which came from a Pool, and which has the special
@@ -21,24 +20,25 @@ import (
 type PoolConn interface {
 	Conn
 
-	// Return, when called, indicates that the PoolConn will no longer be
-	// used by its current borrower and should be returned to the Pool it came
-	// from. This _must_ be called by all borrowers, or their PoolConns
-	// will never be put back in their Pools.
+	// Return, when called, indicates that the PoolConn will no longer be used
+	// by its current borrower and should be returned to the Pool it came from.
 	//
-	// May not be called after Close is called on the PoolConn
-	// TODO why?
+	// This _must_ be called by all borrowers, or their PoolConns will never be
+	// put back in their Pools.
 	Return()
 }
 
 // Pool is a Client which can be used to manage a set of open Conns which can be
 // used by multiple go-routines.
+//
+// When Close is called on a Pool any lent out PoolConns may be automatically
+// closed, or not, depending on the implementation.
 type Pool interface {
 	Client
 
-	// Get retrieves an available PoolConn for use by a single go-routine
-	// (until a subsequent call to Return on it), or returns an error if that's
-	// not possible.
+	// Get retrieves an available PoolConn for use by a single go-routine (until
+	// a subsequent call to Return on it), or returns an error if that's not
+	// possible.
 	Get() (PoolConn, error)
 
 	// Stats returns any runtime stats that the implementation of Pool wishes to
@@ -72,36 +72,26 @@ type staticPoolConn struct {
 }
 
 func (spc *staticPoolConn) Return() {
-	if spc.sp == nil {
-		panic("Return called on Closed PoolConn")
-	}
 	spc.sp.put(spc)
 }
 
 func (spc *staticPoolConn) Encode(m resp.Marshaler) error {
-	if spc.lastIOErr != nil {
-		return spc.lastIOErr
-	} else if err := spc.Conn.Encode(m); err != nil {
+	err := spc.Conn.Encode(m)
+	if nerr, _ := err.(net.Error); nerr != nil {
 		spc.lastIOErr = err
-		return err
 	}
-	return nil
+	return err
 }
 
 func (spc *staticPoolConn) Decode(m resp.Unmarshaler) error {
-	if spc.lastIOErr != nil {
-		return spc.lastIOErr
-	} else if err := spc.Conn.Decode(m); err != nil {
+	err := spc.Conn.Decode(m)
+	if nerr, _ := err.(net.Error); nerr != nil {
 		spc.lastIOErr = err
-		return err
 	}
-	return nil
+	return err
 }
 
 func (spc *staticPoolConn) Close() error {
-	// in case there's some kind of problem with circular reference and gc, also
-	// prevents Return from being called
-	spc.sp = nil
 	return spc.Conn.Close()
 }
 

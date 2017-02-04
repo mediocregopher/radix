@@ -70,6 +70,22 @@ func TestPut(t *T) {
 	// network error
 	assert.Equal(t, 9, len(sp.pool))
 
+	// Make sure that a put _does_ accept a connection which had a
+	// marshal/unmarshal error
+	conn, err = pool.Get()
+	require.Nil(t, err)
+	assert.NotNil(t, CmdNoKey("ECHO", func() {}).Run(conn))
+	assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
+	conn.Return()
+
+	// Make sure that a put _does_ accept a connection which had an app level
+	// resp error
+	conn, err = pool.Get()
+	require.Nil(t, err)
+	assert.NotNil(t, CmdNoKey("CMDDNE"))
+	assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
+	conn.Return()
+
 	// Make sure that closing the pool closes outstanding connections as well
 	conn, err = pool.Get()
 	require.Nil(t, err)

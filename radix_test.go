@@ -3,6 +3,11 @@ package radix
 import (
 	"crypto/rand"
 	"encoding/hex"
+	. "testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func randStr() string {
@@ -19,4 +24,17 @@ func dial() Conn {
 		panic(err)
 	}
 	return c
+}
+
+func TestCloseBehavior(t *T) {
+	c := dial()
+
+	// sanity check
+	var out string
+	require.Nil(t, CmdNoKey("ECHO", "foo").Into(&out).Run(c))
+	assert.Equal(t, "foo", out)
+
+	c.Close()
+	require.NotNil(t, CmdNoKey("ECHO", "foo").Into(&out).Run(c))
+	require.NotNil(t, c.SetDeadline(time.Now()))
 }

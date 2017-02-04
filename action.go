@@ -52,8 +52,7 @@ func Cmd(cmd, key string, args ...interface{}) RawCmd {
 	}
 }
 
-// CmdNoKey is like Cmd, but the returned RawCmd will not have its Keys field
-// set.
+// CmdNoKey is like Cmd, but the returned RawCmd will not have its Key field set
 func CmdNoKey(cmd string, args ...interface{}) RawCmd {
 	return RawCmd{
 		Cmd:  []byte(cmd),
@@ -78,10 +77,9 @@ func (rc RawCmd) OnKey() []byte {
 func (rc RawCmd) MarshalRESP(p *resp.Pool, w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
-		if err != nil {
-			return
+		if err == nil {
+			err = m.MarshalRESP(p, w)
 		}
-		err = m.MarshalRESP(p, w)
 	}
 
 	a := resp.Any{

@@ -4,7 +4,6 @@ package radix
 import (
 	"bufio"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/mediocregopher/radix.v2/resp"
@@ -14,33 +13,35 @@ import (
 // pool for a single redis instance or the cluster client.
 type Client interface {
 	Do(Action) error
+
+	// Once Close() is called all future method calls on the Client will return
+	// an error
 	Close() error
 }
 
-// Conn is an entity which reads/writes data using the redis resp protocol. The
-// methods are synchronous. Encode and Decode may be called at the same time by
-// two different go-routines, but each should only be called once at a time
-// (i.e. two routines shouldn't call Encode at the same time, same with Decode).
+// Conn is a Client which synchronously reads/writes data on a network
+// connection using the redis resp protocol.
 //
-// NOTE the Read/Write methods inherited from net.Conn should not be used
-// directly, though its other methods may.
+// Encode and Decode may be called at the same time by two different
+// go-routines, but each should only be called once at a time (i.e. two routines
+// shouldn't call Encode at the same time, same with Decode).
+//
+// If either Encode or Decode encounter a net.Error the Conn will be
+// automatically closed.
 type Conn interface {
-	net.Conn
 	Encode(resp.Marshaler) error
 	Decode(resp.Unmarshaler) error
 
-	// TODO the Close method needs some thought. I've been using sync.Once in a
-	// few places to allow it to be called more than once. I should check what
-	// net.Conn's behavior is and mimic this one's on that. If it allows for
-	// calling more than once, figure out what to do with the Close error on
-	// subsequent calls
+	// The underlying connection's methods are exposed, all may be used except
+	// Read and Write. When Close is called Encode and Decode will return an
+	// error on all future calls.
+	net.Conn
 }
 
 type connWrap struct {
 	net.Conn
 	brw    *bufio.ReadWriter
 	rp, wp *resp.Pool
-	*sync.Once
 }
 
 // NewConn takes an existing net.Conn and wraps it to support the Conn interface
@@ -55,7 +56,6 @@ func NewConn(conn net.Conn) Conn {
 		brw:  bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn)),
 		rp:   new(resp.Pool),
 		wp:   new(resp.Pool),
-		Once: new(sync.Once),
 	}
 }
 
