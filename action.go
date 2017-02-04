@@ -1,9 +1,12 @@
 package radix
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/mediocregopher/radix.v2/resp"
@@ -31,7 +34,6 @@ type RawCmd struct {
 	Key []byte
 
 	// Args are any extra arguments to the command and can be almost any thing
-	// TODO more deets
 	Args []interface{}
 
 	// Pointer value into which results from the command will be unmarshalled.
@@ -106,12 +108,26 @@ func (rc RawCmd) Run(conn Conn) error {
 	if err := conn.Encode(rc); err != nil {
 		return err
 	}
-
-	// Any will discard the data if its I is nil
 	return conn.Decode(resp.Any{I: rc.Rcv})
 }
 
-// TODO RawCmd.String() would be convenient
+func (rc RawCmd) String() string {
+	// we go way out of the way here to display the command as it would be sent
+	// to redis. This is pretty similar logic to what the stub does as well
+	buf := new(bytes.Buffer)
+	if err := rc.MarshalRESP(nil, buf); err != nil {
+		return fmt.Sprintf("error creating string: %q", err.Error())
+	}
+	var ss []string
+	err := resp.RawMessage(buf.Bytes()).UnmarshalInto(nil, resp.Any{I: &ss})
+	if err != nil {
+		return fmt.Sprintf("error creating string: %q", err.Error())
+	}
+	for i := range ss {
+		ss[i] = strconv.QuoteToASCII(ss[i])
+	}
+	return "[" + strings.Join(ss, " ") + "]"
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
