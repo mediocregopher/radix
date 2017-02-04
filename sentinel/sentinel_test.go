@@ -3,24 +3,17 @@ package sentinel
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"net"
+	"strings"
+	"sync"
 	. "testing"
-	"time"
 
-	"github.com/mediocregopher/radix.v2/redis"
+	radix "github.com/mediocregopher/radix.v2"
+	"github.com/mediocregopher/radix.v2/pubsub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// These tests assume there is a master/slave running on ports 8000/7001, and a
-// sentinel which tracks them under the name "test" on port 28000
-//
-// You can use `make start` to automatically set these up.
-
-func getSentinel(t *T) *Client {
-	s, err := NewClient("tcp", "127.0.0.1:28000", 10, "test")
-	require.Nil(t, err)
-	return s
-}
 
 func randStr() string {
 	b := make([]byte, 16)
@@ -30,53 +23,152 @@ func randStr() string {
 	return hex.EncodeToString(b)
 }
 
-func TestBasic(t *T) {
-	s := getSentinel(t)
-	k := randStr()
+type sentinelStub struct {
+	sync.Mutex
 
-	c, err := s.GetMaster("test")
-	require.Nil(t, err)
-	require.Nil(t, c.Cmd("SET", k, "foo").Err)
-	s.PutMaster("test", c)
+	// The address of the actual instance this stub returns. We ignore the
+	// master name for the tests
+	instAddr string
 
-	c, err = s.GetMaster("test")
-	require.Nil(t, err)
-	foo, err := c.Cmd("GET", k).Str()
-	require.Nil(t, err)
-	assert.Equal(t, "foo", foo)
-	s.PutMaster("test", c)
+	// addresses of all "sentinels" in the cluster
+	sentAddrs []string
+
+	// stubChs which have been created for stubs and want to know about
+	// switch-master messages
+	stubChs map[chan<- pubsub.Message]bool
 }
 
-// Test a basic manual failover
-func TestFailover(t *T) {
-	s := getSentinel(t)
-	sc, err := redis.Dial("tcp", "127.0.0.1:28000")
-	require.Nil(t, err)
+func addrToM(addr string) map[string]string {
+	thisM := map[string]string{}
+	thisM["ip"], thisM["port"], _ = net.SplitHostPort(addr)
+	return thisM
+}
 
-	k := randStr()
+type sentinelStubConn struct {
+	*sentinelStub
+	radix.Conn
+	stubCh chan<- pubsub.Message
+}
 
-	c, err := s.GetMaster("test")
-	require.Nil(t, err)
-	require.Nil(t, c.Cmd("SET", k, "foo").Err)
-	s.PutMaster("test", c)
+func (ssc *sentinelStubConn) Close() error {
+	ssc.sentinelStub.Lock()
+	defer ssc.sentinelStub.Unlock()
+	delete(ssc.sentinelStub.stubChs, ssc.stubCh)
+	return ssc.Conn.Close()
+}
 
-	require.Nil(t, sc.Cmd("SENTINEL", "FAILOVER", "test").Err)
+// addr must be one of sentAddrs
+func (s *sentinelStub) newConn(network, addr string) (radix.Conn, error) {
+	s.Lock()
+	defer s.Unlock()
 
-	c, err = s.GetMaster("test")
-	require.Nil(t, err)
-	foo, err := c.Cmd("GET", k).Str()
-	require.Nil(t, err)
-	assert.Equal(t, "foo", foo)
-	require.Nil(t, c.Cmd("SET", k, "bar").Err)
-	s.PutMaster("test", c)
+	var found bool
+	for _, sentAddr := range s.sentAddrs {
+		if sentAddr == addr {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("%q not in sentinel cluster", addr)
+	}
 
-	time.Sleep(10 * time.Second)
-	require.Nil(t, sc.Cmd("SENTINEL", "FAILOVER", "test").Err)
+	conn, stubCh := pubsub.Stub(network, addr, func(args []string) interface{} {
+		s.Lock()
+		defer s.Unlock()
 
-	c, err = s.GetMaster("test")
+		if args[0] != "SENTINEL" {
+			return fmt.Errorf("command %q not supported by stub", args[0])
+		}
+
+		switch args[1] {
+		case "MASTER":
+			return addrToM(s.instAddr)
+
+		case "SENTINELS":
+			ret := []map[string]string{}
+			for _, otherAddr := range s.sentAddrs {
+				if otherAddr == addr {
+					continue
+				}
+				ret = append(ret, addrToM(otherAddr))
+			}
+			return ret
+		default:
+			return fmt.Errorf("subcommand %q not supported by stub", args[1])
+		}
+	})
+	s.stubChs[stubCh] = true
+	return &sentinelStubConn{
+		sentinelStub: s,
+		Conn:         conn,
+		stubCh:       stubCh,
+	}, nil
+}
+
+func (s *sentinelStub) switchMaster(newAddr string) {
+	s.Lock()
+	defer s.Unlock()
+	oldSplit := strings.Split(s.instAddr, ":")
+	newSplit := strings.Split(newAddr, ":")
+	msg := pubsub.Message{
+		Channel: "switch-master",
+		Message: []byte(fmt.Sprintf("stub %s %s %s %s", oldSplit[0], oldSplit[1], newSplit[0], newSplit[1])),
+	}
+	for stubCh := range s.stubChs {
+		stubCh <- msg
+	}
+}
+
+func TestSentinel(t *T) {
+	stub := sentinelStub{
+		instAddr:  "127.0.0.1:6379",
+		sentAddrs: []string{"127.0.0.1:26379", "127.0.0.2:26379"},
+		stubChs:   map[chan<- pubsub.Message]bool{},
+	}
+
+	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
+	// don't tell anyone
+	poolFn := func(string, string) (radix.Pool, error) {
+		return radix.NewPool("tcp", "127.0.0.1:6379", 10, nil)
+	}
+
+	sc, err := New("stub", stub.sentAddrs, stub.newConn, poolFn)
 	require.Nil(t, err)
-	bar, err := c.Cmd("GET", k).Str()
-	require.Nil(t, err)
-	assert.Equal(t, "bar", bar)
-	s.PutMaster("test", c)
+	scc := sc.(*sentinelClient)
+
+	assertState := func(pAddr string, sentAddrs ...string) {
+		assert.Equal(t, pAddr, scc.pAddr)
+		assert.Len(t, scc.addrs, len(sentAddrs))
+		for i := range sentAddrs {
+			assert.Contains(t, scc.addrs, sentAddrs[i])
+		}
+	}
+
+	assertPoolWorks := func() {
+		c := 10
+		wg := new(sync.WaitGroup)
+		wg.Add(c)
+		for i := 0; i < c; i++ {
+			go func() {
+				key, val := randStr(), randStr()
+				require.Nil(t, sc.Do(radix.Cmd("SET", key, val)))
+				//var out string
+				//require.Nil(t, sc.Do(radix.Cmd("GET", key).Into(&out)))
+				//assert.Equal(t, val, out)
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+	}
+
+	assertState("127.0.0.1:6379", "127.0.0.1:26379", "127.0.0.2:26379")
+	assertPoolWorks()
+
+	stub.switchMaster("127.0.0.2:6379")
+	go assertPoolWorks()
+	assert.Equal(t, "switch-master completed", <-scc.testEventCh)
+	assertState("127.0.0.2:6379", "127.0.0.1:26379", "127.0.0.2:26379")
+
+	assertPoolWorks()
 }

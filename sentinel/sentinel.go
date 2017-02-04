@@ -1,270 +1,289 @@
 // Package sentinel provides a convenient interface with a redis sentinel which
 // will automatically handle pooling connections and failover.
-//
-// Here's an example of creating a sentinel client and then using it to perform
-// some commands
-//
-//	func example() error {
-//		// If there exists sentinel masters "bucket0" and "bucket1", and we want
-//		// out client to create pools for both:
-//		client, err := sentinel.NewClient("tcp", "localhost:6379", 100, "bucket0", "bucket1")
-//		if err != nil {
-//			return err
-//		}
-//
-//		if err := exampleCmd(client); err != nil {
-//			return err
-//		}
-//
-//		return nil
-//	}
-//
-//	func exampleCmd(client *sentinel.Client) error {
-//		conn, err := client.GetMaster("bucket0")
-//		if err != nil {
-//			return redisErr
-//		}
-//		defer client.PutMaster("bucket0", conn)
-//
-//		i, err := conn.Cmd("GET", "foo").Int()
-//		if err != nil {
-//			return err
-//		}
-//
-//		if err := conn.Cmd("SET", "foo", i+1); err != nil {
-//			return err
-//		}
-//
-//		return nil
-//	}
-//
-// This package only guarantees that when Do is called the used connection will
-// be a connection to the master as of the moment that method is called. It is
-// still possible that there is a failover in the middle of an Action.
 package sentinel
 
 import (
 	"errors"
 	"strings"
+	"sync"
+	"time"
 
+	radix "github.com/mediocregopher/radix.v2"
 	"github.com/mediocregopher/radix.v2/pubsub"
 )
 
-// ClientError is an error wrapper returned by operations in this package. It
-// implements the error interface and can therefore be passed around as a normal
-// error.
-type ClientError struct {
-	err error
+type sentinelClient struct {
+	initAddrs []string
 
-	// If this is true the error is due to a problem with the sentinel
-	// connection, either it being closed or otherwise unavailable. If false the
-	// error is due to some other circumstances. This is useful if you want to
-	// implement some kind of reconnecting to sentinel on an error.
-	SentinelErr bool
-}
+	// we read lock when calling methods on p, and normal lock when swapping the
+	// value of p, pAddr, and addrs
+	sync.RWMutex
+	p     radix.Pool
+	pAddr string
+	addrs map[string]bool // the known sentinel addresses
 
-// Error implements the error protocol
-func (ce *ClientError) Error() string {
-	return ce.err.Error()
-}
-
-type getReqRet struct {
-	conn *redis.Client
-	err  *ClientError
-}
-
-type getReq struct {
-	name  string
-	retCh chan *getReqRet
-}
-
-type putReq struct {
 	name string
-	conn *redis.Client
+	dfn  radix.DialFunc // the function used to dial sentinel instances
+	pfn  radix.PoolFunc
+
+	// We use a persistent pubsub.Conn here, so we don't need to do much after
+	// initialization. The pconn is only really kept around for closing
+	pconn   pubsub.Conn
+	pconnCh chan pubsub.Message
+
+	closeCh   chan bool
+	closeOnce sync.Once
+
+	// only used by tests to ensure certain actions have happened before
+	// continuing on during the test
+	testEventCh chan string
 }
 
-type switchMaster struct {
-	name string
-	addr string
+// New creates and returns a sentinel client which implements the radix.Pool
+// interface. The client will, in the background, connect to the first available
+// of the given sentinels and handle all of the following:
+//
+// * Create a Pool to the current master instance, as advertised by the sentinel
+// * Listen for events indicating the master has changed, and automatically
+//   create a new Pool to the new master
+// * Keep track of other sentinels in the cluster, and use them if the currently
+//   connected one becomes unreachable
+//
+// dialFn may be nil, but if given can specify a custom DialFunc to use when
+// connecting to sentinels.
+//
+// poolFn may be nil, but if given can specify a custom PoolFunc to use when
+// createing a connection pool to the master instance.
+func New(masterName string, sentinelAddrs []string, dialFn radix.DialFunc, poolFn radix.PoolFunc) (radix.Pool, error) {
+	if dialFn == nil {
+		dialFn = func(net, addr string) (radix.Conn, error) {
+			return radix.DialTimeout(net, addr, 5*time.Second)
+		}
+	}
+	if poolFn == nil {
+		poolFn = radix.NewPoolFunc(10, nil)
+	}
+
+	addrs := map[string]bool{}
+	for _, addr := range sentinelAddrs {
+		addrs[addr] = true
+	}
+
+	sc := &sentinelClient{
+		initAddrs:   sentinelAddrs,
+		name:        masterName,
+		addrs:       addrs,
+		dfn:         dialFn,
+		pfn:         poolFn,
+		pconnCh:     make(chan pubsub.Message),
+		closeCh:     make(chan bool),
+		testEventCh: make(chan string, 1),
+	}
+
+	// first thing is to retrieve the state and create a pool using the first
+	// connectable connection. This connection is only used during
+	// initialization, it gets closed right after
+	{
+		conn, err := sc.dial()
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+
+		if err := sc.ensureSentinelAddrs(conn); err != nil {
+			return nil, err
+		} else if err := sc.ensureMaster(conn); err != nil {
+			return nil, err
+		}
+	}
+
+	// because we're using persistent these can't _really_ fail
+	sc.pconn = pubsub.NewPersistent(sc.dial)
+	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
+
+	go sc.spin()
+	go sc.pubsubSpin()
+	return sc, nil
 }
 
-// Client communicates with a sentinel instance and manages connection pools of
-// active masters
-type Client struct {
-	poolSize    int
-	masterPools map[string]*pool.Pool
-	subClient   *pubsub.SubClient
-
-	// This is pool.DialFunc instead of the package's DialFunc
-	// as it's only used when calling pool.NewCustom. Otherwise it
-	// will have to be cast on each invocation.
-	dialFunc pool.DialFunc
-
-	getCh   chan *getReq
-	putCh   chan *putReq
-	closeCh chan struct{}
-
-	alwaysErr      *ClientError
-	alwaysErrCh    chan *ClientError
-	switchMasterCh chan *switchMaster
+func (sc *sentinelClient) testEvent(event string) {
+	select {
+	case sc.testEventCh <- event:
+	default:
+	}
 }
 
-// DialFunc is a function which can be passed into NewClientCustom
-type DialFunc func(network, addr string) (*redis.Client, error)
+func (sc *sentinelClient) dial() (radix.Conn, error) {
+	sc.RLock()
+	defer sc.RUnlock()
 
-// NewClient creates a sentinel client. Connects to the given sentinel instance,
-// pulls the information for the masters of the given names, and creates an
-// initial pool of connections for each master. The client will automatically
-// replace the pool for any master should sentinel decide to fail the master
-// over. The returned error is a *ClientError.
-func NewClient(
-	network, address string, poolSize int, names ...string,
-) (
-	*Client, error,
-) {
-	return NewClientCustom(network, address, poolSize, redis.Dial, names...)
+	var conn radix.Conn
+	var err error
+	for addr := range sc.addrs {
+		conn, err = sc.dfn("tcp", addr)
+		if err == nil {
+			return conn, nil
+		}
+	}
+
+	// try the initAddrs as a last ditch, but don't return their error if this
+	// doesn't work
+	for _, addr := range sc.initAddrs {
+		if conn, err := sc.dfn("tcp", addr); err == nil {
+			return conn, nil
+		}
+	}
+
+	return nil, err
 }
 
-// NewClientCustom is the same as NewClient, except it takes in a DialFunc which
-// will be used to create all new connections to the master instances. This can
-// be used to implement authentication, custom timeouts, etc...
-func NewClientCustom(
-	network, address string, poolSize int, df DialFunc, names ...string,
-) (
-	*Client, error,
-) {
+func (sc *sentinelClient) Do(a radix.Action) error {
+	sc.RLock()
+	defer sc.RUnlock()
+	return sc.p.Do(a)
+}
 
-	// We use this to fetch initial details about masters before we upgrade it
-	// to a pubsub client
-	client, err := redis.Dial(network, address)
+func (sc *sentinelClient) Close() error {
+	sc.RLock()
+	defer sc.RUnlock()
+	sc.closeOnce.Do(func() {
+		close(sc.closeCh)
+	})
+	return sc.p.Close()
+}
+
+func (sc *sentinelClient) Get() (radix.PoolConn, error) {
+	sc.RLock()
+	defer sc.RUnlock()
+	return sc.p.Get()
+}
+
+// given a connection to a sentinel, ensures that the pool currently being held
+// agrees with what the sentinel thinks it should be
+func (sc *sentinelClient) ensureMaster(conn radix.Conn) error {
+	sc.RLock()
+	lastAddr := sc.pAddr
+	sc.RUnlock()
+
+	var m map[string]string
+	err := radix.CmdNoKey("SENTINEL", "MASTER", sc.name).Into(&m).Run(conn)
 	if err != nil {
-		return nil, &ClientError{err: err}
+		return err
+	} else if m["ip"] == "" || m["port"] == "" {
+		return errors.New("malformed SENTINEL MASTER response")
 	}
-
-	masterPools := map[string]*pool.Pool{}
-	for _, name := range names {
-		r := client.Cmd("SENTINEL", "MASTER", name)
-		l, err := r.List()
-		if err != nil {
-			return nil, &ClientError{err: err, SentinelErr: true}
-		}
-		addr := l[3] + ":" + l[5]
-		pool, err := pool.NewCustom("tcp", addr, poolSize, (pool.DialFunc)(df))
-		if err != nil {
-			return nil, &ClientError{err: err}
-		}
-		masterPools[name] = pool
+	newAddr := m["ip"] + ":" + m["port"]
+	if newAddr == lastAddr {
+		return nil
 	}
-
-	subClient := pubsub.NewSubClient(client)
-	r := subClient.Subscribe("+switch-master")
-	if r.Err != nil {
-		return nil, &ClientError{err: r.Err, SentinelErr: true}
-	}
-
-	c := &Client{
-		poolSize:       poolSize,
-		masterPools:    masterPools,
-		subClient:      subClient,
-		dialFunc:       (pool.DialFunc)(df),
-		getCh:          make(chan *getReq),
-		putCh:          make(chan *putReq),
-		closeCh:        make(chan struct{}),
-		alwaysErrCh:    make(chan *ClientError),
-		switchMasterCh: make(chan *switchMaster),
-	}
-
-	go c.subSpin()
-	go c.spin()
-	return c, nil
+	return sc.setMaster(newAddr)
 }
 
-func (c *Client) subSpin() {
+func (sc *sentinelClient) setMaster(newAddr string) error {
+	newPool, err := sc.pfn("tcp", newAddr)
+	if err != nil {
+		return err
+	}
+
+	sc.Lock()
+	if sc.p != nil {
+		sc.p.Close()
+	}
+	sc.p = newPool
+	sc.pAddr = newAddr
+	sc.Unlock()
+
+	return nil
+}
+
+// annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_
+// sentinel instance, only the others it knows about for that master
+func (sc *sentinelClient) ensureSentinelAddrs(conn radix.Conn) error {
+	var mm []map[string]string
+	err := radix.CmdNoKey("SENTINEL", "SENTINELS", sc.name).Into(&mm).Run(conn)
+	if err != nil {
+		return err
+	}
+
+	addrs := map[string]bool{conn.RemoteAddr().String(): true}
+	for _, m := range mm {
+		addrs[m["ip"]+":"+m["port"]] = true
+	}
+
+	sc.Lock()
+	sc.addrs = addrs
+	sc.Unlock()
+	return nil
+}
+
+func (sc *sentinelClient) spin() {
 	for {
-		r := c.subClient.Receive()
-		if r.Timeout() {
-			continue
-		}
-		if r.Err != nil {
-			select {
-			case c.alwaysErrCh <- &ClientError{err: r.Err, SentinelErr: true}:
-			case <-c.closeCh:
-			}
-			return
-		}
-		sMsg := strings.Split(r.Message, " ")
-		name := sMsg[0]
-		newAddr := sMsg[3] + ":" + sMsg[4]
+		// TODO get error from innerSpin and do something with it
+		sc.innerSpin()
+		// This also gets checked within innerSpin to short-circuit that, but
+		// we also must check in here to short-circuit this
 		select {
-		case c.switchMasterCh <- &switchMaster{name, newAddr}:
-		case <-c.closeCh:
+		case <-sc.closeCh:
 			return
+		default:
 		}
 	}
 }
 
-func (c *Client) spin() {
+// makes connection to an address in sc.addrs and handles
+// the sentinelClient until that connection goes bad.
+//
+// Things this handles:
+// * Listening for switch-master events (from pconn, which has reconnect logic
+//   external to this package)
+// * Periodically re-ensuring that the list of sentinel addresses is up-to-date
+// * Periodically re-chacking the current master, in case the switch-master was
+//   missed somehow
+func (sc *sentinelClient) innerSpin() {
+	conn, err := sc.dial()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	tick := time.NewTicker(30 * time.Second)
+	defer tick.Stop()
 	for {
 		select {
-		case req := <-c.getCh:
-			if c.alwaysErr != nil {
-				req.retCh <- &getReqRet{nil, c.alwaysErr}
-				continue
+		case <-tick.C:
+			if err := sc.ensureSentinelAddrs(conn); err != nil {
+				return
 			}
-			pool, ok := c.masterPools[req.name]
-			if !ok {
-				err := errors.New("unknown name: " + req.name)
-				req.retCh <- &getReqRet{nil, &ClientError{err: err}}
-				continue
+			if err := sc.ensureMaster(conn); err != nil {
+				return
 			}
-			conn, err := pool.Get()
-			if err != nil {
-				req.retCh <- &getReqRet{nil, &ClientError{err: err}}
-				continue
-			}
-			req.retCh <- &getReqRet{conn, nil}
-
-		case req := <-c.putCh:
-			if pool, ok := c.masterPools[req.name]; ok {
-				pool.Put(req.conn)
-			}
-
-		case err := <-c.alwaysErrCh:
-			c.alwaysErr = err
-
-		case sm := <-c.switchMasterCh:
-			if p, ok := c.masterPools[sm.name]; ok {
-				p.Empty()
-				p, _ = pool.NewCustom("tcp", sm.addr, c.poolSize, c.dialFunc)
-				c.masterPools[sm.name] = p
-			}
-
-		case <-c.closeCh:
-			for name := range c.masterPools {
-				c.masterPools[name].Empty()
-			}
-			c.subClient.Client.Close()
-			close(c.getCh)
-			close(c.putCh)
+			sc.pconn.Ping()
+		case <-sc.closeCh:
 			return
 		}
 	}
 }
 
-// GetMaster retrieves a connection for the master of the given name. If
-// sentinel has become unreachable this will always return an error. Close
-// should be called in that case. The returned error is a *ClientError.
-func (c *Client) GetMaster(name string) (*redis.Client, error) {
-	req := getReq{name, make(chan *getReqRet)}
-	c.getCh <- &req
-	ret := <-req.retCh
-	if ret.err != nil {
-		return nil, ret.err
+func (sc *sentinelClient) pubsubSpin() {
+	tick := time.NewTicker(30 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case msg := <-sc.pconnCh:
+			parts := strings.Split(string(msg.Message), " ")
+			if len(parts) < 5 || parts[0] != sc.name || msg.Channel != "switch-master" {
+				continue
+			}
+			newAddr := parts[3] + ":" + parts[4]
+			if err := sc.setMaster(newAddr); err != nil {
+				panic(err) // TODO
+			}
+			sc.testEvent("switch-master completed")
+		case <-tick.C:
+			sc.pconn.Ping()
+		case <-sc.closeCh:
+			sc.pconn.Close()
+			return
+		}
 	}
-	return ret.conn, nil
-}
-
-// PutMaster return a connection for a master of a given name
-func (c *Client) PutMaster(name string, client *redis.Client) {
-	c.putCh <- &putReq{name, client}
 }
