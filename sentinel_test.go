@@ -1,27 +1,15 @@
-package sentinel
+package radix
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"strings"
 	"sync"
 	. "testing"
 
-	radix "github.com/mediocregopher/radix.v2"
-	"github.com/mediocregopher/radix.v2/pubsub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func randStr() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}
 
 type sentinelStub struct {
 	sync.Mutex
@@ -35,7 +23,7 @@ type sentinelStub struct {
 
 	// stubChs which have been created for stubs and want to know about
 	// switch-master messages
-	stubChs map[chan<- pubsub.Message]bool
+	stubChs map[chan<- PubSubMessage]bool
 }
 
 func addrToM(addr string) map[string]string {
@@ -46,8 +34,8 @@ func addrToM(addr string) map[string]string {
 
 type sentinelStubConn struct {
 	*sentinelStub
-	radix.Conn
-	stubCh chan<- pubsub.Message
+	Conn
+	stubCh chan<- PubSubMessage
 }
 
 func (ssc *sentinelStubConn) Close() error {
@@ -58,7 +46,7 @@ func (ssc *sentinelStubConn) Close() error {
 }
 
 // addr must be one of sentAddrs
-func (s *sentinelStub) newConn(network, addr string) (radix.Conn, error) {
+func (s *sentinelStub) newConn(network, addr string) (Conn, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -73,7 +61,7 @@ func (s *sentinelStub) newConn(network, addr string) (radix.Conn, error) {
 		return nil, fmt.Errorf("%q not in sentinel cluster", addr)
 	}
 
-	conn, stubCh := pubsub.Stub(network, addr, func(args []string) interface{} {
+	conn, stubCh := PubSubStub(network, addr, func(args []string) interface{} {
 		s.Lock()
 		defer s.Unlock()
 
@@ -111,7 +99,7 @@ func (s *sentinelStub) switchMaster(newAddr string) {
 	defer s.Unlock()
 	oldSplit := strings.Split(s.instAddr, ":")
 	newSplit := strings.Split(newAddr, ":")
-	msg := pubsub.Message{
+	msg := PubSubMessage{
 		Channel: "switch-master",
 		Message: []byte(fmt.Sprintf("stub %s %s %s %s", oldSplit[0], oldSplit[1], newSplit[0], newSplit[1])),
 	}
@@ -124,18 +112,18 @@ func TestSentinel(t *T) {
 	stub := sentinelStub{
 		instAddr:  "127.0.0.1:6379",
 		sentAddrs: []string{"127.0.0.1:26379", "127.0.0.2:26379"},
-		stubChs:   map[chan<- pubsub.Message]bool{},
+		stubChs:   map[chan<- PubSubMessage]bool{},
 	}
 
 	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
 	// don't tell anyone
-	poolFn := func(string, string) (radix.Client, error) {
-		return radix.Pool("tcp", "127.0.0.1:6379", 10, nil)
+	poolFn := func(string, string) (Client, error) {
+		return Pool("tcp", "127.0.0.1:6379", 10, nil)
 	}
 
-	sc, err := New("stub", stub.sentAddrs, stub.newConn, poolFn)
+	sc, err := Sentinel("stub", stub.sentAddrs, stub.newConn, poolFn)
 	require.Nil(t, err)
-	scc := sc.(*sentinelClient)
+	scc := sc.(*sentinel)
 
 	assertState := func(clAddr string, sentAddrs ...string) {
 		assert.Equal(t, clAddr, scc.clAddr)
@@ -152,9 +140,9 @@ func TestSentinel(t *T) {
 		for i := 0; i < c; i++ {
 			go func() {
 				key, val := randStr(), randStr()
-				require.Nil(t, sc.Do(radix.Cmd("SET", key, val)))
+				require.Nil(t, sc.Do(Cmd("SET", key, val)))
 				//var out string
-				//require.Nil(t, sc.Do(radix.Cmd("GET", key).Into(&out)))
+				//require.Nil(t, sc.Do(Cmd("GET", key).Into(&out)))
 				//assert.Equal(t, val, out)
 				wg.Done()
 			}()

@@ -1,35 +1,30 @@
-// Package sentinel provides a convenient interface with a redis sentinel which
-// will automatically handle pooling connections and failover.
-package sentinel
+package radix
 
 import (
 	"errors"
 	"strings"
 	"sync"
 	"time"
-
-	radix "github.com/mediocregopher/radix.v2"
-	"github.com/mediocregopher/radix.v2/pubsub"
 )
 
-type sentinelClient struct {
+type sentinel struct {
 	initAddrs []string
 
 	// we read lock when calling methods on cl, and normal lock when swapping
 	// the value of cl, clAddr, and addrs
 	sync.RWMutex
-	cl     radix.Client
+	cl     Client
 	clAddr string
 	addrs  map[string]bool // the known sentinel addresses
 
 	name string
-	dfn  radix.DialFunc // the function used to dial sentinel instances
-	pfn  radix.PoolFunc
+	dfn  DialFunc // the function used to dial sentinel instances
+	pfn  PoolFunc
 
-	// We use a persistent pubsub.Conn here, so we don't need to do much after
+	// We use a persistent PubSubConn here, so we don't need to do much after
 	// initialization. The pconn is only really kept around for closing
-	pconn   pubsub.Conn
-	pconnCh chan pubsub.Message
+	pconn   PubSubConn
+	pconnCh chan PubSubMessage
 
 	closeCh   chan bool
 	closeOnce sync.Once
@@ -39,29 +34,29 @@ type sentinelClient struct {
 	testEventCh chan string
 }
 
-// New creates and returns a sentinel client which implements the radix.Pool
-// interface. The client will, in the background, connect to the first available
-// of the given sentinels and handle all of the following:
+// Sentinel creates and returns a Client which, in the background, connects to
+// the first available of the given sentinels and handles all of the following:
 //
-// * Create a Pool to the current master instance, as advertised by the sentinel
-// * Listen for events indicating the master has changed, and automatically
-//   create a new Pool to the new master
-// * Keep track of other sentinels in the cluster, and use them if the currently
-//   connected one becomes unreachable
+// * Creates a Pool to the current master instance, as advertised by the
+//   sentinel
+// * Listens for events indicating the master has changed, and automatically
+//   creates a new Pool to the new master
+// * Keeps track of other sentinels in the cluster, and use them if the
+//   currently connected one becomes unreachable
 //
 // dialFn may be nil, but if given can specify a custom DialFunc to use when
 // connecting to sentinels.
 //
 // poolFn may be nil, but if given can specify a custom PoolFunc to use when
 // createing a connection pool to the master instance.
-func New(masterName string, sentinelAddrs []string, dialFn radix.DialFunc, poolFn radix.PoolFunc) (radix.Client, error) {
+func Sentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poolFn PoolFunc) (Client, error) {
 	if dialFn == nil {
-		dialFn = func(net, addr string) (radix.Conn, error) {
-			return radix.DialTimeout(net, addr, 5*time.Second)
+		dialFn = func(net, addr string) (Conn, error) {
+			return DialTimeout(net, addr, 5*time.Second)
 		}
 	}
 	if poolFn == nil {
-		poolFn = radix.NewPoolFunc(10, nil)
+		poolFn = NewPoolFunc(10, nil)
 	}
 
 	addrs := map[string]bool{}
@@ -69,13 +64,13 @@ func New(masterName string, sentinelAddrs []string, dialFn radix.DialFunc, poolF
 		addrs[addr] = true
 	}
 
-	sc := &sentinelClient{
+	sc := &sentinel{
 		initAddrs:   sentinelAddrs,
 		name:        masterName,
 		addrs:       addrs,
 		dfn:         dialFn,
 		pfn:         poolFn,
-		pconnCh:     make(chan pubsub.Message),
+		pconnCh:     make(chan PubSubMessage),
 		closeCh:     make(chan bool),
 		testEventCh: make(chan string, 1),
 	}
@@ -98,7 +93,7 @@ func New(masterName string, sentinelAddrs []string, dialFn radix.DialFunc, poolF
 	}
 
 	// because we're using persistent these can't _really_ fail
-	sc.pconn = pubsub.NewPersistent(sc.dial)
+	sc.pconn = PersistentPubSub(sc.dial)
 	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
 
 	go sc.spin()
@@ -106,18 +101,18 @@ func New(masterName string, sentinelAddrs []string, dialFn radix.DialFunc, poolF
 	return sc, nil
 }
 
-func (sc *sentinelClient) testEvent(event string) {
+func (sc *sentinel) testEvent(event string) {
 	select {
 	case sc.testEventCh <- event:
 	default:
 	}
 }
 
-func (sc *sentinelClient) dial() (radix.Conn, error) {
+func (sc *sentinel) dial() (Conn, error) {
 	sc.RLock()
 	defer sc.RUnlock()
 
-	var conn radix.Conn
+	var conn Conn
 	var err error
 	for addr := range sc.addrs {
 		conn, err = sc.dfn("tcp", addr)
@@ -137,13 +132,13 @@ func (sc *sentinelClient) dial() (radix.Conn, error) {
 	return nil, err
 }
 
-func (sc *sentinelClient) Do(a radix.Action) error {
+func (sc *sentinel) Do(a Action) error {
 	sc.RLock()
 	defer sc.RUnlock()
 	return sc.cl.Do(a)
 }
 
-func (sc *sentinelClient) Close() error {
+func (sc *sentinel) Close() error {
 	sc.RLock()
 	defer sc.RUnlock()
 	sc.closeOnce.Do(func() {
@@ -154,13 +149,13 @@ func (sc *sentinelClient) Close() error {
 
 // given a connection to a sentinel, ensures that the pool currently being held
 // agrees with what the sentinel thinks it should be
-func (sc *sentinelClient) ensureMaster(conn radix.Conn) error {
+func (sc *sentinel) ensureMaster(conn Conn) error {
 	sc.RLock()
 	lastAddr := sc.clAddr
 	sc.RUnlock()
 
 	var m map[string]string
-	err := radix.CmdNoKey("SENTINEL", "MASTER", sc.name).Into(&m).Run(conn)
+	err := CmdNoKey("SENTINEL", "MASTER", sc.name).Into(&m).Run(conn)
 	if err != nil {
 		return err
 	} else if m["ip"] == "" || m["port"] == "" {
@@ -173,7 +168,7 @@ func (sc *sentinelClient) ensureMaster(conn radix.Conn) error {
 	return sc.setMaster(newAddr)
 }
 
-func (sc *sentinelClient) setMaster(newAddr string) error {
+func (sc *sentinel) setMaster(newAddr string) error {
 	newPool, err := sc.pfn("tcp", newAddr)
 	if err != nil {
 		return err
@@ -192,9 +187,9 @@ func (sc *sentinelClient) setMaster(newAddr string) error {
 
 // annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_
 // sentinel instance, only the others it knows about for that master
-func (sc *sentinelClient) ensureSentinelAddrs(conn radix.Conn) error {
+func (sc *sentinel) ensureSentinelAddrs(conn Conn) error {
 	var mm []map[string]string
-	err := radix.CmdNoKey("SENTINEL", "SENTINELS", sc.name).Into(&mm).Run(conn)
+	err := CmdNoKey("SENTINEL", "SENTINELS", sc.name).Into(&mm).Run(conn)
 	if err != nil {
 		return err
 	}
@@ -210,7 +205,7 @@ func (sc *sentinelClient) ensureSentinelAddrs(conn radix.Conn) error {
 	return nil
 }
 
-func (sc *sentinelClient) spin() {
+func (sc *sentinel) spin() {
 	for {
 		// TODO get error from innerSpin and do something with it
 		sc.innerSpin()
@@ -225,7 +220,7 @@ func (sc *sentinelClient) spin() {
 }
 
 // makes connection to an address in sc.addrs and handles
-// the sentinelClient until that connection goes bad.
+// the sentinel until that connection goes bad.
 //
 // Things this handles:
 // * Listening for switch-master events (from pconn, which has reconnect logic
@@ -233,7 +228,7 @@ func (sc *sentinelClient) spin() {
 // * Periodically re-ensuring that the list of sentinel addresses is up-to-date
 // * Periodically re-chacking the current master, in case the switch-master was
 //   missed somehow
-func (sc *sentinelClient) innerSpin() {
+func (sc *sentinel) innerSpin() {
 	conn, err := sc.dial()
 	if err != nil {
 		return
@@ -258,7 +253,7 @@ func (sc *sentinelClient) innerSpin() {
 	}
 }
 
-func (sc *sentinelClient) pubsubSpin() {
+func (sc *sentinel) pubsubSpin() {
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
 	for {
