@@ -9,6 +9,10 @@ import (
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
+var (
+	errPoolClosed = errors.New("pool is closed")
+)
+
 // TODO not super happy with the naming here
 
 // PoolFunc is a function which can be used to create a Pool of connections to a
@@ -59,22 +63,20 @@ func (spc *staticPoolConn) Close() error {
 }
 
 type staticPool struct {
-	pool          chan *staticPoolConn
 	df            DialFunc
 	network, addr string
 
-	closeL sync.RWMutex
+	l      sync.RWMutex
+	pool   chan *staticPoolConn
 	closed bool
+
+	closeCh  chan bool
+	initDone chan struct{} // used for tests
 }
 
 // Pool creates a Client whose connections are all created using the DialFunc
 // (or Dial, if the DialFunc is nil). The size indicates the maximum number of
-// idle connections to have waiting to be used at any given moment. If an error
-// is encountered an empty (but still usable) Pool is returned alongside that
-// error
-//
-// TODO make initialization mostly asynchronous and not bother with this
-// "returning empty but usable" nonsense
+// idle connections to have waiting to be used at any given moment.
 //
 // The implementation of Pool returned here is a semi-dynamic pool. It holds a
 // fixed number of connections open. If Get is called and there are no available
@@ -84,35 +86,53 @@ type staticPool struct {
 // connection churn and will need the size to be increased.
 func Pool(network, addr string, size int, df DialFunc) (Client, error) {
 	sp := &staticPool{
-		network: network,
-		addr:    addr,
-		df:      df,
-		pool:    make(chan *staticPoolConn, size),
+		network:  network,
+		addr:     addr,
+		df:       df,
+		pool:     make(chan *staticPoolConn, size),
+		closeCh:  make(chan bool),
+		initDone: make(chan struct{}),
 	}
 	if sp.df == nil {
 		sp.df = Dial
 	}
 
-	// First make as many Conns as we can to initialize the pool. If we hit an
-	// error bail entirely, we'll return an empty pool
-	var spc *staticPoolConn
-	var err error
-	pool := make([]*staticPoolConn, 0, size)
-	for i := 0; i < size; i++ {
-		if spc, err = sp.newConn(); err != nil {
-			for _, spc := range pool {
-				spc.Close()
-			}
-			pool = pool[0:]
-			break
-		}
-		pool = append(pool, spc)
+	// make one Conn synchronously to ensure there's actually a redis instance
+	// present. The rest will be created asynchronously
+	spc, err := sp.newConn()
+	if err != nil {
+		return nil, err
 	}
+	sp.put(spc)
 
-	for i := range pool {
-		sp.pool <- pool[i]
+	go func() {
+		for i := 0; i < size-1; i++ {
+			spc, err := sp.newConn()
+			if err == nil {
+				sp.put(spc)
+			}
+		}
+		close(sp.initDone)
+	}()
+
+	go sp.pingSpin()
+	return sp, nil
+}
+
+func (sp *staticPool) pingSpin() {
+	pingCmd := CmdNoKey("PING")
+	// we want each conn to be pinged every 10 seconds, so divide that by number
+	// of conns to know how often to call PING
+	t := time.NewTicker(10 * time.Second / time.Duration(cap(sp.pool)))
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			sp.Do(pingCmd)
+		case <-sp.closeCh:
+			return
+		}
 	}
-	return sp, err
 }
 
 func (sp *staticPool) newConn() (*staticPoolConn, error) {
@@ -128,21 +148,11 @@ func (sp *staticPool) newConn() (*staticPoolConn, error) {
 	return spc, nil
 }
 
-func (sp *staticPool) isClosed() bool {
-	sp.closeL.RLock()
-	defer sp.closeL.RUnlock()
-	return sp.closed
-}
-
-func (sp *staticPool) setClosed(to bool) {
-	sp.closeL.Lock()
-	defer sp.closeL.Unlock()
-	sp.closed = to
-}
-
 func (sp *staticPool) get() (*staticPoolConn, error) {
-	if sp.isClosed() {
-		return nil, errors.New("pool is closed")
+	sp.l.RLock()
+	defer sp.l.RUnlock()
+	if sp.closed {
+		return nil, errPoolClosed
 	}
 
 	select {
@@ -154,7 +164,9 @@ func (sp *staticPool) get() (*staticPoolConn, error) {
 }
 
 func (sp *staticPool) put(spc *staticPoolConn) {
-	if spc.lastIOErr != nil || sp.isClosed() {
+	sp.l.RLock()
+	defer sp.l.RUnlock()
+	if spc.lastIOErr != nil || sp.closed {
 		spc.Close()
 		return
 	}
@@ -177,51 +189,21 @@ func (sp *staticPool) Do(a Action) error {
 }
 
 func (sp *staticPool) Close() error {
-	sp.setClosed(true)
+	sp.l.Lock()
+	defer sp.l.Unlock()
+	if sp.closed {
+		return errPoolClosed
+	}
+	sp.closed = true
+	sp.closeCh <- true
+
 	for {
 		select {
 		case spc := <-sp.pool:
 			spc.Close()
 		default:
 			close(sp.pool)
-			// TODO race condition here, if a connection were to get returned
-			// here it would be no bueno. setClosed/isClosed can't be counted on
-			// to protect here
 			return nil
 		}
 	}
-}
-
-type clientPinger struct {
-	Client
-	closeCh chan struct{}
-}
-
-// TODO do this in Pool automatically?
-
-// Pinger will periodically call Ping on a Conn held by the Client. This
-// effectively tests the Client's connections and cleans our the dead ones.
-func Pinger(cl Client, period time.Duration) Client {
-	closeCh := make(chan struct{})
-	go func() {
-		pingCmd := CmdNoKey("PING")
-		t := time.NewTicker(period)
-		defer t.Stop()
-		for {
-			select {
-			case <-t.C:
-				cl.Do(pingCmd)
-			case <-closeCh:
-				return
-			}
-		}
-	}()
-
-	return clientPinger{Client: cl, closeCh: closeCh}
-}
-
-func (clP clientPinger) Close() error {
-	clP.closeCh <- struct{}{}
-	close(clP.closeCh)
-	return clP.Client.Close()
 }

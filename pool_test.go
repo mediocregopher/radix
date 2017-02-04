@@ -54,6 +54,7 @@ func TestPool(t *T) {
 func TestPut(t *T) {
 	size := 10
 	pool := testPool(size)
+	<-pool.(*staticPool).initDone
 
 	// TODO if there's ever an avail method it'd be good to use it here
 	assertPoolConns := func(exp int) {
