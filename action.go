@@ -274,3 +274,42 @@ func (p Pipeline) Run(c Conn) error {
 
 	return nil
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+type withConn struct {
+	key []byte
+	fn  func(Conn) error
+}
+
+// WithConn is used to perform a set of independent Actions on the same Conn.
+// key should be a key which one or more of the inner Actions is acting on, or
+// nil if no keys are being acted on. The callback function is what should
+// actually carry out the inner actions, and the error it returns will be
+// returned by the Run method.
+//
+//	err := pool.Do(WithConn("someKey", func(conn Conn) error {
+//		var curr int
+//		if err := Cmd("GET", "someKey").Into(&curr).Run(conn); err != nil {
+//			return err
+//		}
+//
+//		curr++
+//		return Cmd("SET", "someKey", curr).Run(conn)
+//	})
+//
+// NOTE that WithConn only ensures all inner Actions are performed on the same
+// Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
+// WithConn or Pipeline for transactions, or use LuaCmd.
+func WithConn(key []byte, fn func(Conn) error) Action {
+	// TODO don't like that key is []byte here, string would be better
+	return withConn{[]byte(key), fn}
+}
+
+func (wc withConn) OnKey() []byte {
+	return wc.key
+}
+
+func (wc withConn) Run(c Conn) error {
+	return wc.fn(c)
+}

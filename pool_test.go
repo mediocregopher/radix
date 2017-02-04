@@ -6,11 +6,10 @@ import (
 	. "testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func testPool(size int) Pool {
-	pool, err := NewPool("tcp", "localhost:6379", size, nil)
+func testPool(size int) Client {
+	pool, err := Pool("tcp", "localhost:6379", size, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -33,10 +32,10 @@ func TestPool(t *T) {
 		wg.Add(1)
 		go func() {
 			for i := 0; i < 100; i++ {
-				conn, err := pool.Get()
-				assert.Nil(t, err)
-				testEcho(conn)
-				conn.Return()
+				pool.Do(WithConn(nil, func(conn Conn) error {
+					testEcho(conn)
+					return nil
+				}))
 			}
 			wg.Done()
 		}()
@@ -57,42 +56,50 @@ func TestPut(t *T) {
 	pool := testPool(size)
 
 	// TODO if there's ever an avail method it'd be good to use it here
-	sp := pool.(*staticPool)
-
-	conn, err := pool.Get()
-	require.Nil(t, err)
-	assert.Equal(t, 9, len(sp.pool))
-
-	conn.(*staticPoolConn).lastIOErr = io.EOF
-	conn.Return()
+	assertPoolConns := func(exp int) {
+		sp := pool.(*staticPool)
+		assert.Equal(t, exp, len(sp.pool))
+	}
+	assertPoolConns(10)
 
 	// Make sure that put does not accept a connection which has had a critical
 	// network error
-	assert.Equal(t, 9, len(sp.pool))
+	pool.Do(WithConn(nil, func(conn Conn) error {
+		assertPoolConns(9)
+		conn.(*staticPoolConn).lastIOErr = io.EOF
+		return nil
+	}))
+	assertPoolConns(9)
 
 	// Make sure that a put _does_ accept a connection which had a
 	// marshal/unmarshal error
-	conn, err = pool.Get()
-	require.Nil(t, err)
-	assert.NotNil(t, CmdNoKey("ECHO", func() {}).Run(conn))
-	assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
-	conn.Return()
+	pool.Do(WithConn(nil, func(conn Conn) error {
+		assert.NotNil(t, CmdNoKey("ECHO", func() {}).Run(conn))
+		assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
+		return nil
+	}))
+	assertPoolConns(9)
 
 	// Make sure that a put _does_ accept a connection which had an app level
 	// resp error
-	conn, err = pool.Get()
-	require.Nil(t, err)
-	assert.NotNil(t, CmdNoKey("CMDDNE"))
-	assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
-	conn.Return()
+	pool.Do(WithConn(nil, func(conn Conn) error {
+		assert.NotNil(t, CmdNoKey("CMDDNE"))
+		assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
+		return nil
+	}))
+	assertPoolConns(9)
 
 	// Make sure that closing the pool closes outstanding connections as well
-	conn, err = pool.Get()
-	require.Nil(t, err)
-	assert.Equal(t, 8, len(sp.pool))
-
-	sp.Close()
-	assert.Equal(t, 0, len(sp.pool))
-	conn.Return()
-	assert.Equal(t, 0, len(sp.pool))
+	closeCh := make(chan bool)
+	go func() {
+		<-closeCh
+		assert.Nil(t, pool.Close())
+		closeCh <- true
+	}()
+	pool.Do(WithConn(nil, func(conn Conn) error {
+		closeCh <- true
+		<-closeCh
+		return nil
+	}))
+	assertPoolConns(0)
 }

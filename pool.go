@@ -9,56 +9,23 @@ import (
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
-// TODO might be possible to get rid of Pool and PoolConn interfaces entirely
-// If we do this then the PoolFunc type should be renamed to reflect that it's
-// meant for a pool to a single interface.
+// TODO not super happy with the naming here
 
-// TODO expose stats for Clients in some way
+// PoolFunc is a function which can be used to create a Pool of connections to a
+// single redis instance on the given network/address.
+type PoolFunc func(network, addr string) (Client, error)
 
-// PoolConn is a Conn which came from a Pool, and which has the special
-// property of being able to be returned to the Pool it came from
-type PoolConn interface {
-	Conn
-
-	// Return, when called, indicates that the PoolConn will no longer be used
-	// by its current borrower and should be returned to the Pool it came from.
-	//
-	// This _must_ be called by all borrowers, or their PoolConns will never be
-	// put back in their Pools.
-	Return()
-}
-
-// Pool is a Client which can be used to manage a set of open Conns which can be
-// used by multiple go-routines.
+// NewPoolFunc returns a PoolFunc which will use this package's NewPool function
+// to create a Pool of the given size and using the given DialFunc.
 //
-// When Close is called on a Pool any lent out PoolConns may be automatically
-// closed, or not, depending on the implementation.
-type Pool interface {
-	Client
-
-	// Get retrieves an available PoolConn for use by a single go-routine (until
-	// a subsequent call to Return on it), or returns an error if that's not
-	// possible.
-	Get() (PoolConn, error)
-
-	// Stats returns any runtime stats that the implementation of Pool wishes to
-	// return, or nil if it doesn't want to return any. This method aims to help
-	// support logging and debugging, not necessarily to give any actionable
-	// information to the program during runtime.
-	//
-	// Examples of useful runtime stats might be: number of connections
-	// currently available, number of connections currently lent out, number of
-	// connections ever created, number of connections ever closed, average time
-	// to create a new connection, and so on.
-	//
-	// TODO I'm not sure if I actually like this
-	//
-	//Stats() map[string]interface{}
+// If the DialFunc is nil then this package's Dial function is used.
+func NewPoolFunc(size int, df DialFunc) PoolFunc {
+	return func(network, addr string) (Client, error) {
+		// dunno why I have to do this....
+		cl, err := Pool(network, addr, size, df)
+		return cl, err
+	}
 }
-
-// PoolFunc is a function which can be used to create a Pool of connections to
-// the redis instance on the given network/address.
-type PoolFunc func(network, addr string) (Pool, error)
 
 type staticPoolConn struct {
 	Conn
@@ -69,10 +36,6 @@ type staticPoolConn struct {
 	// level error, e.g. a timeout, disconnect, etc... Close is automatically
 	// called on the client when it encounters a critical network error
 	lastIOErr error
-}
-
-func (spc *staticPoolConn) Return() {
-	spc.sp.put(spc)
 }
 
 func (spc *staticPoolConn) Encode(m resp.Marshaler) error {
@@ -104,11 +67,14 @@ type staticPool struct {
 	closed bool
 }
 
-// NewPool creates a new Pool whose connections are all created using the given
-// DialFunc (or Dial, if the given DialFunc is nil).  The size indicates the
-// maximum number of idle connections to have waiting to be used at any given
-// moment. If an error is encountered an empty (but still usable) Pool is
-// returned alongside that error
+// Pool creates a Client whose connections are all created using the DialFunc
+// (or Dial, if the DialFunc is nil). The size indicates the maximum number of
+// idle connections to have waiting to be used at any given moment. If an error
+// is encountered an empty (but still usable) Pool is returned alongside that
+// error
+//
+// TODO make initialization mostly asynchronous and not bother with this
+// "returning empty but usable" nonsense
 //
 // The implementation of Pool returned here is a semi-dynamic pool. It holds a
 // fixed number of connections open. If Get is called and there are no available
@@ -116,7 +82,7 @@ type staticPool struct {
 // called and the Pool is full that Conn will be closed and discarded. In this
 // way spikes are handled rather well, but sustained over-use will cause
 // connection churn and will need the size to be increased.
-func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
+func Pool(network, addr string, size int, df DialFunc) (Client, error) {
 	sp := &staticPool{
 		network: network,
 		addr:    addr,
@@ -149,16 +115,6 @@ func NewPool(network, addr string, size int, df DialFunc) (Pool, error) {
 	return sp, err
 }
 
-// NewPoolFunc returns a PoolFunc which will use this package's NewPool function
-// to create a Pool of the given size and using the given DialFunc.
-//
-// If the DialFunc is nil then this package's Dial function is used.
-func NewPoolFunc(size int, df DialFunc) PoolFunc {
-	return func(network, addr string) (Pool, error) {
-		return NewPool(network, addr, size, df)
-	}
-}
-
 func (sp *staticPool) newConn() (*staticPoolConn, error) {
 	c, err := sp.df(sp.network, sp.addr)
 	if err != nil {
@@ -184,7 +140,7 @@ func (sp *staticPool) setClosed(to bool) {
 	sp.closed = to
 }
 
-func (sp *staticPool) Get() (PoolConn, error) {
+func (sp *staticPool) get() (*staticPoolConn, error) {
 	if sp.isClosed() {
 		return nil, errors.New("pool is closed")
 	}
@@ -210,6 +166,16 @@ func (sp *staticPool) put(spc *staticPoolConn) {
 	}
 }
 
+func (sp *staticPool) Do(a Action) error {
+	c, err := sp.get()
+	if err != nil {
+		return err
+	}
+	defer sp.put(c)
+
+	return a.Run(c)
+}
+
 func (sp *staticPool) Close() error {
 	sp.setClosed(true)
 	for {
@@ -218,53 +184,44 @@ func (sp *staticPool) Close() error {
 			spc.Close()
 		default:
 			close(sp.pool)
+			// TODO race condition here, if a connection were to get returned
+			// here it would be no bueno. setClosed/isClosed can't be counted on
+			// to protect here
 			return nil
 		}
 	}
 }
 
-func (sp *staticPool) Do(a Action) error {
-	c, err := sp.Get()
-	if err != nil {
-		return err
-	}
-	defer c.Return()
-
-	return a.Run(c)
-}
-
-type poolPinger struct {
-	Pool
+type clientPinger struct {
+	Client
 	closeCh chan struct{}
-	doneCh  chan struct{}
 }
 
-// NewPoolPinger will periodically call Get on the given Pool, do a PING
-// command, then return the connection to the Pool. This effectively tests the
-// connections and cleans our the dead ones.
-func NewPoolPinger(p Pool, period time.Duration) Pool {
+// TODO do this in Pool automatically?
+
+// Pinger will periodically call Ping on a Conn held by the Client. This
+// effectively tests the Client's connections and cleans our the dead ones.
+func Pinger(cl Client, period time.Duration) Client {
 	closeCh := make(chan struct{})
-	doneCh := make(chan struct{})
-	pingCmd := CmdNoKey("PING")
 	go func() {
+		pingCmd := CmdNoKey("PING")
 		t := time.NewTicker(period)
+		defer t.Stop()
 		for {
 			select {
 			case <-t.C:
-				p.Do(pingCmd)
+				cl.Do(pingCmd)
 			case <-closeCh:
-				t.Stop()
-				close(doneCh)
 				return
 			}
 		}
 	}()
 
-	return poolPinger{Pool: p, closeCh: closeCh, doneCh: doneCh}
+	return clientPinger{Client: cl, closeCh: closeCh}
 }
 
-func (pp poolPinger) Close() error {
-	close(pp.closeCh)
-	<-pp.doneCh
-	return pp.Pool.Close()
+func (clP clientPinger) Close() error {
+	clP.closeCh <- struct{}{}
+	close(clP.closeCh)
+	return clP.Client.Close()
 }

@@ -45,6 +45,8 @@ func TestLuaCmd(t *T) {
 	}
 }
 
+// TODO don't use testutil
+
 func TestPipelineAction(t *T) {
 	c := dial()
 	for i := 0; i < 10; i++ {
@@ -64,4 +66,18 @@ func TestPipelineAction(t *T) {
 			assert.Equal(t, ss[i], out[i])
 		}
 	}
+}
+
+func TestWithConnAction(t *T) {
+	c := dial()
+	k, v := testutil.RandStr(), 10
+
+	err := WithConn([]byte(k), func(conn Conn) error {
+		require.Nil(t, Cmd("SET", k, v).Run(conn))
+		var out int
+		require.Nil(t, Cmd("GET", k).Into(&out).Run(conn))
+		assert.Equal(t, v, out)
+		return nil
+	}).Run(c)
+	require.Nil(t, err)
 }

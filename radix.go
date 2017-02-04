@@ -9,6 +9,8 @@ import (
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
+// TODO expose stats for Clients in some way
+
 // Client describes an entity which can carry out Actions, e.g. a connection
 // pool for a single redis instance or the cluster client.
 type Client interface {
@@ -17,7 +19,25 @@ type Client interface {
 	// Once Close() is called all future method calls on the Client will return
 	// an error
 	Close() error
+
+	// Stats returns any runtime stats that the implementation of Client wishes
+	// to return, or nil if it doesn't want to return any. This method aims to
+	// help support logging and debugging, not necessarily to give any
+	// actionable information to the program during runtime.
+	//
+	// Examples of useful runtime stats for a pool might be: number of
+	// connections currently available, number of connections currently lent
+	// out, number of connections ever created, number of connections ever
+	// closed, average time to create a new connection, and so on.
+	//
+	// TODO I'm not sure if I actually like this
+	//
+	//Stats() map[string]interface{}
 }
+
+// TODO give Conn the Do method (somehow), to make it a Client itself, and make
+// sure all code and documentation doesn't use the Run method directly like I've
+// been doing
 
 // Conn is a Client which synchronously reads/writes data on a network
 // connection using the redis resp protocol.

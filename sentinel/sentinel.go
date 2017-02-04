@@ -15,12 +15,12 @@ import (
 type sentinelClient struct {
 	initAddrs []string
 
-	// we read lock when calling methods on p, and normal lock when swapping the
-	// value of p, pAddr, and addrs
+	// we read lock when calling methods on cl, and normal lock when swapping
+	// the value of cl, clAddr, and addrs
 	sync.RWMutex
-	p     radix.Pool
-	pAddr string
-	addrs map[string]bool // the known sentinel addresses
+	cl     radix.Client
+	clAddr string
+	addrs  map[string]bool // the known sentinel addresses
 
 	name string
 	dfn  radix.DialFunc // the function used to dial sentinel instances
@@ -54,7 +54,7 @@ type sentinelClient struct {
 //
 // poolFn may be nil, but if given can specify a custom PoolFunc to use when
 // createing a connection pool to the master instance.
-func New(masterName string, sentinelAddrs []string, dialFn radix.DialFunc, poolFn radix.PoolFunc) (radix.Pool, error) {
+func New(masterName string, sentinelAddrs []string, dialFn radix.DialFunc, poolFn radix.PoolFunc) (radix.Client, error) {
 	if dialFn == nil {
 		dialFn = func(net, addr string) (radix.Conn, error) {
 			return radix.DialTimeout(net, addr, 5*time.Second)
@@ -140,7 +140,7 @@ func (sc *sentinelClient) dial() (radix.Conn, error) {
 func (sc *sentinelClient) Do(a radix.Action) error {
 	sc.RLock()
 	defer sc.RUnlock()
-	return sc.p.Do(a)
+	return sc.cl.Do(a)
 }
 
 func (sc *sentinelClient) Close() error {
@@ -149,20 +149,14 @@ func (sc *sentinelClient) Close() error {
 	sc.closeOnce.Do(func() {
 		close(sc.closeCh)
 	})
-	return sc.p.Close()
-}
-
-func (sc *sentinelClient) Get() (radix.PoolConn, error) {
-	sc.RLock()
-	defer sc.RUnlock()
-	return sc.p.Get()
+	return sc.cl.Close()
 }
 
 // given a connection to a sentinel, ensures that the pool currently being held
 // agrees with what the sentinel thinks it should be
 func (sc *sentinelClient) ensureMaster(conn radix.Conn) error {
 	sc.RLock()
-	lastAddr := sc.pAddr
+	lastAddr := sc.clAddr
 	sc.RUnlock()
 
 	var m map[string]string
@@ -186,11 +180,11 @@ func (sc *sentinelClient) setMaster(newAddr string) error {
 	}
 
 	sc.Lock()
-	if sc.p != nil {
-		sc.p.Close()
+	if sc.cl != nil {
+		sc.cl.Close()
 	}
-	sc.p = newPool
-	sc.pAddr = newAddr
+	sc.cl = newPool
+	sc.clAddr = newAddr
 	sc.Unlock()
 
 	return nil

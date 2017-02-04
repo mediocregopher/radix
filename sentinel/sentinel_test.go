@@ -129,16 +129,16 @@ func TestSentinel(t *T) {
 
 	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
 	// don't tell anyone
-	poolFn := func(string, string) (radix.Pool, error) {
-		return radix.NewPool("tcp", "127.0.0.1:6379", 10, nil)
+	poolFn := func(string, string) (radix.Client, error) {
+		return radix.Pool("tcp", "127.0.0.1:6379", 10, nil)
 	}
 
 	sc, err := New("stub", stub.sentAddrs, stub.newConn, poolFn)
 	require.Nil(t, err)
 	scc := sc.(*sentinelClient)
 
-	assertState := func(pAddr string, sentAddrs ...string) {
-		assert.Equal(t, pAddr, scc.pAddr)
+	assertState := func(clAddr string, sentAddrs ...string) {
+		assert.Equal(t, clAddr, scc.clAddr)
 		assert.Len(t, scc.addrs, len(sentAddrs))
 		for i := range sentAddrs {
 			assert.Contains(t, scc.addrs, sentAddrs[i])
