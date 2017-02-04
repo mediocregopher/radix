@@ -1,4 +1,4 @@
-package pubsub
+package radix
 
 /*
 This file, glob.go, taken from github.com/ryanuber/go-glob, and is redistributed

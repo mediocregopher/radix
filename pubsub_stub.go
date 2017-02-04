@@ -1,4 +1,4 @@
-package pubsub
+package radix
 
 import (
 	"errors"
@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	radix "github.com/mediocregopher/radix.v2"
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
@@ -26,10 +25,10 @@ func (mm multiMarshal) MarshalRESP(p *resp.Pool, w io.Writer) error {
 	return nil
 }
 
-type stub struct {
-	radix.Conn
+type pubSubStub struct {
+	Conn
 	fn   func([]string) interface{}
-	inCh <-chan Message
+	inCh <-chan PubSubMessage
 
 	closeOnce sync.Once
 	closeCh   chan struct{}
@@ -45,22 +44,22 @@ type stub struct {
 
 // TODO probably make this into an example
 
-// Stub returns a Conn much like radix.Stub does. It differs in that Encode
+// PubSubStub returns a Conn much like Stub does. It differs in that Encode
 // calls for (P)SUBSCRIBE, (P)UNSUBSCRIBE, MESSAGE, and PING will be intercepted
-// and handled as per redis' expected pubsub functionality. A Message may be
-// written to the returned channel at any time, and if the Stub has had
-// (P)SUBSCRIBE called matching that Message it will be written to the Stub's
-// internal buffer as expected.
+// and handled as per redis' expected pubsub functionality. A PubSubMessage may
+// be written to the returned channel at any time, and if the PubSubStub has had
+// (P)SUBSCRIBE called matching that PubSubMessage it will be written to the
+// PubSubStub's internal buffer as expected.
 //
 // This is intended to be used to so that it can mock services which can perform
 // both normal redis commands and pubsub (e.g. a real redis instance, redis
-// sentinel). Once created this Stub can be wrapped in a normal pubsub.Conn
-// using New and treated like a real connection. Here's an example:
+// sentinel). Once created this stub can be wrapped in a normal PubSubConn using
+// PubSub and treated like a real connection. Here's an example:
 //
 //	// Make a pubsub stub conn which handles normal redis commands. This one
 //	// will return nil for everything except pubsub commands (which will be
 //	// handled automatically)
-//	stub, stubCh := pubsub.Stub("tcp", "127.0.0.1:6379", func([]string) interface{} {
+//	stub, stubCh := radix.PubSubStub("tcp", "127.0.0.1:6379", func([]string) interface{} {
 //		return nil
 //	})
 //
@@ -68,7 +67,7 @@ type stub struct {
 //	// subscribed to anything
 //	go func() {
 //		for {
-//			stubCh <- pubsub.Message{
+//			stubCh <- radix.PubSubMessage{
 //				Channel: "foo",
 //				Message: []byte("bar"),
 //			}
@@ -77,8 +76,8 @@ type stub struct {
 //	}()
 //
 //	// Wrap the stub like we would for a normal redis connection
-//	pstub := pubsub.New(stub)
-//	msgCh := make(chan pubsub.Message)
+//	pstub := PubSub(stub)
+//	msgCh := make(chan PubSubMessage)
 //
 //	// Subscribe to "foo"
 //	if err := pstub.Subscribe(msgCh, "foo"); err != nil {
@@ -98,9 +97,9 @@ type stub struct {
 //		}
 //	}
 //
-func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (radix.Conn, chan<- Message) {
-	ch := make(chan Message)
-	s := &stub{
+func PubSubStub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (Conn, chan<- PubSubMessage) {
+	ch := make(chan PubSubMessage)
+	s := &pubSubStub{
 		fn:      fn,
 		inCh:    ch,
 		closeCh: make(chan struct{}),
@@ -108,12 +107,12 @@ func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (radi
 		psubbed: map[string]bool{},
 		mDoneCh: make(chan struct{}, 1),
 	}
-	s.Conn = radix.Stub(remoteNetwork, remoteAddr, s.innerFn)
+	s.Conn = Stub(remoteNetwork, remoteAddr, s.innerFn)
 	go s.spin()
 	return s, ch
 }
 
-func (s *stub) innerFn(ss []string) interface{} {
+func (s *pubSubStub) innerFn(ss []string) interface{} {
 	s.l.Lock()
 	defer s.l.Unlock()
 
@@ -158,7 +157,7 @@ func (s *stub) innerFn(ss []string) interface{} {
 		}
 		return mm
 	case "MESSAGE":
-		m := Message{
+		m := PubSubMessage{
 			Channel: ss[1],
 			Message: []byte(ss[2]),
 		}
@@ -188,7 +187,7 @@ func (s *stub) innerFn(ss []string) interface{} {
 	}
 }
 
-func (s *stub) Close() error {
+func (s *pubSubStub) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.closeCh)
 		s.closeErr = s.Conn.Close()
@@ -196,17 +195,17 @@ func (s *stub) Close() error {
 	return s.closeErr
 }
 
-func (s *stub) spin() {
+func (s *pubSubStub) spin() {
 	for {
 		select {
 		case m, ok := <-s.inCh:
 			if !ok {
-				panic("pubsub stub message channel was closed")
+				panic("PubSubStub message channel was closed")
 			}
 			m.Type = "message"
 			m.Pattern = ""
 			if err := s.Conn.Encode(m); err != nil {
-				panic(fmt.Sprintf("error encoding message in stub: %s", err))
+				panic(fmt.Sprintf("error encoding message in PubSubStub: %s", err))
 			}
 			select {
 			case s.mDoneCh <- struct{}{}:

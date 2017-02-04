@@ -1,4 +1,4 @@
-package pubsub
+package radix
 
 import (
 	. "testing"
@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStub(t *T) {
-	conn, stubCh := Stub("tcp", "127.0.0.1:6379", func(in []string) interface{} {
+func TestPubSubStub(t *T) {
+	conn, stubCh := PubSubStub("tcp", "127.0.0.1:6379", func(in []string) interface{} {
 		return in
 	})
 	message := func(channel, val string) {
-		stubCh <- Message{Channel: channel, Message: []byte(val)}
-		<-conn.(*stub).mDoneCh
+		stubCh <- PubSubMessage{Channel: channel, Message: []byte(val)}
+		<-conn.(*pubSubStub).mDoneCh
 	}
 
 	assertEncode := func(in ...string) {

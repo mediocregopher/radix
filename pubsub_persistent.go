@@ -1,28 +1,26 @@
-package pubsub
+package radix
 
 import (
 	"sync"
 	"time"
-
-	radix "github.com/mediocregopher/radix.v2"
 )
 
-type persistent struct {
-	dial func() (radix.Conn, error)
+type persistentPubSub struct {
+	dial func() (Conn, error)
 
 	l           sync.Mutex
-	curr        Conn
+	curr        PubSubConn
 	subs, psubs chanSet
 	closeCh     chan struct{}
 }
 
-// NewPersistent is like New, but instead of taking in an existing radix.Conn to
+// PersistentPubSub is like PubSub, but instead of taking in an existing Conn to
 // wrap it will create one on the fly. If the connection is ever terminated then
-// a new one will be created using the given function. None of the methods on
-// the returned Conn will ever return an error, they will instead block until a
+// a new one will be created using the dialFn. None of the methods on the
+// returned Conn will ever return an error, they will instead block until a
 // connection can be successfully reinstated.
-func NewPersistent(dialFn func() (radix.Conn, error)) Conn {
-	p := &persistent{
+func PersistentPubSub(dialFn func() (Conn, error)) PubSubConn {
+	p := &persistentPubSub{
 		dial:    dialFn,
 		subs:    chanSet{},
 		psubs:   chanSet{},
@@ -32,18 +30,18 @@ func NewPersistent(dialFn func() (radix.Conn, error)) Conn {
 	return p
 }
 
-func (p *persistent) refresh() {
+func (p *persistentPubSub) refresh() {
 	if p.curr != nil {
 		p.curr.Close()
 	}
 
-	attempt := func() Conn {
+	attempt := func() PubSubConn {
 		c, err := p.dial()
 		if err != nil {
 			return nil
 		}
 		errCh := make(chan error, 1)
-		pc := newInner(c, errCh)
+		pc := newPubSub(c, errCh)
 
 		for msgCh, channels := range p.subs.inverse() {
 			if err := pc.Subscribe(msgCh, channels...); err != nil {
@@ -84,7 +82,7 @@ func (p *persistent) refresh() {
 	}
 }
 
-func (p *persistent) Subscribe(msgCh chan<- Message, channels ...string) error {
+func (p *persistentPubSub) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -99,7 +97,7 @@ func (p *persistent) Subscribe(msgCh chan<- Message, channels ...string) error {
 	return nil
 }
 
-func (p *persistent) Unsubscribe(msgCh chan<- Message, channels ...string) error {
+func (p *persistentPubSub) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -114,7 +112,7 @@ func (p *persistent) Unsubscribe(msgCh chan<- Message, channels ...string) error
 	return nil
 }
 
-func (p *persistent) PSubscribe(msgCh chan<- Message, channels ...string) error {
+func (p *persistentPubSub) PSubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -129,7 +127,7 @@ func (p *persistent) PSubscribe(msgCh chan<- Message, channels ...string) error 
 	return nil
 }
 
-func (p *persistent) PUnsubscribe(msgCh chan<- Message, channels ...string) error {
+func (p *persistentPubSub) PUnsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -144,7 +142,7 @@ func (p *persistent) PUnsubscribe(msgCh chan<- Message, channels ...string) erro
 	return nil
 }
 
-func (p *persistent) Ping() error {
+func (p *persistentPubSub) Ping() error {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -157,7 +155,7 @@ func (p *persistent) Ping() error {
 	return nil
 }
 
-func (p *persistent) Close() error {
+func (p *persistentPubSub) Close() error {
 	p.l.Lock()
 	defer p.l.Unlock()
 	close(p.closeCh)

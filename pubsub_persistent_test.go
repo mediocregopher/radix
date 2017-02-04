@@ -1,17 +1,16 @@
-package pubsub
+package radix
 
 import (
 	. "testing"
 	"time"
 
-	radix "github.com/mediocregopher/radix.v2"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPersistent(t *T) {
 	closeCh := make(chan chan bool)
-	p := NewPersistent(func() (radix.Conn, error) {
-		c := testConn(t)
+	p := PersistentPubSub(func() (Conn, error) {
+		c := dial()
 		go func() {
 			closeRetCh := <-closeCh
 			c.Close()

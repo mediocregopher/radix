@@ -1,4 +1,4 @@
-package pubsub
+package radix
 
 import (
 	"bufio"
@@ -9,18 +9,18 @@ import (
 	"net"
 	"sync"
 
-	radix "github.com/mediocregopher/radix.v2"
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
 type timeoutOkConn struct {
-	radix.Conn
+	Conn
 }
 
-// TimeoutOk returns a Conn which will _not_ call Close on itself if it sees a
+// timeoutOk returns a Conn which will _not_ call Close on itself if it sees a
 // timeout error during a Decode call (though it will still return that error).
-// It will still do so for all other read/write errors, however.
-func TimeoutOk(c radix.Conn) radix.Conn {
+// Close will still be called other read/write errors.
+// TODO not sure if I want to make this public
+func timeoutOk(c Conn) Conn {
 	return &timeoutOkConn{c}
 }
 
@@ -57,17 +57,17 @@ func (tou timeoutOkUnmarshaler) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) er
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Message describes a message being published to a subscribed channel
-type Message struct {
+// PubSubMessage describes a message being published to a subscribed channel
+type PubSubMessage struct {
 	Type    string // "message" or "pmessage"
 	Pattern string // will be set if Type is "pmessage"
 	Channel string
 	Message []byte
 }
 
-// MarshalRESP implements the radix.Marshaler interface. It will assume the
-// Message is a PMESSAGE if Pattern is non-empty.
-func (m Message) MarshalRESP(p *resp.Pool, w io.Writer) error {
+// MarshalRESP implements the Marshaler interface. It will assume the
+// PubSubMessage is a PMESSAGE if Pattern is non-empty.
+func (m PubSubMessage) MarshalRESP(p *resp.Pool, w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
 		if err == nil {
@@ -90,8 +90,8 @@ func (m Message) MarshalRESP(p *resp.Pool, w io.Writer) error {
 	return err
 }
 
-// UnmarshalRESP implements the radix.Unmarshaler interface
-func (m *Message) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
+// UnmarshalRESP implements the Unmarshaler interface
+func (m *PubSubMessage) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
 	bb := make([][]byte, 0, 4)
 	if err := (resp.Any{I: &bb}).UnmarshalRESP(p, br); err != nil {
 		return err
@@ -126,18 +126,18 @@ func (m *Message) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type chanSet map[string]map[chan<- Message]bool
+type chanSet map[string]map[chan<- PubSubMessage]bool
 
-func (cs chanSet) add(s string, ch chan<- Message) {
+func (cs chanSet) add(s string, ch chan<- PubSubMessage) {
 	m, ok := cs[s]
 	if !ok {
-		m = map[chan<- Message]bool{}
+		m = map[chan<- PubSubMessage]bool{}
 		cs[s] = m
 	}
 	m[ch] = true
 }
 
-func (cs chanSet) del(s string, ch chan<- Message) bool {
+func (cs chanSet) del(s string, ch chan<- PubSubMessage) bool {
 	m, ok := cs[s]
 	if !ok {
 		return true
@@ -160,8 +160,8 @@ func (cs chanSet) missing(ss []string) []string {
 	return out
 }
 
-func (cs chanSet) inverse() map[chan<- Message][]string {
-	inv := map[chan<- Message][]string{}
+func (cs chanSet) inverse() map[chan<- PubSubMessage][]string {
+	inv := map[chan<- PubSubMessage][]string{}
 	for s, m := range cs {
 		for ch := range m {
 			inv[ch] = append(inv[ch], s)
@@ -172,46 +172,47 @@ func (cs chanSet) inverse() map[chan<- Message][]string {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Conn wraps a radix.Conn to support redis' pubsub system. User-created
-// channels can be subscribed to redis channels to receive Messages which have
-// been published.
+// PubSubConn wraps a Conn to support redis' pubsub system. User-created
+// channels can be subscribed to redis channels to receive PubSubMessages which
+// have been published.
 //
-// If any methods return an error it means the Conn has been Close'd and
-// subscribed msgCh's will no longer receive Messages from it. All methods are
-// threadsafe.
+// If any methods return an error it means the PubSubConn has been Close'd and
+// subscribed msgCh's will no longer receive PubSubMessages from it. All methods
+// are threadsafe.
 //
 // NOTE if any channels block when being written to they will block all other
 // channels from receiving a publish.
-type Conn interface {
-	// Subscribe subscribes the Conn to the given set of channels. msgCh will
-	// receieve a Message for every publish written to any of the channels. This
-	// may be called multiple times for the same channels and different msgCh's,
-	// each msgCh will receieve a copy of the Message for each publish.
-	Subscribe(msgCh chan<- Message, channels ...string) error
+type PubSubConn interface {
+	// Subscribe subscribes the PubSubConn to the given set of channels. msgCh
+	// will receieve a PubSubMessage for every publish written to any of the
+	// channels. This may be called multiple times for the same channels and
+	// different msgCh's, each msgCh will receieve a copy of the PubSubMessage
+	// for each publish.
+	Subscribe(msgCh chan<- PubSubMessage, channels ...string) error
 
 	// Unsubscribe unsubscribes the msgCh from the given set of channels, if it
 	// was subscribed at all.
-	Unsubscribe(msgCh chan<- Message, channels ...string) error
+	Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error
 
 	// PSubscribe is like Subscribe, but it subscribes msgCh to a set of
 	// patterns and not individual channels.
-	PSubscribe(msgCh chan<- Message, patterns ...string) error
+	PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) error
 
 	// PUnsubscribe is like Unsubscribe, but it unsubscribes msgCh from a set of
 	// patterns and not individual channels.
-	PUnsubscribe(msgCh chan<- Message, patterns ...string) error
+	PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string) error
 
-	// Ping performs a simple Ping command on the Conn, returning an error if it
-	// failed for some reason
+	// Ping performs a simple Ping command on the PubSubConn, returning an error
+	// if it failed for some reason
 	Ping() error
 
-	// Close closes the Conn so it can't be used anymore. All subscribed
-	// channels will stop receiving Messages from this Conn.
+	// Close closes the PubSubConn so it can't be used anymore. All subscribed
+	// channels will stop receiving PubSubMessages from this Conn.
 	Close() error
 }
 
-type conn struct {
-	conn radix.Conn
+type pubSubConn struct {
+	conn Conn
 
 	csL   sync.RWMutex
 	subs  chanSet
@@ -231,14 +232,14 @@ type conn struct {
 	closeErrCh chan error
 }
 
-// New wraps the given radix.Conn so that it becomes a pubsub.Conn.
-func New(rc radix.Conn) Conn {
-	return newInner(rc, nil)
+// PubSub wraps the given Conn so that it becomes a PubSubConn.
+func PubSub(rc Conn) PubSubConn {
+	return newPubSub(rc, nil)
 }
 
-func newInner(rc radix.Conn, closeErrCh chan error) Conn {
-	c := &conn{
-		conn:       TimeoutOk(rc),
+func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
+	c := &pubSubConn{
+		conn:       timeoutOk(rc),
 		subs:       chanSet{},
 		psubs:      chanSet{},
 		cmdResCh:   make(chan error, 1),
@@ -248,7 +249,7 @@ func newInner(rc radix.Conn, closeErrCh chan error) Conn {
 	return c
 }
 
-func (c *conn) publish(m Message) {
+func (c *pubSubConn) publish(m PubSubMessage) {
 	c.csL.RLock()
 	defer c.csL.RUnlock()
 
@@ -269,7 +270,7 @@ func (c *conn) publish(m Message) {
 	}
 }
 
-func (c *conn) spin() {
+func (c *pubSubConn) spin() {
 	for {
 		var rm resp.RawMessage
 		err := c.conn.Decode(&rm)
@@ -280,7 +281,7 @@ func (c *conn) spin() {
 			return
 		}
 
-		var m Message
+		var m PubSubMessage
 		if err := rm.UnmarshalInto(nil, &m); err == nil {
 			c.publish(m)
 		} else {
@@ -289,7 +290,7 @@ func (c *conn) spin() {
 	}
 }
 
-func (c *conn) do(cmd radix.RawCmd, exp int) error {
+func (c *pubSubConn) do(cmd RawCmd, exp int) error {
 	c.cmdL.Lock()
 	defer c.cmdL.Unlock()
 
@@ -308,7 +309,7 @@ func (c *conn) do(cmd radix.RawCmd, exp int) error {
 	return nil
 }
 
-func (c *conn) closeInner(cmdResErr error) error {
+func (c *pubSubConn) closeInner(cmdResErr error) error {
 	c.close.Do(func() {
 		c.csL.Lock()
 		defer c.csL.Unlock()
@@ -331,16 +332,16 @@ func (c *conn) closeInner(cmdResErr error) error {
 	return c.closeErr
 }
 
-func (c *conn) Close() error {
+func (c *pubSubConn) Close() error {
 	return c.closeInner(nil)
 }
 
-func (c *conn) Subscribe(msgCh chan<- Message, channels ...string) error {
+func (c *pubSubConn) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
 	c.csL.Lock()
 	defer c.csL.Unlock()
 	missing := c.subs.missing(channels)
 	if len(missing) > 0 {
-		if err := c.do(radix.CmdNoKey("SUBSCRIBE", missing), len(missing)); err != nil {
+		if err := c.do(CmdNoKey("SUBSCRIBE", missing), len(missing)); err != nil {
 			return err
 		}
 	}
@@ -351,7 +352,7 @@ func (c *conn) Subscribe(msgCh chan<- Message, channels ...string) error {
 	return nil
 }
 
-func (c *conn) Unsubscribe(msgCh chan<- Message, channels ...string) error {
+func (c *pubSubConn) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
 	c.csL.Lock()
 	defer c.csL.Unlock()
 
@@ -366,15 +367,15 @@ func (c *conn) Unsubscribe(msgCh chan<- Message, channels ...string) error {
 		return nil
 	}
 
-	return c.do(radix.CmdNoKey("UNSUBSCRIBE", emptyChannels), len(emptyChannels))
+	return c.do(CmdNoKey("UNSUBSCRIBE", emptyChannels), len(emptyChannels))
 }
 
-func (c *conn) PSubscribe(msgCh chan<- Message, patterns ...string) error {
+func (c *pubSubConn) PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) error {
 	c.csL.Lock()
 	defer c.csL.Unlock()
 	missing := c.psubs.missing(patterns)
 	if len(missing) > 0 {
-		if err := c.do(radix.CmdNoKey("PSUBSCRIBE", missing), len(missing)); err != nil {
+		if err := c.do(CmdNoKey("PSUBSCRIBE", missing), len(missing)); err != nil {
 			return err
 		}
 	}
@@ -385,7 +386,7 @@ func (c *conn) PSubscribe(msgCh chan<- Message, patterns ...string) error {
 	return nil
 }
 
-func (c *conn) PUnsubscribe(msgCh chan<- Message, patterns ...string) error {
+func (c *pubSubConn) PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string) error {
 	c.csL.Lock()
 	defer c.csL.Unlock()
 
@@ -400,9 +401,9 @@ func (c *conn) PUnsubscribe(msgCh chan<- Message, patterns ...string) error {
 		return nil
 	}
 
-	return c.do(radix.CmdNoKey("PUNSUBSCRIBE", emptyPatterns), len(emptyPatterns))
+	return c.do(CmdNoKey("PUNSUBSCRIBE", emptyPatterns), len(emptyPatterns))
 }
 
-func (c *conn) Ping() error {
-	return c.do(radix.CmdNoKey("PING"), 1)
+func (c *pubSubConn) Ping() error {
+	return c.do(CmdNoKey("PING"), 1)
 }
