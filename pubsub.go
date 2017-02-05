@@ -294,7 +294,7 @@ func (c *pubSubConn) do(exp int, cmd string, args ...interface{}) error {
 	c.cmdL.Lock()
 	defer c.cmdL.Unlock()
 
-	rcmd := RawCmd{Cmd: []byte(cmd), Args: args}
+	rcmd := resp.Cmd{Cmd: []byte(cmd), Args: args}
 	if err := c.conn.Encode(rcmd); err != nil {
 		return err
 	}

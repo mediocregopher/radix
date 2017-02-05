@@ -35,20 +35,21 @@ type ScanOpts struct {
 	Count int
 }
 
-func (o ScanOpts) cmd(rcv interface{}, cursor string) RawCmd {
-	cmdStr := strings.ToUpper(o.Command)
-	cmd := RawCmd{Cmd: []byte(cmdStr), Rcv: rcv}
-	if cmdStr != "SCAN" {
-		cmd.Key = []byte(o.Key)
-	}
-	cmd.Args = append(cmd.Args, cursor)
+func (o ScanOpts) cmd(rcv interface{}, cursor string) CmdAction {
+	var args []interface{}
+	args = append(args, cursor)
 	if o.Pattern != "" {
-		cmd.Args = append(cmd.Args, "MATCH", o.Pattern)
+		args = append(args, "MATCH", o.Pattern)
 	}
 	if o.Count > 0 {
-		cmd.Args = append(cmd.Args, "COUNT", o.Count)
+		args = append(args, "COUNT", o.Count)
 	}
-	return cmd
+
+	cmdStr := strings.ToUpper(o.Command)
+	if cmdStr == "SCAN" {
+		return CmdNoKey(rcv, cmdStr, args...)
+	}
+	return Cmd(rcv, cmdStr, o.Key, args...)
 }
 
 // ScanAllKeys is a shortcut ScanOpts which can be used to scan all keys

@@ -883,10 +883,6 @@ func (rm RawMessage) UnmarshalInto(p *Pool, u Unmarshaler) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/*
-
-TODO not sure if should have this here or in package root
-
 // Cmd is a Marshaler for a command to a redis server. Redis commands always
 // take the form of an array of strings when written, but Cmd allows for
 // arguments to be just about anything, and will flatten/convert them all into a
@@ -919,5 +915,3 @@ func (rc Cmd) MarshalRESP(p *Pool, w io.Writer) error {
 	marshal(a)
 	return err
 }
-
-*/

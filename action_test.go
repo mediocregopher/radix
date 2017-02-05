@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCmd(t *T) {
+func TestCmdAction(t *T) {
 	c := dial()
 	key, val := randStr(), randStr()
 
@@ -17,7 +17,7 @@ func TestCmd(t *T) {
 	assert.Equal(t, val, got)
 }
 
-func TestLuaCmd(t *T) {
+func TestLuaAction(t *T) {
 	getset := `
 		local res = redis.call("GET", KEYS[1])
 		redis.call("SET", KEYS[1], ARGV[1])
@@ -31,14 +31,14 @@ func TestLuaCmd(t *T) {
 
 	{
 		var res string
-		err := LuaCmd(getset, []string{key}, val1).Into(&res).Run(c)
+		err := Lua(&res, getset, []string{key}, val1).Run(c)
 		require.Nil(t, err, "%s", err)
 		assert.Empty(t, res)
 	}
 
 	{
 		var res string
-		err := LuaCmd(getset, []string{key}, val2).Into(&res).Run(c)
+		err := Lua(&res, getset, []string{key}, val2).Run(c)
 		require.Nil(t, err)
 		assert.Equal(t, val1, res)
 	}
@@ -53,7 +53,7 @@ func TestPipelineAction(t *T) {
 			randStr(),
 		}
 		out := make([]string, len(ss))
-		var cmds []RawCmd
+		var cmds []CmdAction
 		for i := range ss {
 			cmds = append(cmds, CmdNoKey(&out[i], "ECHO", ss[i]))
 		}

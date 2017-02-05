@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
@@ -12,102 +13,80 @@ import (
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
-// Action is an entity which can perform one or more tasks using a Conn
+// Action can perform one or more tasks using a Conn
 type Action interface {
-	// OnKey returns a key which will be acted on. If the Action will act on
-	// more than one key then any one can be returned. If no keys will be acted
-	// on then nil should be returned.
-	OnKey() []byte
+	// Key returns a key which will be acted on. If the Action will act on more
+	// than one key then any one can be returned. If no keys will be acted on
+	// then nil should be returned.
+	Key() []byte
 
-	// Run actually performs the action using the given Conn
+	// Run actually performs the Action using the given Conn
 	Run(c Conn) error
 }
 
-// RawCmd implements the Action interface and describes a single redis command
-// to be performed.
-type RawCmd struct {
-	// The name of the redis command to be performed. Always required
-	Cmd []byte
+// CmdAction is a specific type of Action for which a command is marshaled and
+// sent to the server and the command's response is read and unmarshaled into
+// the CmdAction.
+//
+// A CmdAction can be used like an Action, but it can also be used by marshaling
+// the command and unmarshaling the response manually.
+type CmdAction interface {
+	Action
+	resp.Marshaler
+	resp.Unmarshaler
+}
 
-	// The key being operated on. May be left nil if the command doesn't operate
-	// on any specific key (e.g.  SCAN)
-	Key []byte
+////////////////////////////////////////////////////////////////////////////////
 
-	// Args are any extra arguments to the command and can be almost any thing
-	Args []interface{}
-
-	// Pointer value into which results from the command will be unmarshalled.
-	// The Into method can be used to set this as well. See the Decoder docs
-	// for more on unmarshalling
-	Rcv interface{}
+type cmdAction struct {
+	resp.Cmd
+	key []byte
+	rcv interface{}
 }
 
 // Cmd TODO needs docs
-func Cmd(rcv interface{}, cmd, key string, args ...interface{}) RawCmd {
-	return RawCmd{
-		Cmd:  []byte(cmd),
-		Key:  []byte(key),
-		Args: args,
-		Rcv:  rcv,
+func Cmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
+	return cmdAction{
+		Cmd: resp.Cmd{
+			Cmd:  []byte(cmd),
+			Args: append([]interface{}{key}, args...),
+		},
+		key: []byte(key),
+		rcv: rcv,
 	}
 }
 
 // CmdNoKey TODO needs docs
-func CmdNoKey(rcv interface{}, cmd string, args ...interface{}) RawCmd {
-	return RawCmd{
-		Cmd:  []byte(cmd),
-		Args: args,
-		Rcv:  rcv,
+func CmdNoKey(rcv interface{}, cmd string, args ...interface{}) CmdAction {
+	return cmdAction{
+		Cmd: resp.Cmd{
+			Cmd:  []byte(cmd),
+			Args: args,
+		},
+		rcv: rcv,
 	}
 }
 
-// OnKey implements the OnKey method of the Action interface.
-func (rc RawCmd) OnKey() []byte {
-	return rc.Key
+func (c cmdAction) Key() []byte {
+	return c.key
 }
 
-// MarshalRESP implements the resp.Marshaler interface.
-// TODO describe how commands are written
-func (rc RawCmd) MarshalRESP(p *resp.Pool, w io.Writer) error {
-	var err error
-	marshal := func(m resp.Marshaler) {
-		if err == nil {
-			err = m.MarshalRESP(p, w)
-		}
-	}
-
-	a := resp.Any{
-		I:                     rc.Args,
-		MarshalBulkString:     true,
-		MarshalNoArrayHeaders: true,
-	}
-	arrL := 1 + a.NumElems()
-	if rc.Key != nil {
-		arrL++
-	}
-	marshal(resp.ArrayHeader{N: arrL})
-	marshal(resp.BulkString{B: rc.Cmd})
-	if rc.Key != nil {
-		marshal(resp.BulkString{B: rc.Key})
-	}
-	marshal(a)
-	return err
+func (c cmdAction) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
+	return resp.Any{I: c.rcv}.UnmarshalRESP(p, br)
 }
 
-// Run implements the Run method of the Action interface. It writes the RawCmd
-// to the Conn, and unmarshals the result into the Rcv field (if set).
-func (rc RawCmd) Run(conn Conn) error {
-	if err := conn.Encode(rc); err != nil {
+func (c cmdAction) Run(conn Conn) error {
+	if err := conn.Encode(c); err != nil {
 		return err
 	}
-	return conn.Decode(resp.Any{I: rc.Rcv})
+	return conn.Decode(c)
 }
 
-func (rc RawCmd) String() string {
+func (c cmdAction) String() string {
 	// we go way out of the way here to display the command as it would be sent
 	// to redis. This is pretty similar logic to what the stub does as well
 	buf := new(bytes.Buffer)
-	if err := rc.MarshalRESP(nil, buf); err != nil {
+	if err := c.MarshalRESP(nil, buf); err != nil {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
 	var ss []string
@@ -128,58 +107,34 @@ var (
 	eval    = []byte("EVAL")
 )
 
-// RawLuaCmd is an Action similar to RawCmd, but it runs a lua script on the
-// redis server instead of a single Cmd. See redis' EVAL docs for more on how
-// that works.
-type RawLuaCmd struct {
-	// The actual lua script which will be run.
-	Script string
+type lua struct {
+	script string
+	keys   []string
+	args   []interface{}
+	rcv    interface{}
 
-	// The keys being operated on, and may be left empty if the command doesn't
-	// operate on any specific key(s)
-	Keys []string
-
-	// Args are any extra arguments to the command and can be almost any thing
-	// TODO more deets
-	Args []interface{}
-
-	// Pointer value into which results from the command will be unmarshalled.
-	// The Into method can be used to set this as well. See the Decoder docs
-	// for more on unmarshalling
-	Rcv interface{}
-}
-
-// LuaCmd returns an initialized RawLuraCmd, populating the fields with the given
-// values. You can chain the Into method to conveniently set a result receiver.
-func LuaCmd(script string, keys []string, args ...interface{}) RawLuaCmd {
-	return RawLuaCmd{
-		Script: script,
-		Keys:   keys,
-		Args:   args,
-	}
-}
-
-// Into returns a RawLuaCmd with all the same fields as the original, except the
-// Rcv field set to the given value.
-func (rlc RawLuaCmd) Into(rcv interface{}) RawLuaCmd {
-	rlc.Rcv = rcv
-	return rlc
-}
-
-// OnKey implements the OnKey method of the Action interface.
-func (rlc RawLuaCmd) OnKey() []byte {
-	if len(rlc.Keys) == 0 {
-		return nil
-	}
-	return []byte(rlc.Keys[0])
-}
-
-type mRawLuaCmd struct {
-	RawLuaCmd
 	eval bool
 }
 
-func (mrlc mRawLuaCmd) MarshalRESP(p *resp.Pool, w io.Writer) error {
+// Lua TODO docs
+func Lua(rcv interface{}, script string, keys []string, args ...interface{}) Action {
+	return lua{
+		script: script,
+		keys:   keys,
+		args:   args,
+		rcv:    rcv,
+	}
+}
+
+// Key implements the Key method of the Action interface.
+func (lc lua) Key() []byte {
+	if len(lc.keys) == 0 {
+		return nil
+	}
+	return []byte(lc.keys[0])
+}
+
+func (lc lua) MarshalRESP(p *resp.Pool, w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
 		if err != nil {
@@ -189,53 +144,50 @@ func (mrlc mRawLuaCmd) MarshalRESP(p *resp.Pool, w io.Writer) error {
 	}
 
 	a := resp.Any{
-		I:                     mrlc.Args,
+		I:                     lc.args,
 		MarshalBulkString:     true,
 		MarshalNoArrayHeaders: true,
 	}
-	numKeys := len(mrlc.Keys)
+	numKeys := len(lc.keys)
 
 	// EVAL(SHA) script/sum numkeys keys... args...
 	marshal(resp.ArrayHeader{N: 3 + numKeys + a.NumElems()})
-	if mrlc.eval {
+	if lc.eval {
 		marshal(resp.BulkString{B: eval})
-		marshal(resp.BulkString{B: []byte(mrlc.Script)})
+		marshal(resp.BulkString{B: []byte(lc.script)})
 	} else {
-		// TODO alloc here isn't great
-		sumRaw := sha1.Sum([]byte(mrlc.Script))
+		sumRaw := sha1.Sum([]byte(lc.script))
 		sum := hex.EncodeToString(sumRaw[:])
 		marshal(resp.BulkString{B: evalsha})
 		marshal(resp.BulkString{B: []byte(sum)})
 	}
 	marshal(resp.Any{I: numKeys, MarshalBulkString: true})
-	for _, k := range mrlc.Keys {
+	for _, k := range lc.keys {
 		marshal(resp.BulkString{B: []byte(k)})
 	}
 	marshal(a)
 	return err
 }
 
-func (mrlc mRawLuaCmd) Run(conn Conn) error {
-	if err := conn.Encode(mrlc); err != nil {
-		return err
+func (lc lua) Run(conn Conn) error {
+	run := func(eval bool) error {
+		lc.eval = eval
+		if err := conn.Encode(lc); err != nil {
+			return err
+		}
+		return conn.Decode(resp.Any{I: lc.rcv})
 	}
-	return conn.Decode(resp.Any{I: mrlc.Rcv})
-}
 
-// Run implements the Run method of the Action interface. It will first attempt
-// to perform the command using an EVALSHA, but will fallback to a normal EVAL
-// if that doesn't work.
-func (rlc RawLuaCmd) Run(conn Conn) error {
-	err := mRawLuaCmd{RawLuaCmd: rlc}.Run(conn)
+	err := run(false)
 	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
-		err = mRawLuaCmd{RawLuaCmd: rlc, eval: true}.Run(conn)
+		err = run(true)
 	}
 	return err
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type pipeline []RawCmd
+type pipeline []CmdAction
 
 // Pipeline returns an Action which first writes multiple commands to a Conn in
 // a single write, then reads their responses in a single read. This reduces
@@ -243,21 +195,21 @@ type pipeline []RawCmd
 //
 //	var fooVal string
 //	p := Pipeline(
-//		Cmd("SET", "foo", "bar"),
-//		Cmd("GET", "foo").Into(&fooVal),
+//		Cmd(nil, "SET", "foo", "bar"),
+//		Cmd(&fooVal, "GET", "foo"),
 //	)
 //	if err := p.Run(conn); err != nil {
 //		panic(err)
 //	}
 //	fmt.Printf("fooVal: %q\n", fooVal)
 //
-func Pipeline(cmds ...RawCmd) Action {
+func Pipeline(cmds ...CmdAction) Action {
 	return pipeline(cmds)
 }
 
-func (p pipeline) OnKey() []byte {
+func (p pipeline) Key() []byte {
 	for _, rc := range p {
-		if k := rc.OnKey(); k != nil {
+		if k := rc.Key(); k != nil {
 			return k
 		}
 	}
@@ -271,7 +223,7 @@ func (p pipeline) Run(c Conn) error {
 		}
 	}
 	for _, cmd := range p {
-		if err := c.Decode(resp.Any{I: cmd.Rcv}); err != nil {
+		if err := c.Decode(cmd); err != nil {
 			return err
 		}
 	}
@@ -293,12 +245,12 @@ type withConn struct {
 //
 //	err := pool.Do(WithConn("someKey", func(conn Conn) error {
 //		var curr int
-//		if err := Cmd("GET", "someKey").Into(&curr).Run(conn); err != nil {
+//		if err := Cmd(&curr, "GET", "someKey").Run(conn); err != nil {
 //			return err
 //		}
 //
 //		curr++
-//		return Cmd("SET", "someKey", curr).Run(conn)
+//		return Cmd(nil, "SET", "someKey", curr).Run(conn)
 //	})
 //
 // NOTE that WithConn only ensures all inner Actions are performed on the same
@@ -309,7 +261,7 @@ func WithConn(key []byte, fn func(Conn) error) Action {
 	return withConn{[]byte(key), fn}
 }
 
-func (wc withConn) OnKey() []byte {
+func (wc withConn) Key() []byte {
 	return wc.key
 }
 
