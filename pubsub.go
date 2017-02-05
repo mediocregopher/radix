@@ -290,11 +290,12 @@ func (c *pubSubConn) spin() {
 	}
 }
 
-func (c *pubSubConn) do(cmd RawCmd, exp int) error {
+func (c *pubSubConn) do(exp int, cmd string, args ...interface{}) error {
 	c.cmdL.Lock()
 	defer c.cmdL.Unlock()
 
-	if err := c.conn.Encode(cmd); err != nil {
+	rcmd := RawCmd{Cmd: []byte(cmd), Args: args}
+	if err := c.conn.Encode(rcmd); err != nil {
 		return err
 	}
 
@@ -341,7 +342,7 @@ func (c *pubSubConn) Subscribe(msgCh chan<- PubSubMessage, channels ...string) e
 	defer c.csL.Unlock()
 	missing := c.subs.missing(channels)
 	if len(missing) > 0 {
-		if err := c.do(CmdNoKey("SUBSCRIBE", missing), len(missing)); err != nil {
+		if err := c.do(len(missing), "SUBSCRIBE", missing); err != nil {
 			return err
 		}
 	}
@@ -367,7 +368,7 @@ func (c *pubSubConn) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string)
 		return nil
 	}
 
-	return c.do(CmdNoKey("UNSUBSCRIBE", emptyChannels), len(emptyChannels))
+	return c.do(len(emptyChannels), "UNSUBSCRIBE", emptyChannels)
 }
 
 func (c *pubSubConn) PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) error {
@@ -375,7 +376,7 @@ func (c *pubSubConn) PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) 
 	defer c.csL.Unlock()
 	missing := c.psubs.missing(patterns)
 	if len(missing) > 0 {
-		if err := c.do(CmdNoKey("PSUBSCRIBE", missing), len(missing)); err != nil {
+		if err := c.do(len(missing), "PSUBSCRIBE", missing); err != nil {
 			return err
 		}
 	}
@@ -401,9 +402,9 @@ func (c *pubSubConn) PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string
 		return nil
 	}
 
-	return c.do(CmdNoKey("PUNSUBSCRIBE", emptyPatterns), len(emptyPatterns))
+	return c.do(len(emptyPatterns), "PUNSUBSCRIBE", emptyPatterns)
 }
 
 func (c *pubSubConn) Ping() error {
-	return c.do(CmdNoKey("PING"), 1)
+	return c.do(1, "PING")
 }

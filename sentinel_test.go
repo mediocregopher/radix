@@ -140,10 +140,10 @@ func TestSentinel(t *T) {
 		for i := 0; i < c; i++ {
 			go func() {
 				key, val := randStr(), randStr()
-				require.Nil(t, sc.Do(Cmd("SET", key, val)))
-				//var out string
-				//require.Nil(t, sc.Do(Cmd("GET", key).Into(&out)))
-				//assert.Equal(t, val, out)
+				require.Nil(t, sc.Do(Cmd(nil, "SET", key, val)))
+				var out string
+				require.Nil(t, sc.Do(Cmd(&out, "GET", key)))
+				assert.Equal(t, val, out)
 				wg.Done()
 			}()
 		}

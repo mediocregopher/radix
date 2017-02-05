@@ -35,9 +35,9 @@ type ScanOpts struct {
 	Count int
 }
 
-func (o ScanOpts) cmd(cursor string) RawCmd {
+func (o ScanOpts) cmd(rcv interface{}, cursor string) RawCmd {
 	cmdStr := strings.ToUpper(o.Command)
-	cmd := RawCmd{Cmd: []byte(cmdStr)}
+	cmd := RawCmd{Cmd: []byte(cmdStr), Rcv: rcv}
 	if cmdStr != "SCAN" {
 		cmd.Key = []byte(o.Key)
 	}
@@ -116,7 +116,7 @@ func (s *scanner) Next(res *string) bool {
 		}
 
 		var parts []interface{}
-		cmd := s.cmd(s.cur).Into(&parts)
+		cmd := s.cmd(&parts, s.cur)
 		if s.err = cmd.Run(s.Conn); s.err != nil {
 			return false
 		} else if len(parts) < 2 {

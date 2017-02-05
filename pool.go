@@ -120,7 +120,7 @@ func Pool(network, addr string, size int, df DialFunc) (Client, error) {
 }
 
 func (sp *staticPool) pingSpin() {
-	pingCmd := CmdNoKey("PING")
+	pingCmd := CmdNoKey(nil, "PING")
 	// we want each conn to be pinged every 10 seconds, so divide that by number
 	// of conns to know how often to call PING
 	t := time.NewTicker(10 * time.Second / time.Duration(cap(sp.pool)))

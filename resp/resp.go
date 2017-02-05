@@ -880,3 +880,44 @@ func (rm RawMessage) UnmarshalInto(p *Pool, u Unmarshaler) error {
 	br := bufio.NewReader(bytes.NewBuffer(rm))
 	return u.UnmarshalRESP(nil, br)
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+/*
+
+TODO not sure if should have this here or in package root
+
+// Cmd is a Marshaler for a command to a redis server. Redis commands always
+// take the form of an array of strings when written, but Cmd allows for
+// arguments to be just about anything, and will flatten/convert them all into a
+// flat list of strings when marshaling.
+type Cmd struct {
+	// The name of the redis command to be performed. Always required
+	Cmd []byte
+
+	// Args are any extra arguments to the command and can be almost any thing
+	Args []interface{}
+}
+
+// MarshalRESP implements the Marshaler interface.
+func (rc Cmd) MarshalRESP(p *Pool, w io.Writer) error {
+	var err error
+	marshal := func(m Marshaler) {
+		if err == nil {
+			err = m.MarshalRESP(p, w)
+		}
+	}
+
+	a := Any{
+		I:                     rc.Args,
+		MarshalBulkString:     true,
+		MarshalNoArrayHeaders: true,
+	}
+	arrL := 1 + a.NumElems()
+	marshal(ArrayHeader{N: arrL})
+	marshal(BulkString{B: rc.Cmd})
+	marshal(a)
+	return err
+}
+
+*/

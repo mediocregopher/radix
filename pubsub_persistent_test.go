@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPersistent(t *T) {
+func TestPersistentPubSub(t *T) {
 	closeCh := make(chan chan bool)
 	p := PersistentPubSub(func() (Conn, error) {
 		c := dial()

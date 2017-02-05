@@ -36,15 +36,15 @@ func TestStub(t *T) {
 
 	{ // Basic test
 		var foo string
-		require.Nil(t, Cmd("SET", "foo", "a").Run(stub))
-		require.Nil(t, Cmd("GET", "foo").Into(&foo).Run(stub))
+		require.Nil(t, Cmd(nil, "SET", "foo", "a").Run(stub))
+		require.Nil(t, Cmd(&foo, "GET", "foo").Run(stub))
 		assert.Equal(t, "a", foo)
 	}
 
 	{ // Basic test with an int, to ensure marshalling/unmarshalling all works
 		var foo int
-		require.Nil(t, Cmd("SET", "foo", 1).Run(stub))
-		require.Nil(t, Cmd("GET", "foo").Into(&foo).Run(stub))
+		require.Nil(t, Cmd(nil, "SET", "foo", 1).Run(stub))
+		require.Nil(t, Cmd(&foo, "GET", "foo").Run(stub))
 		assert.Equal(t, 1, foo)
 	}
 }
@@ -58,7 +58,7 @@ func TestStubLockingTimeout(t *T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < c; i++ {
-			require.Nil(t, stub.Encode(CmdNoKey("ECHO", i)))
+			require.Nil(t, stub.Encode(CmdNoKey(nil, "ECHO", i)))
 		}
 	}()
 
@@ -78,7 +78,7 @@ func TestStubLockingTimeout(t *T) {
 	// when there's actually data to read
 	now := time.Now()
 	stub.SetDeadline(now.Add(2 * time.Second))
-	require.Nil(t, stub.Encode(CmdNoKey("ECHO", 1)))
+	require.Nil(t, stub.Encode(CmdNoKey(nil, "ECHO", 1)))
 	require.Nil(t, stub.Decode(resp.Any{}))
 
 	// now there's no data to read, should return after 2-ish seconds with a

@@ -11,9 +11,9 @@ func TestCmd(t *T) {
 	c := dial()
 	key, val := randStr(), randStr()
 
-	require.Nil(t, Cmd("SET", key, val).Run(c))
+	require.Nil(t, Cmd(nil, "SET", key, val).Run(c))
 	var got string
-	require.Nil(t, Cmd("GET", key).Into(&got).Run(c))
+	require.Nil(t, Cmd(&got, "GET", key).Run(c))
 	assert.Equal(t, val, got)
 }
 
@@ -55,7 +55,7 @@ func TestPipelineAction(t *T) {
 		out := make([]string, len(ss))
 		var cmds []RawCmd
 		for i := range ss {
-			cmds = append(cmds, CmdNoKey("ECHO", ss[i]).Into(&out[i]))
+			cmds = append(cmds, CmdNoKey(&out[i], "ECHO", ss[i]))
 		}
 		require.Nil(t, Pipeline(cmds...).Run(c))
 
@@ -70,9 +70,9 @@ func TestWithConnAction(t *T) {
 	k, v := randStr(), 10
 
 	err := WithConn([]byte(k), func(conn Conn) error {
-		require.Nil(t, Cmd("SET", k, v).Run(conn))
+		require.Nil(t, Cmd(nil, "SET", k, v).Run(conn))
 		var out int
-		require.Nil(t, Cmd("GET", k).Into(&out).Run(conn))
+		require.Nil(t, Cmd(&out, "GET", k).Run(conn))
 		assert.Equal(t, v, out)
 		return nil
 	}).Run(c)

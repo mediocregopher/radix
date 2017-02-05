@@ -11,7 +11,7 @@ import (
 )
 
 func publish(t *T, c Conn, ch, msg string) {
-	require.Nil(t, Cmd("PUBLISH", ch, msg).Run(c))
+	require.Nil(t, Cmd(nil, "PUBLISH", ch, msg).Run(c))
 }
 
 func assertMsgRead(t *T, msgCh <-chan PubSubMessage) PubSubMessage {
@@ -103,7 +103,7 @@ func testSubscribe(t *T, c PubSubConn, pubCh chan int) {
 
 }
 
-func TestSubscribe(t *T) {
+func TestPubSubSubscribe(t *T) {
 	pubCh := make(chan int)
 	go func() {
 		for i := 0; i < 1000; i++ {
@@ -120,7 +120,7 @@ func TestSubscribe(t *T) {
 	assert.NotNil(t, c.Ping())
 }
 
-func TestPSubscribe(t *T) {
+func TestPubSubPSubscribe(t *T) {
 	pubC := dial()
 	c := PubSub(dial())
 	msgCh := make(chan PubSubMessage, 1)

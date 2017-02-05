@@ -42,31 +42,23 @@ type RawCmd struct {
 	Rcv interface{}
 }
 
-// Cmd returns an initialized RawCmd, populating the fields with the given
-// values. Use CmdNoKey for commands which don't have an actual key (e.g. MULTI
-// or PING). You can chain the Into method to conveniently set a result
-// receiver.
-func Cmd(cmd, key string, args ...interface{}) RawCmd {
+// Cmd TODO needs docs
+func Cmd(rcv interface{}, cmd, key string, args ...interface{}) RawCmd {
 	return RawCmd{
 		Cmd:  []byte(cmd),
 		Key:  []byte(key),
 		Args: args,
+		Rcv:  rcv,
 	}
 }
 
-// CmdNoKey is like Cmd, but the returned RawCmd will not have its Key field set
-func CmdNoKey(cmd string, args ...interface{}) RawCmd {
+// CmdNoKey TODO needs docs
+func CmdNoKey(rcv interface{}, cmd string, args ...interface{}) RawCmd {
 	return RawCmd{
 		Cmd:  []byte(cmd),
 		Args: args,
+		Rcv:  rcv,
 	}
-}
-
-// Into returns a RawCmd with all the same fields as the original, except the
-// Rcv field set to the given value.
-func (rc RawCmd) Into(rcv interface{}) RawCmd {
-	rc.Rcv = rcv
-	return rc
 }
 
 // OnKey implements the OnKey method of the Action interface.
