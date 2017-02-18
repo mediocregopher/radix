@@ -5,20 +5,12 @@
 package cluster
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	radix "github.com/mediocregopher/radix.v2"
 )
-
-// DefaultPoolFunc is what is used if nil is passed into New as the PoolFunc
-// parameter. It will make 10 connections per redis instance using the
-// radix.Dial function.
-var DefaultPoolFunc = func(network, addr string) (radix.Pool, error) {
-	return radix.NewPool(network, addr, 10, radix.Dial)
-}
 
 // Cluster contains all information about a redis cluster needed to interact
 // with it, including a set of pools to each of its instances. All methods on
@@ -27,7 +19,7 @@ type Cluster struct {
 	pf radix.PoolFunc
 
 	sync.RWMutex
-	pools map[string]radix.Pool
+	pools map[string]radix.Client
 	tt    Topo
 
 	closeCh chan struct{}
@@ -38,14 +30,18 @@ type Cluster struct {
 // discover the cluster topology and make all the necessary connections.
 //
 // The PoolFunc is used to make the internal pools for the instances discovered
-// here and all new ones in the future.
+// here and all new ones in the future. If nil is given then
+// radix.DefaultPoolFunc will be used.
 //
-// You will need to call Sync or SyncEvery in order for topology changes to be
-// reflected.
+// TODO You will need to call Sync or SyncEvery in order for topology changes to
+// be reflected.
 func NewCluster(pf radix.PoolFunc, addrs ...string) (*Cluster, error) {
+	if pf == nil {
+		pf = radix.DefaultPoolFunc
+	}
 	c := &Cluster{
 		pf:      pf,
-		pools:   map[string]radix.Pool{},
+		pools:   map[string]radix.Client{},
 		closeCh: make(chan struct{}),
 	}
 
@@ -71,7 +67,7 @@ func NewCluster(pf radix.PoolFunc, addrs ...string) (*Cluster, error) {
 // attempts to create a pool at the given address. The pool will be stored under
 // pools at the instance's id. If the instance was already there that will be
 // returned instead
-func (c *Cluster) dirtyNewPool(addr string) (radix.Pool, error) {
+func (c *Cluster) dirtyNewPool(addr string) (radix.Client, error) {
 	if p, ok := c.pools[addr]; ok {
 		return p, nil
 	}
@@ -84,32 +80,21 @@ func (c *Cluster) dirtyNewPool(addr string) (radix.Pool, error) {
 	return p, nil
 }
 
-func (c *Cluster) anyConn() (radix.PoolConn, error) {
+func (c *Cluster) anyPool() radix.Client {
 	c.RLock()
 	defer c.RUnlock()
 	for _, p := range c.pools {
-		pcc, err := p.Get()
-		if err == nil {
-			return pcc, nil
-		}
+		return p
 	}
-	return nil, errors.New("could not get a valid connection with any known redis instances")
+	panic("TODO")
 }
 
 // Topo will pick a randdom node in the cluster, call CLUSTER SLOTS on it, and
 // unmarshal the result into a Topo instance, returning that instance
 func (c *Cluster) Topo() (Topo, error) {
-	pcc, err := c.anyConn()
-	if err != nil {
-		return nil, err
-	}
-	defer pcc.Return()
-
 	var tt Topo
-	if err := (radix.Cmd{}).C("CLUSTER").A("SLOTS").R(&tt).Run(pcc); err != nil {
-		return nil, err
-	}
-	return tt, nil
+	err := c.anyPool().Do(radix.Cmd(&tt, "CLUSTER", "SLOTS"))
+	return tt, err
 }
 
 // Sync will synchronize the Cluster with the actual cluster, making new pools
@@ -171,32 +156,27 @@ func (c *Cluster) SyncEvery(d time.Duration, errCh chan<- error) {
 	}()
 }
 
-// Get returns a PoolConn which can be used to interact with the given key.
-// Return must be called on the PoolConn when done in order to prevent
-// connection leaks (same as with a normal Pool).
-//
-// Redis' key hash tags can be used to force keys to all be stored to the same
-// slot in the cluster. In cases where multiple keys with the same hash tag are
-// being interacted with at once only one of them needs to be given here.
-func (c *Cluster) Get(forKey string) (radix.PoolConn, error) {
-	s := Slot(forKey)
+// Do performs an Action on a redis instance in the cluster, with the instance
+// being determeined by the key returned from the Action's Key() method.
+func (c *Cluster) Do(a radix.Action) error {
+	k := a.Key()
+	if k == nil {
+		return c.anyPool().Do(a)
+	}
 
-	c.RLock()
-	defer c.RUnlock()
-
+	s := Slot(k)
 	for _, t := range c.tt {
 		if s < t.Slots[0] || s >= t.Slots[1] {
 			continue
 		}
 		p, ok := c.pools[t.Addr]
 		if !ok {
-			return nil, fmt.Errorf("unexpected: no pool for address %q", t.Addr)
+			return fmt.Errorf("unexpected: no pool for address %q", t.Addr)
 		}
-		// TODO return a cluster Conn
-		return p.Get()
+		return p.Do(a)
 	}
 
-	return nil, fmt.Errorf("unexpected: no known address for slot %d", s)
+	return fmt.Errorf("unexpected: no known address for slot %d", s)
 }
 
 // Close cleans up all goroutines spawned by Cluster and closes all of its

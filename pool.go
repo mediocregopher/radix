@@ -31,6 +31,10 @@ func NewPoolFunc(size int, df DialFunc) PoolFunc {
 	}
 }
 
+// DefaultPoolFunc is a sane PoolFunc which will be used as the default when a
+// function or method takes in a PoolFunc and nil is given.
+var DefaultPoolFunc = NewPoolFunc(20, Dial)
+
 type staticPoolConn struct {
 	Conn
 	sp *staticPool

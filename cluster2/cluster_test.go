@@ -6,7 +6,6 @@ import (
 	. "testing"
 	"time"
 
-	"github.com/levenlabs/golib/testutil"
 	radix "github.com/mediocregopher/radix.v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,8 +17,8 @@ import (
 var slotKeys = func() [numSlots]string {
 	var a [numSlots]string
 	for {
-		k := testutil.RandStr()
-		a[Slot(k)] = k
+		k := []byte(randStr())
+		a[Slot(k)] = string(k)
 
 		var notFull bool
 		for _, k := range a {
@@ -88,11 +87,9 @@ func TestClusterSync(t *T) {
 func TestGet(t *T) {
 	c, _ := newTestCluster()
 	for s := uint16(0); s < numSlots; s++ {
-		conn, err := c.Get(slotKeys[s])
-		require.Nil(t, err)
 		var connSlots []uint16
-		require.Nil(t, radix.Cmd{}.C("CONNSLOTS").R(&connSlots).Run(conn))
+		err := c.Do(radix.CmdNoKey(&connSlots, "CONNSLOTS"))
+		require.Nil(t, err)
 		assert.True(t, s >= connSlots[0] && s < connSlots[1])
-		conn.Return()
 	}
 }

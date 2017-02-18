@@ -1,34 +1,26 @@
 package cluster
 
 import (
+	"bufio"
 	"bytes"
-	"fmt"
 	. "testing"
 
-	radix "github.com/mediocregopher/radix.v2"
+	"github.com/mediocregopher/radix.v2/resp"
 	"github.com/stretchr/testify/assert"
 )
 
-func respArr(ii ...interface{}) radix.Resp {
-	var r radix.Resp
-	for _, i := range ii {
-		var thisr radix.Resp
-		switch it := i.(type) {
-		case string:
-			thisr.BulkStr = []byte(it)
-		case int:
-			thisr.Int = int64(it)
-		case radix.Resp:
-			thisr = it
-		default:
-			panic(fmt.Sprintf("unhandled type %T", it))
+var testTopoResp = func() resp.Marshaler {
+	respArr := func(ii ...interface{}) resp.Marshaler {
+		var ar resp.Array
+		for _, i := range ii {
+			if m, ok := i.(resp.Marshaler); ok {
+				ar.A = append(ar.A, m)
+			} else {
+				ar.A = append(ar.A, resp.Any{I: i})
+			}
 		}
-		r.Arr = append(r.Arr, thisr)
+		return ar
 	}
-	return r
-}
-
-var testTopoResp = func() radix.Resp {
 	return respArr(
 		respArr(13653, 16383,
 			respArr("10.128.0.30", 6379, "f7e95c8730634159bc79f9edac566f7b1c964cdd"),
@@ -59,11 +51,11 @@ var testTopoResp = func() radix.Resp {
 
 var testTopo = func() Topo {
 	buf := new(bytes.Buffer)
-	if err := radix.NewEncoder(buf).Encode(testTopoResp); err != nil {
+	if err := testTopoResp.MarshalRESP(nil, buf); err != nil {
 		panic(err)
 	}
 	var tt Topo
-	if err := radix.NewDecoder(buf).Decode(&tt); err != nil {
+	if err := tt.UnmarshalRESP(nil, bufio.NewReader(buf)); err != nil {
 		panic(err)
 	}
 	return tt

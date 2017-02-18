@@ -1,6 +1,6 @@
 package cluster
 
-import "strings"
+import "bytes"
 
 var tab = [256]uint16{
 	0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
@@ -50,13 +50,13 @@ func CRC16(buf []byte) uint16 {
 	return crc
 }
 
-// Slot returns the slot number the given key belongs to, taking into account
-// key hash tags
-func Slot(key string) uint16 {
-	if start := strings.Index(key, "{"); start >= 0 {
-		if end := strings.Index(key[start+2:], "}"); end >= 0 {
+// Slot returns the slot number the key belongs to, taking into account key hash
+// tags
+func Slot(key []byte) uint16 {
+	if start := bytes.Index(key, []byte("{")); start >= 0 {
+		if end := bytes.Index(key[start+2:], []byte("}")); end >= 0 {
 			key = key[start+1 : start+2+end]
 		}
 	}
-	return CRC16([]byte(key)) % numSlots
+	return CRC16(key) % numSlots
 }

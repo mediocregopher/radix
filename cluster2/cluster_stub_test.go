@@ -1,16 +1,15 @@
 package cluster
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	. "testing"
 
 	radix "github.com/mediocregopher/radix.v2"
+	"github.com/mediocregopher/radix.v2/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,80 +35,55 @@ type stub struct {
 	*stubCluster
 }
 
-type stubConn struct {
-	*stub
-	buf *bytes.Buffer
-	enc radix.Encoder
-	dec radix.Decoder
+func newStubConn(s *stub) radix.Conn {
+	return radix.Stub("tcp", s.addr, func(args []string) interface{} {
+		s.stubDataset.Lock()
+		defer s.stubDataset.Unlock()
+		switch strings.ToUpper(string(args[0])) {
+		case "GET":
+			k := args[1]
+			if err := s.maybeMoved(k); err != nil {
+				return err
+			}
+			s, ok := s.stubDataset.kv[k]
+			if !ok {
+				return nil
+			}
+			return s
+		case "SET":
+			k := args[1]
+			if err := s.maybeMoved(k); err != nil {
+				return err
+			}
+			s.stubDataset.kv[k] = args[2]
+			return resp.SimpleString{S: []byte("OK")}
+		case "PING":
+			return resp.SimpleString{S: []byte("PONG")}
+		case "CLUSTER":
+			switch strings.ToUpper(args[1]) {
+			case "SLOTS":
+				return s.stubCluster.topo()
+			}
+		case "CONNSLOTS":
+			return s.stubDataset.slots[:]
+		}
+
+		return resp.Error{E: fmt.Errorf("unknown command %#v", args)}
+	})
 }
 
-func newStubConn(s *stub) *stubConn {
-	buf := new(bytes.Buffer)
-	return &stubConn{
-		stub: s,
-		buf:  buf,
-		enc:  radix.NewEncoder(buf),
-		dec:  radix.NewDecoder(buf),
-	}
-}
-
-func (sc *stubConn) Encode(i interface{}) error {
-	cmd := i.(radix.Cmd)
-	sc.Lock()
-	defer sc.Unlock()
-
-	switch strings.ToUpper(string(cmd.Cmd)) {
-	case "GET":
-		k := cmd.Args[0].(string)
-		if rerr, ok := sc.maybeMoved(k); ok {
-			return sc.enc.Encode(rerr)
-		}
-		s, ok := sc.kv[k]
-		if !ok {
-			return sc.enc.Encode(nil)
-		}
-		return sc.enc.Encode(s)
-	case "SET":
-		k := cmd.Args[0].(string)
-		if rerr, ok := sc.maybeMoved(k); ok {
-			return sc.enc.Encode(rerr)
-		}
-		sc.kv[k] = cmd.Args[1].(string)
-		return sc.enc.Encode(radix.Resp{SimpleStr: []byte("OK")})
-	case "PING":
-		return sc.enc.Encode(radix.Resp{SimpleStr: []byte("PONG")})
-	case "CLUSTER":
-		if strings.ToUpper(cmd.Args[0].(string)) == "SLOTS" {
-			return sc.enc.Encode(sc.slotsResp())
-		}
-	case "CONNSLOTS":
-		return sc.enc.Encode(sc.slots[:])
+func (s *stub) maybeMoved(k string) error {
+	slot := CRC16([]byte(k))
+	if slot >= s.slots[0] && slot < s.slots[1] {
+		return nil
 	}
 
-	err := radix.AppErr{Err: fmt.Errorf("unknown command %q %v", cmd.Cmd, cmd.Args)}
-	return sc.enc.Encode(err)
-}
-
-func (sc *stubConn) Decode(i interface{}) error {
-	return sc.dec.Decode(i)
-}
-
-func (sc *stubConn) Close() error {
-	// set to nil to ensure this doesn't get used after Close is called
-	sc.stub = nil
-	return nil
-}
-
-func (sc *stubConn) Return() {
-	// set to nil to ensure this doesn't get used after Return is called
-	sc.stub = nil
-}
-
-func (s *stub) Get() (radix.PoolConn, error) {
-	if s.stubCluster == nil {
-		return nil, errors.New("stub has been closed")
+	for _, s := range s.stubs {
+		if slot >= s.slots[0] && slot < s.slots[1] && !s.slave {
+			return resp.Error{E: fmt.Errorf("MOVED %d %s", slot, s.addr)}
+		}
 	}
-	return newStubConn(s), nil
+	panic("no possible slots! wut")
 }
 
 func (s *stub) Close() error {
@@ -123,21 +97,6 @@ func (s *stub) Do(a radix.Action) error {
 	}
 	c := newStubConn(s)
 	return a.Run(c)
-}
-
-func (s *stub) maybeMoved(k string) (radix.Resp, bool) {
-	slot := CRC16([]byte(k))
-	if slot >= s.slots[0] && slot < s.slots[1] {
-		return radix.Resp{}, false
-	}
-
-	for _, s := range s.stubs {
-		if slot >= s.slots[0] && slot < s.slots[1] && !s.slave {
-			ae := radix.AppErr{Err: fmt.Errorf("MOVED %d %s", slot, s.addr)}
-			return radix.Resp{Err: ae}, true
-		}
-	}
-	panic("no possible slots! wut")
 }
 
 func newStubCluster(tt Topo) *stubCluster {
@@ -166,45 +125,6 @@ func newStubCluster(tt Topo) *stubCluster {
 	return sc
 }
 
-func (scl *stubCluster) slotsResp() radix.Resp {
-	m := map[[2]uint16][]Node{}
-
-	for _, t := range scl.topo() {
-		m[t.Slots] = append(m[t.Slots], t)
-	}
-
-	NodeRespArr := func(t Node) radix.Resp {
-		var r radix.Resp
-		addrParts := strings.Split(t.Addr, ":")
-
-		port, _ := strconv.ParseInt(addrParts[1], 10, 64)
-
-		r.Arr = append(r.Arr,
-			radix.Resp{BulkStr: []byte(addrParts[0])},
-			radix.Resp{Int: port},
-		)
-		if t.ID != "" {
-			r.Arr = append(r.Arr, radix.Resp{BulkStr: []byte(t.ID)})
-		}
-		return r
-	}
-
-	var out radix.Resp
-	for slots, stubs := range m {
-		var r radix.Resp
-		r.Arr = append(r.Arr,
-			radix.Resp{Int: int64(slots[0])},
-			radix.Resp{Int: int64(slots[1] - 1)},
-		)
-		for _, s := range stubs {
-			r.Arr = append(r.Arr, NodeRespArr(s))
-		}
-		out.Arr = append(out.Arr, r)
-	}
-
-	return out
-}
-
 func (scl *stubCluster) topo() Topo {
 	var tt topoSort
 	for _, s := range scl.stubs {
@@ -220,7 +140,7 @@ func (scl *stubCluster) topo() Topo {
 }
 
 func (scl *stubCluster) poolFunc() radix.PoolFunc {
-	return func(network, addr string) (radix.Pool, error) {
+	return func(network, addr string) (radix.Client, error) {
 		for _, s := range scl.stubs {
 			if s.addr == addr {
 				return s, nil
@@ -268,7 +188,7 @@ func TestStub(t *T) {
 	scl := newStubCluster(testTopo)
 
 	var outTT Topo
-	err := scl.randStub().Do(radix.Cmd{}.C("CLUSTER").A("SLOTS").R(&outTT))
+	err := scl.randStub().Do(radix.CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 }
