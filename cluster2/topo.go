@@ -114,7 +114,7 @@ type topoSlotSet struct {
 func (tss topoSlotSet) MarshalRESP(p *resp.Pool, w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
-		if err != nil {
+		if err == nil {
 			err = m.MarshalRESP(p, w)
 		}
 	}

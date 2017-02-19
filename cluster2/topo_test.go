@@ -7,6 +7,7 @@ import (
 
 	"github.com/mediocregopher/radix.v2/resp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var testTopoResp = func() resp.Marshaler {
@@ -118,5 +119,14 @@ func TestParseTopo(t *T) {
 		},
 	}
 
+	// make sure, to start with, the testTopo matches what we expect it to
 	assert.Equal(t, testTopoExp, testTopo)
+
+	// Make sure both Marshal/UnmarshalRESP on it are working correctly (the
+	// calls in testTopoResp aren't actually on Topo's methods)
+	buf := new(bytes.Buffer)
+	require.Nil(t, testTopo.MarshalRESP(nil, buf))
+	var testTopo2 Topo
+	require.Nil(t, testTopo2.UnmarshalRESP(nil, bufio.NewReader(buf)))
+	assert.Equal(t, testTopoExp, testTopo2)
 }
