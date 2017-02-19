@@ -6,6 +6,26 @@
 // See https://redis.io/topics/protocol for more details on the protocol.
 package resp
 
+// TODO it works out to be really gross that Any can't support Marshalers, if it
+// could be made to be possible it would clean up a lot of other code.
+// Unfortunately there's really not any great way to do it, but here's an idea:
+// * Add NumElems() method to Marshaler, implement that everywhere
+// * Split out the MarshalBulkString and MarshalNoArrayHeaders options in Any to
+//   be wrappers around an io.Writer using io.Pipe, probably genericize this
+//   somehow
+//		* Problem with this is that it will require reading full RawMessages
+//		  into memory probably, that's really not good.
+//		* I could instead make one that's protocol aware, and uses a callback
+//		  only to map the element headers
+// * Load test the above step to see if it regresses performance. At the very
+//   least it shouldn't cause any new allocations
+// * Use these so that Any can support Marshalers internally
+
+// TODO Pool is also a bit sketchy, would be nice if it was an interface that
+// acted more like a pool, then users outside the package could use it. If it
+// only ever needs to be a []byte pool, using a global sync.Pool might be
+// viable, would need to be load tested as well.
+
 import (
 	"bufio"
 	"bytes"
@@ -414,7 +434,7 @@ func (a Array) MarshalRESP(p *Pool, w io.Writer) error {
 
 // Any represents any primitive go type, such as integers, floats, strings,
 // bools, etc... It also includes encoding.Text(Un)Marshalers and
-// encoding.(Un)BinaryMarshalers. It will _not_ handle resp.(Un)Marshalers.
+// encoding.(Un)BinaryMarshalers. It will _not_ handle resp.Marshalers.
 //
 // Most things will be treated as bulk strings, except for those that have their
 // own corresponding type in the RESP protocol (e.g. ints). strings and []bytes
@@ -628,6 +648,11 @@ func saneDefault(prefix byte) interface{} {
 
 // UnmarshalRESP implements the Unmarshaler method
 func (a Any) UnmarshalRESP(p *Pool, br *bufio.Reader) error {
+	// if I is itself an Unmarshaler just hit that directly
+	if u, ok := a.I.(Unmarshaler); ok {
+		return u.UnmarshalRESP(p, br)
+	}
+
 	b, err := br.Peek(1)
 	if err != nil {
 		return err
