@@ -386,6 +386,32 @@ func (ah *ArrayHeader) UnmarshalRESP(p *Pool, br *bufio.Reader) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// Array represents an array of RESP elements which will be marshaled as a RESP
+// array. If A is Nil then a Nil RESP will be marshaled.
+type Array struct {
+	A []Marshaler
+}
+
+// MarshalRESP implements the Marshaler method
+func (a Array) MarshalRESP(p *Pool, w io.Writer) error {
+	ah := ArrayHeader{N: len(a.A)}
+	if a.A == nil {
+		ah.N = -1
+	}
+
+	if err := ah.MarshalRESP(p, w); err != nil {
+		return err
+	}
+	for _, el := range a.A {
+		if err := el.MarshalRESP(p, w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // Any represents any primitive go type, such as integers, floats, strings,
 // bools, etc... It also includes encoding.Text(Un)Marshalers and
 // encoding.(Un)BinaryMarshalers. It will _not_ handle resp.(Un)Marshalers.

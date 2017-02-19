@@ -43,6 +43,15 @@ func TestRESPTypes(t *T) {
 			{in: &BulkReader{LR: newLR("foo\r\nbar")}, out: "$8\r\nfoo\r\nbar\r\n"},
 			{in: &ArrayHeader{N: 5}, out: "*5\r\n"},
 			{in: &ArrayHeader{N: -1}, out: "*-1\r\n"},
+			{in: &Array{}, out: "*-1\r\n"},
+			{in: &Array{A: []Marshaler{}}, out: "*0\r\n"},
+			{
+				in: &Array{A: []Marshaler{
+					SimpleString{S: []byte("foo")},
+					Int{I: 5},
+				}},
+				out: "*2\r\n+foo\r\n:5\r\n",
+			},
 		}
 	}
 
