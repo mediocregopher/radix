@@ -5,12 +5,25 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	radix "github.com/mediocregopher/radix.v2"
 )
+
+type errClient struct {
+	err error
+}
+
+func (ec errClient) Do(radix.Action) error {
+	return ec.err
+}
+
+func (ec errClient) Close() error {
+	return nil
+}
 
 // Cluster contains all information about a redis cluster needed to interact
 // with it, including a set of pools to each of its instances. All methods on
@@ -22,6 +35,7 @@ type Cluster struct {
 	pools map[string]radix.Client
 	tt    Topo
 
+	errCh   chan error // TODO expose those somehow
 	closeCh chan struct{}
 }
 
@@ -32,9 +46,6 @@ type Cluster struct {
 // The PoolFunc is used to make the internal pools for the instances discovered
 // here and all new ones in the future. If nil is given then
 // radix.DefaultPoolFunc will be used.
-//
-// TODO You will need to call Sync or SyncEvery in order for topology changes to
-// be reflected.
 func NewCluster(pf radix.PoolFunc, addrs ...string) (*Cluster, error) {
 	if pf == nil {
 		pf = radix.DefaultPoolFunc
@@ -43,6 +54,7 @@ func NewCluster(pf radix.PoolFunc, addrs ...string) (*Cluster, error) {
 		pf:      pf,
 		pools:   map[string]radix.Client{},
 		closeCh: make(chan struct{}),
+		errCh:   make(chan error, 1),
 	}
 
 	// make a pool to base the cluster on
@@ -61,7 +73,17 @@ func NewCluster(pf radix.PoolFunc, addrs ...string) (*Cluster, error) {
 		}
 		return nil, err
 	}
+
+	go c.syncEvery(30 * time.Second) // TODO make period configurable?
+
 	return c, nil
+}
+
+func (c *Cluster) err(err error) {
+	select {
+	case c.errCh <- err:
+	default:
+	}
 }
 
 // attempts to create a pool at the given address. The pool will be stored under
@@ -84,24 +106,39 @@ func (c *Cluster) anyPool() radix.Client {
 	c.RLock()
 	defer c.RUnlock()
 	for _, p := range c.pools {
+		err := p.Do(radix.CmdNoKey(nil, "PING"))
+		if err != nil {
+			// TODO If there's an error we don't log it or anything, since node
+			// failures are "normal". Maybe we should?
+			continue
+		}
 		return p
 	}
-	panic("TODO")
+	return errClient{err: errors.New("no available known redis instances")}
 }
 
 // Topo will pick a randdom node in the cluster, call CLUSTER SLOTS on it, and
 // unmarshal the result into a Topo instance, returning that instance
 func (c *Cluster) Topo() (Topo, error) {
+	return c.topo(c.anyPool())
+}
+
+func (c *Cluster) topo(p radix.Client) (Topo, error) {
 	var tt Topo
-	err := c.anyPool().Do(radix.Cmd(&tt, "CLUSTER", "SLOTS"))
+	err := p.Do(radix.Cmd(&tt, "CLUSTER", "SLOTS"))
 	return tt, err
 }
 
 // Sync will synchronize the Cluster with the actual cluster, making new pools
 // to new instances and removing ones from instances no longer in the cluster.
-// This must be called periodically, or SyncEvery can be used instead.
+// This will be called periodically automatically, but you can manually call it
+// at any time as well
 func (c *Cluster) Sync() error {
-	tt, err := c.Topo()
+	return c.sync(c.anyPool())
+}
+
+func (c *Cluster) sync(p radix.Client) error {
+	tt, err := c.topo(p)
 	if err != nil {
 		return err
 	}
@@ -127,27 +164,16 @@ func (c *Cluster) Sync() error {
 	return nil
 }
 
-// SyncEvery spawns a background go-routine which will call Sync at the given
-// time interval.
-//
-// If an error channel is given all errors returned by Sync will be written to
-// it, and it will be closed when Close is called on the Cluster.
-//
-// A good duration to use if you're not sure is 5 seconds.
-func (c *Cluster) SyncEvery(d time.Duration, errCh chan<- error) {
+func (c *Cluster) syncEvery(d time.Duration) {
 	go func() {
 		t := time.NewTicker(d)
 		defer t.Stop()
 
-		if errCh != nil {
-			defer close(errCh)
-		}
-
 		for {
 			select {
 			case <-t.C:
-				if err := c.Sync(); err != nil && errCh != nil {
-					errCh <- err
+				if err := c.Sync(); err != nil {
+					c.err(err)
 				}
 			case <-c.closeCh:
 				return
@@ -183,6 +209,7 @@ func (c *Cluster) Do(a radix.Action) error {
 // Pools.
 func (c *Cluster) Close() {
 	close(c.closeCh)
+	close(c.errCh)
 	c.Lock()
 	defer c.Unlock()
 
