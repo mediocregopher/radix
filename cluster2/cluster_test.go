@@ -3,9 +3,11 @@ package cluster
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	. "testing"
 
 	radix "github.com/mediocregopher/radix.v2"
+	"github.com/mediocregopher/radix.v2/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -88,4 +90,40 @@ func TestGet(t *T) {
 		require.Nil(t, err)
 		assert.True(t, s >= connSlots[0] && s < connSlots[1])
 	}
+}
+
+func assertMoved(t *T, err error, slot uint16, to string) {
+	rerr, ok := err.(resp.Error)
+	assert.True(t, ok)
+	assert.Equal(t, fmt.Sprintf("MOVED %d %s", slot, to), rerr.Error())
+}
+
+func TestMoved(t *T) {
+	c, scl := newTestCluster()
+	// These two slots should be handled by totally different nodes
+	slotA, slotB := uint16(1), uint16(16000)
+	keyA := slotKeys[slotA]
+	stubA, stubB := scl.stubForSlot(slotA), scl.stubForSlot(slotB)
+
+	require.Nil(t, stubA.Do(radix.Cmd(nil, "SET", keyA, "foo")))
+
+	// confirm that the stub is returning MOVED correctly
+	err := stubB.Do(radix.Cmd(nil, "GET", keyA))
+	assertMoved(t, err, slotA, stubA.addr)
+
+	// confirm that cluster handles moves correctly, but first retrieving a conn
+	// for an Action and then changing the node on which that action should be
+	// taken
+	var foo string
+	var swapped bool
+	err = c.Do(radix.WithConn([]byte(keyA), func(c radix.Conn) error {
+		if !swapped {
+			scl.swap(stubA.addr, stubB.addr)
+			swapped = true
+		}
+		return radix.Cmd(&foo, "GET", keyA).Run(c)
+	}))
+	require.Nil(t, err, "%s", err)
+	assert.Equal(t, "foo", foo)
+	t.Fatal("this shouldn't be working, cluster isn't actually checking for MOVED yet")
 }

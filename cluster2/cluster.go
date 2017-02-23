@@ -35,7 +35,7 @@ type Cluster struct {
 	pools map[string]radix.Client
 	tt    Topo
 
-	errCh   chan error // TODO expose those somehow
+	errCh   chan error // TODO expose this somehow
 	closeCh chan struct{}
 }
 

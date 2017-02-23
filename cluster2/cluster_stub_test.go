@@ -73,17 +73,13 @@ func newStubConn(s *stub) radix.Conn {
 }
 
 func (s *stub) maybeMoved(k string) error {
-	slot := CRC16([]byte(k))
+	slot := Slot([]byte(k))
 	if slot >= s.slots[0] && slot < s.slots[1] {
 		return nil
 	}
 
-	for _, s := range s.stubs {
-		if slot >= s.slots[0] && slot < s.slots[1] && !s.slave {
-			return resp.Error{E: fmt.Errorf("MOVED %d %s", slot, s.addr)}
-		}
-	}
-	panic("no possible slots! wut")
+	movedStub := s.stubCluster.stubForSlot(slot)
+	return resp.Error{E: fmt.Errorf("MOVED %d %s", slot, movedStub.addr)}
 }
 
 func (s *stub) Close() error {
@@ -123,6 +119,15 @@ func newStubCluster(tt Topo) *stubCluster {
 	}
 
 	return sc
+}
+
+func (scl *stubCluster) stubForSlot(slot uint16) *stub {
+	for _, s := range scl.stubs {
+		if slot >= s.slots[0] && slot < s.slots[1] && !s.slave {
+			return s
+		}
+	}
+	panic(fmt.Sprintf("couldn't find stub for slot %d", slot))
 }
 
 func (scl *stubCluster) topo() Topo {
@@ -181,6 +186,13 @@ func (scl *stubCluster) move(toAddr, fromAddr string) {
 	oldS.Close()
 	delete(scl.stubs, fromAddr)
 	scl.stubs[toAddr] = newS
+}
+
+func (scl *stubCluster) swap(addrA, addrB string) {
+	stubA, stubB := scl.stubs[addrA], scl.stubs[addrB]
+	stubA.addr, stubB.addr = stubB.addr, stubA.addr
+	scl.stubs[stubA.addr] = stubA
+	scl.stubs[stubB.addr] = stubB
 }
 
 // Who watches the watchmen?
