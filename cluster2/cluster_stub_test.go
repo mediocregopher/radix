@@ -3,7 +3,6 @@ package cluster
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	. "testing"
@@ -131,7 +130,7 @@ func (scl *stubCluster) stubForSlot(slot uint16) *stub {
 }
 
 func (scl *stubCluster) topo() Topo {
-	var tt topoSort
+	var tt Topo
 	for _, s := range scl.stubs {
 		tt = append(tt, Node{
 			Addr:  s.addr,
@@ -140,8 +139,8 @@ func (scl *stubCluster) topo() Topo {
 			Slave: s.slave,
 		})
 	}
-	sort.Sort(tt)
-	return Topo(tt)
+	tt.sort()
+	return tt
 }
 
 func (scl *stubCluster) poolFunc() radix.PoolFunc {

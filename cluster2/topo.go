@@ -62,17 +62,25 @@ func (tt *Topo) UnmarshalRESP(br *bufio.Reader) error {
 		}
 	}
 
-	var stt topoSort
 	for _, tss := range slotSets {
 		for _, n := range tss.nodes {
-			stt = append(stt, n)
+			*tt = append(*tt, n)
 		}
 	}
-
-	sort.Sort(stt)
-	*tt = Topo(stt)
-
+	tt.sort()
 	return nil
+}
+
+func (tt Topo) sort() {
+	sort.Slice(tt, func(i, j int) bool {
+		if tt[i].Slots[0] != tt[j].Slots[0] {
+			return tt[i].Slots[0] < tt[j].Slots[0]
+		}
+		// we want slaves to come after, which actually means they should be
+		// sorted as greater
+		return !tt[i].Slave
+	})
+
 }
 
 // Map returns the topology as a mapping of node address to its Node
@@ -82,26 +90,6 @@ func (tt Topo) Map() map[string]Node {
 		m[t.Addr] = t
 	}
 	return m
-}
-
-// TODO use sort.Slice
-type topoSort []Node
-
-func (tt topoSort) Len() int {
-	return len(tt)
-}
-
-func (tt topoSort) Swap(i, j int) {
-	tt[i], tt[j] = tt[j], tt[i]
-}
-
-func (tt topoSort) Less(i, j int) bool {
-	if tt[i].Slots[0] != tt[j].Slots[0] {
-		return tt[i].Slots[0] < tt[j].Slots[0]
-	}
-	// we want slaves to come after, which actually means they should be
-	// sorted as greater
-	return !tt[i].Slave
 }
 
 // we only use this type during unmarshalling, the topo Unmarshal method will
