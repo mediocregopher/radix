@@ -25,8 +25,8 @@ type Action interface {
 }
 
 // CmdAction is a specific type of Action for which a command is marshaled and
-// sent to the server and the command's response is read and unmarshaled into
-// the CmdAction.
+// sent to the server and the command's response is read and unmarshaled into a
+// receiver within the CmdAction.
 //
 // A CmdAction can be used like an Action, but it can also be used by marshaling
 // the command and unmarshaling the response manually.

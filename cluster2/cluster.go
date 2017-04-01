@@ -7,6 +7,7 @@ package cluster
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -102,25 +103,28 @@ func (c *Cluster) dirtyNewPool(addr string) (radix.Client, error) {
 	return p, nil
 }
 
-func (c *Cluster) anyPool() radix.Client {
+func (c *Cluster) pool(addr string) radix.Client {
 	c.RLock()
 	defer c.RUnlock()
-	for _, p := range c.pools {
-		err := p.Do(radix.CmdNoKey(nil, "PING"))
-		if err != nil {
-			// TODO If there's an error we don't log it or anything, since node
-			// failures are "normal". Maybe we should?
-			continue
+	if addr == "" {
+		for _, p := range c.pools {
+			return p
 		}
+		return errClient{err: errors.New("no pools available")}
+	} else if p, ok := c.pools[addr]; ok {
 		return p
 	}
-	return errClient{err: errors.New("no available known redis instances")}
+
+	// TODO during a failover it's possible that a client would get a MOVED/ASK
+	// for the new addr before sync is called, and they would get this error in
+	// that case. we should have this function kick off making a pool if needed.
+	return errClient{err: fmt.Errorf("no available pool for addr %q", addr)}
 }
 
 // Topo will pick a randdom node in the cluster, call CLUSTER SLOTS on it, and
 // unmarshal the result into a Topo instance, returning that instance
 func (c *Cluster) Topo() (Topo, error) {
-	return c.topo(c.anyPool())
+	return c.topo(c.pool(""))
 }
 
 func (c *Cluster) topo(p radix.Client) (Topo, error) {
@@ -134,7 +138,7 @@ func (c *Cluster) topo(p radix.Client) (Topo, error) {
 // This will be called periodically automatically, but you can manually call it
 // at any time as well
 func (c *Cluster) Sync() error {
-	return c.sync(c.anyPool())
+	return c.sync(c.pool(""))
 }
 
 func (c *Cluster) sync(p radix.Client) error {
@@ -146,6 +150,10 @@ func (c *Cluster) sync(p radix.Client) error {
 	c.Lock()
 	defer c.Unlock()
 	c.tt = tt
+
+	// TODO what happens if one of the pools fails to be created mid-way? we
+	// have an incomplete topology then. Might be betterh to put tt and pools
+	// under a single type which can be bailed on completely
 
 	for _, t := range tt {
 		if _, err := c.dirtyNewPool(t.Addr); err != nil {
@@ -182,27 +190,66 @@ func (c *Cluster) syncEvery(d time.Duration) {
 	}()
 }
 
-// Do performs an Action on a redis instance in the cluster, with the instance
-// being determeined by the key returned from the Action's Key() method.
-func (c *Cluster) Do(a radix.Action) error {
-	k := a.Key()
-	if k == nil {
-		return c.anyPool().Do(a)
+func (c *Cluster) addrForKey(key []byte) string {
+	if key == nil {
+		return ""
 	}
-
-	s := Slot(k)
+	c.RLock()
+	defer c.RUnlock()
+	s := Slot(key)
 	for _, t := range c.tt {
 		if s < t.Slots[0] || s >= t.Slots[1] {
 			continue
 		}
-		p, ok := c.pools[t.Addr]
-		if !ok {
-			return fmt.Errorf("unexpected: no pool for address %q", t.Addr)
-		}
-		return p.Do(a)
+		return t.Addr
+	}
+	return ""
+}
+
+// Do performs an Action on a redis instance in the cluster, with the instance
+// being determeined by the key returned from the Action's Key() method.
+//
+// If the Action is a CmdAction then Cluster will handled MOVED and ASK errors
+// correctly, for other Action types those errors will be returned as is.
+func (c *Cluster) Do(a radix.Action) error {
+	return c.doInner(a, c.addrForKey(a.Key()), false, 5)
+}
+
+func (c *Cluster) doInner(a radix.Action, addr string, ask bool, attempts int) error {
+	if attempts <= 0 {
+		return errors.New("cluster action redirected too many times")
 	}
 
-	return fmt.Errorf("unexpected: no known address for slot %d", s)
+	err := c.pool(addr).Do(radix.WithConn(a.Key(), func(conn radix.Conn) error {
+		if ask {
+			if err := radix.CmdNoKey(nil, "ASKING").Run(conn); err != nil {
+				return err
+			}
+		}
+		return a.Run(conn)
+	}))
+
+	if err == nil {
+		return nil
+	} else if _, ok := a.(radix.CmdAction); !ok {
+		return err
+	}
+	msg := err.Error()
+	moved := strings.HasPrefix(msg, "MOVED ")
+	ask = strings.HasPrefix(msg, "ASK ")
+	if !moved && !ask {
+		return err
+	}
+
+	// TODO kick off a sync somewhere in here too?
+
+	msgParts := strings.Split(msg, " ")
+	if len(msgParts) < 3 {
+		return fmt.Errorf("malformed MOVED/ASK error %q", msg)
+	}
+	addr = msgParts[2]
+
+	return c.doInner(a, addr, ask, attempts-1)
 }
 
 // Close cleans up all goroutines spawned by Cluster and closes all of its

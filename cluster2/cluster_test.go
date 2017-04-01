@@ -111,7 +111,7 @@ func TestMoved(t *T) {
 	err := stubB.Do(radix.Cmd(nil, "GET", keyA))
 	assertMoved(t, err, slotA, stubA.addr)
 
-	// confirm that cluster handles moves correctly, but first retrieving a conn
+	// confirm that cluster handles moves correctly, by first retrieving a conn
 	// for an Action and then changing the node on which that action should be
 	// taken
 	var foo string
