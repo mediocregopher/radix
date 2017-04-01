@@ -1,0 +1,40 @@
+# Week 1
+    * Potentially refactor resp pool stuff again
+    * investigate using contexts
+
+# Week 2
+    * Cluster
+      - Support ASK/MOVE
+      - Finish testing
+        - ASK (MOVED test is done already)
+      - Move into root
+
+# Week 3
+  * cluster
+    - Method like `WithMasters(func(string, radix.Conn) error) error`
+  * Look into how WithMasters above correlates with other Client types, maybe we
+    can modify the Client interface to do something like that, would make
+    scanning easier
+
+# Week (3?) 4
+  * Figure out how to expose stats/errors from Clients
+
+# Week 5 (and 6?)
+  * Load testing
+    - against v2
+    - against redigo
+
+.... re-evaluate here
+
+* Clean
+  - All leftover TODOS
+  - consistent Close behavior
+  - CmdAction is ugly
+  - PoolFunc naming is ugly
+  - PubSub stuff is kind of a mess
+  - Read through docs, ensure everything is clean and sensical
+* Documentation
+  - Examples where necessary
+  - Simplify
+* Think of name
+* Make okq use it
