@@ -1,24 +1,24 @@
-# Week 1
-    * whatever that other todo in resp was
+# Week
+    * Big TODO in resp to maybe refactor it yet another time? ugh....
 
-# Week 2
+# Week
     * Cluster
       - Support ASK/MOVE
       - Finish testing
         - ASK (MOVED test is done already)
       - Move into root
 
-# Week 3
+# Week
   * cluster
     - Method like `WithMasters(func(string, radix.Conn) error) error`
   * Look into how WithMasters above correlates with other Client types, maybe we
     can modify the Client interface to do something like that, would make
     scanning easier
 
-# Week (3?) 4
+# Week (or 2?)
   * Figure out how to expose stats/errors from Clients
 
-# Week 5 (and 6?)
+# Week (or 2?)
   * Think of name, move to that repo
   * Load testing
     - against v2
@@ -32,9 +32,11 @@
   - CmdAction is ugly
   - PoolFunc naming is ugly
   - PubSub stuff is kind of a mess
+  - do all the structs types in resp need to be structs?
   - Read through docs, ensure everything is clean and sensical
   - Read through code, make sure all code comments are correct
   - Don't use testify
+  - https://blog.golang.org/subtests
 * Documentation
   - Examples where necessary
   - Simplify

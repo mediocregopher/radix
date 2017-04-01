@@ -6,21 +6,6 @@
 // See https://redis.io/topics/protocol for more details on the protocol.
 package resp
 
-// TODO it works out to be really gross that Any can't support Marshalers, if it
-// could be made to be possible it would clean up a lot of other code.
-// Unfortunately there's really not any great way to do it, but here's an idea:
-// * Add NumElems() method to Marshaler, implement that everywhere
-// * Split out the MarshalBulkString and MarshalNoArrayHeaders options in Any to
-//   be wrappers around an io.Writer using io.Pipe, probably genericize this
-//   somehow
-//		* Problem with this is that it will require reading full RawMessages
-//		  into memory probably, that's really not good.
-//		* I could instead make one that's protocol aware, and uses a callback
-//		  only to map the element headers
-// * Load test the above step to see if it regresses performance. At the very
-//   least it shouldn't cause any new allocations
-// * Use these so that Any can support Marshalers internally
-
 import (
 	"bufio"
 	"bytes"
@@ -128,14 +113,13 @@ func bufferedPrefix(br *bufio.Reader, prefix []byte) error {
 
 // reads bytes up to a delim and returns them, or an error
 func bufferedBytesDelim(br *bufio.Reader) ([]byte, error) {
-	b, err := br.ReadSlice('\r')
+	b, err := br.ReadSlice('\n')
 	if err != nil {
 		return nil, err
+	} else if len(b) < 2 {
+		return nil, fmt.Errorf("malformed resp %q", b)
 	}
-
-	// there's a trailing \n we have to read
-	_, err = br.ReadByte()
-	return b[:len(b)-1], err
+	return b[:len(b)-2], err
 }
 
 // reads an integer out of the buffer, followed by a delim. It parses the
@@ -199,6 +183,66 @@ func readFloat(r io.Reader, precision int) (float64, error) {
 	}
 	return strconv.ParseFloat(string(scratch), precision)
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+/*
+TODO
+
+type Msg struct {
+	Prefix []byte
+	Body LenReader // must be at least LenReader to support BulkStrEncoder
+}
+
+func (m Msg) Unmarshal(interface{}) error {
+	...
+}
+
+type Encoder interface {
+	Encode(Msg) error
+}
+
+func NewEncoder(io.Writer) Encoder
+func BulkStrEncoder(Encoder) Encoder
+func FilterArrEncoder(Encoder) Encoder
+
+type Decoder interface {
+	Decode(*Msg) error
+	// maybe Decode() (Msg, error)
+}
+
+func NewDecoder(io.Reader) Decoder
+
+Notes:
+  - I should do a benchmark of the resp code pre/post bytes pool. If it's not
+	significant than this method would work ok I think, but if not it will take
+	a little more effort for this to become viable
+  - Msgs passed into/returned from Decoder _must_ be used before Decode is
+	called again. As long as this limitation doesn't leak into the outer package
+	in some way I think this is fine, just needs to be documented.
+  - Arrays become kind of weird... would have to have a separate type for them?
+
+type respMsg struct {
+	prefix []byte
+	body   io.Reader
+}
+
+func (r respMsg) MarshalRESP(w io.Writer) error {
+	return multiWrite(r.prefix, r.body, delim)
+}
+
+func (r *respMsg) UnmarshalRESP(br *bufio.Reader) error {
+	b, err := bufferedBytesDelim(br)
+	if err != nil {
+		return err
+	} else if len(b) == 0 {
+		return errors.New("delim with no prefix")
+	}
+
+	r.prefix = b[:1]
+	panic("TODO")
+}
+*/
 
 ////////////////////////////////////////////////////////////////////////////////
 
