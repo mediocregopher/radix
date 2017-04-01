@@ -11,11 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setPool(p *Pool, vv reflect.Value) {
-	vv = reflect.Indirect(vv)
-	vv.FieldByName("Pool").Set(reflect.ValueOf(p))
-}
-
 func TestRESPTypes(t *T) {
 	newLR := func(s string) LenReader {
 		buf := bytes.NewBufferString(s)
@@ -27,7 +22,7 @@ func TestRESPTypes(t *T) {
 		out string
 	}
 
-	encodeTests := func(p *Pool) []encodeTest {
+	encodeTests := func() []encodeTest {
 		return []encodeTest{
 			{in: &SimpleString{S: []byte("")}, out: "+\r\n"},
 			{in: &SimpleString{S: []byte("foo")}, out: "+foo\r\n"},
@@ -55,14 +50,34 @@ func TestRESPTypes(t *T) {
 		}
 	}
 
-	for _, p := range []*Pool{nil, new(Pool)} {
-		for _, et := range encodeTests(p) {
-			buf := new(bytes.Buffer)
-			err := et.in.MarshalRESP(p, buf)
-			assert.Nil(t, err)
-			assert.Equal(t, et.out, string(buf.Bytes()))
+	for _, et := range encodeTests() {
+		buf := new(bytes.Buffer)
+		err := et.in.MarshalRESP(buf)
+		assert.Nil(t, err)
+		assert.Equal(t, et.out, string(buf.Bytes()))
 
-			br := bufio.NewReader(buf)
+		br := bufio.NewReader(buf)
+		umr := reflect.New(reflect.TypeOf(et.in).Elem())
+		um, ok := umr.Interface().(Unmarshaler)
+		if !ok {
+			br.Discard(len(et.out))
+			continue
+		}
+
+		err = um.UnmarshalRESP(br)
+		assert.Nil(t, err)
+		assert.Equal(t, et.in, umr.Interface())
+	}
+
+	// Same test, but do all the marshals first, then do all the unmarshals
+	{
+		ett := encodeTests()
+		buf := new(bytes.Buffer)
+		for _, et := range ett {
+			assert.Nil(t, et.in.MarshalRESP(buf))
+		}
+		br := bufio.NewReader(buf)
+		for _, et := range ett {
 			umr := reflect.New(reflect.TypeOf(et.in).Elem())
 			um, ok := umr.Interface().(Unmarshaler)
 			if !ok {
@@ -70,31 +85,9 @@ func TestRESPTypes(t *T) {
 				continue
 			}
 
-			err = um.UnmarshalRESP(p, br)
+			err := um.UnmarshalRESP(br)
 			assert.Nil(t, err)
 			assert.Equal(t, et.in, umr.Interface())
-		}
-
-		// Same test, but do all the marshals first, then do all the unmarshals
-		{
-			ett := encodeTests(p)
-			buf := new(bytes.Buffer)
-			for _, et := range ett {
-				assert.Nil(t, et.in.MarshalRESP(p, buf))
-			}
-			br := bufio.NewReader(buf)
-			for _, et := range ett {
-				umr := reflect.New(reflect.TypeOf(et.in).Elem())
-				um, ok := umr.Interface().(Unmarshaler)
-				if !ok {
-					br.Discard(len(et.out))
-					continue
-				}
-
-				err := um.UnmarshalRESP(p, br)
-				assert.Nil(t, err)
-				assert.Equal(t, et.in, umr.Interface())
-			}
 		}
 	}
 }
@@ -206,38 +199,26 @@ func TestAnyMarshal(t *T) {
 		},
 	}
 
-	marshal := func(et encodeTest, p *Pool, buf *bytes.Buffer) {
+	marshal := func(et encodeTest, buf *bytes.Buffer) {
 		a := Any{
 			I:                     et.in,
 			MarshalBulkString:     et.forceStr,
 			MarshalNoArrayHeaders: et.flat,
 		}
-		assert.Nil(t, a.MarshalRESP(p, buf))
+		assert.Nil(t, a.MarshalRESP(buf))
 	}
 
-	// first we do the tests with the same pool each time
-	{
-		p := new(Pool)
-		for _, et := range encodeTests {
-			buf := new(bytes.Buffer)
-			marshal(et, p, buf)
-			assert.Equal(t, et.out, buf.String())
-		}
-	}
-
-	// then again with a new Pool each time
 	for _, et := range encodeTests {
 		buf := new(bytes.Buffer)
-		marshal(et, nil, buf)
+		marshal(et, buf)
 		assert.Equal(t, et.out, buf.String(), "et: %#v", et)
 	}
 
 	// do them by doing all the marshals at once then reading them all at once
 	{
 		buf := new(bytes.Buffer)
-		p := new(Pool)
 		for _, et := range encodeTests {
-			marshal(et, p, buf)
+			marshal(et, buf)
 		}
 		for _, et := range encodeTests {
 			out := buf.Next(len(et.out))
@@ -374,10 +355,10 @@ func TestAnyUnmarshal(t *T) {
 		}
 	}
 
-	assertUnmarshal := func(br *bufio.Reader, dt decodeTest, p *Pool) {
+	assertUnmarshal := func(br *bufio.Reader, dt decodeTest) {
 		debug := []interface{}{
-			"withPool:%v preloadEmpty:%v preload:%T(%v) %q -> %T(%v)",
-			p != nil, dt.preloadEmpty, dt.preload, dt.preload, dt.in, dt.out, dt.out,
+			"preloadEmpty:%v preload:%T(%v) %q -> %T(%v)",
+			dt.preloadEmpty, dt.preload, dt.preload, dt.in, dt.out, dt.out,
 		}
 		//t.Logf(debug[0].(string), debug[1:]...)
 
@@ -393,7 +374,7 @@ func TestAnyUnmarshal(t *T) {
 			into = reflect.New(reflect.TypeOf(dt.out)).Interface()
 		}
 
-		err := Any{I: into}.UnmarshalRESP(p, br)
+		err := Any{I: into}.UnmarshalRESP(br)
 		if dt.shouldErr != "" {
 			require.NotNil(t, err, debug...)
 			assert.Equal(t, dt.shouldErr, err.Error(), debug...)
@@ -409,23 +390,21 @@ func TestAnyUnmarshal(t *T) {
 		}
 	}
 
-	for _, p := range []*Pool{nil, new(Pool)} {
-		// do reads/writes sequentially
-		for _, dt := range decodeTests() {
-			br := bufio.NewReader(bytes.NewBufferString(dt.in))
-			assertUnmarshal(br, dt, p)
-		}
+	// do reads/writes sequentially
+	for _, dt := range decodeTests() {
+		br := bufio.NewReader(bytes.NewBufferString(dt.in))
+		assertUnmarshal(br, dt)
+	}
 
-		// do all the writes before the unmarshals
-		{
-			buf := new(bytes.Buffer)
-			for _, dt := range decodeTests() {
-				buf.WriteString(dt.in)
-			}
-			br := bufio.NewReader(buf)
-			for _, dt := range decodeTests() {
-				assertUnmarshal(br, dt, p)
-			}
+	// do all the writes before the unmarshals
+	{
+		buf := new(bytes.Buffer)
+		for _, dt := range decodeTests() {
+			buf.WriteString(dt.in)
+		}
+		br := bufio.NewReader(buf)
+		for _, dt := range decodeTests() {
+			assertUnmarshal(br, dt)
 		}
 	}
 }
@@ -454,12 +433,12 @@ func TestRawMessage(t *T) {
 		buf := new(bytes.Buffer)
 		{
 			rm := RawMessage(rmt.b)
-			require.Nil(t, rm.MarshalRESP(nil, buf))
+			require.Nil(t, rm.MarshalRESP(buf))
 			assert.Equal(t, rmt.b, buf.String())
 		}
 		{
 			var rm RawMessage
-			require.Nil(t, rm.UnmarshalRESP(nil, bufio.NewReader(buf)))
+			require.Nil(t, rm.UnmarshalRESP(bufio.NewReader(buf)))
 			assert.Equal(t, rmt.b, string(rm))
 		}
 	}
@@ -469,12 +448,12 @@ func TestRawMessage(t *T) {
 		buf := new(bytes.Buffer)
 		for _, rmt := range rmtests {
 			rm := RawMessage(rmt.b)
-			require.Nil(t, rm.MarshalRESP(nil, buf))
+			require.Nil(t, rm.MarshalRESP(buf))
 		}
 		br := bufio.NewReader(buf)
 		for _, rmt := range rmtests {
 			var rm RawMessage
-			require.Nil(t, rm.UnmarshalRESP(nil, br))
+			require.Nil(t, rm.UnmarshalRESP(br))
 			assert.Equal(t, rmt.b, string(rm))
 		}
 	}

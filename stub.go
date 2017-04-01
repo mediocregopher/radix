@@ -54,7 +54,7 @@ func (b *buffer) Encode(m resp.Marshaler) error {
 	if b.closed {
 		err = b.err("write", errClosed)
 	} else {
-		err = m.MarshalRESP(nil, b.buf)
+		err = m.MarshalRESP(b.buf)
 	}
 	b.bufL.L.Unlock()
 	if err != nil {
@@ -107,7 +107,7 @@ func (b *buffer) Decode(u resp.Unmarshaler) error {
 		b.bufL.Wait()
 	}
 
-	return u.UnmarshalRESP(nil, b.bufbr)
+	return u.UnmarshalRESP(b.bufbr)
 }
 
 func (b *buffer) Close() error {
@@ -207,14 +207,14 @@ func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn 
 func (s *stub) Encode(m resp.Marshaler) error {
 	// first marshal into a RawMessage
 	buf := new(bytes.Buffer)
-	if err := m.MarshalRESP(nil, buf); err != nil {
+	if err := m.MarshalRESP(buf); err != nil {
 		return err
 	}
 	rm := resp.RawMessage(buf.Bytes())
 
 	// unmarshal that into a string slice
 	var ss []string
-	if err := rm.UnmarshalInto(nil, resp.Any{I: &ss}); err != nil {
+	if err := rm.UnmarshalInto(resp.Any{I: &ss}); err != nil {
 		return err
 	}
 

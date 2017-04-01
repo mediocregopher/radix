@@ -1,5 +1,4 @@
 # Week 1
-    * Potentially refactor resp pool stuff again
     * investigate using contexts
 
 # Week 2
@@ -20,6 +19,7 @@
   * Figure out how to expose stats/errors from Clients
 
 # Week 5 (and 6?)
+  * Think of name, move to that repo
   * Load testing
     - against v2
     - against redigo
@@ -33,8 +33,9 @@
   - PoolFunc naming is ugly
   - PubSub stuff is kind of a mess
   - Read through docs, ensure everything is clean and sensical
+  - Read through code, make sure all code comments are correct
+  - Don't use testify
 * Documentation
   - Examples where necessary
   - Simplify
-* Think of name
 * Make okq use it

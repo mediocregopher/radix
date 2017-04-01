@@ -16,9 +16,9 @@ var errPubSubMode = resp.Error{
 
 type multiMarshal []resp.Marshaler
 
-func (mm multiMarshal) MarshalRESP(p *resp.Pool, w io.Writer) error {
+func (mm multiMarshal) MarshalRESP(w io.Writer) error {
 	for _, m := range mm {
-		if err := m.MarshalRESP(p, w); err != nil {
+		if err := m.MarshalRESP(w); err != nil {
 			return err
 		}
 	}

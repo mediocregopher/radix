@@ -60,8 +60,7 @@ type Conn interface {
 
 type connWrap struct {
 	net.Conn
-	brw    *bufio.ReadWriter
-	rp, wp *resp.Pool
+	brw *bufio.ReadWriter
 }
 
 // NewConn takes an existing net.Conn and wraps it to support the Conn interface
@@ -74,13 +73,11 @@ func NewConn(conn net.Conn) Conn {
 	return connWrap{
 		Conn: conn,
 		brw:  bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn)),
-		rp:   new(resp.Pool),
-		wp:   new(resp.Pool),
 	}
 }
 
 func (cw connWrap) Encode(m resp.Marshaler) error {
-	err := m.MarshalRESP(cw.wp, cw.brw)
+	err := m.MarshalRESP(cw.brw)
 	defer func() {
 		if _, ok := err.(net.Error); ok {
 			cw.Close()
@@ -95,7 +92,7 @@ func (cw connWrap) Encode(m resp.Marshaler) error {
 }
 
 func (cw connWrap) Decode(u resp.Unmarshaler) error {
-	err := u.UnmarshalRESP(cw.rp, cw.brw.Reader)
+	err := u.UnmarshalRESP(cw.brw.Reader)
 	if _, ok := err.(net.Error); ok {
 		cw.Close()
 	}

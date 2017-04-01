@@ -52,11 +52,11 @@ var testTopoResp = func() resp.Marshaler {
 
 var testTopo = func() Topo {
 	buf := new(bytes.Buffer)
-	if err := testTopoResp.MarshalRESP(nil, buf); err != nil {
+	if err := testTopoResp.MarshalRESP(buf); err != nil {
 		panic(err)
 	}
 	var tt Topo
-	if err := tt.UnmarshalRESP(nil, bufio.NewReader(buf)); err != nil {
+	if err := tt.UnmarshalRESP(bufio.NewReader(buf)); err != nil {
 		panic(err)
 	}
 	return tt
@@ -125,8 +125,8 @@ func TestParseTopo(t *T) {
 	// Make sure both Marshal/UnmarshalRESP on it are working correctly (the
 	// calls in testTopoResp aren't actually on Topo's methods)
 	buf := new(bytes.Buffer)
-	require.Nil(t, testTopo.MarshalRESP(nil, buf))
+	require.Nil(t, testTopo.MarshalRESP(buf))
 	var testTopo2 Topo
-	require.Nil(t, testTopo2.UnmarshalRESP(nil, bufio.NewReader(buf)))
+	require.Nil(t, testTopo2.UnmarshalRESP(bufio.NewReader(buf)))
 	assert.Equal(t, testTopoExp, testTopo2)
 }

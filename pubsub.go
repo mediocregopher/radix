@@ -47,8 +47,8 @@ type errTimeout struct {
 
 func (et errTimeout) Error() string { return et.err.Error() }
 
-func (tou timeoutOkUnmarshaler) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
-	err := tou.u.UnmarshalRESP(p, br)
+func (tou timeoutOkUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
+	err := tou.u.UnmarshalRESP(br)
 	if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 		err = errTimeout{err}
 	}
@@ -67,11 +67,11 @@ type PubSubMessage struct {
 
 // MarshalRESP implements the Marshaler interface. It will assume the
 // PubSubMessage is a PMESSAGE if Pattern is non-empty.
-func (m PubSubMessage) MarshalRESP(p *resp.Pool, w io.Writer) error {
+func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
 		if err == nil {
-			err = m.MarshalRESP(p, w)
+			err = m.MarshalRESP(w)
 		}
 	}
 
@@ -91,9 +91,9 @@ func (m PubSubMessage) MarshalRESP(p *resp.Pool, w io.Writer) error {
 }
 
 // UnmarshalRESP implements the Unmarshaler interface
-func (m *PubSubMessage) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
+func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 	bb := make([][]byte, 0, 4)
-	if err := (resp.Any{I: &bb}).UnmarshalRESP(p, br); err != nil {
+	if err := (resp.Any{I: &bb}).UnmarshalRESP(br); err != nil {
 		return err
 	}
 
@@ -282,7 +282,7 @@ func (c *pubSubConn) spin() {
 		}
 
 		var m PubSubMessage
-		if err := rm.UnmarshalInto(nil, &m); err == nil {
+		if err := rm.UnmarshalInto(&m); err == nil {
 			c.publish(m)
 		} else {
 			c.cmdResCh <- nil

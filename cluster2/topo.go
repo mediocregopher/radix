@@ -26,13 +26,13 @@ type Node struct {
 type Topo []Node
 
 // MarshalRESP implements the resp.Marshaler interface,
-func (tt Topo) MarshalRESP(p *resp.Pool, w io.Writer) error {
+func (tt Topo) MarshalRESP(w io.Writer) error {
 	m := map[[2]uint16][]Node{}
 	for _, t := range tt {
 		m[t.Slots] = append(m[t.Slots], t)
 	}
 
-	if err := (resp.ArrayHeader{N: len(m)}).MarshalRESP(p, w); err != nil {
+	if err := (resp.ArrayHeader{N: len(m)}).MarshalRESP(w); err != nil {
 		return err
 	}
 	for slots, nodes := range m {
@@ -40,7 +40,7 @@ func (tt Topo) MarshalRESP(p *resp.Pool, w io.Writer) error {
 			slots: slots,
 			nodes: nodes,
 		}
-		if err := tss.MarshalRESP(p, w); err != nil {
+		if err := tss.MarshalRESP(w); err != nil {
 			return err
 		}
 	}
@@ -50,14 +50,14 @@ func (tt Topo) MarshalRESP(p *resp.Pool, w io.Writer) error {
 // UnmarshalRESP implements the resp.Unmarshaler interface, but only supports
 // unmarshaling the return from CLUSTER SLOTS. The unmarshaled nodes will be
 // sorted before they are returned
-func (tt *Topo) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
+func (tt *Topo) UnmarshalRESP(br *bufio.Reader) error {
 	var arrHead resp.ArrayHeader
-	if err := arrHead.UnmarshalRESP(p, br); err != nil {
+	if err := arrHead.UnmarshalRESP(br); err != nil {
 		return err
 	}
 	slotSets := make([]topoSlotSet, arrHead.N)
 	for i := range slotSets {
-		if err := (&(slotSets[i])).UnmarshalRESP(p, br); err != nil {
+		if err := (&(slotSets[i])).UnmarshalRESP(br); err != nil {
 			return err
 		}
 	}
@@ -111,11 +111,11 @@ type topoSlotSet struct {
 	nodes []Node
 }
 
-func (tss topoSlotSet) MarshalRESP(p *resp.Pool, w io.Writer) error {
+func (tss topoSlotSet) MarshalRESP(w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
 		if err == nil {
-			err = m.MarshalRESP(p, w)
+			err = m.MarshalRESP(w)
 		}
 	}
 
@@ -135,16 +135,16 @@ func (tss topoSlotSet) MarshalRESP(p *resp.Pool, w io.Writer) error {
 	return err
 }
 
-func (tss *topoSlotSet) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
+func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 	var arrHead resp.ArrayHeader
-	if err := arrHead.UnmarshalRESP(p, br); err != nil {
+	if err := arrHead.UnmarshalRESP(br); err != nil {
 		return err
 	}
 
 	// first two array elements are the slot numbers. We increment the second to
 	// preserve inclusive start/exclusive end, which redis doesn't
 	for i := range tss.slots {
-		if err := (resp.Any{I: &tss.slots[i]}).UnmarshalRESP(p, br); err != nil {
+		if err := (resp.Any{I: &tss.slots[i]}).UnmarshalRESP(br); err != nil {
 			return err
 		}
 	}
@@ -153,7 +153,7 @@ func (tss *topoSlotSet) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
 
 	for i := 0; i < arrHead.N; i++ {
 		var node []string
-		if err := (resp.Any{I: &node}).UnmarshalRESP(p, br); err != nil {
+		if err := (resp.Any{I: &node}).UnmarshalRESP(br); err != nil {
 			return err
 		} else if len(node) < 2 {
 			return fmt.Errorf("malformed node array: %#v", node)

@@ -71,8 +71,8 @@ func (c cmdAction) Key() []byte {
 	return c.key
 }
 
-func (c cmdAction) UnmarshalRESP(p *resp.Pool, br *bufio.Reader) error {
-	return resp.Any{I: c.rcv}.UnmarshalRESP(p, br)
+func (c cmdAction) UnmarshalRESP(br *bufio.Reader) error {
+	return resp.Any{I: c.rcv}.UnmarshalRESP(br)
 }
 
 func (c cmdAction) Run(conn Conn) error {
@@ -86,11 +86,11 @@ func (c cmdAction) String() string {
 	// we go way out of the way here to display the command as it would be sent
 	// to redis. This is pretty similar logic to what the stub does as well
 	buf := new(bytes.Buffer)
-	if err := c.MarshalRESP(nil, buf); err != nil {
+	if err := c.MarshalRESP(buf); err != nil {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
 	var ss []string
-	err := resp.RawMessage(buf.Bytes()).UnmarshalInto(nil, resp.Any{I: &ss})
+	err := resp.RawMessage(buf.Bytes()).UnmarshalInto(resp.Any{I: &ss})
 	if err != nil {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
@@ -134,13 +134,13 @@ func (lc lua) Key() []byte {
 	return []byte(lc.keys[0])
 }
 
-func (lc lua) MarshalRESP(p *resp.Pool, w io.Writer) error {
+func (lc lua) MarshalRESP(w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
 		if err != nil {
 			return
 		}
-		err = m.MarshalRESP(p, w)
+		err = m.MarshalRESP(w)
 	}
 
 	a := resp.Any{
