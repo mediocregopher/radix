@@ -38,6 +38,19 @@ cluster-enabled yes
 cluster-config-file redis_cluster_node2.conf
 endef
 
+define NODE2_SLAVE_CONF
+daemonize yes
+port 7011
+dir .
+pidfile redis_cluster_node1_slave.pid
+logfile redis_cluster_node1_slave.log
+cluster-node-timeout 5000
+save ""
+appendonly no
+cluster-enabled yes
+cluster-config-file redis_cluster_node1_slave.conf
+endef
+
 # SENTINEL REDIS NODES
 define SENTINEL_CONF
 daemonize yes
@@ -76,6 +89,7 @@ endef
 export VANILLA_CONF
 export NODE1_CONF
 export NODE2_CONF
+export NODE2_SLAVE_CONF
 
 export SENTINEL_CONF
 export SENTINEL_NODE1_CONF
@@ -88,14 +102,20 @@ start: cleanup
 	echo "$$VANILLA_CONF" | redis-server -
 	echo "$$NODE1_CONF" | redis-server -
 	echo "$$NODE2_CONF" | redis-server -
+	echo "$$NODE2_SLAVE_CONF" | redis-server -
 	echo "$$SENTINEL_CONF" > sentinel.conf
 	redis-sentinel sentinel.conf
 	echo "$$SENTINEL_NODE1_CONF" | redis-server -
 	echo "$$SENTINEL_NODE2_CONF" | redis-server -
 	sleep 1
 	redis-cli -p 7000 cluster meet 127.0.0.1 7001
+	redis-cli -p 7011 cluster meet 127.0.0.1 7001
+	sleep 1
 	redis-cli -p 7000 cluster addslots $$(seq 0 8191)
 	redis-cli -p 7001 cluster addslots $$(seq 8192 16383)
+	node2id=$$(redis-cli -p 7001 cluster nodes | grep 7001 | awk '{print $$1}')
+	redis-cli -p 7011 cluster nodes
+	redis-cli -p 7011 cluster replicate $$node2id
 	redis-cli -p 8001 slaveof 127.0.0.1 8000
 
 cleanup:

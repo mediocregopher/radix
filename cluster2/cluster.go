@@ -198,10 +198,11 @@ func (c *Cluster) addrForKey(key []byte) string {
 	defer c.RUnlock()
 	s := Slot(key)
 	for _, t := range c.tt {
-		if s < t.Slots[0] || s >= t.Slots[1] {
-			continue
+		for _, slot := range t.Slots {
+			if s >= slot[0] && s < slot[1] {
+				return t.Addr
+			}
 		}
-		return t.Addr
 	}
 	return ""
 }

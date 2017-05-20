@@ -16,7 +16,7 @@ type Node struct {
 	// blank
 	Addr, ID string
 	// start is inclusive, end is exclusive
-	Slots [2]uint16
+	Slots [][2]uint16
 	// address and id this node is the slave of, if it's a slave
 	SlaveOfAddr, SlaveOfID string
 }
@@ -26,21 +26,34 @@ type Node struct {
 // come before slaves.
 type Topo []Node
 
-// MarshalRESP implements the resp.Marshaler interface,
+// MarshalRESP implements the resp.Marshaler interface, and will marshal the
+// Topo in the same format as the return from CLUSTER SLOTS
 func (tt Topo) MarshalRESP(w io.Writer) error {
-	m := map[[2]uint16][]Node{}
+	m := map[[2]uint16]topoSlotSet{}
 	for _, t := range tt {
-		m[t.Slots] = append(m[t.Slots], t)
+		for _, slots := range t.Slots {
+			tss := m[slots]
+			tss.slots = slots
+			tss.nodes = append(tss.nodes, t)
+			m[slots] = tss
+		}
 	}
 
-	if err := (resp.ArrayHeader{N: len(m)}).MarshalRESP(w); err != nil {
+	// we sort the topoSlotSets by their slot number so that the order is
+	// deterministic, mostly so tests pass consistently, I'm not sure if actual
+	// redis has any contract on the order
+	allTSS := make([]topoSlotSet, 0, len(m))
+	for _, tss := range m {
+		allTSS = append(allTSS, tss)
+	}
+	sort.Slice(allTSS, func(i, j int) bool {
+		return allTSS[i].slots[0] < allTSS[j].slots[0]
+	})
+
+	if err := (resp.ArrayHeader{N: len(allTSS)}).MarshalRESP(w); err != nil {
 		return err
 	}
-	for slots, nodes := range m {
-		tss := topoSlotSet{
-			slots: slots,
-			nodes: nodes,
-		}
+	for _, tss := range allTSS {
 		if err := tss.MarshalRESP(w); err != nil {
 			return err
 		}
@@ -63,19 +76,37 @@ func (tt *Topo) UnmarshalRESP(br *bufio.Reader) error {
 		}
 	}
 
+	nodeAddrM := map[string]Node{}
 	for _, tss := range slotSets {
 		for _, n := range tss.nodes {
-			*tt = append(*tt, n)
+			if existingN, ok := nodeAddrM[n.Addr]; ok {
+				existingN.Slots = append(existingN.Slots, n.Slots...)
+				nodeAddrM[n.Addr] = existingN
+			} else {
+				nodeAddrM[n.Addr] = n
+			}
 		}
+	}
+
+	for _, n := range nodeAddrM {
+		*tt = append(*tt, n)
 	}
 	tt.sort()
 	return nil
 }
 
 func (tt Topo) sort() {
+	// first go through each node and make sure the individual slot sets are
+	// sorted
+	for _, node := range tt {
+		sort.Slice(node.Slots, func(i, j int) bool {
+			return node.Slots[i][0] < node.Slots[j][0]
+		})
+	}
+
 	sort.Slice(tt, func(i, j int) bool {
 		if tt[i].Slots[0] != tt[j].Slots[0] {
-			return tt[i].Slots[0] < tt[j].Slots[0]
+			return tt[i].Slots[0][0] < tt[j].Slots[0][0]
 		}
 		// we want slaves to come after, which actually means they should be
 		// sorted as greater
@@ -157,7 +188,7 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 		node := Node{
 			Addr:  ip + ":" + port,
 			ID:    id,
-			Slots: tss.slots,
+			Slots: [][2]uint16{tss.slots},
 		}
 
 		if i == 0 {

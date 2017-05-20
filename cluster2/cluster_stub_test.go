@@ -26,6 +26,28 @@ type stubDataset struct {
 	slots map[uint16]stubSlot
 }
 
+func (sd stubDataset) slotRanges() [][2]uint16 {
+	slotIs := make([]uint16, 0, len(sd.slots))
+	for i := range sd.slots {
+		slotIs = append(slotIs, i)
+	}
+	sort.Slice(slotIs, func(i, j int) bool { return slotIs[i] < slotIs[j] })
+
+	ranges := make([][2]uint16, 0, 1)
+	for _, slot := range slotIs {
+		if len(ranges) == 0 {
+			ranges = append(ranges, [2]uint16{slot, slot + 1})
+		} else if lastRange := &(ranges[len(ranges)-1]); (*lastRange)[1] == slot {
+			(*lastRange)[1] = slot + 1
+		} else {
+			ranges = append(ranges, [2]uint16{slot, slot + 1})
+		}
+	}
+	return ranges
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // equivalent to a single redis instance
 type stub struct {
 	addr, id string
@@ -103,16 +125,6 @@ func (s *stub) newClient() radix.Client {
 	return radix.ConnClient(s.newConn())
 }
 
-// returns sorted list of all slot indices this stub owns
-func (s *stub) allSlots() []uint16 {
-	var slotIs []uint16
-	for slotI := range s.stubDataset.slots {
-		slotIs = append(slotIs, slotI)
-	}
-	sort.Slice(slotIs, func(i, j int) bool { return slotIs[i] < slotIs[j] })
-	return slotIs
-}
-
 func (s *stub) Close() error {
 	*s = stub{}
 	return nil
@@ -125,20 +137,27 @@ type stubCluster struct {
 }
 
 func newStubCluster(tt Topo) *stubCluster {
-	// map of slots to dataset
-	m := map[[2]uint16]*stubDataset{}
+	// map of addrs to dataset
+	m := map[string]*stubDataset{}
 	sc := &stubCluster{
 		stubs: make(map[string]*stub, len(tt)),
 	}
 
 	for _, t := range tt {
-		sd, ok := m[t.Slots]
+		addr := t.Addr
+		if t.SlaveOfAddr != "" {
+			addr = t.SlaveOfAddr
+		}
+
+		sd, ok := m[addr]
 		if !ok {
 			sd = &stubDataset{slots: map[uint16]stubSlot{}}
-			for i := t.Slots[0]; i < t.Slots[1]; i++ {
-				sd.slots[i] = stubSlot{kv: map[string]string{}}
+			for _, slots := range t.Slots {
+				for i := slots[0]; i < slots[1]; i++ {
+					sd.slots[i] = stubSlot{kv: map[string]string{}}
+				}
 			}
-			m[t.Slots] = sd
+			m[addr] = sd
 		}
 
 		sc.stubs[t.Addr] = &stub{
@@ -165,14 +184,10 @@ func (scl *stubCluster) stubForSlot(slot uint16) *stub {
 func (scl *stubCluster) topo() Topo {
 	var tt Topo
 	for _, s := range scl.stubs {
-		slots := s.allSlots()
 		tt = append(tt, Node{
-			Addr: s.addr,
-			ID:   s.id,
-			// TODO this assumes all each node can only have one contiguous slot
-			// range, is that true?
-			// slots contains each slot, but Slots is incl/excl
-			Slots:       [2]uint16{slots[0], slots[len(slots)-1] + 1},
+			Addr:        s.addr,
+			ID:          s.id,
+			Slots:       s.stubDataset.slotRanges(),
 			SlaveOfAddr: s.slaveOf,
 			SlaveOfID:   "", // TODO
 		})
