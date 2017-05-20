@@ -13,13 +13,23 @@ import (
 )
 
 // slotKeys contains a random key for every slot. Unfortunately I haven't come
-// up with a better way to do this than brute force. It takes like 5 seconds on
-// my laptop, which isn't terrible.
+// up with a better way to do this than brute force. It takes less than a second
+// on my laptop, so whatevs.
 var slotKeys = func() [numSlots]string {
 	var a [numSlots]string
 	for {
+		// we get a set of random characters and try increasingly larger subsets
+		// of that set until one is in a slot which hasn't been set yet. This is
+		// optimal because it minimizes the number of reads from random needed
+		// to fill a slot, and the keys being filled are of minimal size.
 		k := []byte(randStr())
-		a[Slot(k)] = string(k)
+		for i := 1; i <= len(k); i++ {
+			ksmall := k[:i]
+			if a[Slot(ksmall)] == "" {
+				a[Slot(ksmall)] = string(ksmall)
+				break
+			}
+		}
 
 		var notFull bool
 		for _, k := range a {
