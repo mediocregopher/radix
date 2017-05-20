@@ -35,10 +35,6 @@ type Client interface {
 	//Stats() map[string]interface{}
 }
 
-// TODO give Conn the Do method (somehow), to make it a Client itself, and make
-// sure all code and documentation doesn't use the Run method directly like I've
-// been doing
-
 // Conn is a Client which synchronously reads/writes data on a network
 // connection using the redis resp protocol.
 //
@@ -56,6 +52,24 @@ type Conn interface {
 	// Read and Write. When Close is called Encode and Decode will return an
 	// error on all future calls.
 	net.Conn
+}
+
+// TODO connClient is weird, if Conn was a Client also that'd be hella
+// convenient and make more sense
+
+type connClient struct {
+	Conn
+}
+
+// ConnClient wraps a Conn so it may be directly used as a Client
+func ConnClient(conn Conn) Client {
+	return connClient{conn}
+}
+
+// Do implements the method for the Client interface, directly passing in the
+// underlying Conn into the Action's Run method
+func (cc connClient) Do(a Action) error {
+	return a.Run(cc.Conn)
 }
 
 type connWrap struct {

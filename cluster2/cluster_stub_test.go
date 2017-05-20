@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,10 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type stubCluster struct {
-	stubs map[string]*stub // addr -> stub
-}
 
 type stubSlot struct {
 	kv                   map[string]string
@@ -104,6 +99,10 @@ func (s *stub) newConn() radix.Conn {
 	})
 }
 
+func (s *stub) newClient() radix.Client {
+	return radix.ConnClient(s.newConn())
+}
+
 // returns sorted list of all slot indices this stub owns
 func (s *stub) allSlots() []uint16 {
 	var slotIs []uint16
@@ -119,12 +118,10 @@ func (s *stub) Close() error {
 	return nil
 }
 
-func (s *stub) Do(a radix.Action) error {
-	if s.stubCluster == nil {
-		return errors.New("stub has been closed")
-	}
-	c := s.newConn()
-	return a.Run(c)
+////////////////////////////////////////////////////////////////////////////////
+
+type stubCluster struct {
+	stubs map[string]*stub // addr -> stub
 }
 
 func newStubCluster(tt Topo) *stubCluster {
@@ -188,7 +185,7 @@ func (scl *stubCluster) poolFunc() radix.PoolFunc {
 	return func(network, addr string) (radix.Client, error) {
 		for _, s := range scl.stubs {
 			if s.addr == addr {
-				return s, nil
+				return s.newClient(), nil
 			}
 		}
 		return nil, fmt.Errorf("unknown addr: %q", addr)
@@ -248,7 +245,7 @@ func TestStub(t *T) {
 	scl := newStubCluster(testTopo)
 
 	var outTT Topo
-	err := scl.randStub().Do(radix.CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
+	err := scl.randStub().newClient().Do(radix.CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 }

@@ -59,6 +59,8 @@ func newTestCluster() (*Cluster, *stubCluster) {
 }
 
 func TestClusterSync(t *T) {
+	t.Fatal("TODO this test is broke af, and the underlying stub code isn't much better")
+
 	c, scl := newTestCluster()
 	assertClusterState := func() {
 		c.RLock()
@@ -108,10 +110,10 @@ func TestMoved(t *T) {
 	keyA := slotKeys[slotA]
 	stubA, stubB := scl.stubForSlot(slotA), scl.stubForSlot(slotB)
 
-	require.Nil(t, stubA.Do(radix.Cmd(nil, "SET", keyA, "foo")))
+	require.Nil(t, stubA.newClient().Do(radix.Cmd(nil, "SET", keyA, "foo")))
 
 	// confirm that the stub is returning MOVED correctly
-	err := stubB.Do(radix.Cmd(nil, "GET", keyA))
+	err := stubB.newClient().Do(radix.Cmd(nil, "GET", keyA))
 	assertMoved(t, err, slotA, stubA.addr)
 
 	// confirm that cluster handles moves correctly, by first retrieving a conn
