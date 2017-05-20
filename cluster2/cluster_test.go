@@ -45,11 +45,7 @@ func randStr() string {
 
 func newTestCluster() (*Cluster, *stubCluster) {
 	scl := newStubCluster(testTopo)
-	c, err := NewCluster(scl.poolFunc(), scl.addrs()...)
-	if err != nil {
-		panic(err)
-	}
-	return c, scl
+	return scl.newCluster(), scl
 }
 
 func TestClusterSync(t *T) {
@@ -85,10 +81,7 @@ func TestClusterSync(t *T) {
 func TestGet(t *T) {
 	c, _ := newTestCluster()
 	for s := uint16(0); s < numSlots; s++ {
-		var connSlots []uint16
-		err := c.Do(radix.Cmd(&connSlots, "CONNSLOTS", slotKeys[s]))
-		require.Nil(t, err)
-		assert.True(t, s >= connSlots[0] && s < connSlots[1])
+		require.Nil(t, c.Do(radix.Cmd(nil, "GET", slotKeys[s])))
 	}
 }
 

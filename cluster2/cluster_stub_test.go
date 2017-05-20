@@ -3,6 +3,7 @@ package cluster
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	. "testing"
@@ -17,45 +18,76 @@ type stubCluster struct {
 	stubs map[string]*stub // addr -> stub
 }
 
+type stubSlot struct {
+	kv                   map[string]string
+	migrating, importing string // addr migrating to/importing from, if either
+}
+
 // stubDataset describes a dataset hosted by a stub instance. This is separated
 // out because different instances can host the same dataset (master and
 // slaves)
 type stubDataset struct {
-	slots [2]uint16 // slots, start is inclusive, end is exclusive
 	sync.Mutex
-	kv map[string]string
+	slots map[uint16]stubSlot
 }
 
 // equivalent to a single redis instance
 type stub struct {
 	addr, id string
-	slave    bool
+	slaveOf  string // addr slaved to, if slave
 	*stubDataset
 	*stubCluster
 }
 
-func newStubConn(s *stub) radix.Conn {
+func (s *stub) withKey(key string, asking bool, fn func(stubSlot) interface{}) interface{} {
+	s.stubDataset.Lock()
+	defer s.stubDataset.Unlock()
+
+	slotI := Slot([]byte(key))
+	slot, ok := s.stubDataset.slots[slotI]
+	if !ok {
+		movedStub := s.stubCluster.stubForSlot(slotI)
+		return resp.Error{E: fmt.Errorf("MOVED %d %s", slotI, movedStub.addr)}
+
+	} else if _, ok := slot.kv[key]; !ok && slot.migrating != "" {
+		return resp.Error{E: fmt.Errorf("ASK %d %s", slotI, slot.migrating)}
+
+	} else if slot.importing != "" && !asking {
+		return resp.Error{E: fmt.Errorf("MOVED %d %s", slotI, slot.importing)}
+	}
+
+	return fn(slot)
+}
+
+func (s *stub) newConn() radix.Conn {
+	asking := false // flag we hold onto in between commands
 	return radix.Stub("tcp", s.addr, func(args []string) interface{} {
-		s.stubDataset.Lock()
-		defer s.stubDataset.Unlock()
-		switch strings.ToUpper(string(args[0])) {
+		cmd := strings.ToUpper(args[0])
+
+		// If the cmd is not ASKING we need to unset the flag at the _end_ of
+		// this command, if it's set
+		if cmd != "ASKING" {
+			defer func() {
+				asking = false
+			}()
+		}
+
+		switch cmd {
 		case "GET":
 			k := args[1]
-			if err := s.maybeMoved(k); err != nil {
-				return err
-			}
-			s, ok := s.stubDataset.kv[k]
-			if !ok {
-				return nil
-			}
-			return s
+			return s.withKey(k, asking, func(slot stubSlot) interface{} {
+				s, ok := slot.kv[k]
+				if !ok {
+					return nil
+				}
+				return s
+			})
 		case "SET":
 			k := args[1]
-			if err := s.maybeMoved(k); err != nil {
-				return err
-			}
-			s.stubDataset.kv[k] = args[2]
-			return resp.SimpleString{S: []byte("OK")}
+			return s.withKey(k, asking, func(slot stubSlot) interface{} {
+				slot.kv[k] = args[2]
+				return resp.SimpleString{S: []byte("OK")}
+			})
 		case "PING":
 			return resp.SimpleString{S: []byte("PONG")}
 		case "CLUSTER":
@@ -63,22 +95,23 @@ func newStubConn(s *stub) radix.Conn {
 			case "SLOTS":
 				return s.stubCluster.topo()
 			}
-		case "CONNSLOTS":
-			return s.stubDataset.slots[:]
+		case "ASKING":
+			asking = true
+			return resp.SimpleString{S: []byte("OK")}
 		}
 
 		return resp.Error{E: fmt.Errorf("unknown command %#v", args)}
 	})
 }
 
-func (s *stub) maybeMoved(k string) error {
-	slot := Slot([]byte(k))
-	if slot >= s.slots[0] && slot < s.slots[1] {
-		return nil
+// returns sorted list of all slot indices this stub owns
+func (s *stub) allSlots() []uint16 {
+	var slotIs []uint16
+	for slotI := range s.stubDataset.slots {
+		slotIs = append(slotIs, slotI)
 	}
-
-	movedStub := s.stubCluster.stubForSlot(slot)
-	return resp.Error{E: fmt.Errorf("MOVED %d %s", slot, movedStub.addr)}
+	sort.Slice(slotIs, func(i, j int) bool { return slotIs[i] < slotIs[j] })
+	return slotIs
 }
 
 func (s *stub) Close() error {
@@ -90,7 +123,7 @@ func (s *stub) Do(a radix.Action) error {
 	if s.stubCluster == nil {
 		return errors.New("stub has been closed")
 	}
-	c := newStubConn(s)
+	c := s.newConn()
 	return a.Run(c)
 }
 
@@ -104,14 +137,17 @@ func newStubCluster(tt Topo) *stubCluster {
 	for _, t := range tt {
 		sd, ok := m[t.Slots]
 		if !ok {
-			sd = &stubDataset{slots: t.Slots, kv: map[string]string{}}
+			sd = &stubDataset{slots: map[uint16]stubSlot{}}
+			for i := t.Slots[0]; i < t.Slots[1]; i++ {
+				sd.slots[i] = stubSlot{kv: map[string]string{}}
+			}
 			m[t.Slots] = sd
 		}
 
 		sc.stubs[t.Addr] = &stub{
 			addr:        t.Addr,
 			id:          t.ID,
-			slave:       t.Slave,
+			slaveOf:     t.SlaveOfAddr,
 			stubDataset: sd,
 			stubCluster: sc,
 		}
@@ -122,7 +158,7 @@ func newStubCluster(tt Topo) *stubCluster {
 
 func (scl *stubCluster) stubForSlot(slot uint16) *stub {
 	for _, s := range scl.stubs {
-		if slot >= s.slots[0] && slot < s.slots[1] && !s.slave {
+		if _, ok := s.stubDataset.slots[slot]; ok && s.slaveOf == "" {
 			return s
 		}
 	}
@@ -132,11 +168,16 @@ func (scl *stubCluster) stubForSlot(slot uint16) *stub {
 func (scl *stubCluster) topo() Topo {
 	var tt Topo
 	for _, s := range scl.stubs {
+		slots := s.allSlots()
 		tt = append(tt, Node{
-			Addr:  s.addr,
-			ID:    s.id,
-			Slots: s.slots,
-			Slave: s.slave,
+			Addr: s.addr,
+			ID:   s.id,
+			// TODO this assumes all each node can only have one contiguous slot
+			// range, is that true?
+			// slots contains each slot, but Slots is incl/excl
+			Slots:       [2]uint16{slots[0], slots[len(slots)-1] + 1},
+			SlaveOfAddr: s.slaveOf,
+			SlaveOfID:   "", // TODO
 		})
 	}
 	tt.sort()
@@ -162,6 +203,14 @@ func (scl *stubCluster) addrs() []string {
 	return res
 }
 
+func (scl *stubCluster) newCluster() *Cluster {
+	c, err := NewCluster(scl.poolFunc(), scl.addrs()...)
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
 func (scl *stubCluster) randStub() *stub {
 	for _, s := range scl.stubs {
 		return s
@@ -178,7 +227,7 @@ func (scl *stubCluster) move(toAddr, fromAddr string) {
 	oldS := scl.stubs[fromAddr]
 	newS := &stub{
 		addr:        toAddr,
-		slave:       oldS.slave,
+		slaveOf:     oldS.slaveOf,
 		stubDataset: oldS.stubDataset,
 		stubCluster: oldS.stubCluster,
 	}

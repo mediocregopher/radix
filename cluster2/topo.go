@@ -17,7 +17,8 @@ type Node struct {
 	Addr, ID string
 	// start is inclusive, end is exclusive
 	Slots [2]uint16
-	Slave bool
+	// address and id this node is the slave of, if it's a slave
+	SlaveOfAddr, SlaveOfID string
 }
 
 // Topo describes the cluster topology at a given moment. It will be sorted
@@ -78,7 +79,7 @@ func (tt Topo) sort() {
 		}
 		// we want slaves to come after, which actually means they should be
 		// sorted as greater
-		return !tt[i].Slave
+		return tt[i].SlaveOfAddr == ""
 	})
 
 }
@@ -139,25 +140,34 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 	tss.slots[1]++
 	arrHead.N -= len(tss.slots)
 
+	var masterNode Node
 	for i := 0; i < arrHead.N; i++ {
-		var node []string
-		if err := (resp.Any{I: &node}).UnmarshalRESP(br); err != nil {
+		var nodeStrs []string
+		if err := (resp.Any{I: &nodeStrs}).UnmarshalRESP(br); err != nil {
 			return err
-		} else if len(node) < 2 {
-			return fmt.Errorf("malformed node array: %#v", node)
+		} else if len(nodeStrs) < 2 {
+			return fmt.Errorf("malformed node array: %#v", nodeStrs)
 		}
-		ip := node[0]
-		port := node[1]
+		ip, port := nodeStrs[0], nodeStrs[1]
 		var id string
-		if len(node) > 2 {
-			id = node[2]
+		if len(nodeStrs) > 2 {
+			id = nodeStrs[2]
 		}
-		tss.nodes = append(tss.nodes, Node{
+
+		node := Node{
 			Addr:  ip + ":" + port,
 			ID:    id,
 			Slots: tss.slots,
-			Slave: i > 0,
-		})
+		}
+
+		if i == 0 {
+			masterNode = node
+		} else {
+			node.SlaveOfAddr = masterNode.Addr
+			node.SlaveOfID = masterNode.ID
+		}
+
+		tss.nodes = append(tss.nodes, node)
 	}
 
 	return nil

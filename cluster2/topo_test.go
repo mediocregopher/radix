@@ -71,8 +71,10 @@ func TestParseTopo(t *T) {
 		Node{
 			Slots: [2]uint16{0, 2730},
 			Addr:  "10.128.0.3:6379", ID: "7be2403f92c00d4907da742ffa4c84b935228350",
-			Slave: true,
+			SlaveOfAddr: "10.128.0.34:6379",
+			SlaveOfID:   "062d8ca98db4deb6b2a3fc776a774dbb710c1a24",
 		},
+
 		Node{
 			Slots: [2]uint16{2730, 5461},
 			Addr:  "10.128.0.25:6379", ID: "78e4bb43f68cdc929815a65b4db0697fdda2a9fa",
@@ -80,8 +82,10 @@ func TestParseTopo(t *T) {
 		Node{
 			Slots: [2]uint16{2730, 5461},
 			Addr:  "10.128.0.28:6379", ID: "5a57538cd8ae102daee1dd7f34070e133ff92173",
-			Slave: true,
+			SlaveOfAddr: "10.128.0.25:6379",
+			SlaveOfID:   "78e4bb43f68cdc929815a65b4db0697fdda2a9fa",
 		},
+
 		Node{
 			Slots: [2]uint16{5461, 8191},
 			Addr:  "10.128.0.36:6379", ID: "a3c69665bb05c8d5770407cad5b35af29e740586",
@@ -89,8 +93,10 @@ func TestParseTopo(t *T) {
 		Node{
 			Slots: [2]uint16{5461, 8191},
 			Addr:  "10.128.0.24:6379", ID: "bef29809fbfe964d3b7c3ad02d3d9a40e55de317",
-			Slave: true,
+			SlaveOfAddr: "10.128.0.36:6379",
+			SlaveOfID:   "a3c69665bb05c8d5770407cad5b35af29e740586",
 		},
+
 		Node{
 			Slots: [2]uint16{8191, 10923},
 			Addr:  "10.128.0.29:6379", ID: "43f1b46d2772fd7bb78b144ddfc3fe77a9f21748",
@@ -98,8 +104,10 @@ func TestParseTopo(t *T) {
 		Node{
 			Slots: [2]uint16{8191, 10923},
 			Addr:  "10.128.0.26:6379", ID: "25339aee29100492d73cbfb1518e318ce1f2fd57",
-			Slave: true,
+			SlaveOfAddr: "10.128.0.29:6379",
+			SlaveOfID:   "43f1b46d2772fd7bb78b144ddfc3fe77a9f21748",
 		},
+
 		Node{
 			Slots: [2]uint16{10923, 13653},
 			Addr:  "10.128.0.20:6379", ID: "e0abc57f65496368e73a9b52b55efd00668adab7",
@@ -107,15 +115,19 @@ func TestParseTopo(t *T) {
 		Node{
 			Slots: [2]uint16{10923, 13653},
 			Addr:  "10.128.0.35:6379", ID: "3e231d265d6ec0c5aa11614eb86704b65f7f909e",
-			Slave: true,
+			SlaveOfAddr: "10.128.0.20:6379",
+			SlaveOfID:   "e0abc57f65496368e73a9b52b55efd00668adab7",
 		},
+
 		Node{
 			Slots: [2]uint16{13653, 16384},
 			Addr:  "10.128.0.30:6379", ID: "f7e95c8730634159bc79f9edac566f7b1c964cdd",
 		},
 		Node{
 			Slots: [2]uint16{13653, 16384},
-			Addr:  "10.128.0.27:6379", ID: "", Slave: true,
+			Addr:  "10.128.0.27:6379", ID: "",
+			SlaveOfAddr: "10.128.0.30:6379",
+			SlaveOfID:   "f7e95c8730634159bc79f9edac566f7b1c964cdd",
 		},
 	}
 
