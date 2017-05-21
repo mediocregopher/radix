@@ -88,7 +88,7 @@ func (c *Cluster) err(err error) {
 }
 
 // attempts to create a pool at the given address. The pool will be stored under
-// pools at the instance's id. If the instance was already there that will be
+// pools at the instance's addr. If the instance was already there that will be
 // returned instead
 func (c *Cluster) dirtyNewPool(addr string) (radix.Client, error) {
 	if p, ok := c.pools[addr]; ok {

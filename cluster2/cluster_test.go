@@ -57,37 +57,40 @@ func newTestCluster() (*Cluster, *stubCluster) {
 }
 
 func TestClusterSync(t *T) {
-	t.Fatal("TODO this test is broke af, and the underlying stub code isn't much better")
-
 	c, scl := newTestCluster()
 	assertClusterState := func() {
+		require.Nil(t, c.Sync())
 		c.RLock()
 		defer c.RUnlock()
-		assert.Len(t, c.pools, len(testTopo))
-		for addr := range c.pools {
-			assert.Contains(t, scl.stubs, addr)
+		assert.Equal(t, c.tt, scl.topo())
+		assert.Len(t, c.pools, len(c.tt))
+		for _, node := range c.tt {
+			assert.Contains(t, c.pools, node.Addr)
 		}
 	}
 	assertClusterState()
 
-	/*
-		// cluster is unstable af
-		for i := 0; i < 10; i++ {
-			// move a node to a new address
-			oldAddr := scl.randStub().addr
-			newAddr := "10.128.1.1:6379"
-			t.Logf("moving %s to %s", oldAddr, newAddr)
-			scl.move(newAddr, oldAddr)
-			require.Nil(t, c.Sync())
-			assertClusterState()
-
-			// move it back
-			t.Logf("moving %s to %s", newAddr, oldAddr)
-			scl.move(oldAddr, newAddr)
-			require.Nil(t, c.Sync())
-			assertClusterState()
+	// cluster is unstable af
+	for i := 0; i < 10; i++ {
+		// find a usabel src/dst
+		var srcStub, dstStub *stub
+		for {
+			srcStub = scl.randStub()
+			dstStub = scl.randStub()
+			if srcStub.addr == dstStub.addr {
+				continue
+			} else if slotRanges := srcStub.slotRanges(); len(slotRanges) == 0 {
+				continue
+			}
+			break
 		}
-	*/
+
+		// move src's first slot range to dst
+		slotRange := srcStub.slotRanges()[0]
+		t.Logf("moving %d:%d from %s to %s", slotRange[0], slotRange[1], srcStub.addr, dstStub.addr)
+		scl.migrateSlotRange(dstStub.addr, slotRange[0], slotRange[1])
+		assertClusterState()
+	}
 }
 
 func TestGet(t *T) {

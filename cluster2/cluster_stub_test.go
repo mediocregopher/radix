@@ -50,8 +50,8 @@ func (sd stubDataset) slotRanges() [][2]uint16 {
 
 // equivalent to a single redis instance
 type stub struct {
-	addr, id string
-	slaveOf  string // addr slaved to, if slave
+	addr, id               string
+	slaveOfAddr, slaveOfID string // set if slave
 	*stubDataset
 	*stubCluster
 }
@@ -163,7 +163,8 @@ func newStubCluster(tt Topo) *stubCluster {
 		sc.stubs[t.Addr] = &stub{
 			addr:        t.Addr,
 			id:          t.ID,
-			slaveOf:     t.SlaveOfAddr,
+			slaveOfAddr: t.SlaveOfAddr,
+			slaveOfID:   t.SlaveOfID,
 			stubDataset: sd,
 			stubCluster: sc,
 		}
@@ -174,7 +175,7 @@ func newStubCluster(tt Topo) *stubCluster {
 
 func (scl *stubCluster) stubForSlot(slot uint16) *stub {
 	for _, s := range scl.stubs {
-		if slot, ok := s.stubDataset.slots[slot]; ok && s.slaveOf == "" && slot.importing == "" {
+		if slot, ok := s.stubDataset.slots[slot]; ok && s.slaveOfAddr == "" && slot.importing == "" {
 			return s
 		}
 	}
@@ -184,12 +185,16 @@ func (scl *stubCluster) stubForSlot(slot uint16) *stub {
 func (scl *stubCluster) topo() Topo {
 	var tt Topo
 	for _, s := range scl.stubs {
+		slotRanges := s.stubDataset.slotRanges()
+		if len(slotRanges) == 0 {
+			continue
+		}
 		tt = append(tt, Node{
 			Addr:        s.addr,
 			ID:          s.id,
-			Slots:       s.stubDataset.slotRanges(),
-			SlaveOfAddr: s.slaveOf,
-			SlaveOfID:   "", // TODO
+			Slots:       slotRanges,
+			SlaveOfAddr: s.slaveOfAddr,
+			SlaveOfID:   s.slaveOfID,
 		})
 	}
 	tt.sort()
@@ -225,7 +230,9 @@ func (scl *stubCluster) newCluster() *Cluster {
 
 func (scl *stubCluster) randStub() *stub {
 	for _, s := range scl.stubs {
-		return s
+		if s.slaveOfAddr != "" {
+			return s
+		}
 	}
 	panic("cluster is empty?")
 }
@@ -304,6 +311,14 @@ func (scl *stubCluster) migrateDone(slot uint16) {
 	dstSlot := dst.stubDataset.slots[slot]
 	dstSlot.importing = ""
 	dst.stubDataset.slots[slot] = dstSlot
+}
+
+func (scl *stubCluster) migrateSlotRange(dstAddr string, start, end uint16) {
+	for slot := start; slot < end; slot++ {
+		scl.migrateInit(dstAddr, slot)
+		scl.migrateAllKeys(slot)
+		scl.migrateDone(slot)
+	}
 }
 
 // Who watches the watchmen?
