@@ -174,7 +174,7 @@ func newStubCluster(tt Topo) *stubCluster {
 
 func (scl *stubCluster) stubForSlot(slot uint16) *stub {
 	for _, s := range scl.stubs {
-		if _, ok := s.stubDataset.slots[slot]; ok && s.slaveOf == "" {
+		if slot, ok := s.stubDataset.slots[slot]; ok && s.slaveOf == "" && slot.importing == "" {
 			return s
 		}
 	}
@@ -230,29 +230,80 @@ func (scl *stubCluster) randStub() *stub {
 	panic("cluster is empty?")
 }
 
-// TODO what's actually needed here is a way of moving slots from one address to
-// another, somehow checking on the master/slave status too maybe
+// Migration steps:
+// * Mark slot as migrating on src and importing on dst
+// * Move each key individually
+// * Mark slots as migrated, note slot change in datasets
+//
+// At any point inside those steps we need to be able to run a test
 
-// removes the fromAddr from the cluster, initiating a new stub at toAddr with
-// the same dataset and slots (and no id cause fuck it)
-func (scl *stubCluster) move(toAddr, fromAddr string) {
-	oldS := scl.stubs[fromAddr]
-	newS := &stub{
-		addr:        toAddr,
-		slaveOf:     oldS.slaveOf,
-		stubDataset: oldS.stubDataset,
-		stubCluster: oldS.stubCluster,
+func (scl *stubCluster) migrateInit(dstAddr string, slot uint16) {
+	src := scl.stubForSlot(slot)
+	src.stubDataset.Lock()
+	defer src.stubDataset.Unlock()
+
+	dst := scl.stubs[dstAddr]
+	dst.stubDataset.Lock()
+	defer dst.stubDataset.Unlock()
+
+	srcSlot := src.stubDataset.slots[slot]
+	srcSlot.migrating = dst.addr
+	src.stubDataset.slots[slot] = srcSlot
+
+	dst.stubDataset.slots[slot] = stubSlot{
+		kv:        map[string]string{},
+		importing: src.addr,
 	}
-	oldS.Close()
-	delete(scl.stubs, fromAddr)
-	scl.stubs[toAddr] = newS
 }
 
-func (scl *stubCluster) swap(addrA, addrB string) {
-	stubA, stubB := scl.stubs[addrA], scl.stubs[addrB]
-	stubA.addr, stubB.addr = stubB.addr, stubA.addr
-	scl.stubs[stubA.addr] = stubA
-	scl.stubs[stubB.addr] = stubB
+// migrateInit must have been called on the slot this key belongs to
+func (scl *stubCluster) migrateKey(key string) {
+	slot := Slot([]byte(key))
+	src := scl.stubForSlot(slot)
+	src.stubDataset.Lock()
+	defer src.stubDataset.Unlock()
+
+	srcSlot := src.stubDataset.slots[slot]
+	dst := scl.stubs[srcSlot.migrating]
+	dst.stubDataset.Lock()
+	defer dst.stubDataset.Unlock()
+
+	dst.stubDataset.slots[slot].kv[key] = srcSlot.kv[key]
+	delete(srcSlot.kv, key)
+}
+
+// migrateInit must have been called on the slot already
+func (scl *stubCluster) migrateAllKeys(slot uint16) {
+	src := scl.stubForSlot(slot)
+	src.stubDataset.Lock()
+	defer src.stubDataset.Unlock()
+
+	srcSlot := src.stubDataset.slots[slot]
+	dst := scl.stubs[srcSlot.migrating]
+	dst.stubDataset.Lock()
+	defer dst.stubDataset.Unlock()
+
+	for k, v := range srcSlot.kv {
+		dst.stubDataset.slots[slot].kv[k] = v
+		delete(srcSlot.kv, k)
+	}
+}
+
+// all keys must have been migrated to call this, probably via migrateAllKeys
+func (scl *stubCluster) migrateDone(slot uint16) {
+	src := scl.stubForSlot(slot)
+	src.stubDataset.Lock()
+	defer src.stubDataset.Unlock()
+
+	srcSlot := src.stubDataset.slots[slot]
+	dst := scl.stubs[srcSlot.migrating]
+	dst.stubDataset.Lock()
+	defer dst.stubDataset.Unlock()
+
+	delete(src.stubDataset.slots, slot)
+	dstSlot := dst.stubDataset.slots[slot]
+	dstSlot.importing = ""
+	dst.stubDataset.slots[slot] = dstSlot
 }
 
 // Who watches the watchmen?
@@ -263,4 +314,46 @@ func TestStub(t *T) {
 	err := scl.randStub().newClient().Do(radix.CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
+
+	// make sure that moving slots works, start by marking the slot 0 as
+	// migrating to another addr (dst). We choose dst as the node which holds
+	// some arbitrary high number slot
+	src := scl.stubForSlot(0)
+	srcClient := src.newClient()
+	key := slotKeys[0]
+	require.Nil(t, srcClient.Do(radix.Cmd(nil, "SET", key, "foo")))
+	dst := scl.stubForSlot(10000)
+	dstClient := dst.newClient()
+	scl.migrateInit(dst.addr, 0)
+
+	// getting a key from that slot from the original should still work
+	var val string
+	require.Nil(t, srcClient.Do(radix.Cmd(&val, "GET", key)))
+	assert.Equal(t, "foo", val)
+
+	// getting on the new dst should give MOVED
+	err = dstClient.Do(radix.Cmd(nil, "GET", key))
+	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
+
+	// actually migrate that key ...
+	scl.migrateKey(key)
+	// ... then doing the GET on the src should give an ASK error ...
+	err = srcClient.Do(radix.Cmd(nil, "GET", key))
+	assert.Equal(t, "ASK 0 "+dst.addr, err.Error())
+	// ... doing the GET on the dst _without_ asking should give MOVED again ...
+	err = dstClient.Do(radix.Cmd(nil, "GET", key))
+	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
+	// ... but doing it with ASKING on dst should work
+	require.Nil(t, dstClient.Do(radix.CmdNoKey(nil, "ASKING")))
+	require.Nil(t, dstClient.Do(radix.Cmd(nil, "GET", key)))
+	assert.Equal(t, "foo", val)
+
+	// finish the migration, then src should always MOVED, dst should always
+	// work
+	scl.migrateAllKeys(0)
+	scl.migrateDone(0)
+	err = srcClient.Do(radix.Cmd(nil, "GET", key))
+	assert.Equal(t, "MOVED 0 "+dst.addr, err.Error())
+	require.Nil(t, dstClient.Do(radix.Cmd(nil, "GET", key)))
+	assert.Equal(t, "foo", val)
 }
