@@ -41,22 +41,6 @@ func (d *dedupe) do(fn func()) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// errClient is a client which returns an error for all calls to Do and never
-// actually does anything with the given Actions
-type errClient struct {
-	err error
-}
-
-func (ec errClient) Do(radix.Action) error {
-	return ec.err
-}
-
-func (ec errClient) Close() error {
-	return nil
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 // Cluster contains all information about a redis cluster needed to interact
 // with it, including a set of pools to each of its instances. All methods on
 // Cluster are thread-safe
@@ -122,44 +106,61 @@ func (c *Cluster) err(err error) {
 	}
 }
 
-// attempts to create a pool at the given address. The pool will be stored under
-// pools at the instance's addr. If the instance was already there that will be
-// returned instead
-func (c *Cluster) dirtyNewPool(addr string) (radix.Client, error) {
-	if p, ok := c.pools[addr]; ok {
-		return p, nil
-	}
-
-	p, err := c.pf("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	c.pools[addr] = p
-	return p, nil
-}
-
-func (c *Cluster) pool(addr string) radix.Client {
+// may return nil, nil if no pool for the addr
+func (c *Cluster) rpool(addr string) (radix.Client, error) {
 	c.RLock()
 	defer c.RUnlock()
 	if addr == "" {
 		for _, p := range c.pools {
-			return p
+			return p, nil
 		}
-		return errClient{err: errors.New("no pools available")}
+		return nil, errors.New("no pools available")
 	} else if p, ok := c.pools[addr]; ok {
-		return p
+		return p, nil
+	}
+	return nil, nil
+}
+
+// if addr is "" returns a random pool. If addr is given but there's no pool for
+// it one will be created on-the-fly
+func (c *Cluster) pool(addr string) (radix.Client, error) {
+	p, err := c.rpool(addr)
+	if p != nil || err != nil {
+		return p, err
 	}
 
-	// TODO during a failover it's possible that a client would get a MOVED/ASK
-	// for the new addr before sync is called, and they would get this error in
-	// that case. we should have this function kick off making a pool if needed.
-	return errClient{err: fmt.Errorf("no available pool for addr %q", addr)}
+	// if the pool isn't available make it on-the-fly. This behavior isn't
+	// _great_, but theoretically the syncEvery process should clean up any
+	// extraneous pools which aren't really needed
+
+	// it's important that the cluster pool set isn't locked while this is
+	// happening, because this could block for a while
+	if p, err = c.pf("tcp", addr); err != nil {
+		return nil, err
+	}
+
+	// we've made a new pool, but we need to double-check someone else didn't
+	// make one at the same time and add it in first. If they did, close this
+	// one and return that one
+	c.Lock()
+	if p2, ok := c.pools[addr]; ok {
+		c.Unlock()
+		p.Close()
+		return p2, nil
+	}
+	c.pools[addr] = p
+	c.Unlock()
+	return p, nil
 }
 
 // Topo will pick a randdom node in the cluster, call CLUSTER SLOTS on it, and
 // unmarshal the result into a Topo instance, returning that instance
 func (c *Cluster) Topo() (Topo, error) {
-	return c.topo(c.pool(""))
+	p, err := c.pool("")
+	if err != nil {
+		return Topo{}, err
+	}
+	return c.topo(p)
 }
 
 func (c *Cluster) topo(p radix.Client) (Topo, error) {
@@ -173,9 +174,12 @@ func (c *Cluster) topo(p radix.Client) (Topo, error) {
 // This will be called periodically automatically, but you can manually call it
 // at any time as well
 func (c *Cluster) Sync() error {
-	var err error
+	p, err := c.pool("")
+	if err != nil {
+		return err
+	}
 	c.syncDedupe.do(func() {
-		err = c.sync(c.pool(""))
+		err = c.sync(p)
 	})
 	return err
 }
@@ -188,19 +192,18 @@ func (c *Cluster) sync(p radix.Client) error {
 		return err
 	}
 
-	c.Lock()
-	defer c.Unlock()
-	c.tt = tt
-
-	// TODO what happens if one of the pools fails to be created mid-way? we
-	// have an incomplete topology then. Might be betterh to put tt and pools
-	// under a single type which can be bailed on completely
-
 	for _, t := range tt {
-		if _, err := c.dirtyNewPool(t.Addr); err != nil {
+		// call pool just to ensure one exists for this addr
+		if _, err := c.pool(t.Addr); err != nil {
 			return fmt.Errorf("error connecting to %s: %s", t.Addr, err)
 		}
 	}
+
+	// this is a big bit of code to totally lockdown the cluster for, but at the
+	// same time Close _shouldn't_ block significantly
+	c.Lock()
+	defer c.Unlock()
+	c.tt = tt
 
 	tm := tt.Map()
 	for addr, p := range c.pools {
@@ -260,11 +263,12 @@ func (c *Cluster) Do(a radix.Action) error {
 }
 
 func (c *Cluster) doInner(a radix.Action, addr string, ask bool, attempts int) error {
-	if attempts <= 0 {
-		return errors.New("cluster action redirected too many times")
+	p, err := c.pool(addr)
+	if err != nil {
+		return err
 	}
 
-	err := c.pool(addr).Do(radix.WithConn(a.Key(), func(conn radix.Conn) error {
+	err = p.Do(radix.WithConn(a.Key(), func(conn radix.Conn) error {
 		if ask {
 			if err := radix.CmdNoKey(nil, "ASKING").Run(conn); err != nil {
 				return err
@@ -302,7 +306,11 @@ func (c *Cluster) doInner(a radix.Action, addr string, ask bool, attempts int) e
 	}
 	addr = msgParts[2]
 
-	return c.doInner(a, addr, ask, attempts-1)
+	if attempts--; attempts <= 0 {
+		return errors.New("cluster action redirected too many times")
+	}
+
+	return c.doInner(a, addr, ask, attempts)
 }
 
 // Close cleans up all goroutines spawned by Cluster and closes all of its
