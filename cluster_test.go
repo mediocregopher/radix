@@ -1,19 +1,16 @@
-package cluster
+package radix
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	. "testing"
 
-	radix "github.com/mediocregopher/radix.v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// slotKeys contains a random key for every slot. Unfortunately I haven't come
-// up with a better way to do this than brute force. It takes less than a second
-// on my laptop, so whatevs.
-var slotKeys = func() [numSlots]string {
+// clusterSlotKeys contains a random key for every slot. Unfortunately I haven't
+// come up with a better way to do this than brute force. It takes less than a
+// second on my laptop, so whatevs.
+var clusterSlotKeys = func() [numSlots]string {
 	var a [numSlots]string
 	for {
 		// we get a set of random characters and try increasingly larger subsets
@@ -23,8 +20,8 @@ var slotKeys = func() [numSlots]string {
 		k := []byte(randStr())
 		for i := 1; i <= len(k); i++ {
 			ksmall := k[:i]
-			if a[Slot(ksmall)] == "" {
-				a[Slot(ksmall)] = string(ksmall)
+			if a[ClusterSlot(ksmall)] == "" {
+				a[ClusterSlot(ksmall)] = string(ksmall)
 				break
 			}
 		}
@@ -43,15 +40,7 @@ var slotKeys = func() [numSlots]string {
 	}
 }()
 
-func randStr() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}
-
-func newTestCluster() (*Cluster, *stubCluster) {
+func newTestCluster() (*Cluster, *clusterStub) {
 	scl := newStubCluster(testTopo)
 	return scl.newCluster(), scl
 }
@@ -73,7 +62,7 @@ func TestClusterSync(t *T) {
 	// cluster is unstable af
 	for i := 0; i < 10; i++ {
 		// find a usabel src/dst
-		var srcStub, dstStub *stub
+		var srcStub, dstStub *clusterNodeStub
 		for {
 			srcStub = scl.randStub()
 			dstStub = scl.randStub()
@@ -93,14 +82,14 @@ func TestClusterSync(t *T) {
 	}
 }
 
-func TestGet(t *T) {
+func TestClusterGet(t *T) {
 	c, _ := newTestCluster()
 	for s := uint16(0); s < numSlots; s++ {
-		require.Nil(t, c.Do(radix.Cmd(nil, "GET", slotKeys[s])))
+		require.Nil(t, c.Do(Cmd(nil, "GET", clusterSlotKeys[s])))
 	}
 }
 
-func TestDo(t *T) {
+func TestClusterDo(t *T) {
 	c, scl := newTestCluster()
 	stub0 := scl.stubForSlot(0)
 	stub16k := scl.stubForSlot(16000)
@@ -109,11 +98,11 @@ func TestDo(t *T) {
 	require.NotEqual(t, stub0.addr, stub16k.addr)
 
 	// basic Cmd
-	k, v := slotKeys[0], randStr()
-	require.Nil(t, c.Do(radix.Cmd(nil, "SET", k, v)))
+	k, v := clusterSlotKeys[0], randStr()
+	require.Nil(t, c.Do(Cmd(nil, "SET", k, v)))
 	{
 		var vgot string
-		require.Nil(t, c.Do(radix.Cmd(&vgot, "GET", k)))
+		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
 	}
 
@@ -121,7 +110,7 @@ func TestDo(t *T) {
 	// and end up at the correct node
 	{
 		var vgot string
-		cmd := radix.Cmd(&vgot, "GET", k)
+		cmd := Cmd(&vgot, "GET", k)
 		require.Nil(t, c.doInner(cmd, stub16k.addr, false, 2))
 		assert.Equal(t, v, vgot)
 	}
@@ -132,7 +121,7 @@ func TestDo(t *T) {
 		scl.migrateInit(stub16k.addr, 0)
 		scl.migrateKey(k)
 		var vgot string
-		require.Nil(t, c.Do(radix.Cmd(&vgot, "GET", k)))
+		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
 		scl.migrateAllKeys(0)
 		scl.migrateDone(0)

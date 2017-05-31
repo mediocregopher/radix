@@ -1,4 +1,4 @@
-package cluster
+package radix
 
 import (
 	"fmt"
@@ -7,26 +7,25 @@ import (
 	"sync"
 	. "testing"
 
-	radix "github.com/mediocregopher/radix.v2"
 	"github.com/mediocregopher/radix.v2/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type stubSlot struct {
+type clusterSlotStub struct {
 	kv                   map[string]string
 	migrating, importing string // addr migrating to/importing from, if either
 }
 
-// stubDataset describes a dataset hosted by a stub instance. This is separated
-// out because different instances can host the same dataset (master and
-// slaves)
-type stubDataset struct {
+// clusterDatasetStub describes a dataset hosted by a clusterStub instance. This
+// is separated out because different instances can host the same dataset
+// (master and slaves)
+type clusterDatasetStub struct {
 	sync.Mutex
-	slots map[uint16]stubSlot
+	slots map[uint16]clusterSlotStub
 }
 
-func (sd stubDataset) slotRanges() [][2]uint16 {
+func (sd clusterDatasetStub) slotRanges() [][2]uint16 {
 	slotIs := make([]uint16, 0, len(sd.slots))
 	for i := range sd.slots {
 		slotIs = append(slotIs, i)
@@ -49,21 +48,21 @@ func (sd stubDataset) slotRanges() [][2]uint16 {
 ////////////////////////////////////////////////////////////////////////////////
 
 // equivalent to a single redis instance
-type stub struct {
+type clusterNodeStub struct {
 	addr, id               string
 	slaveOfAddr, slaveOfID string // set if slave
-	*stubDataset
-	*stubCluster
+	*clusterDatasetStub
+	*clusterStub
 }
 
-func (s *stub) withKey(key string, asking bool, fn func(stubSlot) interface{}) interface{} {
-	s.stubDataset.Lock()
-	defer s.stubDataset.Unlock()
+func (s *clusterNodeStub) withKey(key string, asking bool, fn func(clusterSlotStub) interface{}) interface{} {
+	s.clusterDatasetStub.Lock()
+	defer s.clusterDatasetStub.Unlock()
 
-	slotI := Slot([]byte(key))
-	slot, ok := s.stubDataset.slots[slotI]
+	slotI := ClusterSlot([]byte(key))
+	slot, ok := s.clusterDatasetStub.slots[slotI]
 	if !ok {
-		movedStub := s.stubCluster.stubForSlot(slotI)
+		movedStub := s.clusterStub.stubForSlot(slotI)
 		return resp.Error{E: fmt.Errorf("MOVED %d %s", slotI, movedStub.addr)}
 
 	} else if _, ok := slot.kv[key]; !ok && slot.migrating != "" {
@@ -76,9 +75,9 @@ func (s *stub) withKey(key string, asking bool, fn func(stubSlot) interface{}) i
 	return fn(slot)
 }
 
-func (s *stub) newConn() radix.Conn {
+func (s *clusterNodeStub) newConn() Conn {
 	asking := false // flag we hold onto in between commands
-	return radix.Stub("tcp", s.addr, func(args []string) interface{} {
+	return Stub("tcp", s.addr, func(args []string) interface{} {
 		cmd := strings.ToUpper(args[0])
 
 		// If the cmd is not ASKING we need to unset the flag at the _end_ of
@@ -92,7 +91,7 @@ func (s *stub) newConn() radix.Conn {
 		switch cmd {
 		case "GET":
 			k := args[1]
-			return s.withKey(k, asking, func(slot stubSlot) interface{} {
+			return s.withKey(k, asking, func(slot clusterSlotStub) interface{} {
 				s, ok := slot.kv[k]
 				if !ok {
 					return nil
@@ -101,7 +100,7 @@ func (s *stub) newConn() radix.Conn {
 			})
 		case "SET":
 			k := args[1]
-			return s.withKey(k, asking, func(slot stubSlot) interface{} {
+			return s.withKey(k, asking, func(slot clusterSlotStub) interface{} {
 				slot.kv[k] = args[2]
 				return resp.SimpleString{S: []byte("OK")}
 			})
@@ -110,7 +109,7 @@ func (s *stub) newConn() radix.Conn {
 		case "CLUSTER":
 			switch strings.ToUpper(args[1]) {
 			case "SLOTS":
-				return s.stubCluster.topo()
+				return s.clusterStub.topo()
 			}
 		case "ASKING":
 			asking = true
@@ -121,26 +120,26 @@ func (s *stub) newConn() radix.Conn {
 	})
 }
 
-func (s *stub) newClient() radix.Client {
-	return radix.ConnClient(s.newConn())
+func (s *clusterNodeStub) newClient() Client {
+	return ConnClient(s.newConn())
 }
 
-func (s *stub) Close() error {
-	*s = stub{}
+func (s *clusterNodeStub) Close() error {
+	*s = clusterNodeStub{}
 	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type stubCluster struct {
-	stubs map[string]*stub // addr -> stub
+type clusterStub struct {
+	stubs map[string]*clusterNodeStub // addr -> stub
 }
 
-func newStubCluster(tt Topo) *stubCluster {
+func newStubCluster(tt ClusterTopo) *clusterStub {
 	// map of addrs to dataset
-	m := map[string]*stubDataset{}
-	sc := &stubCluster{
-		stubs: make(map[string]*stub, len(tt)),
+	m := map[string]*clusterDatasetStub{}
+	sc := &clusterStub{
+		stubs: make(map[string]*clusterNodeStub, len(tt)),
 	}
 
 	for _, t := range tt {
@@ -151,45 +150,45 @@ func newStubCluster(tt Topo) *stubCluster {
 
 		sd, ok := m[addr]
 		if !ok {
-			sd = &stubDataset{slots: map[uint16]stubSlot{}}
+			sd = &clusterDatasetStub{slots: map[uint16]clusterSlotStub{}}
 			for _, slots := range t.Slots {
 				for i := slots[0]; i < slots[1]; i++ {
-					sd.slots[i] = stubSlot{kv: map[string]string{}}
+					sd.slots[i] = clusterSlotStub{kv: map[string]string{}}
 				}
 			}
 			m[addr] = sd
 		}
 
-		sc.stubs[t.Addr] = &stub{
-			addr:        t.Addr,
-			id:          t.ID,
-			slaveOfAddr: t.SlaveOfAddr,
-			slaveOfID:   t.SlaveOfID,
-			stubDataset: sd,
-			stubCluster: sc,
+		sc.stubs[t.Addr] = &clusterNodeStub{
+			addr:               t.Addr,
+			id:                 t.ID,
+			slaveOfAddr:        t.SlaveOfAddr,
+			slaveOfID:          t.SlaveOfID,
+			clusterDatasetStub: sd,
+			clusterStub:        sc,
 		}
 	}
 
 	return sc
 }
 
-func (scl *stubCluster) stubForSlot(slot uint16) *stub {
+func (scl *clusterStub) stubForSlot(slot uint16) *clusterNodeStub {
 	for _, s := range scl.stubs {
-		if slot, ok := s.stubDataset.slots[slot]; ok && s.slaveOfAddr == "" && slot.importing == "" {
+		if slot, ok := s.clusterDatasetStub.slots[slot]; ok && s.slaveOfAddr == "" && slot.importing == "" {
 			return s
 		}
 	}
 	panic(fmt.Sprintf("couldn't find stub for slot %d", slot))
 }
 
-func (scl *stubCluster) topo() Topo {
-	var tt Topo
+func (scl *clusterStub) topo() ClusterTopo {
+	var tt ClusterTopo
 	for _, s := range scl.stubs {
-		slotRanges := s.stubDataset.slotRanges()
+		slotRanges := s.clusterDatasetStub.slotRanges()
 		if len(slotRanges) == 0 {
 			continue
 		}
-		tt = append(tt, Node{
+		tt = append(tt, ClusterNode{
 			Addr:        s.addr,
 			ID:          s.id,
 			Slots:       slotRanges,
@@ -201,8 +200,8 @@ func (scl *stubCluster) topo() Topo {
 	return tt
 }
 
-func (scl *stubCluster) poolFunc() radix.PoolFunc {
-	return func(network, addr string) (radix.Client, error) {
+func (scl *clusterStub) poolFunc() PoolFunc {
+	return func(network, addr string) (Client, error) {
 		for _, s := range scl.stubs {
 			if s.addr == addr {
 				return s.newClient(), nil
@@ -212,7 +211,7 @@ func (scl *stubCluster) poolFunc() radix.PoolFunc {
 	}
 }
 
-func (scl *stubCluster) addrs() []string {
+func (scl *clusterStub) addrs() []string {
 	var res []string
 	for _, s := range scl.stubs {
 		res = append(res, s.addr)
@@ -220,7 +219,7 @@ func (scl *stubCluster) addrs() []string {
 	return res
 }
 
-func (scl *stubCluster) newCluster() *Cluster {
+func (scl *clusterStub) newCluster() *Cluster {
 	c, err := NewCluster(scl.poolFunc(), scl.addrs()...)
 	if err != nil {
 		panic(err)
@@ -228,7 +227,7 @@ func (scl *stubCluster) newCluster() *Cluster {
 	return c
 }
 
-func (scl *stubCluster) randStub() *stub {
+func (scl *clusterStub) randStub() *clusterNodeStub {
 	for _, s := range scl.stubs {
 		if s.slaveOfAddr != "" {
 			return s
@@ -244,76 +243,76 @@ func (scl *stubCluster) randStub() *stub {
 //
 // At any point inside those steps we need to be able to run a test
 
-func (scl *stubCluster) migrateInit(dstAddr string, slot uint16) {
+func (scl *clusterStub) migrateInit(dstAddr string, slot uint16) {
 	src := scl.stubForSlot(slot)
-	src.stubDataset.Lock()
-	defer src.stubDataset.Unlock()
+	src.clusterDatasetStub.Lock()
+	defer src.clusterDatasetStub.Unlock()
 
 	dst := scl.stubs[dstAddr]
-	dst.stubDataset.Lock()
-	defer dst.stubDataset.Unlock()
+	dst.clusterDatasetStub.Lock()
+	defer dst.clusterDatasetStub.Unlock()
 
-	srcSlot := src.stubDataset.slots[slot]
+	srcSlot := src.clusterDatasetStub.slots[slot]
 	srcSlot.migrating = dst.addr
-	src.stubDataset.slots[slot] = srcSlot
+	src.clusterDatasetStub.slots[slot] = srcSlot
 
-	dst.stubDataset.slots[slot] = stubSlot{
+	dst.clusterDatasetStub.slots[slot] = clusterSlotStub{
 		kv:        map[string]string{},
 		importing: src.addr,
 	}
 }
 
 // migrateInit must have been called on the slot this key belongs to
-func (scl *stubCluster) migrateKey(key string) {
-	slot := Slot([]byte(key))
+func (scl *clusterStub) migrateKey(key string) {
+	slot := ClusterSlot([]byte(key))
 	src := scl.stubForSlot(slot)
-	src.stubDataset.Lock()
-	defer src.stubDataset.Unlock()
+	src.clusterDatasetStub.Lock()
+	defer src.clusterDatasetStub.Unlock()
 
-	srcSlot := src.stubDataset.slots[slot]
+	srcSlot := src.clusterDatasetStub.slots[slot]
 	dst := scl.stubs[srcSlot.migrating]
-	dst.stubDataset.Lock()
-	defer dst.stubDataset.Unlock()
+	dst.clusterDatasetStub.Lock()
+	defer dst.clusterDatasetStub.Unlock()
 
-	dst.stubDataset.slots[slot].kv[key] = srcSlot.kv[key]
+	dst.clusterDatasetStub.slots[slot].kv[key] = srcSlot.kv[key]
 	delete(srcSlot.kv, key)
 }
 
 // migrateInit must have been called on the slot already
-func (scl *stubCluster) migrateAllKeys(slot uint16) {
+func (scl *clusterStub) migrateAllKeys(slot uint16) {
 	src := scl.stubForSlot(slot)
-	src.stubDataset.Lock()
-	defer src.stubDataset.Unlock()
+	src.clusterDatasetStub.Lock()
+	defer src.clusterDatasetStub.Unlock()
 
-	srcSlot := src.stubDataset.slots[slot]
+	srcSlot := src.clusterDatasetStub.slots[slot]
 	dst := scl.stubs[srcSlot.migrating]
-	dst.stubDataset.Lock()
-	defer dst.stubDataset.Unlock()
+	dst.clusterDatasetStub.Lock()
+	defer dst.clusterDatasetStub.Unlock()
 
 	for k, v := range srcSlot.kv {
-		dst.stubDataset.slots[slot].kv[k] = v
+		dst.clusterDatasetStub.slots[slot].kv[k] = v
 		delete(srcSlot.kv, k)
 	}
 }
 
 // all keys must have been migrated to call this, probably via migrateAllKeys
-func (scl *stubCluster) migrateDone(slot uint16) {
+func (scl *clusterStub) migrateDone(slot uint16) {
 	src := scl.stubForSlot(slot)
-	src.stubDataset.Lock()
-	defer src.stubDataset.Unlock()
+	src.clusterDatasetStub.Lock()
+	defer src.clusterDatasetStub.Unlock()
 
-	srcSlot := src.stubDataset.slots[slot]
+	srcSlot := src.clusterDatasetStub.slots[slot]
 	dst := scl.stubs[srcSlot.migrating]
-	dst.stubDataset.Lock()
-	defer dst.stubDataset.Unlock()
+	dst.clusterDatasetStub.Lock()
+	defer dst.clusterDatasetStub.Unlock()
 
-	delete(src.stubDataset.slots, slot)
-	dstSlot := dst.stubDataset.slots[slot]
+	delete(src.clusterDatasetStub.slots, slot)
+	dstSlot := dst.clusterDatasetStub.slots[slot]
 	dstSlot.importing = ""
-	dst.stubDataset.slots[slot] = dstSlot
+	dst.clusterDatasetStub.slots[slot] = dstSlot
 }
 
-func (scl *stubCluster) migrateSlotRange(dstAddr string, start, end uint16) {
+func (scl *clusterStub) migrateSlotRange(dstAddr string, start, end uint16) {
 	for slot := start; slot < end; slot++ {
 		scl.migrateInit(dstAddr, slot)
 		scl.migrateAllKeys(slot)
@@ -322,11 +321,11 @@ func (scl *stubCluster) migrateSlotRange(dstAddr string, start, end uint16) {
 }
 
 // Who watches the watchmen?
-func TestStub(t *T) {
+func TestClusterStub(t *T) {
 	scl := newStubCluster(testTopo)
 
-	var outTT Topo
-	err := scl.randStub().newClient().Do(radix.CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
+	var outTT ClusterTopo
+	err := scl.randStub().newClient().Do(CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 
@@ -335,40 +334,40 @@ func TestStub(t *T) {
 	// some arbitrary high number slot
 	src := scl.stubForSlot(0)
 	srcClient := src.newClient()
-	key := slotKeys[0]
-	require.Nil(t, srcClient.Do(radix.Cmd(nil, "SET", key, "foo")))
+	key := clusterSlotKeys[0]
+	require.Nil(t, srcClient.Do(Cmd(nil, "SET", key, "foo")))
 	dst := scl.stubForSlot(10000)
 	dstClient := dst.newClient()
 	scl.migrateInit(dst.addr, 0)
 
 	// getting a key from that slot from the original should still work
 	var val string
-	require.Nil(t, srcClient.Do(radix.Cmd(&val, "GET", key)))
+	require.Nil(t, srcClient.Do(Cmd(&val, "GET", key)))
 	assert.Equal(t, "foo", val)
 
 	// getting on the new dst should give MOVED
-	err = dstClient.Do(radix.Cmd(nil, "GET", key))
+	err = dstClient.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
 
 	// actually migrate that key ...
 	scl.migrateKey(key)
 	// ... then doing the GET on the src should give an ASK error ...
-	err = srcClient.Do(radix.Cmd(nil, "GET", key))
+	err = srcClient.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "ASK 0 "+dst.addr, err.Error())
 	// ... doing the GET on the dst _without_ asking should give MOVED again ...
-	err = dstClient.Do(radix.Cmd(nil, "GET", key))
+	err = dstClient.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
 	// ... but doing it with ASKING on dst should work
-	require.Nil(t, dstClient.Do(radix.CmdNoKey(nil, "ASKING")))
-	require.Nil(t, dstClient.Do(radix.Cmd(nil, "GET", key)))
+	require.Nil(t, dstClient.Do(CmdNoKey(nil, "ASKING")))
+	require.Nil(t, dstClient.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
 
 	// finish the migration, then src should always MOVED, dst should always
 	// work
 	scl.migrateAllKeys(0)
 	scl.migrateDone(0)
-	err = srcClient.Do(radix.Cmd(nil, "GET", key))
+	err = srcClient.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "MOVED 0 "+dst.addr, err.Error())
-	require.Nil(t, dstClient.Do(radix.Cmd(nil, "GET", key)))
+	require.Nil(t, dstClient.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
 }

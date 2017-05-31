@@ -1,8 +1,4 @@
-// Package cluster handles connecting to and interfacing with a redis cluster.
-// It also handles connecting to new nodes in the cluster as well as failover.
-//
-// TODO better docs
-package cluster
+package radix
 
 import (
 	"errors"
@@ -10,8 +6,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	radix "github.com/mediocregopher/radix.v2"
 )
 
 // dedupe is used to deduplicate a function invocation, so if multiple
@@ -45,14 +39,14 @@ func (d *dedupe) do(fn func()) {
 // with it, including a set of pools to each of its instances. All methods on
 // Cluster are thread-safe
 type Cluster struct {
-	pf radix.PoolFunc
+	pf PoolFunc
 
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
 
 	sync.RWMutex
-	pools map[string]radix.Client
-	tt    Topo
+	pools map[string]Client
+	tt    ClusterTopo
 
 	errCh   chan error // TODO expose this somehow
 	closeCh chan struct{}
@@ -65,14 +59,14 @@ type Cluster struct {
 // The PoolFunc is used to make the internal pools for the instances discovered
 // here and all new ones in the future. If nil is given then
 // radix.DefaultPoolFunc will be used.
-func NewCluster(pf radix.PoolFunc, addrs ...string) (*Cluster, error) {
+func NewCluster(pf PoolFunc, addrs ...string) (*Cluster, error) {
 	if pf == nil {
-		pf = radix.DefaultPoolFunc
+		pf = DefaultPoolFunc
 	}
 	c := &Cluster{
 		pf:         pf,
 		syncDedupe: newDedupe(),
-		pools:      map[string]radix.Client{},
+		pools:      map[string]Client{},
 		closeCh:    make(chan struct{}),
 		errCh:      make(chan error, 1),
 	}
@@ -107,7 +101,7 @@ func (c *Cluster) err(err error) {
 }
 
 // may return nil, nil if no pool for the addr
-func (c *Cluster) rpool(addr string) (radix.Client, error) {
+func (c *Cluster) rpool(addr string) (Client, error) {
 	c.RLock()
 	defer c.RUnlock()
 	if addr == "" {
@@ -123,7 +117,7 @@ func (c *Cluster) rpool(addr string) (radix.Client, error) {
 
 // if addr is "" returns a random pool. If addr is given but there's no pool for
 // it one will be created on-the-fly
-func (c *Cluster) pool(addr string) (radix.Client, error) {
+func (c *Cluster) pool(addr string) (Client, error) {
 	p, err := c.rpool(addr)
 	if p != nil || err != nil {
 		return p, err
@@ -154,18 +148,18 @@ func (c *Cluster) pool(addr string) (radix.Client, error) {
 }
 
 // Topo will pick a randdom node in the cluster, call CLUSTER SLOTS on it, and
-// unmarshal the result into a Topo instance, returning that instance
-func (c *Cluster) Topo() (Topo, error) {
+// unmarshal the result into a ClusterTopo instance, returning that instance
+func (c *Cluster) Topo() (ClusterTopo, error) {
 	p, err := c.pool("")
 	if err != nil {
-		return Topo{}, err
+		return ClusterTopo{}, err
 	}
 	return c.topo(p)
 }
 
-func (c *Cluster) topo(p radix.Client) (Topo, error) {
-	var tt Topo
-	err := p.Do(radix.Cmd(&tt, "CLUSTER", "SLOTS"))
+func (c *Cluster) topo(p Client) (ClusterTopo, error) {
+	var tt ClusterTopo
+	err := p.Do(Cmd(&tt, "CLUSTER", "SLOTS"))
 	return tt, err
 }
 
@@ -186,7 +180,7 @@ func (c *Cluster) Sync() error {
 
 // while this method is normally deduplicated by the Sync method's use of
 // dedupe it is perfectly thread-safe on its own and can be used whenever.
-func (c *Cluster) sync(p radix.Client) error {
+func (c *Cluster) sync(p Client) error {
 	tt, err := c.topo(p)
 	if err != nil {
 		return err
@@ -238,7 +232,7 @@ func (c *Cluster) addrForKey(key []byte) string {
 	if key == nil {
 		return ""
 	}
-	s := Slot(key)
+	s := ClusterSlot(key)
 	c.RLock()
 	defer c.RUnlock()
 	for _, t := range c.tt {
@@ -258,19 +252,19 @@ const doAttempts = 5
 //
 // If the Action is a CmdAction then Cluster will handled MOVED and ASK errors
 // correctly, for other Action types those errors will be returned as is.
-func (c *Cluster) Do(a radix.Action) error {
+func (c *Cluster) Do(a Action) error {
 	return c.doInner(a, c.addrForKey(a.Key()), false, doAttempts)
 }
 
-func (c *Cluster) doInner(a radix.Action, addr string, ask bool, attempts int) error {
+func (c *Cluster) doInner(a Action, addr string, ask bool, attempts int) error {
 	p, err := c.pool(addr)
 	if err != nil {
 		return err
 	}
 
-	err = p.Do(radix.WithConn(a.Key(), func(conn radix.Conn) error {
+	err = p.Do(WithConn(a.Key(), func(conn Conn) error {
 		if ask {
-			if err := radix.CmdNoKey(nil, "ASKING").Run(conn); err != nil {
+			if err := CmdNoKey(nil, "ASKING").Run(conn); err != nil {
 				return err
 			}
 		}
@@ -279,7 +273,7 @@ func (c *Cluster) doInner(a radix.Action, addr string, ask bool, attempts int) e
 
 	if err == nil {
 		return nil
-	} else if _, ok := a.(radix.CmdAction); !ok {
+	} else if _, ok := a.(CmdAction); !ok {
 		return err
 	}
 

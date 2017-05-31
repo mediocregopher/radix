@@ -1,4 +1,4 @@
-package cluster
+package radix
 
 import "bytes"
 
@@ -50,9 +50,9 @@ func CRC16(buf []byte) uint16 {
 	return crc
 }
 
-// Slot returns the slot number the key belongs to, taking into account key hash
-// tags
-func Slot(key []byte) uint16 {
+// ClusterSlot returns the slot number the key belongs to in any redis cluster,
+// taking into account key hash tags
+func ClusterSlot(key []byte) uint16 {
 	if start := bytes.Index(key, []byte("{")); start >= 0 {
 		if end := bytes.Index(key[start+2:], []byte("}")); end >= 0 {
 			key = key[start+1 : start+2+end]

@@ -1,4 +1,4 @@
-package cluster
+package radix
 
 import (
 	"bufio"
@@ -11,7 +11,7 @@ import (
 )
 
 // Node describes a single node in the cluster at a moment in time.
-type Node struct {
+type ClusterNode struct {
 	// older versions of redis might not actually send back the id, so it may be
 	// blank
 	Addr, ID string
@@ -21,14 +21,14 @@ type Node struct {
 	SlaveOfAddr, SlaveOfID string
 }
 
-// Topo describes the cluster topology at a given moment. It will be sorted
-// first by slot number of each node and then by slave status, so masters will
-// come before slaves.
-type Topo []Node
+// ClusterTopo describes the cluster topology at a given moment. It will be
+// sorted first by slot number of each node and then by slave status, so masters
+// will come before slaves.
+type ClusterTopo []ClusterNode
 
 // MarshalRESP implements the resp.Marshaler interface, and will marshal the
-// Topo in the same format as the return from CLUSTER SLOTS
-func (tt Topo) MarshalRESP(w io.Writer) error {
+// ClusterTopo in the same format as the return from CLUSTER SLOTS
+func (tt ClusterTopo) MarshalRESP(w io.Writer) error {
 	m := map[[2]uint16]topoSlotSet{}
 	for _, t := range tt {
 		for _, slots := range t.Slots {
@@ -64,7 +64,7 @@ func (tt Topo) MarshalRESP(w io.Writer) error {
 // UnmarshalRESP implements the resp.Unmarshaler interface, but only supports
 // unmarshaling the return from CLUSTER SLOTS. The unmarshaled nodes will be
 // sorted before they are returned
-func (tt *Topo) UnmarshalRESP(br *bufio.Reader) error {
+func (tt *ClusterTopo) UnmarshalRESP(br *bufio.Reader) error {
 	var arrHead resp.ArrayHeader
 	if err := arrHead.UnmarshalRESP(br); err != nil {
 		return err
@@ -76,7 +76,7 @@ func (tt *Topo) UnmarshalRESP(br *bufio.Reader) error {
 		}
 	}
 
-	nodeAddrM := map[string]Node{}
+	nodeAddrM := map[string]ClusterNode{}
 	for _, tss := range slotSets {
 		for _, n := range tss.nodes {
 			if existingN, ok := nodeAddrM[n.Addr]; ok {
@@ -95,7 +95,7 @@ func (tt *Topo) UnmarshalRESP(br *bufio.Reader) error {
 	return nil
 }
 
-func (tt Topo) sort() {
+func (tt ClusterTopo) sort() {
 	// first go through each node and make sure the individual slot sets are
 	// sorted
 	for _, node := range tt {
@@ -115,9 +115,9 @@ func (tt Topo) sort() {
 
 }
 
-// Map returns the topology as a mapping of node address to its Node
-func (tt Topo) Map() map[string]Node {
-	m := make(map[string]Node, len(tt))
+// Map returns the topology as a mapping of node address to its ClusterNode
+func (tt ClusterTopo) Map() map[string]ClusterNode {
+	m := make(map[string]ClusterNode, len(tt))
 	for _, t := range tt {
 		m[t.Addr] = t
 	}
@@ -125,10 +125,10 @@ func (tt Topo) Map() map[string]Node {
 }
 
 // we only use this type during unmarshalling, the topo Unmarshal method will
-// convert these into Nodes
+// convert these into ClusterNodes
 type topoSlotSet struct {
 	slots [2]uint16
-	nodes []Node
+	nodes []ClusterNode
 }
 
 func (tss topoSlotSet) MarshalRESP(w io.Writer) error {
@@ -171,7 +171,7 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 	tss.slots[1]++
 	arrHead.N -= len(tss.slots)
 
-	var masterNode Node
+	var masterNode ClusterNode
 	for i := 0; i < arrHead.N; i++ {
 		var nodeStrs []string
 		if err := (resp.Any{I: &nodeStrs}).UnmarshalRESP(br); err != nil {
@@ -185,7 +185,7 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 			id = nodeStrs[2]
 		}
 
-		node := Node{
+		node := ClusterNode{
 			Addr:  ip + ":" + port,
 			ID:    id,
 			Slots: [][2]uint16{tss.slots},
