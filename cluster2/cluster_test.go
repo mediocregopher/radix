@@ -100,40 +100,41 @@ func TestGet(t *T) {
 	}
 }
 
-/*
-func assertMoved(t *T, err error, slot uint16, to string) {
-	rerr, ok := err.(resp.Error)
-	assert.True(t, ok)
-	assert.Equal(t, fmt.Sprintf("MOVED %d %s", slot, to), rerr.Error())
-}
-
-func TestMoved(t *T) {
+func TestDo(t *T) {
 	c, scl := newTestCluster()
-	// These two slots should be handled by totally different nodes
-	slotA, slotB := uint16(1), uint16(16000)
-	keyA := slotKeys[slotA]
-	stubA, stubB := scl.stubForSlot(slotA), scl.stubForSlot(slotB)
+	stub0 := scl.stubForSlot(0)
+	stub16k := scl.stubForSlot(16000)
 
-	require.Nil(t, stubA.newClient().Do(radix.Cmd(nil, "SET", keyA, "foo")))
+	// sanity check before we start, these shouldn't have the same address
+	require.NotEqual(t, stub0.addr, stub16k.addr)
 
-	// confirm that the stub is returning MOVED correctly
-	err := stubB.newClient().Do(radix.Cmd(nil, "GET", keyA))
-	assertMoved(t, err, slotA, stubA.addr)
+	// basic Cmd
+	k, v := slotKeys[0], randStr()
+	require.Nil(t, c.Do(radix.Cmd(nil, "SET", k, v)))
+	{
+		var vgot string
+		require.Nil(t, c.Do(radix.Cmd(&vgot, "GET", k)))
+		assert.Equal(t, v, vgot)
+	}
 
-	// confirm that cluster handles moves correctly, by first retrieving a conn
-	// for an Action and then changing the node on which that action should be
-	// taken
-	var foo string
-	var swapped bool
-	err = c.Do(radix.WithConn([]byte(keyA), func(c radix.Conn) error {
-		if !swapped {
-			scl.swap(stubA.addr, stubB.addr)
-			swapped = true
-		}
-		return radix.Cmd(&foo, "GET", keyA).Run(c)
-	}))
-	require.Nil(t, err, "%s", err)
-	assert.Equal(t, "foo", foo)
-	//t.Fatal("this shouldn't be working, cluster isn't actually checking for MOVED yet")
+	// use doInner to hit the wrong node originally, Do should get a MOVED error
+	// and end up at the correct node
+	{
+		var vgot string
+		cmd := radix.Cmd(&vgot, "GET", k)
+		require.Nil(t, c.doInner(cmd, stub16k.addr, false, 2))
+		assert.Equal(t, v, vgot)
+	}
+
+	// start a migration and migrate the key, which should trigger an ASK when
+	// we hit stub0 for the key
+	{
+		scl.migrateInit(stub16k.addr, 0)
+		scl.migrateKey(k)
+		var vgot string
+		require.Nil(t, c.Do(radix.Cmd(&vgot, "GET", k)))
+		assert.Equal(t, v, vgot)
+		scl.migrateAllKeys(0)
+		scl.migrateDone(0)
+	}
 }
-*/

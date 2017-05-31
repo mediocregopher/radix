@@ -14,6 +14,35 @@ import (
 	radix "github.com/mediocregopher/radix.v2"
 )
 
+// dedupe is used to deduplicate a function invocation, so if multiple
+// go-routines call it at the same time only the first will actually run it, and
+// the others will block until that one is done.
+type dedupe struct {
+	l sync.Mutex
+	s *sync.Once
+}
+
+func newDedupe() *dedupe {
+	return &dedupe{s: new(sync.Once)}
+}
+
+func (d *dedupe) do(fn func()) {
+	d.l.Lock()
+	s := d.s
+	d.l.Unlock()
+
+	s.Do(func() {
+		fn()
+		d.l.Lock()
+		d.s = new(sync.Once)
+		d.l.Unlock()
+	})
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// errClient is a client which returns an error for all calls to Do and never
+// actually does anything with the given Actions
 type errClient struct {
 	err error
 }
@@ -26,11 +55,16 @@ func (ec errClient) Close() error {
 	return nil
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 // Cluster contains all information about a redis cluster needed to interact
 // with it, including a set of pools to each of its instances. All methods on
 // Cluster are thread-safe
 type Cluster struct {
 	pf radix.PoolFunc
+
+	// used to deduplicate calls to sync
+	syncDedupe *dedupe
 
 	sync.RWMutex
 	pools map[string]radix.Client
@@ -52,10 +86,11 @@ func NewCluster(pf radix.PoolFunc, addrs ...string) (*Cluster, error) {
 		pf = radix.DefaultPoolFunc
 	}
 	c := &Cluster{
-		pf:      pf,
-		pools:   map[string]radix.Client{},
-		closeCh: make(chan struct{}),
-		errCh:   make(chan error, 1),
+		pf:         pf,
+		syncDedupe: newDedupe(),
+		pools:      map[string]radix.Client{},
+		closeCh:    make(chan struct{}),
+		errCh:      make(chan error, 1),
 	}
 
 	// make a pool to base the cluster on
@@ -138,9 +173,15 @@ func (c *Cluster) topo(p radix.Client) (Topo, error) {
 // This will be called periodically automatically, but you can manually call it
 // at any time as well
 func (c *Cluster) Sync() error {
-	return c.sync(c.pool(""))
+	var err error
+	c.syncDedupe.do(func() {
+		err = c.sync(c.pool(""))
+	})
+	return err
 }
 
+// while this method is normally deduplicated by the Sync method's use of
+// dedupe it is perfectly thread-safe on its own and can be used whenever.
 func (c *Cluster) sync(p radix.Client) error {
 	tt, err := c.topo(p)
 	if err != nil {
@@ -194,9 +235,9 @@ func (c *Cluster) addrForKey(key []byte) string {
 	if key == nil {
 		return ""
 	}
+	s := Slot(key)
 	c.RLock()
 	defer c.RUnlock()
-	s := Slot(key)
 	for _, t := range c.tt {
 		for _, slot := range t.Slots {
 			if s >= slot[0] && s < slot[1] {
@@ -207,13 +248,15 @@ func (c *Cluster) addrForKey(key []byte) string {
 	return ""
 }
 
+const doAttempts = 5
+
 // Do performs an Action on a redis instance in the cluster, with the instance
 // being determeined by the key returned from the Action's Key() method.
 //
 // If the Action is a CmdAction then Cluster will handled MOVED and ASK errors
 // correctly, for other Action types those errors will be returned as is.
 func (c *Cluster) Do(a radix.Action) error {
-	return c.doInner(a, c.addrForKey(a.Key()), false, 5)
+	return c.doInner(a, c.addrForKey(a.Key()), false, doAttempts)
 }
 
 func (c *Cluster) doInner(a radix.Action, addr string, ask bool, attempts int) error {
@@ -235,6 +278,7 @@ func (c *Cluster) doInner(a radix.Action, addr string, ask bool, attempts int) e
 	} else if _, ok := a.(radix.CmdAction); !ok {
 		return err
 	}
+
 	msg := err.Error()
 	moved := strings.HasPrefix(msg, "MOVED ")
 	ask = strings.HasPrefix(msg, "ASK ")
@@ -242,7 +286,15 @@ func (c *Cluster) doInner(a radix.Action, addr string, ask bool, attempts int) e
 		return err
 	}
 
-	// TODO kick off a sync somewhere in here too?
+	// if we get an ASK there's no need to do a sync quite yet, we can continue
+	// normally. But MOVED always prompts a sync. In the following section we
+	// figure out what address to use based on the returned error so the sync
+	// isn't used _immediately_, but it still needs to happen.
+	if moved {
+		if err := c.Sync(); err != nil {
+			return err
+		}
+	}
 
 	msgParts := strings.Split(msg, " ")
 	if len(msgParts) < 3 {
