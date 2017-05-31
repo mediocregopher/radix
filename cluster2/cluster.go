@@ -326,3 +326,6 @@ func (c *Cluster) Close() {
 	}
 	return
 }
+
+// TODO specially handle SCAN, once that's implemented
+// TODO method to iterate through every master pool
