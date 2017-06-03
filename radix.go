@@ -45,31 +45,14 @@ type Client interface {
 // If either Encode or Decode encounter a net.Error the Conn will be
 // automatically closed.
 type Conn interface {
+	Client
+
 	Encode(resp.Marshaler) error
 	Decode(resp.Unmarshaler) error
 
-	// The underlying connection's methods are exposed, all may be used except
-	// Read and Write. When Close is called Encode and Decode will return an
-	// error on all future calls.
-	net.Conn
-}
-
-// TODO connClient is weird, if Conn was a Client also that'd be hella
-// convenient and make more sense
-
-type connClient struct {
-	Conn
-}
-
-// ConnClient wraps a Conn so it may be directly used as a Client
-func ConnClient(conn Conn) Client {
-	return connClient{conn}
-}
-
-// Do implements the method for the Client interface, directly passing in the
-// underlying Conn into the Action's Run method
-func (cc connClient) Do(a Action) error {
-	return a.Run(cc.Conn)
+	// Returns the underlying network connection, as-is. Read, Write, and Close
+	// should not be called on the returned Conn.
+	NetConn() net.Conn
 }
 
 type connWrap struct {
@@ -88,6 +71,10 @@ func NewConn(conn net.Conn) Conn {
 		Conn: conn,
 		brw:  bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn)),
 	}
+}
+
+func (cw connWrap) Do(a Action) error {
+	return a.Run(cw)
 }
 
 func (cw connWrap) Encode(m resp.Marshaler) error {
@@ -111,6 +98,10 @@ func (cw connWrap) Decode(u resp.Unmarshaler) error {
 		cw.Close()
 	}
 	return err
+}
+
+func (cw connWrap) NetConn() net.Conn {
+	return cw.Conn
 }
 
 // DialFunc is a function which returns an initialized, ready-to-be-used Conn.

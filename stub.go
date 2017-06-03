@@ -34,7 +34,7 @@ type buffer struct {
 	readDeadline time.Time
 }
 
-func newBuffer(remoteNetwork, remoteAddr string) Conn {
+func newBuffer(remoteNetwork, remoteAddr string) *buffer {
 	buf := new(bytes.Buffer)
 	return &buffer{
 		remoteAddr: bufferAddr{network: remoteNetwork, addr: remoteAddr},
@@ -42,10 +42,6 @@ func newBuffer(remoteNetwork, remoteAddr string) Conn {
 		buf:        buf,
 		bufbr:      bufio.NewReader(buf),
 	}
-}
-
-func (b *buffer) RemoteAddr() net.Addr {
-	return b.remoteAddr
 }
 
 func (b *buffer) Encode(m resp.Marshaler) error {
@@ -121,6 +117,10 @@ func (b *buffer) Close() error {
 	return nil
 }
 
+func (b *buffer) RemoteAddr() net.Addr {
+	return b.remoteAddr
+}
+
 func (b *buffer) SetDeadline(t time.Time) error {
 	return b.SetReadDeadline(t)
 }
@@ -140,7 +140,7 @@ func (b *buffer) err(op string, err error) error {
 		Op:     op,
 		Net:    "tcp",
 		Source: nil,
-		Addr:   b.RemoteAddr(),
+		Addr:   b.remoteAddr,
 		Err:    err,
 	}
 }
@@ -156,7 +156,7 @@ func (e *timeoutError) Temporary() bool { return true }
 ////////////////////////////////////////////////////////////////////////////////
 
 type stub struct {
-	Conn
+	*buffer
 	fn func([]string) interface{}
 }
 
@@ -199,9 +199,13 @@ type stub struct {
 //
 func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn {
 	return &stub{
-		Conn: newBuffer(remoteNetwork, remoteAddr),
-		fn:   fn,
+		buffer: newBuffer(remoteNetwork, remoteAddr),
+		fn:     fn,
 	}
+}
+
+func (s *stub) Do(a Action) error {
+	return a.Run(s)
 }
 
 func (s *stub) Encode(m resp.Marshaler) error {
@@ -223,9 +227,13 @@ func (s *stub) Encode(m resp.Marshaler) error {
 	// error it is assumed to want to be returned directly.
 	ret := s.fn(ss)
 	if m, ok := ret.(resp.Marshaler); ok {
-		return s.Conn.Encode(m)
+		return s.buffer.Encode(m)
 	} else if err, _ := ret.(error); err != nil {
 		return err
 	}
-	return s.Conn.Encode(resp.Any{I: ret})
+	return s.buffer.Encode(resp.Any{I: ret})
+}
+
+func (s *stub) NetConn() net.Conn {
+	return s.buffer
 }

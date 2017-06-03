@@ -194,7 +194,7 @@ func (sc *sentinel) ensureSentinelAddrs(conn Conn) error {
 		return err
 	}
 
-	addrs := map[string]bool{conn.RemoteAddr().String(): true}
+	addrs := map[string]bool{conn.NetConn().RemoteAddr().String(): true}
 	for _, m := range mm {
 		addrs[m["ip"]+":"+m["port"]] = true
 	}

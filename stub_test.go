@@ -74,10 +74,11 @@ func TestStubLockingTimeout(t *T) {
 
 	wg.Wait()
 
-	// test out timeout. do a write-then-read to ensure nothing bad happens in
+	// test out timeout. do a write-then-read to ensure nothing bad happens
 	// when there's actually data to read
 	now := time.Now()
-	stub.SetDeadline(now.Add(2 * time.Second))
+	conn := stub.NetConn()
+	conn.SetDeadline(now.Add(2 * time.Second))
 	require.Nil(t, stub.Encode(CmdNoKey(nil, "ECHO", 1)))
 	require.Nil(t, stub.Decode(resp.Any{}))
 

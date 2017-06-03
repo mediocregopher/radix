@@ -120,10 +120,6 @@ func (s *clusterNodeStub) newConn() Conn {
 	})
 }
 
-func (s *clusterNodeStub) newClient() Client {
-	return ConnClient(s.newConn())
-}
-
 func (s *clusterNodeStub) Close() error {
 	*s = clusterNodeStub{}
 	return nil
@@ -204,7 +200,7 @@ func (scl *clusterStub) poolFunc() PoolFunc {
 	return func(network, addr string) (Client, error) {
 		for _, s := range scl.stubs {
 			if s.addr == addr {
-				return s.newClient(), nil
+				return s.newConn(), nil
 			}
 		}
 		return nil, fmt.Errorf("unknown addr: %q", addr)
@@ -325,7 +321,7 @@ func TestClusterStub(t *T) {
 	scl := newStubCluster(testTopo)
 
 	var outTT ClusterTopo
-	err := scl.randStub().newClient().Do(CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
+	err := scl.randStub().newConn().Do(CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 
@@ -333,41 +329,41 @@ func TestClusterStub(t *T) {
 	// migrating to another addr (dst). We choose dst as the node which holds
 	// some arbitrary high number slot
 	src := scl.stubForSlot(0)
-	srcClient := src.newClient()
+	srcConn := src.newConn()
 	key := clusterSlotKeys[0]
-	require.Nil(t, srcClient.Do(Cmd(nil, "SET", key, "foo")))
+	require.Nil(t, srcConn.Do(Cmd(nil, "SET", key, "foo")))
 	dst := scl.stubForSlot(10000)
-	dstClient := dst.newClient()
+	dstConn := dst.newConn()
 	scl.migrateInit(dst.addr, 0)
 
 	// getting a key from that slot from the original should still work
 	var val string
-	require.Nil(t, srcClient.Do(Cmd(&val, "GET", key)))
+	require.Nil(t, srcConn.Do(Cmd(&val, "GET", key)))
 	assert.Equal(t, "foo", val)
 
 	// getting on the new dst should give MOVED
-	err = dstClient.Do(Cmd(nil, "GET", key))
+	err = dstConn.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
 
 	// actually migrate that key ...
 	scl.migrateKey(key)
 	// ... then doing the GET on the src should give an ASK error ...
-	err = srcClient.Do(Cmd(nil, "GET", key))
+	err = srcConn.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "ASK 0 "+dst.addr, err.Error())
 	// ... doing the GET on the dst _without_ asking should give MOVED again ...
-	err = dstClient.Do(Cmd(nil, "GET", key))
+	err = dstConn.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
 	// ... but doing it with ASKING on dst should work
-	require.Nil(t, dstClient.Do(CmdNoKey(nil, "ASKING")))
-	require.Nil(t, dstClient.Do(Cmd(nil, "GET", key)))
+	require.Nil(t, dstConn.Do(CmdNoKey(nil, "ASKING")))
+	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
 
 	// finish the migration, then src should always MOVED, dst should always
 	// work
 	scl.migrateAllKeys(0)
 	scl.migrateDone(0)
-	err = srcClient.Do(Cmd(nil, "GET", key))
+	err = srcConn.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "MOVED 0 "+dst.addr, err.Error())
-	require.Nil(t, dstClient.Do(Cmd(nil, "GET", key)))
+	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
 }

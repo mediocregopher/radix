@@ -36,5 +36,5 @@ func TestCloseBehavior(t *T) {
 
 	c.Close()
 	require.NotNil(t, CmdNoKey(&out, "ECHO", "foo").Run(c))
-	require.NotNil(t, c.SetDeadline(time.Now()))
+	require.NotNil(t, c.NetConn().SetDeadline(time.Now()))
 }
