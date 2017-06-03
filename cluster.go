@@ -48,8 +48,12 @@ type Cluster struct {
 	pools map[string]Client
 	tt    ClusterTopo
 
-	errCh   chan error // TODO expose this somehow
 	closeCh chan struct{}
+
+	// Any errors encountered internally will be written to this channel. If
+	// nothing is reading the channel the errors will be dropped. The channel
+	// will be closed when the Close is called.
+	ErrCh chan error
 }
 
 // NewCluster initializes and returns a Cluster instance. It will try every
@@ -68,7 +72,7 @@ func NewCluster(pf PoolFunc, addrs ...string) (*Cluster, error) {
 		syncDedupe: newDedupe(),
 		pools:      map[string]Client{},
 		closeCh:    make(chan struct{}),
-		errCh:      make(chan error, 1),
+		ErrCh:      make(chan error, 1),
 	}
 
 	// make a pool to base the cluster on
@@ -95,7 +99,7 @@ func NewCluster(pf PoolFunc, addrs ...string) (*Cluster, error) {
 
 func (c *Cluster) err(err error) {
 	select {
-	case c.errCh <- err:
+	case c.ErrCh <- err:
 	default:
 	}
 }
@@ -311,7 +315,7 @@ func (c *Cluster) doInner(a Action, addr string, ask bool, attempts int) error {
 // Pools.
 func (c *Cluster) Close() error {
 	close(c.closeCh)
-	close(c.errCh)
+	close(c.ErrCh)
 	c.Lock()
 	defer c.Unlock()
 

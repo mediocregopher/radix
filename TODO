@@ -2,21 +2,11 @@
     * Big TODO in resp to maybe refactor it yet another time? ugh....
 
 # Week
-    * Cluster
-      - Support ASK/MOVE
-      - Finish testing
-        - ASK (MOVED test is done already)
-      - Move into root
-
-# Week
   * cluster
     - Method like `WithMasters(func(string, radix.Conn) error) error`
   * Look into how WithMasters above correlates with other Client types, maybe we
     can modify the Client interface to do something like that, would make
     scanning easier
-
-# Week (or 2?)
-  * Figure out how to expose stats/errors from Clients
 
 # Week (or 2?)
   * Think of name, move to that repo
@@ -28,14 +18,15 @@
 
 * Clean
   - All leftover TODOS
-  - consistent Close behavior
+  - consistent Close behavior, including blocking till fully closed
   - CmdAction is ugly
+    - the way Cluster.Do works is... iffy. Casting Action to CmdAction feels
+      weird
+    - If someone were to make a "RetryAction" kind of thing it would not play
+      nicely with cluster
   - PoolFunc naming is ugly
-  - PubSub stuff is kind of a mess
+  - PubSub stuff is kind of a mess (in what way?)
   - do all the structs types in resp need to be structs?
-  - the way Cluster.Do works is... iffy. Casting Action to CmdAction feels weird
-  - If someone were to make a "RetryAction" kind of thing it would not play
-    nicely with cluster
   - Read through docs, ensure everything is clean and sensical
   - Read through code, make sure all code comments are correct
   - Don't use testify

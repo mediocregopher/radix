@@ -36,6 +36,11 @@ type Sentinel struct {
 	pconn   PubSubConn
 	pconnCh chan PubSubMessage
 
+	// Any errors encountered internally will be written to this channel. If
+	// nothing is reading the channel the errors will be dropped. The channel
+	// will be closed when the Close is called.
+	ErrCh chan error
+
 	closeCh   chan bool
 	closeOnce sync.Once
 
@@ -70,6 +75,7 @@ func NewSentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poo
 		dfn:         dialFn,
 		pfn:         poolFn,
 		pconnCh:     make(chan PubSubMessage),
+		ErrCh:       make(chan error, 1),
 		closeCh:     make(chan bool),
 		testEventCh: make(chan string, 1),
 	}
@@ -98,6 +104,13 @@ func NewSentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poo
 	go sc.spin()
 	go sc.pubsubSpin()
 	return sc, nil
+}
+
+func (sc *Sentinel) err(err error) {
+	select {
+	case sc.ErrCh <- err:
+	default:
+	}
 }
 
 func (sc *Sentinel) testEvent(event string) {
@@ -209,8 +222,11 @@ func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 
 func (sc *Sentinel) spin() {
 	for {
-		// TODO get error from innerSpin and do something with it
-		sc.innerSpin()
+		if err := sc.innerSpin(); err != nil {
+			sc.err(err)
+			// sleep a second so we don't end up in a tight loop
+			time.Sleep(1 * time.Second)
+		}
 		// This also gets checked within innerSpin to short-circuit that, but
 		// we also must check in here to short-circuit this
 		select {
@@ -228,12 +244,12 @@ func (sc *Sentinel) spin() {
 // * Listening for switch-master events (from pconn, which has reconnect logic
 //   external to this package)
 // * Periodically re-ensuring that the list of sentinel addresses is up-to-date
-// * Periodically re-chacking the current master, in case the switch-master was
+// * Periodically re-checking the current master, in case the switch-master was
 //   missed somehow
-func (sc *Sentinel) innerSpin() {
+func (sc *Sentinel) innerSpin() error {
 	conn, err := sc.dial()
 	if err != nil {
-		return
+		return err
 	}
 	defer conn.Close()
 
@@ -243,14 +259,14 @@ func (sc *Sentinel) innerSpin() {
 		select {
 		case <-tick.C:
 			if err := sc.ensureSentinelAddrs(conn); err != nil {
-				return
+				return err
 			}
 			if err := sc.ensureMaster(conn); err != nil {
-				return
+				return err
 			}
 			sc.pconn.Ping()
 		case <-sc.closeCh:
-			return
+			return nil
 		}
 	}
 }
@@ -267,7 +283,7 @@ func (sc *Sentinel) pubsubSpin() {
 			}
 			newAddr := parts[3] + ":" + parts[4]
 			if err := sc.setMaster(newAddr); err != nil {
-				panic(err) // TODO
+				sc.err(err)
 			}
 			sc.testEvent("switch-master completed")
 		case <-tick.C:

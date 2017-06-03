@@ -13,7 +13,9 @@ var (
 	errPoolClosed = errors.New("pool is closed")
 )
 
-// TODO not super happy with the naming here, PoolFunc is _basically_ a DialFunc
+// TODO not super happy with the naming here, PoolFunc is _basically_ a
+// DialFunc. If Conn's methods were all thread-safe we could just have
+// ClientFunc and have them all be the effectively the same
 
 // PoolFunc is a function which can be used to create a Pool of connections to a
 // single redis instance on the given network/address.
