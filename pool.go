@@ -62,6 +62,10 @@ func (spc *staticPoolConn) Decode(m resp.Unmarshaler) error {
 	return err
 }
 
+func (spc *staticPoolConn) Do(a Action) error {
+	return a.Run(spc)
+}
+
 func (spc *staticPoolConn) Close() error {
 	return spc.Conn.Close()
 }
@@ -189,7 +193,7 @@ func (sp *staticPool) Do(a Action) error {
 	}
 	defer sp.put(c)
 
-	return a.Run(c)
+	return c.Do(a)
 }
 
 func (sp *staticPool) Close() error {

@@ -198,7 +198,7 @@ type pipeline []CmdAction
 //		Cmd(nil, "SET", "foo", "bar"),
 //		Cmd(&fooVal, "GET", "foo"),
 //	)
-//	if err := p.Run(conn); err != nil {
+//	if err := conn.Do(p); err != nil {
 //		panic(err)
 //	}
 //	fmt.Printf("fooVal: %q\n", fooVal)
@@ -245,12 +245,12 @@ type withConn struct {
 //
 //	err := pool.Do(WithConn("someKey", func(conn Conn) error {
 //		var curr int
-//		if err := Cmd(&curr, "GET", "someKey").Run(conn); err != nil {
+//		if err := conn.Do(radix.Cmd(&curr, "GET", "someKey")); err != nil {
 //			return err
 //		}
 //
 //		curr++
-//		return Cmd(nil, "SET", "someKey", curr).Run(conn)
+//		return conn.Do(radix.Cmd(nil, "SET", "someKey", curr))
 //	})
 //
 // NOTE that WithConn only ensures all inner Actions are performed on the same

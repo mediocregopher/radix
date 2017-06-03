@@ -264,11 +264,11 @@ func (c *Cluster) doInner(a Action, addr string, ask bool, attempts int) error {
 
 	err = p.Do(WithConn(a.Key(), func(conn Conn) error {
 		if ask {
-			if err := CmdNoKey(nil, "ASKING").Run(conn); err != nil {
+			if err := conn.Do(CmdNoKey(nil, "ASKING")); err != nil {
 				return err
 			}
 		}
-		return a.Run(conn)
+		return conn.Do(a)
 	}))
 
 	if err == nil {

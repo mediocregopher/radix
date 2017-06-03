@@ -117,8 +117,7 @@ func (s *scanner) Next(res *string) bool {
 		}
 
 		var parts []interface{}
-		cmd := s.cmd(&parts, s.cur)
-		if s.err = cmd.Run(s.Conn); s.err != nil {
+		if s.err = s.Conn.Do(s.cmd(&parts, s.cur)); s.err != nil {
 			return false
 		} else if len(parts) < 2 {
 			s.err = errors.New("not enough parts returned")

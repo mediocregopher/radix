@@ -11,9 +11,9 @@ func TestCmdAction(t *T) {
 	c := dial()
 	key, val := randStr(), randStr()
 
-	require.Nil(t, Cmd(nil, "SET", key, val).Run(c))
+	require.Nil(t, c.Do(Cmd(nil, "SET", key, val)))
 	var got string
-	require.Nil(t, Cmd(&got, "GET", key).Run(c))
+	require.Nil(t, c.Do(Cmd(&got, "GET", key)))
 	assert.Equal(t, val, got)
 }
 
@@ -31,14 +31,14 @@ func TestLuaAction(t *T) {
 
 	{
 		var res string
-		err := Lua(&res, getset, []string{key}, val1).Run(c)
+		err := c.Do(Lua(&res, getset, []string{key}, val1))
 		require.Nil(t, err, "%s", err)
 		assert.Empty(t, res)
 	}
 
 	{
 		var res string
-		err := Lua(&res, getset, []string{key}, val2).Run(c)
+		err := c.Do(Lua(&res, getset, []string{key}, val2))
 		require.Nil(t, err)
 		assert.Equal(t, val1, res)
 	}
@@ -57,7 +57,7 @@ func TestPipelineAction(t *T) {
 		for i := range ss {
 			cmds = append(cmds, CmdNoKey(&out[i], "ECHO", ss[i]))
 		}
-		require.Nil(t, Pipeline(cmds...).Run(c))
+		require.Nil(t, c.Do(Pipeline(cmds...)))
 
 		for i := range ss {
 			assert.Equal(t, ss[i], out[i])
@@ -69,12 +69,12 @@ func TestWithConnAction(t *T) {
 	c := dial()
 	k, v := randStr(), 10
 
-	err := WithConn([]byte(k), func(conn Conn) error {
-		require.Nil(t, Cmd(nil, "SET", k, v).Run(conn))
+	err := c.Do(WithConn([]byte(k), func(conn Conn) error {
+		require.Nil(t, conn.Do(Cmd(nil, "SET", k, v)))
 		var out int
-		require.Nil(t, Cmd(&out, "GET", k).Run(conn))
+		require.Nil(t, conn.Do(Cmd(&out, "GET", k)))
 		assert.Equal(t, v, out)
 		return nil
-	}).Run(c)
+	}))
 	require.Nil(t, err)
 }

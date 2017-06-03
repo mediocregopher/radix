@@ -191,10 +191,10 @@ type stub struct {
 //		}
 //	})
 //
-//	radix.Cmd("SET", "foo", 1).Run(stub)
+//	stub.Do(radix.Cmd("SET", "foo", 1))
 //
 //	var foo int
-//	radix.Cmd("GET", "foo").Into(&foo).Run(stub)
+//	stub.Do(radix.Cmd("GET", "foo").Into(&foo))
 //	fmt.Printf("foo: %d\n", foo)
 //
 func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn {

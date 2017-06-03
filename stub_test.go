@@ -36,15 +36,15 @@ func TestStub(t *T) {
 
 	{ // Basic test
 		var foo string
-		require.Nil(t, Cmd(nil, "SET", "foo", "a").Run(stub))
-		require.Nil(t, Cmd(&foo, "GET", "foo").Run(stub))
+		require.Nil(t, stub.Do(Cmd(nil, "SET", "foo", "a")))
+		require.Nil(t, stub.Do(Cmd(&foo, "GET", "foo")))
 		assert.Equal(t, "a", foo)
 	}
 
 	{ // Basic test with an int, to ensure marshalling/unmarshalling all works
 		var foo int
-		require.Nil(t, Cmd(nil, "SET", "foo", 1).Run(stub))
-		require.Nil(t, Cmd(&foo, "GET", "foo").Run(stub))
+		require.Nil(t, stub.Do(Cmd(nil, "SET", "foo", 1)))
+		require.Nil(t, stub.Do(Cmd(&foo, "GET", "foo")))
 		assert.Equal(t, 1, foo)
 	}
 }

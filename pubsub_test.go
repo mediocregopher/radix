@@ -11,7 +11,7 @@ import (
 )
 
 func publish(t *T, c Conn, ch, msg string) {
-	require.Nil(t, Cmd(nil, "PUBLISH", ch, msg).Run(c))
+	require.Nil(t, c.Do(Cmd(nil, "PUBLISH", ch, msg)))
 }
 
 func assertMsgRead(t *T, msgCh <-chan PubSubMessage) PubSubMessage {
