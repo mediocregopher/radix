@@ -13,7 +13,7 @@ var (
 	errPoolClosed = errors.New("pool is closed")
 )
 
-// TODO not super happy with the naming here
+// TODO not super happy with the naming here, PoolFunc is _basically_ a DialFunc
 
 // PoolFunc is a function which can be used to create a Pool of connections to a
 // single redis instance on the given network/address.
@@ -25,9 +25,7 @@ type PoolFunc func(network, addr string) (Client, error)
 // If the DialFunc is nil then this package's Dial function is used.
 func NewPoolFunc(size int, df DialFunc) PoolFunc {
 	return func(network, addr string) (Client, error) {
-		// dunno why I have to do this....
-		cl, err := Pool(network, addr, size, df)
-		return cl, err
+		return NewPool(network, addr, size, df)
 	}
 }
 
@@ -37,7 +35,7 @@ var DefaultPoolFunc = NewPoolFunc(20, Dial)
 
 type staticPoolConn struct {
 	Conn
-	sp *staticPool
+	sp *Pool
 
 	// The most recent network error which occurred when either reading
 	// or writing. A critical network error is basically any non-application
@@ -70,7 +68,14 @@ func (spc *staticPoolConn) Close() error {
 	return spc.Conn.Close()
 }
 
-type staticPool struct {
+// Pool a semi-dynamic pool which holds a fixed number of connections open. If a
+// connection needs to be retrieved from the pool but the pool is empty a new
+// connection will be created on-the-fly using DialFunc. If connection is being
+// put back in the pool but the pool is full then the connection will be closed
+// and discarded.  In this way spikes are handled rather well, but sustained
+// over-use will cause connection churn and will need the pool size to be
+// increased.
+type Pool struct {
 	df            DialFunc
 	network, addr string
 
@@ -82,18 +87,11 @@ type staticPool struct {
 	initDone chan struct{} // used for tests
 }
 
-// Pool creates a Client whose connections are all created using the DialFunc
+// NewPool creates a *Pool whose connections are all created using the DialFunc
 // (or Dial, if the DialFunc is nil). The size indicates the maximum number of
 // idle connections to have waiting to be used at any given moment.
-//
-// The implementation of Pool returned here is a semi-dynamic pool. It holds a
-// fixed number of connections open. If Get is called and there are no available
-// Conns it will create a new one on the spot (using the DialFunc). If Put is
-// called and the Pool is full that Conn will be closed and discarded. In this
-// way spikes are handled rather well, but sustained over-use will cause
-// connection churn and will need the size to be increased.
-func Pool(network, addr string, size int, df DialFunc) (Client, error) {
-	sp := &staticPool{
+func NewPool(network, addr string, size int, df DialFunc) (*Pool, error) {
+	sp := &Pool{
 		network:  network,
 		addr:     addr,
 		df:       df,
@@ -127,7 +125,7 @@ func Pool(network, addr string, size int, df DialFunc) (Client, error) {
 	return sp, nil
 }
 
-func (sp *staticPool) pingSpin() {
+func (sp *Pool) pingSpin() {
 	pingCmd := CmdNoKey(nil, "PING")
 	// we want each conn to be pinged every 10 seconds, so divide that by number
 	// of conns to know how often to call PING
@@ -143,7 +141,7 @@ func (sp *staticPool) pingSpin() {
 	}
 }
 
-func (sp *staticPool) newConn() (*staticPoolConn, error) {
+func (sp *Pool) newConn() (*staticPoolConn, error) {
 	c, err := sp.df(sp.network, sp.addr)
 	if err != nil {
 		return nil, err
@@ -156,7 +154,7 @@ func (sp *staticPool) newConn() (*staticPoolConn, error) {
 	return spc, nil
 }
 
-func (sp *staticPool) get() (*staticPoolConn, error) {
+func (sp *Pool) get() (*staticPoolConn, error) {
 	sp.l.RLock()
 	defer sp.l.RUnlock()
 	if sp.closed {
@@ -171,7 +169,7 @@ func (sp *staticPool) get() (*staticPoolConn, error) {
 	}
 }
 
-func (sp *staticPool) put(spc *staticPoolConn) {
+func (sp *Pool) put(spc *staticPoolConn) {
 	sp.l.RLock()
 	defer sp.l.RUnlock()
 	if spc.lastIOErr != nil || sp.closed {
@@ -186,7 +184,10 @@ func (sp *staticPool) put(spc *staticPoolConn) {
 	}
 }
 
-func (sp *staticPool) Do(a Action) error {
+// Do implements the Do method of the Client interface by retrieving a Conn out
+// of the pool, calling Run on the given Action with it, and returning the Conn
+// to the pool
+func (sp *Pool) Do(a Action) error {
 	c, err := sp.get()
 	if err != nil {
 		return err
@@ -196,7 +197,14 @@ func (sp *staticPool) Do(a Action) error {
 	return c.Do(a)
 }
 
-func (sp *staticPool) Close() error {
+// NumAvailConns returns the number of connections currently available in the
+// pool
+func (sp *Pool) NumAvailConns() int {
+	return len(sp.pool)
+}
+
+// Close implements the Close method of the Client
+func (sp *Pool) Close() error {
 	sp.l.Lock()
 	defer sp.l.Unlock()
 	if sp.closed {

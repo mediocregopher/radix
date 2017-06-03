@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testPool(size int) Client {
-	pool, err := Pool("tcp", "localhost:6379", size, nil)
+func testPool(size int) *Pool {
+	pool, err := NewPool("tcp", "localhost:6379", size, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -43,23 +43,19 @@ func TestPool(t *T) {
 
 	wg.Wait()
 
-	// TODO if there's ever an avail method it'd be good to use it here
-	sp := pool.(*staticPool)
-	assert.Equal(t, size, len(sp.pool))
+	assert.Equal(t, size, pool.NumAvailConns())
 
 	pool.Close()
-	assert.Equal(t, 0, len(sp.pool))
+	assert.Equal(t, 0, pool.NumAvailConns())
 }
 
 func TestPut(t *T) {
 	size := 10
 	pool := testPool(size)
-	<-pool.(*staticPool).initDone
+	<-pool.initDone
 
-	// TODO if there's ever an avail method it'd be good to use it here
 	assertPoolConns := func(exp int) {
-		sp := pool.(*staticPool)
-		assert.Equal(t, exp, len(sp.pool))
+		assert.Equal(t, exp, pool.NumAvailConns())
 	}
 	assertPoolConns(10)
 

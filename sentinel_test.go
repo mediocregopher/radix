@@ -118,7 +118,7 @@ func TestSentinel(t *T) {
 	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
 	// don't tell anyone
 	poolFn := func(string, string) (Client, error) {
-		return Pool("tcp", "127.0.0.1:6379", 10, nil)
+		return NewPool("tcp", "127.0.0.1:6379", 10, nil)
 	}
 
 	sc, err := Sentinel("stub", stub.sentAddrs, stub.newConn, poolFn)
