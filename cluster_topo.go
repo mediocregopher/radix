@@ -124,6 +124,18 @@ func (tt ClusterTopo) Map() map[string]ClusterNode {
 	return m
 }
 
+// Masters returns a ClusterTopo instance containing only the master nodes from
+// the ClusterTopo being called on
+func (tt ClusterTopo) Masters() ClusterTopo {
+	mtt := make(ClusterTopo, 0, len(tt))
+	for _, node := range tt {
+		if node.SlaveOfAddr == "" {
+			mtt = append(mtt, node)
+		}
+	}
+	return mtt
+}
+
 // we only use this type during unmarshalling, the topo Unmarshal method will
 // convert these into ClusterNodes
 type topoSlotSet struct {

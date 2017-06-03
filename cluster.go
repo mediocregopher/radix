@@ -189,6 +189,7 @@ func (c *Cluster) sync(p Client) error {
 	if err != nil {
 		return err
 	}
+	tt = tt.Masters()
 
 	for _, t := range tt {
 		// call pool just to ensure one exists for this addr
@@ -311,6 +312,33 @@ func (c *Cluster) doInner(a Action, addr string, ask bool, attempts int) error {
 	return c.doInner(a, addr, ask, attempts)
 }
 
+// WithMasters calls the given callback with the address and Client instance of
+// each master in the pool. If the callback returns an error that error is
+// returned from WithMasters immediately.
+func (c *Cluster) WithMasters(fn func(string, Client) error) error {
+	// we get all addrs first, then unlock. Then we go through each master
+	// individually, locking/unlocking for each one, so that we don't have to
+	// worry as much about the callback blocking pool updates
+	c.RLock()
+	addrs := make([]string, 0, len(c.pools))
+	for addr := range c.pools {
+		addrs = append(addrs, addr)
+	}
+	c.RUnlock()
+
+	for _, addr := range addrs {
+		c.RLock()
+		client, ok := c.pools[addr]
+		c.RUnlock()
+		if !ok {
+			continue
+		} else if err := fn(addr, client); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Close cleans up all goroutines spawned by Cluster and closes all of its
 // Pools.
 func (c *Cluster) Close() error {
@@ -325,5 +353,5 @@ func (c *Cluster) Close() error {
 	return nil
 }
 
-// TODO specially handle SCAN, once that's implemented
-// TODO method to iterate through every master pool
+// TODO specially handle SCAN
+// TODO specially handle Pipeline.... somehow

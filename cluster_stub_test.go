@@ -114,6 +114,8 @@ func (s *clusterNodeStub) newConn() Conn {
 		case "ASKING":
 			asking = true
 			return resp.SimpleString{S: []byte("OK")}
+		case "ADDR":
+			return s.addr
 		}
 
 		return resp.Error{E: fmt.Errorf("unknown command %#v", args)}
