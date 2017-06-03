@@ -121,9 +121,8 @@ func TestSentinel(t *T) {
 		return NewPool("tcp", "127.0.0.1:6379", 10, nil)
 	}
 
-	sc, err := Sentinel("stub", stub.sentAddrs, stub.newConn, poolFn)
+	scc, err := NewSentinel("stub", stub.sentAddrs, stub.newConn, poolFn)
 	require.Nil(t, err)
-	scc := sc.(*sentinel)
 
 	assertState := func(clAddr string, sentAddrs ...string) {
 		assert.Equal(t, clAddr, scc.clAddr)
@@ -140,9 +139,9 @@ func TestSentinel(t *T) {
 		for i := 0; i < c; i++ {
 			go func() {
 				key, val := randStr(), randStr()
-				require.Nil(t, sc.Do(Cmd(nil, "SET", key, val)))
+				require.Nil(t, scc.Do(Cmd(nil, "SET", key, val)))
 				var out string
-				require.Nil(t, sc.Do(Cmd(&out, "GET", key)))
+				require.Nil(t, scc.Do(Cmd(&out, "GET", key)))
 				assert.Equal(t, val, out)
 				wg.Done()
 			}()

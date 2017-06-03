@@ -7,7 +7,17 @@ import (
 	"time"
 )
 
-type sentinel struct {
+// Sentinel is a Client which, in the background, connects to an available
+// sentinel node and handles all of the following:
+//
+// * Creates a Pool to the current master instance, as advertised by the
+//   sentinel
+// * Listens for events indicating the master has changed, and automatically
+//   creates a new Pool to the new master
+// * Keeps track of other sentinels in the cluster, and use them if the
+//   currently connected one becomes unreachable
+//
+type Sentinel struct {
 	initAddrs []string
 
 	// we read lock when calling methods on cl, and normal lock when swapping
@@ -34,22 +44,11 @@ type sentinel struct {
 	testEventCh chan string
 }
 
-// Sentinel creates and returns a Client which, in the background, connects to
-// the first available of the given sentinels and handles all of the following:
-//
-// * Creates a Pool to the current master instance, as advertised by the
-//   sentinel
-// * Listens for events indicating the master has changed, and automatically
-//   creates a new Pool to the new master
-// * Keeps track of other sentinels in the cluster, and use them if the
-//   currently connected one becomes unreachable
-//
-// dialFn may be nil, but if given can specify a custom DialFunc to use when
-// connecting to sentinels.
-//
-// poolFn may be nil, but if given can specify a custom PoolFunc to use when
-// createing a connection pool to the master instance.
-func Sentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poolFn PoolFunc) (Client, error) {
+// NewSentinel creates and returns a *Sentinel. dialFn may be nil, but if given
+// can specify a custom DialFunc to use when connecting to sentinels. poolFn
+// may be nil, but if given can specify a custom PoolFunc to use when createing
+// a connection pool to the master instance.
+func NewSentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poolFn PoolFunc) (*Sentinel, error) {
 	if dialFn == nil {
 		dialFn = func(net, addr string) (Conn, error) {
 			return DialTimeout(net, addr, 5*time.Second)
@@ -64,7 +63,7 @@ func Sentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poolFn
 		addrs[addr] = true
 	}
 
-	sc := &sentinel{
+	sc := &Sentinel{
 		initAddrs:   sentinelAddrs,
 		name:        masterName,
 		addrs:       addrs,
@@ -101,14 +100,14 @@ func Sentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poolFn
 	return sc, nil
 }
 
-func (sc *sentinel) testEvent(event string) {
+func (sc *Sentinel) testEvent(event string) {
 	select {
 	case sc.testEventCh <- event:
 	default:
 	}
 }
 
-func (sc *sentinel) dial() (Conn, error) {
+func (sc *Sentinel) dial() (Conn, error) {
 	sc.RLock()
 	defer sc.RUnlock()
 
@@ -132,13 +131,16 @@ func (sc *sentinel) dial() (Conn, error) {
 	return nil, err
 }
 
-func (sc *sentinel) Do(a Action) error {
+// Do implements the method for the Client interface. It will pass the given
+// action onto the current master.
+func (sc *Sentinel) Do(a Action) error {
 	sc.RLock()
 	defer sc.RUnlock()
 	return sc.cl.Do(a)
 }
 
-func (sc *sentinel) Close() error {
+// Close implements the method for the Client interface.
+func (sc *Sentinel) Close() error {
 	sc.RLock()
 	defer sc.RUnlock()
 	sc.closeOnce.Do(func() {
@@ -149,7 +151,7 @@ func (sc *sentinel) Close() error {
 
 // given a connection to a sentinel, ensures that the pool currently being held
 // agrees with what the sentinel thinks it should be
-func (sc *sentinel) ensureMaster(conn Conn) error {
+func (sc *Sentinel) ensureMaster(conn Conn) error {
 	sc.RLock()
 	lastAddr := sc.clAddr
 	sc.RUnlock()
@@ -168,7 +170,7 @@ func (sc *sentinel) ensureMaster(conn Conn) error {
 	return sc.setMaster(newAddr)
 }
 
-func (sc *sentinel) setMaster(newAddr string) error {
+func (sc *Sentinel) setMaster(newAddr string) error {
 	newPool, err := sc.pfn("tcp", newAddr)
 	if err != nil {
 		return err
@@ -187,7 +189,7 @@ func (sc *sentinel) setMaster(newAddr string) error {
 
 // annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_
 // sentinel instance, only the others it knows about for that master
-func (sc *sentinel) ensureSentinelAddrs(conn Conn) error {
+func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 	var mm []map[string]string
 	err := conn.Do(CmdNoKey(&mm, "SENTINEL", "SENTINELS", sc.name))
 	if err != nil {
@@ -205,7 +207,7 @@ func (sc *sentinel) ensureSentinelAddrs(conn Conn) error {
 	return nil
 }
 
-func (sc *sentinel) spin() {
+func (sc *Sentinel) spin() {
 	for {
 		// TODO get error from innerSpin and do something with it
 		sc.innerSpin()
@@ -228,7 +230,7 @@ func (sc *sentinel) spin() {
 // * Periodically re-ensuring that the list of sentinel addresses is up-to-date
 // * Periodically re-chacking the current master, in case the switch-master was
 //   missed somehow
-func (sc *sentinel) innerSpin() {
+func (sc *Sentinel) innerSpin() {
 	conn, err := sc.dial()
 	if err != nil {
 		return
@@ -253,7 +255,7 @@ func (sc *sentinel) innerSpin() {
 	}
 }
 
-func (sc *sentinel) pubsubSpin() {
+func (sc *Sentinel) pubsubSpin() {
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
 	for {
