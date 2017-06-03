@@ -45,6 +45,12 @@ func newTestCluster() (*Cluster, *clusterStub) {
 	return scl.newCluster(), scl
 }
 
+// sanity check that Cluster is a client
+func TestClusterClient(t *T) {
+	c, _ := newTestCluster()
+	assert.Implements(t, new(Client), c)
+}
+
 func TestClusterSync(t *T) {
 	c, scl := newTestCluster()
 	assertClusterState := func() {

@@ -309,7 +309,7 @@ func (c *Cluster) doInner(a Action, addr string, ask bool, attempts int) error {
 
 // Close cleans up all goroutines spawned by Cluster and closes all of its
 // Pools.
-func (c *Cluster) Close() {
+func (c *Cluster) Close() error {
 	close(c.closeCh)
 	close(c.errCh)
 	c.Lock()
@@ -318,7 +318,7 @@ func (c *Cluster) Close() {
 	for _, p := range c.pools {
 		p.Close()
 	}
-	return
+	return nil
 }
 
 // TODO specially handle SCAN, once that's implemented
