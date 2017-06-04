@@ -22,10 +22,11 @@ func newRedigo() redigo.Conn {
 
 type rawCmd struct {
 	rcv interface{}
-	cmd [][]byte
+	cmd []string
 }
 
-func newRawCmd(rcv interface{}, cmd ...[]byte) *rawCmd {
+// TODO make this a public type
+func newRawCmd(rcv interface{}, cmd ...string) *rawCmd {
 	return &rawCmd{rcv: rcv, cmd: cmd}
 }
 
@@ -34,7 +35,7 @@ func (rc *rawCmd) MarshalRESP(w io.Writer) error {
 		return err
 	}
 	for i := range rc.cmd {
-		if err := (resp.BulkString{B: rc.cmd[i]}).MarshalRESP(w); err != nil {
+		if err := (resp.BulkStringStr{S: rc.cmd[i]}).MarshalRESP(w); err != nil {
 			return err
 		}
 	}
@@ -55,7 +56,7 @@ func (rc *rawCmd) Run(conn Conn) error {
 }
 
 func (rc *rawCmd) Key() []byte {
-	return rc.cmd[1]
+	return []byte(rc.cmd[1])
 }
 
 func BenchmarkSerialGetSet(b *B) {
@@ -74,11 +75,11 @@ func BenchmarkSerialGetSet(b *B) {
 
 	b.Run("radix-raw", func(b *B) {
 		for i := 0; i < b.N; i++ {
-			if err := radix.Do(newRawCmd(nil, []byte("SET"), []byte("foo"), []byte("bar"))); err != nil {
+			if err := radix.Do(newRawCmd(nil, "SET", "foo", "bar")); err != nil {
 				b.Fatal(err)
 			}
 			var out string
-			if err := radix.Do(newRawCmd(&out, []byte("GET"), []byte("foo"))); err != nil {
+			if err := radix.Do(newRawCmd(&out, "GET", "foo")); err != nil {
 				b.Fatal(err)
 			}
 		}

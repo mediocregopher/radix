@@ -51,17 +51,17 @@ type connWrap struct {
 // In both the Encode and Decode methods of the returned Conn, if a net.Error is
 // encountered the Conn will have Close called on it automatically.
 func NewConn(conn net.Conn) Conn {
-	return connWrap{
+	return &connWrap{
 		Conn: conn,
 		brw:  bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn)),
 	}
 }
 
-func (cw connWrap) Do(a Action) error {
+func (cw *connWrap) Do(a Action) error {
 	return a.Run(cw)
 }
 
-func (cw connWrap) Encode(m resp.Marshaler) error {
+func (cw *connWrap) Encode(m resp.Marshaler) error {
 	err := m.MarshalRESP(cw.brw)
 	defer func() {
 		if _, ok := err.(net.Error); ok {
@@ -76,7 +76,7 @@ func (cw connWrap) Encode(m resp.Marshaler) error {
 	return err
 }
 
-func (cw connWrap) Decode(u resp.Unmarshaler) error {
+func (cw *connWrap) Decode(u resp.Unmarshaler) error {
 	err := u.UnmarshalRESP(cw.brw.Reader)
 	if _, ok := err.(net.Error); ok {
 		cw.Close()
@@ -84,7 +84,7 @@ func (cw connWrap) Decode(u resp.Unmarshaler) error {
 	return err
 }
 
-func (cw connWrap) NetConn() net.Conn {
+func (cw *connWrap) NetConn() net.Conn {
 	return cw.Conn
 }
 

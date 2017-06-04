@@ -37,15 +37,14 @@ func (lr *lenReader) Len() int64 {
 // has been reached
 type limitedReaderPlus struct {
 	eof bool
-	lr  *io.LimitedReader
+	lr  io.LimitedReader
 }
 
-func newLimitedReaderPlus(br *bufio.Reader, limit int64) *limitedReaderPlus {
-	return &limitedReaderPlus{
-		lr: &io.LimitedReader{
-			R: br,
-			N: limit,
-		},
+func (lrp *limitedReaderPlus) reset(br *bufio.Reader, limit int64) {
+	lrp.eof = false
+	lrp.lr = io.LimitedReader{
+		R: br,
+		N: limit,
 	}
 }
 

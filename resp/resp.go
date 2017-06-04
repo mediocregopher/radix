@@ -64,15 +64,17 @@ func anyIntToInt64(m interface{}) int64 {
 
 var bytePool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 0, 64)
+		b := make([]byte, 0, 64)
+		return &b
 	},
 }
 
-func getBytes() []byte {
-	return bytePool.Get().([]byte)[:0]
+func getBytes() *[]byte {
+	return bytePool.Get().(*[]byte)
 }
 
-func putBytes(b []byte) {
+func putBytes(b *[]byte) {
+	(*b) = (*b)[:0]
 	bytePool.Put(b)
 }
 
@@ -156,10 +158,10 @@ func readInt(r io.Reader) (int64, error) {
 	defer putBytes(scratch)
 
 	var err error
-	if scratch, err = readAllAppend(r, scratch); err != nil {
+	if (*scratch), err = readAllAppend(r, *scratch); err != nil {
 		return 0, err
 	}
-	return strconv.ParseInt(string(scratch), 10, 64)
+	return strconv.ParseInt(string(*scratch), 10, 64)
 }
 
 func readUint(r io.Reader) (uint64, error) {
@@ -167,10 +169,10 @@ func readUint(r io.Reader) (uint64, error) {
 	defer putBytes(scratch)
 
 	var err error
-	if scratch, err = readAllAppend(r, scratch); err != nil {
+	if (*scratch), err = readAllAppend(r, (*scratch)); err != nil {
 		return 0, err
 	}
-	return strconv.ParseUint(string(scratch), 10, 64)
+	return strconv.ParseUint(string(*scratch), 10, 64)
 }
 
 func readFloat(r io.Reader, precision int) (float64, error) {
@@ -178,10 +180,10 @@ func readFloat(r io.Reader, precision int) (float64, error) {
 	defer putBytes(scratch)
 
 	var err error
-	if scratch, err = readAllAppend(r, scratch); err != nil {
+	if (*scratch), err = readAllAppend(r, *scratch); err != nil {
 		return 0, err
 	}
-	return strconv.ParseFloat(string(scratch), precision)
+	return strconv.ParseFloat(string(*scratch), precision)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -295,7 +297,8 @@ func (e Error) MarshalRESP(w io.Writer) error {
 	}
 	scratch := getBytes()
 	defer putBytes(scratch)
-	return multiWrite(w, errPrefix, append(scratch, e.E.Error()...), delim)
+	*scratch = append(*scratch, e.E.Error()...)
+	return multiWrite(w, errPrefix, *scratch, delim)
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -319,7 +322,8 @@ type Int struct {
 func (i Int) MarshalRESP(w io.Writer) error {
 	scratch := getBytes()
 	defer putBytes(scratch)
-	return multiWrite(w, intPrefix, strconv.AppendInt(scratch, int64(i.I), 10), delim)
+	*scratch = strconv.AppendInt(*scratch, int64(i.I), 10)
+	return multiWrite(w, intPrefix, *scratch, delim)
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -352,13 +356,8 @@ func (b BulkString) MarshalRESP(w io.Writer) error {
 	}
 	scratch := getBytes()
 	defer putBytes(scratch)
-	return multiWrite(w,
-		bulkStrPrefix,
-		strconv.AppendInt(scratch, int64(len(b.B)), 10),
-		delim,
-		b.B,
-		delim,
-	)
+	*scratch = strconv.AppendInt(*scratch, int64(len(b.B)), 10)
+	return multiWrite(w, bulkStrPrefix, *scratch, delim, b.B, delim)
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -387,6 +386,22 @@ func (b *BulkString) UnmarshalRESP(br *bufio.Reader) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type BulkStringStr struct {
+	S string
+}
+
+// MarshalRESP implements the Marshaler method
+func (b BulkStringStr) MarshalRESP(w io.Writer) error {
+	scratch := getBytes()
+	defer putBytes(scratch)
+	*scratch = strconv.AppendInt(*scratch, int64(len(b.S)), 10)
+	ll := len(*scratch)
+	*scratch = append(*scratch, b.S...)
+	return multiWrite(w, bulkStrPrefix, (*scratch)[:ll], delim, (*scratch)[ll:], delim)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // BulkReader is like BulkString, but it only supports marshalling and will use
 // the given LenReader to do so. If LR is nil then the nil bulk string RESP will
 // be written
@@ -402,11 +417,8 @@ func (b BulkReader) MarshalRESP(w io.Writer) error {
 	scratch := getBytes()
 	defer putBytes(scratch)
 	l := b.LR.Len()
-	if err := multiWrite(w,
-		bulkStrPrefix,
-		strconv.AppendInt(scratch, l, 10),
-		delim,
-	); err != nil {
+	*scratch = strconv.AppendInt(*scratch, l, 10)
+	if err := multiWrite(w, bulkStrPrefix, *scratch, delim); err != nil {
 		return err
 	}
 	if _, err := io.CopyN(w, b.LR, l); err != nil {
@@ -430,7 +442,8 @@ type ArrayHeader struct {
 func (ah ArrayHeader) MarshalRESP(w io.Writer) error {
 	scratch := getBytes()
 	defer putBytes(scratch)
-	return multiWrite(w, arrayPrefix, strconv.AppendInt(scratch, int64(ah.N), 10), delim)
+	*scratch = strconv.AppendInt(*scratch, int64(ah.N), 10)
+	return multiWrite(w, arrayPrefix, *scratch, delim)
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -567,7 +580,8 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		}
 		scratch := getBytes()
 		defer putBytes(scratch)
-		return marshalBulk(append(scratch, at...))
+		*scratch = append(*scratch, at...)
+		return marshalBulk(*scratch)
 	case bool:
 		b := bools[0]
 		if at {
@@ -577,11 +591,13 @@ func (a Any) MarshalRESP(w io.Writer) error {
 	case float32:
 		scratch := getBytes()
 		defer putBytes(scratch)
-		return marshalBulk(strconv.AppendFloat(scratch, float64(at), 'f', -1, 32))
+		*scratch = strconv.AppendFloat(*scratch, float64(at), 'f', -1, 32)
+		return marshalBulk(*scratch)
 	case float64:
 		scratch := getBytes()
 		defer putBytes(scratch)
-		return marshalBulk(strconv.AppendFloat(scratch, at, 'f', -1, 64))
+		*scratch = strconv.AppendFloat(*scratch, at, 'f', -1, 64)
+		return marshalBulk(*scratch)
 	case nil:
 		return marshalBulk(nil)
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
@@ -589,14 +605,16 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		if a.MarshalBulkString {
 			scratch := getBytes()
 			defer putBytes(scratch)
-			return marshalBulk(strconv.AppendInt(scratch, at64, 10))
+			*scratch = strconv.AppendInt(*scratch, at64, 10)
+			return marshalBulk(*scratch)
 		}
 		return Int{I: at64}.MarshalRESP(w)
 	case error:
 		if a.MarshalBulkString {
 			scratch := getBytes()
 			defer putBytes(scratch)
-			return marshalBulk(append(scratch, at.Error()...))
+			*scratch = append(*scratch, at.Error()...)
+			return marshalBulk(*scratch)
 		}
 		return Error{E: at}.MarshalRESP(w)
 	case LenReader:
@@ -688,6 +706,24 @@ func saneDefault(prefix byte) interface{} {
 	panic("should never get here")
 }
 
+// We use pools for these even though they only get used within
+// Any.UnmarshalRESP because of how often they get used. Any return from redis
+// which has a simple string or bulk string (the vast majority of them) is going
+// to go through one of these.
+var (
+	byteReaderPool = sync.Pool{
+		New: func() interface{} {
+			return bytes.NewReader(nil)
+		},
+	}
+
+	lrpPool = sync.Pool{
+		New: func() interface{} {
+			return new(limitedReaderPlus)
+		},
+	}
+)
+
 // UnmarshalRESP implements the Unmarshaler method
 func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 	// if I is itself an Unmarshaler just hit that directly
@@ -738,9 +774,15 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		} else if l == -1 {
 			return a.unmarshalNil()
 		}
-		return a.unmarshalSingle(newLimitedReaderPlus(br, l))
+		lrp := lrpPool.Get().(*limitedReaderPlus)
+		defer lrpPool.Put(lrp)
+		lrp.reset(br, l)
+		return a.unmarshalSingle(lrp)
 	case simpleStrPrefix[0], intPrefix[0]:
-		return a.unmarshalSingle(bytes.NewBuffer(b))
+		reader := byteReaderPool.Get().(*bytes.Reader)
+		defer byteReaderPool.Put(reader)
+		reader.Reset(b)
+		return a.unmarshalSingle(reader)
 	default:
 		return fmt.Errorf("unknown type prefix %q", b[0])
 	}
@@ -759,8 +801,8 @@ func (a Any) unmarshalSingle(body io.Reader) error {
 		_, err = io.Copy(ioutil.Discard, body)
 	case *string:
 		scratch := getBytes()
-		scratch, err = readAllAppend(body, scratch)
-		*ai = string(scratch)
+		(*scratch), err = readAllAppend(body, *scratch)
+		*ai = string(*scratch)
 		putBytes(scratch)
 	case *[]byte:
 		*ai, err = readAllAppend(body, (*ai)[:0])
@@ -807,17 +849,17 @@ func (a Any) unmarshalSingle(body io.Reader) error {
 		_, err = io.Copy(ai, body)
 	case encoding.TextUnmarshaler:
 		scratch := getBytes()
-		if scratch, err = readAllAppend(body, scratch); err != nil {
+		if (*scratch), err = readAllAppend(body, *scratch); err != nil {
 			break
 		}
-		err = ai.UnmarshalText(scratch)
+		err = ai.UnmarshalText(*scratch)
 		putBytes(scratch)
 	case encoding.BinaryUnmarshaler:
 		scratch := getBytes()
-		if scratch, err = readAllAppend(body, scratch); err != nil {
+		if (*scratch), err = readAllAppend(body, *scratch); err != nil {
 			break
 		}
-		err = ai.UnmarshalBinary(scratch)
+		err = ai.UnmarshalBinary(*scratch)
 		putBytes(scratch)
 	default:
 		return fmt.Errorf("can't unmarshal into %T", a.I)
