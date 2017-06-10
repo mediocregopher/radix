@@ -137,11 +137,11 @@ func (c *cmdAction) Key() []byte {
 func (c *cmdAction) MarshalRESP(w io.Writer) error {
 	if err := (resp.ArrayHeader{N: len(c.args) + 1}).MarshalRESP(w); err != nil {
 		return err
-	} else if err := (resp.BulkStringStr{S: c.cmd}).MarshalRESP(w); err != nil {
+	} else if err := (resp.BulkString{S: c.cmd}).MarshalRESP(w); err != nil {
 		return err
 	}
 	for i := range c.args {
-		if err := (resp.BulkStringStr{S: c.args[i]}).MarshalRESP(w); err != nil {
+		if err := (resp.BulkString{S: c.args[i]}).MarshalRESP(w); err != nil {
 			return err
 		}
 	}
@@ -200,8 +200,8 @@ func (c *flatCmdAction) MarshalRESP(w io.Writer) error {
 	}
 	arrL := 2 + a.NumElems()
 	marshal(resp.ArrayHeader{N: arrL})
-	marshal(resp.BulkStringStr{S: c.cmd})
-	marshal(resp.BulkStringStr{S: c.key})
+	marshal(resp.BulkString{S: c.cmd})
+	marshal(resp.BulkString{S: c.key})
 	marshal(a)
 	return err
 }
@@ -274,17 +274,17 @@ func (lc lua) MarshalRESP(w io.Writer) error {
 	// EVAL(SHA) script/sum numkeys keys... args...
 	marshal(resp.ArrayHeader{N: 3 + numKeys + a.NumElems()})
 	if lc.eval {
-		marshal(resp.BulkString{B: eval})
-		marshal(resp.BulkString{B: []byte(lc.script)})
+		marshal(resp.BulkStringBytes{B: eval})
+		marshal(resp.BulkString{S: lc.script})
 	} else {
 		sumRaw := sha1.Sum([]byte(lc.script))
 		sum := hex.EncodeToString(sumRaw[:])
-		marshal(resp.BulkString{B: evalsha})
-		marshal(resp.BulkString{B: []byte(sum)})
+		marshal(resp.BulkStringBytes{B: evalsha})
+		marshal(resp.BulkString{S: sum})
 	}
 	marshal(resp.Any{I: numKeys, MarshalBulkString: true})
 	for _, k := range lc.keys {
-		marshal(resp.BulkString{B: []byte(k)})
+		marshal(resp.BulkString{S: k})
 	}
 	marshal(a)
 	return err

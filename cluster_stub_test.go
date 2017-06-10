@@ -102,10 +102,10 @@ func (s *clusterNodeStub) newConn() Conn {
 			k := args[1]
 			return s.withKey(k, asking, func(slot clusterSlotStub) interface{} {
 				slot.kv[k] = args[2]
-				return resp.SimpleString{S: []byte("OK")}
+				return resp.SimpleString{S: "OK"}
 			})
 		case "PING":
-			return resp.SimpleString{S: []byte("PONG")}
+			return resp.SimpleString{S: "PONG"}
 		case "CLUSTER":
 			switch strings.ToUpper(args[1]) {
 			case "SLOTS":
@@ -113,7 +113,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			}
 		case "ASKING":
 			asking = true
-			return resp.SimpleString{S: []byte("OK")}
+			return resp.SimpleString{S: "OK"}
 		case "ADDR":
 			return s.addr
 		}

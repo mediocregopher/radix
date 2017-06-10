@@ -77,16 +77,16 @@ func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 
 	if m.Type == "message" {
 		marshal(resp.ArrayHeader{N: 3})
-		marshal(resp.BulkString{B: []byte(m.Type)})
+		marshal(resp.BulkString{S: m.Type})
 	} else if m.Type == "pmessage" {
 		marshal(resp.ArrayHeader{N: 4})
-		marshal(resp.BulkString{B: []byte(m.Type)})
-		marshal(resp.BulkString{B: []byte(m.Pattern)})
+		marshal(resp.BulkString{S: m.Type})
+		marshal(resp.BulkString{S: m.Pattern})
 	} else {
 		return errors.New("unknown message Type")
 	}
-	marshal(resp.BulkString{B: []byte(m.Channel)})
-	marshal(resp.BulkString{B: m.Message})
+	marshal(resp.BulkString{S: m.Channel})
+	marshal(resp.BulkStringBytes{B: m.Message})
 	return err
 }
 
@@ -290,11 +290,11 @@ func (c *pubSubConn) spin() {
 	}
 }
 
-func (c *pubSubConn) do(exp int, cmd string, args ...interface{}) error {
+func (c *pubSubConn) do(exp int, cmd string, args ...string) error {
 	c.cmdL.Lock()
 	defer c.cmdL.Unlock()
 
-	rcmd := resp.Cmd{Cmd: []byte(cmd), Args: args}
+	rcmd := Cmd(nil, cmd, args...)
 	if err := c.conn.Encode(rcmd); err != nil {
 		return err
 	}
@@ -342,7 +342,7 @@ func (c *pubSubConn) Subscribe(msgCh chan<- PubSubMessage, channels ...string) e
 	defer c.csL.Unlock()
 	missing := c.subs.missing(channels)
 	if len(missing) > 0 {
-		if err := c.do(len(missing), "SUBSCRIBE", missing); err != nil {
+		if err := c.do(len(missing), "SUBSCRIBE", missing...); err != nil {
 			return err
 		}
 	}
@@ -368,7 +368,7 @@ func (c *pubSubConn) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string)
 		return nil
 	}
 
-	return c.do(len(emptyChannels), "UNSUBSCRIBE", emptyChannels)
+	return c.do(len(emptyChannels), "UNSUBSCRIBE", emptyChannels...)
 }
 
 func (c *pubSubConn) PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) error {
@@ -376,7 +376,7 @@ func (c *pubSubConn) PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) 
 	defer c.csL.Unlock()
 	missing := c.psubs.missing(patterns)
 	if len(missing) > 0 {
-		if err := c.do(len(missing), "PSUBSCRIBE", missing); err != nil {
+		if err := c.do(len(missing), "PSUBSCRIBE", missing...); err != nil {
 			return err
 		}
 	}
@@ -402,7 +402,7 @@ func (c *pubSubConn) PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string
 		return nil
 	}
 
-	return c.do(len(emptyPatterns), "PUNSUBSCRIBE", emptyPatterns)
+	return c.do(len(emptyPatterns), "PUNSUBSCRIBE", emptyPatterns...)
 }
 
 func (c *pubSubConn) Ping() error {

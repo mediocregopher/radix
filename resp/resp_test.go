@@ -24,17 +24,20 @@ func TestRESPTypes(t *T) {
 
 	encodeTests := func() []encodeTest {
 		return []encodeTest{
-			{in: &SimpleString{S: []byte("")}, out: "+\r\n"},
-			{in: &SimpleString{S: []byte("foo")}, out: "+foo\r\n"},
+			{in: &SimpleString{S: ""}, out: "+\r\n"},
+			{in: &SimpleString{S: "foo"}, out: "+foo\r\n"},
 			{in: &Error{E: errors.New("")}, out: "-\r\n"},
 			{in: &Error{E: errors.New("foo")}, out: "-foo\r\n"},
 			{in: &Int{I: 5}, out: ":5\r\n"},
 			{in: &Int{I: 0}, out: ":0\r\n"},
 			{in: &Int{I: -5}, out: ":-5\r\n"},
-			{in: &BulkString{B: nil}, out: "$-1\r\n"},
-			{in: &BulkString{B: []byte{}}, out: "$0\r\n\r\n"},
-			{in: &BulkString{B: []byte("foo")}, out: "$3\r\nfoo\r\n"},
-			{in: &BulkString{B: []byte("foo\r\nbar")}, out: "$8\r\nfoo\r\nbar\r\n"},
+			{in: &BulkStringBytes{B: nil}, out: "$-1\r\n"},
+			{in: &BulkStringBytes{B: []byte{}}, out: "$0\r\n\r\n"},
+			{in: &BulkStringBytes{B: []byte("foo")}, out: "$3\r\nfoo\r\n"},
+			{in: &BulkStringBytes{B: []byte("foo\r\nbar")}, out: "$8\r\nfoo\r\nbar\r\n"},
+			{in: &BulkString{S: ""}, out: "$0\r\n\r\n"},
+			{in: &BulkString{S: "foo"}, out: "$3\r\nfoo\r\n"},
+			{in: &BulkString{S: "foo\r\nbar"}, out: "$8\r\nfoo\r\nbar\r\n"},
 			{in: &BulkReader{LR: newLR("foo\r\nbar")}, out: "$8\r\nfoo\r\nbar\r\n"},
 			{in: &ArrayHeader{N: 5}, out: "*5\r\n"},
 			{in: &ArrayHeader{N: -1}, out: "*-1\r\n"},
@@ -42,7 +45,7 @@ func TestRESPTypes(t *T) {
 			{in: &Array{A: []Marshaler{}}, out: "*0\r\n"},
 			{
 				in: &Array{A: []Marshaler{
-					SimpleString{S: []byte("foo")},
+					SimpleString{S: "foo"},
 					Int{I: 5},
 				}},
 				out: "*2\r\n+foo\r\n:5\r\n",

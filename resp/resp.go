@@ -188,75 +188,15 @@ func readFloat(r io.Reader, precision int) (float64, error) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/*
-TODO
-
-type Msg struct {
-	Prefix []byte
-	Body LenReader // must be at least LenReader to support BulkStrEncoder
-}
-
-func (m Msg) Unmarshal(interface{}) error {
-	...
-}
-
-type Encoder interface {
-	Encode(Msg) error
-}
-
-func NewEncoder(io.Writer) Encoder
-func BulkStrEncoder(Encoder) Encoder
-func FilterArrEncoder(Encoder) Encoder
-
-type Decoder interface {
-	Decode(*Msg) error
-	// maybe Decode() (Msg, error)
-}
-
-func NewDecoder(io.Reader) Decoder
-
-Notes:
-  - I should do a benchmark of the resp code pre/post bytes pool. If it's not
-	significant than this method would work ok I think, but if not it will take
-	a little more effort for this to become viable
-  - Msgs passed into/returned from Decoder _must_ be used before Decode is
-	called again. As long as this limitation doesn't leak into the outer package
-	in some way I think this is fine, just needs to be documented.
-  - Arrays become kind of weird... would have to have a separate type for them?
-
-type respMsg struct {
-	prefix []byte
-	body   io.Reader
-}
-
-func (r respMsg) MarshalRESP(w io.Writer) error {
-	return multiWrite(r.prefix, r.body, delim)
-}
-
-func (r *respMsg) UnmarshalRESP(br *bufio.Reader) error {
-	b, err := bufferedBytesDelim(br)
-	if err != nil {
-		return err
-	} else if len(b) == 0 {
-		return errors.New("delim with no prefix")
-	}
-
-	r.prefix = b[:1]
-	panic("TODO")
-}
-*/
-
-////////////////////////////////////////////////////////////////////////////////
-
 // SimpleString represents the simple string type in the RESP protocol. An S
 // value of nil is equivalent to empty string.
 type SimpleString struct {
-	S []byte
+	S string
 }
 
 // MarshalRESP implements the Marshaler method
 func (ss SimpleString) MarshalRESP(w io.Writer) error {
-	return multiWrite(w, simpleStrPrefix, ss.S, delim)
+	return multiWrite(w, simpleStrPrefix, []byte(ss.S), delim)
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -268,8 +208,8 @@ func (ss *SimpleString) UnmarshalRESP(br *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
-	ss.S = expand(ss.S, len(b))
-	copy(ss.S, b)
+
+	ss.S = string(b)
 	return nil
 }
 
@@ -338,10 +278,10 @@ func (i *Int) UnmarshalRESP(br *bufio.Reader) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// BulkString represents the bulk string type in the RESP protocol. A B value of
-// nil indicates the nil bulk string message, versus a B value of []byte{} which
-// indicates a bulk string of length 0.
-type BulkString struct {
+// BulkStringBytes represents the bulk string type in the RESP protocol using a
+// go byte slice. A B value of nil indicates the nil bulk string message, versus
+// a B value of []byte{} which indicates a bulk string of length 0.
+type BulkStringBytes struct {
 	B []byte
 
 	// If true then this won't marshal the nil RESP value when B is nil, it will
@@ -350,7 +290,7 @@ type BulkString struct {
 }
 
 // MarshalRESP implements the Marshaler method
-func (b BulkString) MarshalRESP(w io.Writer) error {
+func (b BulkStringBytes) MarshalRESP(w io.Writer) error {
 	if b.B == nil && !b.MarshalNotNil {
 		return multiWrite(w, nilBulkString)
 	}
@@ -361,7 +301,7 @@ func (b BulkString) MarshalRESP(w io.Writer) error {
 }
 
 // UnmarshalRESP implements the Unmarshaler method
-func (b *BulkString) UnmarshalRESP(br *bufio.Reader) error {
+func (b *BulkStringBytes) UnmarshalRESP(br *bufio.Reader) error {
 	if err := bufferedPrefix(br, bulkStrPrefix); err != nil {
 		return err
 	}
@@ -386,18 +326,48 @@ func (b *BulkString) UnmarshalRESP(br *bufio.Reader) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type BulkStringStr struct {
+// BulkString represents the bulk string type in the RESP protocol using a go
+// string.
+type BulkString struct {
 	S string
 }
 
 // MarshalRESP implements the Marshaler method
-func (b BulkStringStr) MarshalRESP(w io.Writer) error {
+func (b BulkString) MarshalRESP(w io.Writer) error {
 	scratch := getBytes()
 	defer putBytes(scratch)
 	*scratch = strconv.AppendInt(*scratch, int64(len(b.S)), 10)
 	ll := len(*scratch)
 	*scratch = append(*scratch, b.S...)
 	return multiWrite(w, bulkStrPrefix, (*scratch)[:ll], delim, (*scratch)[ll:], delim)
+}
+
+// UnmarshalRESP implements the Unmarshaler method. This treats a Nil bulk
+// string message as empty string.
+func (b *BulkString) UnmarshalRESP(br *bufio.Reader) error {
+	if err := bufferedPrefix(br, bulkStrPrefix); err != nil {
+		return err
+	}
+	n, err := bufferedIntDelim(br)
+	if err != nil {
+		return err
+	} else if n == -1 {
+		b.S = ""
+		return nil
+	}
+
+	scratch := getBytes()
+	defer putBytes(scratch)
+	*scratch = expand(*scratch, int(n))
+
+	if _, err := io.ReadFull(br, *scratch); err != nil {
+		return err
+	} else if _, err := bufferedBytesDelim(br); err != nil {
+		return err
+	}
+
+	b.S = string(*scratch)
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -565,7 +535,7 @@ func (a Any) NumElems() int {
 // MarshalRESP implements the Marshaler method
 func (a Any) MarshalRESP(w io.Writer) error {
 	marshalBulk := func(b []byte) error {
-		bs := BulkString{B: b, MarshalNotNil: a.MarshalBulkString}
+		bs := BulkStringBytes{B: b, MarshalNotNil: a.MarshalBulkString}
 		return bs.MarshalRESP(w)
 	}
 
@@ -576,7 +546,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		if at == "" {
 			// special case, we never want string to be nil, but appending empty
 			// string to a nil []byte would still be a nil bulk string
-			return BulkString{MarshalNotNil: true}.MarshalRESP(w)
+			return BulkStringBytes{MarshalNotNil: true}.MarshalRESP(w)
 		}
 		scratch := getBytes()
 		defer putBytes(scratch)
@@ -1019,39 +989,4 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 func (rm RawMessage) UnmarshalInto(u Unmarshaler) error {
 	br := bufio.NewReader(bytes.NewBuffer(rm))
 	return u.UnmarshalRESP(br)
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-// Cmd is a Marshaler for a command to a redis server. Redis commands always
-// take the form of an array of strings when written, but Cmd allows for
-// arguments to be just about anything, and will flatten/convert them all into a
-// flat list of strings when marshaling.
-type Cmd struct {
-	// The name of the redis command to be performed. Always required
-	Cmd []byte
-
-	// Args are any extra arguments to the command and can be almost any thing
-	Args []interface{}
-}
-
-// MarshalRESP implements the Marshaler interface.
-func (rc Cmd) MarshalRESP(w io.Writer) error {
-	var err error
-	marshal := func(m Marshaler) {
-		if err == nil {
-			err = m.MarshalRESP(w)
-		}
-	}
-
-	a := Any{
-		I:                     rc.Args,
-		MarshalBulkString:     true,
-		MarshalNoArrayHeaders: true,
-	}
-	arrL := 1 + a.NumElems()
-	marshal(ArrayHeader{N: arrL})
-	marshal(BulkString{B: rc.Cmd})
-	marshal(a)
-	return err
 }
