@@ -128,7 +128,7 @@ func NewPool(network, addr string, size int, df DialFunc) (*Pool, error) {
 }
 
 func (sp *Pool) pingSpin() {
-	pingCmd := CmdNoKey(nil, "PING")
+	pingCmd := Cmd(nil, "PING")
 	// we want each conn to be pinged every 10 seconds, so divide that by number
 	// of conns to know how often to call PING
 	t := time.NewTicker(10 * time.Second / time.Duration(cap(sp.pool)))

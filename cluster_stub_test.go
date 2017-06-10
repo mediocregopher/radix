@@ -323,7 +323,7 @@ func TestClusterStub(t *T) {
 	scl := newStubCluster(testTopo)
 
 	var outTT ClusterTopo
-	err := scl.randStub().newConn().Do(CmdNoKey(&outTT, "CLUSTER", "SLOTS"))
+	err := scl.randStub().newConn().Do(Cmd(&outTT, "CLUSTER", "SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 
@@ -356,7 +356,7 @@ func TestClusterStub(t *T) {
 	err = dstConn.Do(Cmd(nil, "GET", key))
 	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
 	// ... but doing it with ASKING on dst should work
-	require.Nil(t, dstConn.Do(CmdNoKey(nil, "ASKING")))
+	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
 	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
 

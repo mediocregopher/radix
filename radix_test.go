@@ -31,10 +31,10 @@ func TestCloseBehavior(t *T) {
 
 	// sanity check
 	var out string
-	require.Nil(t, c.Do(CmdNoKey(&out, "ECHO", "foo")))
+	require.Nil(t, c.Do(Cmd(&out, "ECHO", "foo")))
 	assert.Equal(t, "foo", out)
 
 	c.Close()
-	require.NotNil(t, c.Do(CmdNoKey(&out, "ECHO", "foo")))
+	require.NotNil(t, c.Do(Cmd(&out, "ECHO", "foo")))
 	require.NotNil(t, c.NetConn().SetDeadline(time.Now()))
 }

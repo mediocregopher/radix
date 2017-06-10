@@ -139,7 +139,7 @@ func TestClusterDo(t *T) {
 func TestClusterWithMasters(t *T) {
 	c, _ := newTestCluster()
 	var topo ClusterTopo
-	require.Nil(t, c.Do(CmdNoKey(&topo, "CLUSTER", "SLOTS")))
+	require.Nil(t, c.Do(Cmd(&topo, "CLUSTER", "SLOTS")))
 
 	masterAddrs := make([]string, 0, len(topo))
 	for _, node := range topo.Masters() {
@@ -149,7 +149,7 @@ func TestClusterWithMasters(t *T) {
 	addrs := make([]string, 0, len(masterAddrs))
 	err := c.WithMasters(func(addr string, client Client) error {
 		var thisAddr string
-		require.Nil(t, client.Do(CmdNoKey(&thisAddr, "ADDR")))
+		require.Nil(t, client.Do(Cmd(&thisAddr, "ADDR")))
 		assert.Equal(t, addr, thisAddr)
 		addrs = append(addrs, addr)
 		return nil

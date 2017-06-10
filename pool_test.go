@@ -23,7 +23,7 @@ func TestPool(t *T) {
 	testEcho := func(c Conn) {
 		exp := randStr()
 		var out string
-		assert.Nil(t, c.Do(CmdNoKey(&out, "ECHO", exp)))
+		assert.Nil(t, c.Do(Cmd(&out, "ECHO", exp)))
 		assert.Equal(t, exp, out)
 	}
 
@@ -71,7 +71,7 @@ func TestPut(t *T) {
 	// Make sure that a put _does_ accept a connection which had a
 	// marshal/unmarshal error
 	pool.Do(WithConn(nil, func(conn Conn) error {
-		assert.NotNil(t, conn.Do(CmdNoKey(nil, "ECHO", func() {})))
+		assert.NotNil(t, conn.Do(FlatCmd(nil, "ECHO", "", func() {})))
 		assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
 		return nil
 	}))
@@ -80,7 +80,7 @@ func TestPut(t *T) {
 	// Make sure that a put _does_ accept a connection which had an app level
 	// resp error
 	pool.Do(WithConn(nil, func(conn Conn) error {
-		assert.NotNil(t, CmdNoKey(nil, "CMDDNE"))
+		assert.NotNil(t, Cmd(nil, "CMDDNE"))
 		assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
 		return nil
 	}))

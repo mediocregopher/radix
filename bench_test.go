@@ -1,12 +1,9 @@
 package radix
 
 import (
-	"bufio"
-	"io"
 	. "testing"
 
 	redigo "github.com/garyburd/redigo/redis"
-	"github.com/mediocregopher/radix.v2/resp"
 )
 
 // TODO if the package name is going to change then stuff in here should get
@@ -20,45 +17,6 @@ func newRedigo() redigo.Conn {
 	return c
 }
 
-type rawCmd struct {
-	rcv interface{}
-	cmd []string
-}
-
-// TODO make this a public type
-func newRawCmd(rcv interface{}, cmd ...string) *rawCmd {
-	return &rawCmd{rcv: rcv, cmd: cmd}
-}
-
-func (rc *rawCmd) MarshalRESP(w io.Writer) error {
-	if err := (resp.ArrayHeader{N: len(rc.cmd)}).MarshalRESP(w); err != nil {
-		return err
-	}
-	for i := range rc.cmd {
-		if err := (resp.BulkStringStr{S: rc.cmd[i]}).MarshalRESP(w); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (rc *rawCmd) UnmarshalRESP(br *bufio.Reader) error {
-	return resp.Any{I: rc.rcv}.UnmarshalRESP(br)
-}
-
-func (rc *rawCmd) Run(conn Conn) error {
-	// TODO 50% of allocations are these Encode and Decode points, converting
-	// the rawCmd into an inteface
-	if err := conn.Encode(rc); err != nil {
-		return err
-	}
-	return conn.Decode(rc)
-}
-
-func (rc *rawCmd) Key() []byte {
-	return []byte(rc.cmd[1])
-}
-
 func BenchmarkSerialGetSet(b *B) {
 	radix := dial()
 	b.Run("radix", func(b *B) {
@@ -68,18 +26,6 @@ func BenchmarkSerialGetSet(b *B) {
 			}
 			var out string
 			if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-
-	b.Run("radix-raw", func(b *B) {
-		for i := 0; i < b.N; i++ {
-			if err := radix.Do(newRawCmd(nil, "SET", "foo", "bar")); err != nil {
-				b.Fatal(err)
-			}
-			var out string
-			if err := radix.Do(newRawCmd(&out, "GET", "foo")); err != nil {
 				b.Fatal(err)
 			}
 		}

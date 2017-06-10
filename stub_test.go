@@ -3,6 +3,7 @@ package radix
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	. "testing"
 	"time"
@@ -43,7 +44,7 @@ func TestStub(t *T) {
 
 	{ // Basic test with an int, to ensure marshalling/unmarshalling all works
 		var foo int
-		require.Nil(t, stub.Do(Cmd(nil, "SET", "foo", 1)))
+		require.Nil(t, stub.Do(FlatCmd(nil, "SET", "foo", 1)))
 		require.Nil(t, stub.Do(Cmd(&foo, "GET", "foo")))
 		assert.Equal(t, 1, foo)
 	}
@@ -58,7 +59,7 @@ func TestStubLockingTimeout(t *T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < c; i++ {
-			require.Nil(t, stub.Encode(CmdNoKey(nil, "ECHO", i)))
+			require.Nil(t, stub.Encode(Cmd(nil, "ECHO", strconv.Itoa(i))))
 		}
 	}()
 
@@ -79,7 +80,7 @@ func TestStubLockingTimeout(t *T) {
 	now := time.Now()
 	conn := stub.NetConn()
 	conn.SetDeadline(now.Add(2 * time.Second))
-	require.Nil(t, stub.Encode(CmdNoKey(nil, "ECHO", 1)))
+	require.Nil(t, stub.Encode(Cmd(nil, "ECHO", "1")))
 	require.Nil(t, stub.Decode(resp.Any{}))
 
 	// now there's no data to read, should return after 2-ish seconds with a

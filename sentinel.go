@@ -170,7 +170,7 @@ func (sc *Sentinel) ensureMaster(conn Conn) error {
 	sc.RUnlock()
 
 	var m map[string]string
-	err := conn.Do(CmdNoKey(&m, "SENTINEL", "MASTER", sc.name))
+	err := conn.Do(Cmd(&m, "SENTINEL", "MASTER", sc.name))
 	if err != nil {
 		return err
 	} else if m["ip"] == "" || m["port"] == "" {
@@ -204,7 +204,7 @@ func (sc *Sentinel) setMaster(newAddr string) error {
 // sentinel instance, only the others it knows about for that master
 func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 	var mm []map[string]string
-	err := conn.Do(CmdNoKey(&mm, "SENTINEL", "SENTINELS", sc.name))
+	err := conn.Do(Cmd(&mm, "SENTINEL", "SENTINELS", sc.name))
 	if err != nil {
 		return err
 	}

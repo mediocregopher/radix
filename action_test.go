@@ -17,6 +17,8 @@ func TestCmdAction(t *T) {
 	assert.Equal(t, val, got)
 }
 
+// TODO TestFlatAction
+
 func TestLuaAction(t *T) {
 	getset := `
 		local res = redis.call("GET", KEYS[1])
@@ -55,7 +57,7 @@ func TestPipelineAction(t *T) {
 		out := make([]string, len(ss))
 		var cmds []CmdAction
 		for i := range ss {
-			cmds = append(cmds, CmdNoKey(&out[i], "ECHO", ss[i]))
+			cmds = append(cmds, Cmd(&out[i], "ECHO", ss[i]))
 		}
 		require.Nil(t, c.Do(Pipeline(cmds...)))
 
@@ -70,7 +72,7 @@ func TestWithConnAction(t *T) {
 	k, v := randStr(), 10
 
 	err := c.Do(WithConn([]byte(k), func(conn Conn) error {
-		require.Nil(t, conn.Do(Cmd(nil, "SET", k, v)))
+		require.Nil(t, conn.Do(FlatCmd(nil, "SET", k, v)))
 		var out int
 		require.Nil(t, conn.Do(Cmd(&out, "GET", k)))
 		assert.Equal(t, v, out)

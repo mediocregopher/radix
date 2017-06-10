@@ -2,6 +2,7 @@ package radix
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 )
 
@@ -36,20 +37,21 @@ type ScanOpts struct {
 }
 
 func (o ScanOpts) cmd(rcv interface{}, cursor string) CmdAction {
-	var args []interface{}
+	cmdStr := strings.ToUpper(o.Command)
+	var args []string
+	if cmdStr != "SCAN" {
+		args = append(args, o.Key)
+	}
+
 	args = append(args, cursor)
 	if o.Pattern != "" {
 		args = append(args, "MATCH", o.Pattern)
 	}
 	if o.Count > 0 {
-		args = append(args, "COUNT", o.Count)
+		args = append(args, "COUNT", strconv.Itoa(o.Count))
 	}
 
-	cmdStr := strings.ToUpper(o.Command)
-	if cmdStr == "SCAN" {
-		return CmdNoKey(rcv, cmdStr, args...)
-	}
-	return Cmd(rcv, cmdStr, o.Key, args...)
+	return Cmd(rcv, cmdStr, args...)
 }
 
 // ScanAllKeys is a shortcut ScanOpts which can be used to scan all keys

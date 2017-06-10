@@ -36,57 +36,67 @@ type CmdAction interface {
 	resp.Unmarshaler
 }
 
-////////////////////////////////////////////////////////////////////////////////
+var noKeyCmds = map[string]bool{
+	"SENTINEL": true,
 
-type cmdAction struct {
-	resp.Cmd
-	key []byte
-	rcv interface{}
+	"CLUSTER":   true,
+	"READONLY":  true,
+	"READWRITE": true,
+	"ASKING":    true,
+
+	"AUTH":   true,
+	"ECHO":   true,
+	"PING":   true,
+	"QUIT":   true,
+	"SELECT": true,
+	"SWAPDB": true,
+
+	"KEYS":      true,
+	"MIGRATE":   true,
+	"OBJECT":    true,
+	"RANDOMKEY": true,
+	"WAIT":      true,
+	"SCAN":      true,
+
+	"EVAL":    true,
+	"EVALSHA": true,
+	"SCRIPT":  true,
+
+	"BGREWRITEAOF": true,
+	"BGSAVE":       true,
+	"CLIENT":       true,
+	"COMMAND":      true,
+	"CONFIG":       true,
+	"DBSIZE":       true,
+	"DEBUG":        true,
+	"FLUSHALL":     true,
+	"FLUSHDB":      true,
+	"INFO":         true,
+	"LASTSAVE":     true,
+	"MONITOR":      true,
+	"ROLE":         true,
+	"SAVE":         true,
+	"SHUTDOWN":     true,
+	"SLAVEOF":      true,
+	"SLOWLOG":      true,
+	"SYNC":         true,
+	"TIME":         true,
+
+	//"BITOPS": true, // TODO specially handle this?
+
+	// TODO cluster needs to support WithConnForKey or something like that
+	"DISCARD": true,
+	"EXEC":    true,
+	"MULTI":   true,
+	"UNWATCH": true,
+	"WATCH":   true,
 }
 
-// Cmd TODO needs docs
-func Cmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
-	return cmdAction{
-		Cmd: resp.Cmd{
-			Cmd:  []byte(cmd),
-			Args: append([]interface{}{key}, args...),
-		},
-		key: []byte(key),
-		rcv: rcv,
-	}
-}
-
-// CmdNoKey TODO needs docs
-func CmdNoKey(rcv interface{}, cmd string, args ...interface{}) CmdAction {
-	return cmdAction{
-		Cmd: resp.Cmd{
-			Cmd:  []byte(cmd),
-			Args: args,
-		},
-		rcv: rcv,
-	}
-}
-
-func (c cmdAction) Key() []byte {
-	return c.key
-}
-
-func (c cmdAction) UnmarshalRESP(br *bufio.Reader) error {
-	return resp.Any{I: c.rcv}.UnmarshalRESP(br)
-}
-
-func (c cmdAction) Run(conn Conn) error {
-	if err := conn.Encode(c); err != nil {
-		return err
-	}
-	return conn.Decode(c)
-}
-
-func (c cmdAction) String() string {
+func cmdString(m resp.Marshaler) string {
 	// we go way out of the way here to display the command as it would be sent
 	// to redis. This is pretty similar logic to what the stub does as well
 	buf := new(bytes.Buffer)
-	if err := c.MarshalRESP(buf); err != nil {
+	if err := m.MarshalRESP(buf); err != nil {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
 	var ss []string
@@ -98,6 +108,117 @@ func (c cmdAction) String() string {
 		ss[i] = strconv.QuoteToASCII(ss[i])
 	}
 	return "[" + strings.Join(ss, " ") + "]"
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type cmdAction struct {
+	rcv  interface{}
+	cmd  string
+	args []string
+}
+
+// Cmd TODO needs docs
+func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
+	return &cmdAction{
+		rcv:  rcv,
+		cmd:  cmd,
+		args: args,
+	}
+}
+
+func (c *cmdAction) Key() []byte {
+	if noKeyCmds[strings.ToUpper(c.cmd)] || len(c.args) == 0 {
+		return nil
+	}
+	return []byte(c.args[0])
+}
+
+func (c *cmdAction) MarshalRESP(w io.Writer) error {
+	if err := (resp.ArrayHeader{N: len(c.args) + 1}).MarshalRESP(w); err != nil {
+		return err
+	} else if err := (resp.BulkStringStr{S: c.cmd}).MarshalRESP(w); err != nil {
+		return err
+	}
+	for i := range c.args {
+		if err := (resp.BulkStringStr{S: c.args[i]}).MarshalRESP(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
+	return resp.Any{I: c.rcv}.UnmarshalRESP(br)
+}
+
+func (c *cmdAction) Run(conn Conn) error {
+	if err := conn.Encode(c); err != nil {
+		return err
+	}
+	return conn.Decode(c)
+}
+
+func (c *cmdAction) String() string {
+	return cmdString(c)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type flatCmdAction struct {
+	rcv      interface{}
+	cmd, key string
+	args     []interface{}
+}
+
+// FlatCmd TODO needs docs
+func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
+	return &flatCmdAction{
+		rcv:  rcv,
+		cmd:  cmd,
+		key:  key,
+		args: args,
+	}
+}
+
+func (c *flatCmdAction) Key() []byte {
+	return []byte(c.key)
+}
+
+func (c *flatCmdAction) MarshalRESP(w io.Writer) error {
+	var err error
+	marshal := func(m resp.Marshaler) {
+		if err == nil {
+			err = m.MarshalRESP(w)
+		}
+	}
+
+	a := resp.Any{
+		I:                     c.args,
+		MarshalBulkString:     true,
+		MarshalNoArrayHeaders: true,
+	}
+	arrL := 2 + a.NumElems()
+	marshal(resp.ArrayHeader{N: arrL})
+	marshal(resp.BulkStringStr{S: c.cmd})
+	marshal(resp.BulkStringStr{S: c.key})
+	marshal(a)
+	return err
+}
+
+func (c *flatCmdAction) UnmarshalRESP(br *bufio.Reader) error {
+	return resp.Any{I: c.rcv}.UnmarshalRESP(br)
+}
+
+func (c *flatCmdAction) Run(conn Conn) error {
+	if err := conn.Encode(c); err != nil {
+		return err
+	}
+	return conn.Decode(c)
+}
+
+func (c *flatCmdAction) String() string {
+	return cmdString(c)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
