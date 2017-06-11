@@ -104,6 +104,23 @@ func (c *Cluster) err(err error) {
 	}
 }
 
+func assertKeysSlot(keys []string) error {
+	var ok bool
+	var prevKey string
+	var slot uint16
+	for _, key := range keys {
+		thisSlot := ClusterSlot([]byte(key))
+		if !ok {
+			ok = true
+		} else if slot != thisSlot {
+			return fmt.Errorf("keys %q and %q do not belong to the same slot", prevKey, key)
+		}
+		prevKey = key
+		slot = thisSlot
+	}
+	return nil
+}
+
 // may return nil, nil if no pool for the addr
 func (c *Cluster) rpool(addr string) (Client, error) {
 	c.RLock()
@@ -233,11 +250,8 @@ func (c *Cluster) syncEvery(d time.Duration) {
 	}()
 }
 
-func (c *Cluster) addrForKey(key []byte) string {
-	if key == nil {
-		return ""
-	}
-	s := ClusterSlot(key)
+func (c *Cluster) addrForKey(key string) string {
+	s := ClusterSlot([]byte(key))
 	c.RLock()
 	defer c.RUnlock()
 	for _, t := range c.tt {
@@ -258,16 +272,27 @@ const doAttempts = 5
 // If the Action is a CmdAction then Cluster will handled MOVED and ASK errors
 // correctly, for other Action types those errors will be returned as is.
 func (c *Cluster) Do(a Action) error {
-	return c.doInner(a, c.addrForKey(a.Key()), false, doAttempts)
+	var addr, key string
+	keys := a.Keys()
+	if len(keys) == 0 {
+		// that's ok, key will then just be ""
+	} else if err := assertKeysSlot(keys); err != nil {
+		return err
+	} else {
+		key = keys[0]
+		addr = c.addrForKey(key)
+	}
+
+	return c.doInner(a, addr, key, false, doAttempts)
 }
 
-func (c *Cluster) doInner(a Action, addr string, ask bool, attempts int) error {
+func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) error {
 	p, err := c.pool(addr)
 	if err != nil {
 		return err
 	}
 
-	err = p.Do(WithConn(a.Key(), func(conn Conn) error {
+	err = p.Do(WithConn(key, func(conn Conn) error {
 		if ask {
 			if err := conn.Do(Cmd(nil, "ASKING")); err != nil {
 				return err
@@ -309,7 +334,7 @@ func (c *Cluster) doInner(a Action, addr string, ask bool, attempts int) error {
 		return errors.New("cluster action redirected too many times")
 	}
 
-	return c.doInner(a, addr, ask, attempts)
+	return c.doInner(a, addr, key, ask, attempts)
 }
 
 // WithMasters calls the given callback with the address and Client instance of
@@ -354,4 +379,3 @@ func (c *Cluster) Close() error {
 }
 
 // TODO specially handle SCAN
-// TODO specially handle Pipeline.... somehow

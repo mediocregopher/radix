@@ -32,7 +32,7 @@ func TestPool(t *T) {
 		wg.Add(1)
 		go func() {
 			for i := 0; i < 100; i++ {
-				pool.Do(WithConn(nil, func(conn Conn) error {
+				pool.Do(WithConn("", func(conn Conn) error {
 					testEcho(conn)
 					return nil
 				}))
@@ -61,7 +61,7 @@ func TestPut(t *T) {
 
 	// Make sure that put does not accept a connection which has had a critical
 	// network error
-	pool.Do(WithConn(nil, func(conn Conn) error {
+	pool.Do(WithConn("", func(conn Conn) error {
 		assertPoolConns(9)
 		conn.(*staticPoolConn).lastIOErr = io.EOF
 		return nil
@@ -70,7 +70,7 @@ func TestPut(t *T) {
 
 	// Make sure that a put _does_ accept a connection which had a
 	// marshal/unmarshal error
-	pool.Do(WithConn(nil, func(conn Conn) error {
+	pool.Do(WithConn("", func(conn Conn) error {
 		assert.NotNil(t, conn.Do(FlatCmd(nil, "ECHO", "", func() {})))
 		assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
 		return nil
@@ -79,7 +79,7 @@ func TestPut(t *T) {
 
 	// Make sure that a put _does_ accept a connection which had an app level
 	// resp error
-	pool.Do(WithConn(nil, func(conn Conn) error {
+	pool.Do(WithConn("", func(conn Conn) error {
 		assert.NotNil(t, Cmd(nil, "CMDDNE"))
 		assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
 		return nil
@@ -93,7 +93,7 @@ func TestPut(t *T) {
 		assert.Nil(t, pool.Close())
 		closeCh <- true
 	}()
-	pool.Do(WithConn(nil, func(conn Conn) error {
+	pool.Do(WithConn("", func(conn Conn) error {
 		closeCh <- true
 		<-closeCh
 		return nil

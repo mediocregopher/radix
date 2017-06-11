@@ -84,7 +84,7 @@ func TestWithConnAction(t *T) {
 	c := dial()
 	k, v := randStr(), 10
 
-	err := c.Do(WithConn([]byte(k), func(conn Conn) error {
+	err := c.Do(WithConn(k, func(conn Conn) error {
 		require.Nil(t, conn.Do(FlatCmd(nil, "SET", k, v)))
 		var out int
 		require.Nil(t, conn.Do(Cmd(&out, "GET", k)))

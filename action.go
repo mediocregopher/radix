@@ -15,10 +15,9 @@ import (
 
 // Action can perform one or more tasks using a Conn
 type Action interface {
-	// Key returns a key which will be acted on. If the Action will act on more
-	// than one key then any one can be returned. If no keys will be acted on
-	// then nil should be returned.
-	Key() []byte
+	// Keys returns the keys which will be acted on. Empty slice or nil may be
+	// returned if no keys are being acted on.
+	Keys() []string
 
 	// Run actually performs the Action using the given Conn
 	Run(c Conn) error
@@ -127,11 +126,11 @@ func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 	}
 }
 
-func (c *cmdAction) Key() []byte {
+func (c *cmdAction) Keys() []string {
 	if noKeyCmds[strings.ToUpper(c.cmd)] || len(c.args) == 0 {
 		return nil
 	}
-	return []byte(c.args[0])
+	return []string{c.args[0]}
 }
 
 func (c *cmdAction) MarshalRESP(w io.Writer) error {
@@ -181,8 +180,8 @@ func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
 	}
 }
 
-func (c *flatCmdAction) Key() []byte {
-	return []byte(c.key)
+func (c *flatCmdAction) Keys() []string {
+	return []string{c.key}
 }
 
 func (c *flatCmdAction) MarshalRESP(w io.Writer) error {
@@ -248,11 +247,8 @@ func Lua(rcv interface{}, script string, keys []string, args ...interface{}) Act
 }
 
 // Key implements the Key method of the Action interface.
-func (lc lua) Key() []byte {
-	if len(lc.keys) == 0 {
-		return nil
-	}
-	return []byte(lc.keys[0])
+func (lc lua) Keys() []string {
+	return lc.keys
 }
 
 func (lc lua) MarshalRESP(w io.Writer) error {
@@ -328,13 +324,18 @@ func Pipeline(cmds ...CmdAction) Action {
 	return pipeline(cmds)
 }
 
-func (p pipeline) Key() []byte {
+func (p pipeline) Keys() []string {
+	m := map[string]bool{}
 	for _, rc := range p {
-		if k := rc.Key(); k != nil {
-			return k
+		for _, k := range rc.Keys() {
+			m[k] = true
 		}
 	}
-	return nil
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func (p pipeline) Run(c Conn) error {
@@ -354,15 +355,15 @@ func (p pipeline) Run(c Conn) error {
 ////////////////////////////////////////////////////////////////////////////////
 
 type withConn struct {
-	key []byte
+	key string
 	fn  func(Conn) error
 }
 
 // WithConn is used to perform a set of independent Actions on the same Conn.
 // key should be a key which one or more of the inner Actions is acting on, or
-// nil if no keys are being acted on. The callback function is what should
+// "" if no keys are being acted on. The callback function is what should
 // actually carry out the inner actions, and the error it returns will be
-// returned by the Run method.
+// passed back up immediately.
 //
 //	err := pool.Do(WithConn("someKey", func(conn Conn) error {
 //		var curr int
@@ -376,14 +377,13 @@ type withConn struct {
 //
 // NOTE that WithConn only ensures all inner Actions are performed on the same
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
-// WithConn or Pipeline for transactions, or use LuaCmd.
-func WithConn(key []byte, fn func(Conn) error) Action {
-	// TODO don't like that key is []byte here, string would be better
-	return withConn{[]byte(key), fn}
+// WithConn or Pipeline for transactions, or use Lua
+func WithConn(key string, fn func(Conn) error) Action {
+	return withConn{key, fn}
 }
 
-func (wc withConn) Key() []byte {
-	return wc.key
+func (wc withConn) Keys() []string {
+	return []string{wc.key}
 }
 
 func (wc withConn) Run(c Conn) error {

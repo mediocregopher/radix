@@ -119,7 +119,7 @@ func TestClusterDo(t *T) {
 	{
 		var vgot string
 		cmd := Cmd(&vgot, "GET", k)
-		require.Nil(t, c.doInner(cmd, stub16k.addr, false, 2))
+		require.Nil(t, c.doInner(cmd, stub16k.addr, k, false, 2))
 		assert.Equal(t, v, vgot)
 	}
 
