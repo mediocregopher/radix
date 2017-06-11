@@ -377,5 +377,3 @@ func (c *Cluster) Close() error {
 	}
 	return nil
 }
-
-// TODO specially handle SCAN

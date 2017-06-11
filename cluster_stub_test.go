@@ -116,6 +116,20 @@ func (s *clusterNodeStub) newConn() Conn {
 			return resp.SimpleString{S: "OK"}
 		case "ADDR":
 			return s.addr
+		case "SCAN":
+			if cur := args[1]; cur == "0" {
+				var keys []string
+				s.clusterDatasetStub.Lock()
+				for _, slot := range s.clusterDatasetStub.slots {
+					for key := range slot.kv {
+						keys = append(keys, key)
+					}
+				}
+				s.clusterDatasetStub.Unlock()
+				return []interface{}{"1", keys}
+			} else {
+				return []interface{}{"0", []string{}}
+			}
 		}
 
 		return resp.Error{E: fmt.Errorf("unknown command %#v", args)}
