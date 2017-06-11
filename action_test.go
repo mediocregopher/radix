@@ -17,7 +17,20 @@ func TestCmdAction(t *T) {
 	assert.Equal(t, val, got)
 }
 
-// TODO TestFlatAction
+func TestFlatAction(t *T) {
+	c := dial()
+	key := randStr()
+	m := map[string]string{
+		randStr(): randStr(),
+		randStr(): randStr(),
+		randStr(): randStr(),
+	}
+	require.Nil(t, c.Do(FlatCmd(nil, "HMSET", key, m)))
+
+	var got map[string]string
+	require.Nil(t, c.Do(FlatCmd(&got, "HGETALL", key)))
+	assert.Equal(t, m, got)
+}
 
 func TestLuaAction(t *T) {
 	getset := `
