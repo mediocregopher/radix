@@ -13,28 +13,6 @@ var (
 	errPoolClosed = errors.New("pool is closed")
 )
 
-// TODO not super happy with the naming here, PoolFunc is _basically_ a
-// DialFunc. If Conn's methods were all thread-safe we could just have
-// ClientFunc and have them all be the effectively the same
-
-// PoolFunc is a function which can be used to create a Pool of connections to a
-// single redis instance on the given network/address.
-type PoolFunc func(network, addr string) (Client, error)
-
-// NewPoolFunc returns a PoolFunc which will use this package's NewPool function
-// to create a Pool of the given size and using the given DialFunc.
-//
-// If the DialFunc is nil then this package's Dial function is used.
-func NewPoolFunc(size int, df DialFunc) PoolFunc {
-	return func(network, addr string) (Client, error) {
-		return NewPool(network, addr, size, df)
-	}
-}
-
-// DefaultPoolFunc is a sane PoolFunc which will be used as the default when a
-// function or method takes in a PoolFunc and nil is given.
-var DefaultPoolFunc = NewPoolFunc(20, Dial)
-
 type staticPoolConn struct {
 	Conn
 	sp *Pool
@@ -72,13 +50,13 @@ func (spc *staticPoolConn) Close() error {
 
 // Pool a semi-dynamic pool which holds a fixed number of connections open. If a
 // connection needs to be retrieved from the pool but the pool is empty a new
-// connection will be created on-the-fly using DialFunc. If connection is being
+// connection will be created on-the-fly using ConnFunc. If connection is being
 // put back in the pool but the pool is full then the connection will be closed
 // and discarded.  In this way spikes are handled rather well, but sustained
 // over-use will cause connection churn and will need the pool size to be
 // increased.
 type Pool struct {
-	df            DialFunc
+	df            ConnFunc
 	network, addr string
 
 	l      sync.RWMutex
@@ -89,10 +67,10 @@ type Pool struct {
 	initDone chan struct{} // used for tests
 }
 
-// NewPool creates a *Pool whose connections are all created using the DialFunc
-// (or Dial, if the DialFunc is nil). The size indicates the maximum number of
+// NewPool creates a *Pool whose connections are all created using the ConnFunc
+// (or Dial, if the ConnFunc is nil). The size indicates the maximum number of
 // idle connections to have waiting to be used at any given moment.
-func NewPool(network, addr string, size int, df DialFunc) (*Pool, error) {
+func NewPool(network, addr string, size int, df ConnFunc) (*Pool, error) {
 	sp := &Pool{
 		network:  network,
 		addr:     addr,

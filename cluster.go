@@ -39,7 +39,7 @@ func (d *dedupe) do(fn func()) {
 // with it, including a set of pools to each of its instances. All methods on
 // Cluster are thread-safe
 type Cluster struct {
-	pf PoolFunc
+	cf ClientFunc
 
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
@@ -60,15 +60,15 @@ type Cluster struct {
 // address given until it finds a usable one. From there it use CLUSTER SLOTS to
 // discover the cluster topology and make all the necessary connections.
 //
-// The PoolFunc is used to make the internal pools for the instances discovered
-// here and all new ones in the future. If nil is given then
-// radix.DefaultPoolFunc will be used.
-func NewCluster(pf PoolFunc, addrs ...string) (*Cluster, error) {
-	if pf == nil {
-		pf = DefaultPoolFunc
+// The ClientFunc is used to make the internal clients for the instances
+// discovered here and all new ones in the future. If nil is given then
+// radix.DefaultClientFunc will be used.
+func NewCluster(cf ClientFunc, addrs ...string) (*Cluster, error) {
+	if cf == nil {
+		cf = DefaultClientFunc
 	}
 	c := &Cluster{
-		pf:         pf,
+		cf:         cf,
 		syncDedupe: newDedupe(),
 		pools:      map[string]Client{},
 		closeCh:    make(chan struct{}),
@@ -77,7 +77,7 @@ func NewCluster(pf PoolFunc, addrs ...string) (*Cluster, error) {
 
 	// make a pool to base the cluster on
 	for _, addr := range addrs {
-		p, err := pf("tcp", addr)
+		p, err := cf("tcp", addr)
 		if err != nil {
 			continue
 		}
@@ -150,7 +150,7 @@ func (c *Cluster) pool(addr string) (Client, error) {
 
 	// it's important that the cluster pool set isn't locked while this is
 	// happening, because this could block for a while
-	if p, err = c.pf("tcp", addr); err != nil {
+	if p, err = c.cf("tcp", addr); err != nil {
 		return nil, err
 	}
 

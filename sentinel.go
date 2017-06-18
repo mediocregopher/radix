@@ -28,8 +28,8 @@ type Sentinel struct {
 	addrs  map[string]bool // the known sentinel addresses
 
 	name string
-	dfn  DialFunc // the function used to dial sentinel instances
-	pfn  PoolFunc
+	dfn  ConnFunc // the function used to dial sentinel instances
+	cfn  ClientFunc
 
 	// We use a persistent PubSubConn here, so we don't need to do much after
 	// initialization. The pconn is only really kept around for closing
@@ -50,17 +50,17 @@ type Sentinel struct {
 }
 
 // NewSentinel creates and returns a *Sentinel. dialFn may be nil, but if given
-// can specify a custom DialFunc to use when connecting to sentinels. poolFn
-// may be nil, but if given can specify a custom PoolFunc to use when createing
-// a connection pool to the master instance.
-func NewSentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poolFn PoolFunc) (*Sentinel, error) {
+// can specify a custom ConnFunc to use when connecting to sentinels. clientFn
+// may be nil, but if given can specify a custom ClientFunc to use when creating
+// a client to the master instance.
+func NewSentinel(masterName string, sentinelAddrs []string, dialFn ConnFunc, clientFn ClientFunc) (*Sentinel, error) {
 	if dialFn == nil {
 		dialFn = func(net, addr string) (Conn, error) {
 			return DialTimeout(net, addr, 5*time.Second)
 		}
 	}
-	if poolFn == nil {
-		poolFn = NewPoolFunc(10, nil)
+	if clientFn == nil {
+		clientFn = DefaultClientFunc
 	}
 
 	addrs := map[string]bool{}
@@ -73,7 +73,7 @@ func NewSentinel(masterName string, sentinelAddrs []string, dialFn DialFunc, poo
 		name:        masterName,
 		addrs:       addrs,
 		dfn:         dialFn,
-		pfn:         poolFn,
+		cfn:         clientFn,
 		pconnCh:     make(chan PubSubMessage),
 		ErrCh:       make(chan error, 1),
 		closeCh:     make(chan bool),
@@ -184,7 +184,7 @@ func (sc *Sentinel) ensureMaster(conn Conn) error {
 }
 
 func (sc *Sentinel) setMaster(newAddr string) error {
-	newPool, err := sc.pfn("tcp", newAddr)
+	newPool, err := sc.cfn("tcp", newAddr)
 	if err != nil {
 		return err
 	}

@@ -212,7 +212,7 @@ func (scl *clusterStub) topo() ClusterTopo {
 	return tt
 }
 
-func (scl *clusterStub) poolFunc() PoolFunc {
+func (scl *clusterStub) clientFunc() ClientFunc {
 	return func(network, addr string) (Client, error) {
 		for _, s := range scl.stubs {
 			if s.addr == addr {
@@ -232,7 +232,7 @@ func (scl *clusterStub) addrs() []string {
 }
 
 func (scl *clusterStub) newCluster() *Cluster {
-	c, err := NewCluster(scl.poolFunc(), scl.addrs()...)
+	c, err := NewCluster(scl.clientFunc(), scl.addrs()...)
 	if err != nil {
 		panic(err)
 	}
