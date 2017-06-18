@@ -407,13 +407,13 @@ type withConn struct {
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
 // WithConn or Pipeline for transactions, or use Lua
 func WithConn(key string, fn func(Conn) error) Action {
-	return withConn{key, fn}
+	return &withConn{key, fn}
 }
 
-func (wc withConn) Keys() []string {
+func (wc *withConn) Keys() []string {
 	return []string{wc.key}
 }
 
-func (wc withConn) Run(c Conn) error {
+func (wc *withConn) Run(c Conn) error {
 	return wc.fn(c)
 }
