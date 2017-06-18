@@ -1,13 +1,4 @@
-# Week
-  * Think of name, move to that repo
-  * Load testing
-    - against v2
-    - against redigo
-
-.... re-evaluate here
-
 * Clean
-  - All leftover TODOS
   - consistent Close behavior, including blocking till fully closed
   - CmdAction is ugly
     - the way Cluster.Do works is... iffy. Casting Action to CmdAction feels
@@ -19,9 +10,14 @@
   - do all the structs types in resp need to be structs?
   - Read through docs, ensure everything is clean and sensical
   - Read through code, make sure all code comments are correct
-  - Don't use testify
+  - Don't use testify?
   - https://blog.golang.org/subtests
+  - update/delete Makefile
 * Documentation
   - Examples where necessary
   - Simplify
+  - README
+    - doc link obvs
+    - Feature list
+    - Benchmarks
 * Make okq use it

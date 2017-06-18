@@ -7,9 +7,6 @@ import (
 	redigo "github.com/garyburd/redigo/redis"
 )
 
-// TODO if the package name is going to change then stuff in here should get
-// renamed
-
 func newRedigo() redigo.Conn {
 	c, err := redigo.Dial("tcp", "127.0.0.1:6379")
 	if err != nil {

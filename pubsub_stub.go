@@ -42,8 +42,6 @@ type pubSubStub struct {
 	mDoneCh chan struct{}
 }
 
-// TODO probably make this into an example
-
 // PubSubStub returns a Conn much like Stub does. It differs in that Encode
 // calls for (P)SUBSCRIBE, (P)UNSUBSCRIBE, MESSAGE, and PING will be intercepted
 // and handled as per redis' expected pubsub functionality. A PubSubMessage may
@@ -51,7 +49,7 @@ type pubSubStub struct {
 // (P)SUBSCRIBE called matching that PubSubMessage it will be written to the
 // PubSubStub's internal buffer as expected.
 //
-// This is intended to be used to so that it can mock services which can perform
+// This is intended to be used so that it can mock services which can perform
 // both normal redis commands and pubsub (e.g. a real redis instance, redis
 // sentinel). Once created this stub can be wrapped in a normal PubSubConn using
 // PubSub and treated like a real connection. Here's an example:
@@ -76,8 +74,8 @@ type pubSubStub struct {
 //	}()
 //
 //	// Wrap the stub like we would for a normal redis connection
-//	pstub := PubSub(stub)
-//	msgCh := make(chan PubSubMessage)
+//	pstub := radix.PubSub(stub)
+//	msgCh := make(chan radix.PubSubMessage)
 //
 //	// Subscribe to "foo"
 //	if err := pstub.Subscribe(msgCh, "foo"); err != nil {
@@ -97,6 +95,7 @@ type pubSubStub struct {
 //		}
 //	}
 //
+// TODO probably make this into an example
 func PubSubStub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (Conn, chan<- PubSubMessage) {
 	ch := make(chan PubSubMessage)
 	s := &pubSubStub{
