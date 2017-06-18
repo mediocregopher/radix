@@ -106,6 +106,20 @@ func cmdString(m resp.Marshaler) string {
 	return "[" + strings.Join(ss, " ") + "]"
 }
 
+func marshalBulkString(prevErr error, w io.Writer, str string) error {
+	if prevErr != nil {
+		return prevErr
+	}
+	return resp.BulkString{S: str}.MarshalRESP(w)
+}
+
+func marshalBulkStringBytes(prevErr error, w io.Writer, b []byte) error {
+	if prevErr != nil {
+		return prevErr
+	}
+	return resp.BulkStringBytes{B: b}.MarshalRESP(w)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 type cmdAction struct {
@@ -134,17 +148,12 @@ func (c *cmdAction) Keys() []string {
 }
 
 func (c *cmdAction) MarshalRESP(w io.Writer) error {
-	if err := (resp.ArrayHeader{N: len(c.args) + 1}).MarshalRESP(w); err != nil {
-		return err
-	} else if err := (resp.BulkString{S: c.cmd}).MarshalRESP(w); err != nil {
-		return err
-	}
+	err := resp.ArrayHeader{N: len(c.args) + 1}.MarshalRESP(w)
+	err = marshalBulkString(err, w, c.cmd)
 	for i := range c.args {
-		if err := (resp.BulkString{S: c.args[i]}).MarshalRESP(w); err != nil {
-			return err
-		}
+		err = marshalBulkString(err, w, c.args[i])
 	}
-	return nil
+	return err
 }
 
 func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
@@ -189,23 +198,19 @@ func (c *flatCmdAction) Keys() []string {
 
 func (c *flatCmdAction) MarshalRESP(w io.Writer) error {
 	var err error
-	marshal := func(m resp.Marshaler) {
-		if err == nil {
-			err = m.MarshalRESP(w)
-		}
-	}
-
 	a := resp.Any{
 		I:                     c.args,
 		MarshalBulkString:     true,
 		MarshalNoArrayHeaders: true,
 	}
 	arrL := 2 + a.NumElems()
-	marshal(resp.ArrayHeader{N: arrL})
-	marshal(resp.BulkString{S: c.cmd})
-	marshal(resp.BulkString{S: c.key})
-	marshal(a)
-	return err
+	err = resp.ArrayHeader{N: arrL}.MarshalRESP(w)
+	err = marshalBulkString(err, w, c.cmd)
+	err = marshalBulkString(err, w, c.key)
+	if err != nil {
+		return err
+	}
+	return a.MarshalRESP(w)
 }
 
 func (c *flatCmdAction) UnmarshalRESP(br *bufio.Reader) error {
@@ -288,26 +293,23 @@ func (lc *luaAction) Keys() []string {
 }
 
 func (lc *luaAction) MarshalRESP(w io.Writer) error {
-	var err error
-	marshal := func(m resp.Marshaler) {
-		if err != nil {
-			return
-		}
-		err = m.MarshalRESP(w)
+	// EVAL(SHA) script/sum numkeys args...
+	if err := (resp.ArrayHeader{N: 3 + len(lc.args)}).MarshalRESP(w); err != nil {
+		return err
 	}
 
-	// EVAL(SHA) script/sum numkeys args...
-	marshal(resp.ArrayHeader{N: 3 + len(lc.args)})
+	var err error
 	if lc.eval {
-		marshal(resp.BulkStringBytes{B: eval})
-		marshal(resp.BulkString{S: lc.script})
+		err = marshalBulkStringBytes(err, w, eval)
+		err = marshalBulkString(err, w, lc.script)
 	} else {
-		marshal(resp.BulkStringBytes{B: evalsha})
-		marshal(resp.BulkString{S: lc.sum})
+		err = marshalBulkStringBytes(err, w, evalsha)
+		err = marshalBulkString(err, w, lc.sum)
 	}
-	marshal(resp.Any{I: lc.numKeys, MarshalBulkString: true})
+
+	err = marshalBulkString(err, w, strconv.Itoa(lc.numKeys))
 	for i := range lc.args {
-		marshal(resp.BulkString{S: lc.args[i]})
+		err = marshalBulkString(err, w, lc.args[i])
 	}
 	return err
 }
