@@ -91,6 +91,12 @@ func NewConn(conn net.Conn) Conn {
 	}
 }
 
+var connWrapPool = sync.Pool{
+	New: func() interface{} {
+		return new(connWrap)
+	},
+}
+
 func (cw *connWrap) Do(a Action) error {
 	cw.doL.Lock()
 	defer cw.doL.Unlock()
@@ -98,11 +104,15 @@ func (cw *connWrap) Do(a Action) error {
 	// if we passed in this connWrap as-is it would be locked and that wouldn't
 	// be possible. By making an inner one we can let the outer one stay locked,
 	// and the inner one's Do calls will lock themselves correctly as well.
-	inner := &connWrap{
-		Conn: cw.Conn,
-		brw:  cw.brw,
-	}
-	return a.Run(inner)
+	//
+	// Since this inner wrapper causes an allocation and this is in the critical
+	// path for any heavy load we use a pool to try to absorb some of that.
+	inner := connWrapPool.Get().(*connWrap)
+	inner.Conn = cw.Conn
+	inner.brw = cw.brw
+	err := a.Run(inner)
+	connWrapPool.Put(inner)
+	return err
 }
 
 func (cw *connWrap) Encode(m resp.Marshaler) error {
