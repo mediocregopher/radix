@@ -81,9 +81,6 @@ var noKeyCmds = map[string]bool{
 	"SYNC":         true,
 	"TIME":         true,
 
-	//"BITOPS": true, // TODO specially handle this?
-
-	// TODO cluster needs to support WithConnForKey or something like that
 	"DISCARD": true,
 	"EXEC":    true,
 	"MULTI":   true,
@@ -127,7 +124,10 @@ func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 }
 
 func (c *cmdAction) Keys() []string {
-	if noKeyCmds[strings.ToUpper(c.cmd)] || len(c.args) == 0 {
+	cmd := strings.ToUpper(c.cmd)
+	if cmd == "BITOP" && len(c.args) > 1 { // antirez why you do this
+		return c.args[1:]
+	} else if noKeyCmds[cmd] || len(c.args) == 0 {
 		return nil
 	}
 	return []string{c.args[0]}
@@ -172,6 +172,9 @@ type flatCmdAction struct {
 
 // FlatCmd TODO needs docs
 func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
+	if strings.ToUpper(cmd) == "BITOP" {
+		panic("FlatCmd doesn't support BITOP, use Cmd instead")
+	}
 	return &flatCmdAction{
 		rcv:  rcv,
 		cmd:  cmd,

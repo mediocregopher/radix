@@ -15,6 +15,15 @@ func TestCmdAction(t *T) {
 	var got string
 	require.Nil(t, c.Do(Cmd(&got, "GET", key)))
 	assert.Equal(t, val, got)
+
+	// because BITOP is weird
+	require.Nil(t, c.Do(Cmd(nil, "SET", key, val)))
+	bitopCmd := Cmd(nil, "BITOP", "AND", key+key, key, key)
+	assert.Equal(t, []string{key + key, key, key}, bitopCmd.Keys())
+	require.Nil(t, c.Do(bitopCmd))
+	var dstval string
+	require.Nil(t, c.Do(Cmd(&dstval, "GET", key+key)))
+	assert.Equal(t, val, dstval)
 }
 
 func TestFlatAction(t *T) {
