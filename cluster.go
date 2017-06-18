@@ -92,7 +92,7 @@ func NewCluster(pf PoolFunc, addrs ...string) (*Cluster, error) {
 		return nil, err
 	}
 
-	go c.syncEvery(30 * time.Second) // TODO make period configurable?
+	go c.syncEvery(30 * time.Second)
 
 	return c, nil
 }

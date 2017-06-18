@@ -136,10 +136,9 @@ func bufferedIntDelim(br *bufio.Reader) (int64, error) {
 
 func readAllAppend(r io.Reader, b []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(b)
-	// TODO a side effect of this is that the given b will be re-allocated if
+	// a side effect of this is that the given b will be re-allocated if
 	// it's less than bytes.MinRead. Since this b could be all the way from the
-	// user we can't guarantee it within the library. Would be nice to not have
-	// that weird edge-case
+	// user we can't guarantee it within the library
 	_, err := buf.ReadFrom(r)
 	return buf.Bytes(), err
 }

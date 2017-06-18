@@ -1,14 +1,4 @@
 # Week
-    * Big TODO in resp to maybe refactor it yet another time? ugh....
-
-# Week
-  * cluster
-    - Method like `WithMasters(func(string, radix.Conn) error) error`
-  * Look into how WithMasters above correlates with other Client types, maybe we
-    can modify the Client interface to do something like that, would make
-    scanning easier
-
-# Week (or 2?)
   * Think of name, move to that repo
   * Load testing
     - against v2

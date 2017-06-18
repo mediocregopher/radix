@@ -19,7 +19,6 @@ type timeoutOkConn struct {
 // timeoutOk returns a Conn which will _not_ call Close on itself if it sees a
 // timeout error during a Decode call (though it will still return that error).
 // Close will still be called other read/write errors.
-// TODO not sure if I want to make this public
 func timeoutOk(c Conn) Conn {
 	return &timeoutOkConn{c}
 }
