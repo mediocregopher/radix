@@ -128,7 +128,19 @@ type cmdAction struct {
 	args []string
 }
 
-// Cmd TODO needs docs
+// Cmd is used to perform a redis command and retrieve a result. See the package
+// docs on how results are unmarshaled into the receiver.
+//
+//	if err := client.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
+//		panic(err)
+//	}
+//
+//	var fooVal string
+//	if err := client.Do(radix.Cmd(&fooVal, "GET", "foo")); err != nil {
+//		panic(err)
+//	}
+//	fmt.Println(fooVal) // "bar"
+//
 func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 	return &cmdAction{
 		rcv:  rcv,
@@ -179,11 +191,23 @@ type flatCmdAction struct {
 	args     []interface{}
 }
 
-// FlatCmd TODO needs docs
+// FlatCmd is like Cmd, but the arguments can be of almost any type, and FlatCmd
+// will automatically flatten them into a single array of strings.
+//
+// FlatCmd does _not_ work for commands whose first parameter isn't a key. Use
+// Cmd for those.
+//
+//	client.Do(radix.FlatCmd(nil, "SET", "foo", 1))
+//	// performs "SET" "foo" "1"
+//
+//	client.Do(radix.FlatCmd(nil, "SADD", "fooSet", []string{"1", "2", "3"}))
+//	// performs "SADD" "fooSet" "1" "2" "3"
+//
+//	m := map[string]int{"a":1, "b":2, "c":3}
+//	client.Do(radix.FlatCmd(nil, "HMSET", "fooHash", m))
+//	// performs "HMSET" "foohash" "a" "1" "b" "2" "c" "3"
+//
 func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
-	if strings.ToUpper(cmd) == "BITOP" {
-		panic("FlatCmd doesn't support BITOP, use Cmd instead")
-	}
 	return &flatCmdAction{
 		rcv:  rcv,
 		cmd:  cmd,
@@ -230,11 +254,11 @@ func (c *flatCmdAction) String() string {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// LuaScript contains the body of a script to be used with redis' EVAL
-// functionality. Call Cmd on a LuaScript to actually create an Action which can
-// be run.
+// EvalScript contains the body of a script to be used with redis' EVAL
+// functionality. Call Cmd on a EvalScript to actually create an Action which
+// can be run.
 //
-//	var getSet = NewLuaScript(1, `
+//	var getSet = NewEvalScript(1, `
 //		local prev = redis.call("GET", KEYS[1])
 //		redis.call("SET", KEYS[1], ARGV[1])
 //		return prev
@@ -246,17 +270,17 @@ func (c *flatCmdAction) String() string {
 //		return prevVal, err
 //	}
 //
-type LuaScript struct {
+type EvalScript struct {
 	script, sum string
 	numKeys     int
 }
 
-// NewLuaScript initializes a LuaScript instance. numKeys corresponds to the
+// NewEvalScript initializes a EvalScript instance. numKeys corresponds to the
 // number of arguments which will be keys when Cmd is called
-func NewLuaScript(numKeys int, script string) LuaScript {
+func NewEvalScript(numKeys int, script string) EvalScript {
 	sumRaw := sha1.Sum([]byte(script))
 	sum := hex.EncodeToString(sumRaw[:])
-	return LuaScript{
+	return EvalScript{
 		script:  script,
 		sum:     sum,
 		numKeys: numKeys,
@@ -268,59 +292,61 @@ var (
 	eval    = []byte("EVAL")
 )
 
-type luaAction struct {
-	LuaScript
+type evalAction struct {
+	EvalScript
 	args []string
 	rcv  interface{}
 
 	eval bool
 }
 
-// Lua TODO docs
-func (ls LuaScript) Cmd(rcv interface{}, args ...string) Action {
-	if len(args) < ls.numKeys {
-		panic("not enough arguments passed into LuaScript.Cmd")
+// Cmd is like the top-level Cmd but it uses the the EvalScript to perform EVAL
+// an EVAL command. args must be at least as long as the numKeys argument of
+// NewEvalScript.
+func (es EvalScript) Cmd(rcv interface{}, args ...string) Action {
+	if len(args) < es.numKeys {
+		panic("not enough arguments passed into EvalScript.Cmd")
 	}
-	return &luaAction{
-		LuaScript: ls,
-		args:      args,
-		rcv:       rcv,
+	return &evalAction{
+		EvalScript: es,
+		args:       args,
+		rcv:        rcv,
 	}
 }
 
-func (lc *luaAction) Keys() []string {
-	return lc.args[:lc.numKeys]
+func (ec *evalAction) Keys() []string {
+	return ec.args[:ec.numKeys]
 }
 
-func (lc *luaAction) MarshalRESP(w io.Writer) error {
+func (ec *evalAction) MarshalRESP(w io.Writer) error {
 	// EVAL(SHA) script/sum numkeys args...
-	if err := (resp.ArrayHeader{N: 3 + len(lc.args)}).MarshalRESP(w); err != nil {
+	if err := (resp.ArrayHeader{N: 3 + len(ec.args)}).MarshalRESP(w); err != nil {
 		return err
 	}
 
 	var err error
-	if lc.eval {
+	if ec.eval {
 		err = marshalBulkStringBytes(err, w, eval)
-		err = marshalBulkString(err, w, lc.script)
+		err = marshalBulkString(err, w, ec.script)
 	} else {
 		err = marshalBulkStringBytes(err, w, evalsha)
-		err = marshalBulkString(err, w, lc.sum)
+		err = marshalBulkString(err, w, ec.sum)
 	}
 
-	err = marshalBulkString(err, w, strconv.Itoa(lc.numKeys))
-	for i := range lc.args {
-		err = marshalBulkString(err, w, lc.args[i])
+	err = marshalBulkString(err, w, strconv.Itoa(ec.numKeys))
+	for i := range ec.args {
+		err = marshalBulkString(err, w, ec.args[i])
 	}
 	return err
 }
 
-func (lc *luaAction) Run(conn Conn) error {
+func (ec *evalAction) Run(conn Conn) error {
 	run := func(eval bool) error {
-		lc.eval = eval
-		if err := conn.Encode(lc); err != nil {
+		ec.eval = eval
+		if err := conn.Encode(ec); err != nil {
 			return err
 		}
-		return conn.Decode(resp.Any{I: lc.rcv})
+		return conn.Decode(resp.Any{I: ec.rcv})
 	}
 
 	err := run(false)
@@ -339,9 +365,9 @@ type pipeline []CmdAction
 // network delay into a single round-trip.
 //
 //	var fooVal string
-//	p := Pipeline(
-//		Cmd(nil, "SET", "foo", "bar"),
-//		Cmd(&fooVal, "GET", "foo"),
+//	p := radix.Pipeline(
+//		radix.FlatCmd(nil, "SET", "foo", 1),
+//		radix.Cmd(&fooVal, "GET", "foo"),
 //	)
 //	if err := conn.Do(p); err != nil {
 //		panic(err)
@@ -405,7 +431,7 @@ type withConn struct {
 //
 // NOTE that WithConn only ensures all inner Actions are performed on the same
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
-// WithConn or Pipeline for transactions, or use Lua
+// WithConn or Pipeline for transactions, or use EvalScript
 func WithConn(key string, fn func(Conn) error) Action {
 	return &withConn{key, fn}
 }

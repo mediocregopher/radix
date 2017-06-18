@@ -41,8 +41,8 @@ func TestFlatAction(t *T) {
 	assert.Equal(t, m, got)
 }
 
-func TestLuaAction(t *T) {
-	getSet := NewLuaScript(1, `
+func TestEvalAction(t *T) {
+	getSet := NewEvalScript(1, `
 		local prev = redis.call("GET", KEYS[1])
 		redis.call("SET", KEYS[1], ARGV[1])
 		return prev
