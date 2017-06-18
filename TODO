@@ -1,17 +1,15 @@
 * Clean
-  - consistent Close behavior, including blocking till fully closed
   - CmdAction is ugly
     - the way Cluster.Do works is... iffy. Casting Action to CmdAction feels
       weird
     - If someone were to make a "RetryAction" kind of thing it would not play
       nicely with cluster
-  - PoolFunc naming is ugly
   - PubSub stuff is kind of a mess (in what way?)
+    - PersistentPubSub(...) should maybe take in a ConnFunc?
   - do all the structs types in resp need to be structs?
   - Read through docs, ensure everything is clean and sensical
   - Read through code, make sure all code comments are correct
   - Don't use testify?
-  - https://blog.golang.org/subtests
   - update/delete Makefile
 * Documentation
   - Examples where necessary
@@ -20,4 +18,3 @@
     - doc link obvs
     - Feature list
     - Benchmarks
-* Make okq use it

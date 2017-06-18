@@ -1,16 +1,11 @@
 package radix
 
 import (
-	"errors"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/mediocregopher/radix.v2/resp"
-)
-
-var (
-	errPoolClosed = errors.New("pool is closed")
 )
 
 type staticPoolConn struct {
@@ -138,7 +133,7 @@ func (sp *Pool) get() (*staticPoolConn, error) {
 	sp.l.RLock()
 	defer sp.l.RUnlock()
 	if sp.closed {
-		return nil, errPoolClosed
+		return nil, errClientClosed
 	}
 
 	select {
@@ -188,7 +183,7 @@ func (sp *Pool) Close() error {
 	sp.l.Lock()
 	defer sp.l.Unlock()
 	if sp.closed {
-		return errPoolClosed
+		return errClientClosed
 	}
 	sp.closed = true
 	sp.closeCh <- true

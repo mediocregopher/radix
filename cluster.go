@@ -48,7 +48,9 @@ type Cluster struct {
 	pools map[string]Client
 	tt    ClusterTopo
 
-	closeCh chan struct{}
+	closeCh   chan struct{}
+	closeWG   sync.WaitGroup
+	closeOnce sync.Once
 
 	// Any errors encountered internally will be written to this channel. If
 	// nothing is reading the channel the errors will be dropped. The channel
@@ -92,7 +94,7 @@ func NewCluster(cf ClientFunc, addrs ...string) (*Cluster, error) {
 		return nil, err
 	}
 
-	go c.syncEvery(30 * time.Second)
+	c.syncEvery(30 * time.Second)
 
 	return c, nil
 }
@@ -233,7 +235,9 @@ func (c *Cluster) sync(p Client) error {
 }
 
 func (c *Cluster) syncEvery(d time.Duration) {
+	c.closeWG.Add(1)
 	go func() {
+		defer c.closeWG.Done()
 		t := time.NewTicker(d)
 		defer t.Stop()
 
@@ -367,13 +371,21 @@ func (c *Cluster) WithMasters(fn func(string, Client) error) error {
 // Close cleans up all goroutines spawned by Cluster and closes all of its
 // Pools.
 func (c *Cluster) Close() error {
-	close(c.closeCh)
-	close(c.ErrCh)
-	c.Lock()
-	defer c.Unlock()
+	closeErr := errClientClosed
+	c.closeOnce.Do(func() {
+		close(c.closeCh)
+		c.closeWG.Wait()
+		close(c.ErrCh)
 
-	for _, p := range c.pools {
-		p.Close()
-	}
-	return nil
+		c.Lock()
+		defer c.Unlock()
+		var pErr error
+		for _, p := range c.pools {
+			if err := p.Close(); pErr == nil && err != nil {
+				pErr = err
+			}
+		}
+		closeErr = pErr
+	})
+	return closeErr
 }

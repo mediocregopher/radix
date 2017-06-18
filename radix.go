@@ -11,6 +11,8 @@ import (
 	"github.com/mediocregopher/radix.v2/resp"
 )
 
+var errClientClosed = errors.New("client is closed")
+
 // Client describes an entity which can carry out Actions, e.g. a connection
 // pool for a single redis instance or the cluster client.
 type Client interface {

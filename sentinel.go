@@ -42,6 +42,7 @@ type Sentinel struct {
 	ErrCh chan error
 
 	closeCh   chan bool
+	closeWG   sync.WaitGroup
 	closeOnce sync.Once
 
 	// only used by tests to ensure certain actions have happened before
@@ -101,6 +102,7 @@ func NewSentinel(masterName string, sentinelAddrs []string, dialFn ConnFunc, cli
 	sc.pconn = PersistentPubSub(sc.dial)
 	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
 
+	sc.closeWG.Add(2)
 	go sc.spin()
 	go sc.pubsubSpin()
 	return sc, nil
@@ -154,12 +156,15 @@ func (sc *Sentinel) Do(a Action) error {
 
 // Close implements the method for the Client interface.
 func (sc *Sentinel) Close() error {
-	sc.RLock()
-	defer sc.RUnlock()
+	sc.Lock()
+	defer sc.Unlock()
+	closeErr := errClientClosed
 	sc.closeOnce.Do(func() {
 		close(sc.closeCh)
+		sc.closeWG.Wait()
+		closeErr = sc.cl.Close()
 	})
-	return sc.cl.Close()
+	return closeErr
 }
 
 // given a connection to a sentinel, ensures that the pool currently being held
@@ -221,6 +226,7 @@ func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 }
 
 func (sc *Sentinel) spin() {
+	defer sc.closeWG.Done()
 	for {
 		if err := sc.innerSpin(); err != nil {
 			sc.err(err)
@@ -272,6 +278,7 @@ func (sc *Sentinel) innerSpin() error {
 }
 
 func (sc *Sentinel) pubsubSpin() {
+	defer sc.closeWG.Done()
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
 	for {
