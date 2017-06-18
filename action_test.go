@@ -42,12 +42,12 @@ func TestFlatAction(t *T) {
 }
 
 func TestLuaAction(t *T) {
-	getset := `
-		local res = redis.call("GET", KEYS[1])
+	getSet := NewLuaScript(1, `
+		local prev = redis.call("GET", KEYS[1])
 		redis.call("SET", KEYS[1], ARGV[1])
-		return res
-	`
-	getset += " -- " + randStr() // so it does has to do an eval every time
+		return prev
+		-- `+randStr() /* so there's an eval everytime */ +`
+	`)
 
 	c := dial()
 	key := randStr()
@@ -55,14 +55,14 @@ func TestLuaAction(t *T) {
 
 	{
 		var res string
-		err := c.Do(Lua(&res, getset, []string{key}, val1))
+		err := c.Do(getSet.Cmd(&res, key, val1))
 		require.Nil(t, err, "%s", err)
 		assert.Empty(t, res)
 	}
 
 	{
 		var res string
-		err := c.Do(Lua(&res, getset, []string{key}, val2))
+		err := c.Do(getSet.Cmd(&res, key, val2))
 		require.Nil(t, err)
 		assert.Equal(t, val1, res)
 	}

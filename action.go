@@ -225,36 +225,69 @@ func (c *flatCmdAction) String() string {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// LuaScript contains the body of a script to be used with redis' EVAL
+// functionality. Call Cmd on a LuaScript to actually create an Action which can
+// be run.
+//
+//	var getSet = NewLuaScript(1, `
+//		local prev = redis.call("GET", KEYS[1])
+//		redis.call("SET", KEYS[1], ARGV[1])
+//		return prev
+//	`)
+//
+//	func doAThing(c radix.Client) (string, error) {
+//		var prevVal string
+//		err := c.Do(getSet.Cmd(&string, "myKey", "myVal"))
+//		return prevVal, err
+//	}
+//
+type LuaScript struct {
+	script, sum string
+	numKeys     int
+}
+
+// NewLuaScript initializes a LuaScript instance. numKeys corresponds to the
+// number of arguments which will be keys when Cmd is called
+func NewLuaScript(numKeys int, script string) LuaScript {
+	sumRaw := sha1.Sum([]byte(script))
+	sum := hex.EncodeToString(sumRaw[:])
+	return LuaScript{
+		script:  script,
+		sum:     sum,
+		numKeys: numKeys,
+	}
+}
+
 var (
 	evalsha = []byte("EVALSHA")
 	eval    = []byte("EVAL")
 )
 
-type lua struct {
-	script string
-	keys   []string
-	args   []interface{}
-	rcv    interface{}
+type luaAction struct {
+	LuaScript
+	args []string
+	rcv  interface{}
 
 	eval bool
 }
 
 // Lua TODO docs
-func Lua(rcv interface{}, script string, keys []string, args ...interface{}) Action {
-	return lua{
-		script: script,
-		keys:   keys,
-		args:   args,
-		rcv:    rcv,
+func (ls LuaScript) Cmd(rcv interface{}, args ...string) Action {
+	if len(args) < ls.numKeys {
+		panic("not enough arguments passed into LuaScript.Cmd")
+	}
+	return &luaAction{
+		LuaScript: ls,
+		args:      args,
+		rcv:       rcv,
 	}
 }
 
-// Key implements the Key method of the Action interface.
-func (lc lua) Keys() []string {
-	return lc.keys
+func (lc *luaAction) Keys() []string {
+	return lc.args[:lc.numKeys]
 }
 
-func (lc lua) MarshalRESP(w io.Writer) error {
+func (lc *luaAction) MarshalRESP(w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
 		if err != nil {
@@ -263,33 +296,23 @@ func (lc lua) MarshalRESP(w io.Writer) error {
 		err = m.MarshalRESP(w)
 	}
 
-	a := resp.Any{
-		I:                     lc.args,
-		MarshalBulkString:     true,
-		MarshalNoArrayHeaders: true,
-	}
-	numKeys := len(lc.keys)
-
-	// EVAL(SHA) script/sum numkeys keys... args...
-	marshal(resp.ArrayHeader{N: 3 + numKeys + a.NumElems()})
+	// EVAL(SHA) script/sum numkeys args...
+	marshal(resp.ArrayHeader{N: 3 + len(lc.args)})
 	if lc.eval {
 		marshal(resp.BulkStringBytes{B: eval})
 		marshal(resp.BulkString{S: lc.script})
 	} else {
-		sumRaw := sha1.Sum([]byte(lc.script))
-		sum := hex.EncodeToString(sumRaw[:])
 		marshal(resp.BulkStringBytes{B: evalsha})
-		marshal(resp.BulkString{S: sum})
+		marshal(resp.BulkString{S: lc.sum})
 	}
-	marshal(resp.Any{I: numKeys, MarshalBulkString: true})
-	for _, k := range lc.keys {
-		marshal(resp.BulkString{S: k})
+	marshal(resp.Any{I: lc.numKeys, MarshalBulkString: true})
+	for i := range lc.args {
+		marshal(resp.BulkString{S: lc.args[i]})
 	}
-	marshal(a)
 	return err
 }
 
-func (lc lua) Run(conn Conn) error {
+func (lc *luaAction) Run(conn Conn) error {
 	run := func(eval bool) error {
 		lc.eval = eval
 		if err := conn.Encode(lc); err != nil {
