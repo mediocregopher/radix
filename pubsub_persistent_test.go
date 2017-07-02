@@ -9,7 +9,7 @@ import (
 
 func TestPersistentPubSub(t *T) {
 	closeCh := make(chan chan bool)
-	p := PersistentPubSub(func() (Conn, error) {
+	p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
 		c := dial()
 		go func() {
 			closeRetCh := <-closeCh

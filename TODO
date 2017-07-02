@@ -4,8 +4,6 @@
       weird
     - If someone were to make a "RetryAction" kind of thing it would not play
       nicely with cluster
-  - PubSub stuff is kind of a mess (in what way?)
-    - PersistentPubSub(...) should maybe take in a ConnFunc?
   - do all the structs types in resp need to be structs?
   - Read through docs, ensure everything is clean and sensical
   - Read through code, make sure all code comments are correct

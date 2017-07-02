@@ -50,13 +50,13 @@ type Sentinel struct {
 	testEventCh chan string
 }
 
-// NewSentinel creates and returns a *Sentinel. dialFn may be nil, but if given
+// NewSentinel creates and returns a *Sentinel. connFn may be nil, but if given
 // can specify a custom ConnFunc to use when connecting to sentinels. clientFn
 // may be nil, but if given can specify a custom ClientFunc to use when creating
 // a client to the master instance.
-func NewSentinel(masterName string, sentinelAddrs []string, dialFn ConnFunc, clientFn ClientFunc) (*Sentinel, error) {
-	if dialFn == nil {
-		dialFn = func(net, addr string) (Conn, error) {
+func NewSentinel(masterName string, sentinelAddrs []string, connFn ConnFunc, clientFn ClientFunc) (*Sentinel, error) {
+	if connFn == nil {
+		connFn = func(net, addr string) (Conn, error) {
 			return DialTimeout(net, addr, 5*time.Second)
 		}
 	}
@@ -73,7 +73,7 @@ func NewSentinel(masterName string, sentinelAddrs []string, dialFn ConnFunc, cli
 		initAddrs:   sentinelAddrs,
 		name:        masterName,
 		addrs:       addrs,
-		dfn:         dialFn,
+		dfn:         connFn,
 		cfn:         clientFn,
 		pconnCh:     make(chan PubSubMessage),
 		ErrCh:       make(chan error, 1),
@@ -99,7 +99,9 @@ func NewSentinel(masterName string, sentinelAddrs []string, dialFn ConnFunc, cli
 	}
 
 	// because we're using persistent these can't _really_ fail
-	sc.pconn = PersistentPubSub(sc.dial)
+	sc.pconn = PersistentPubSub("", "", func(_, _ string) (Conn, error) {
+		return sc.dial()
+	})
 	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
 
 	sc.closeWG.Add(2)

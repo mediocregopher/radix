@@ -16,12 +16,15 @@ type persistentPubSub struct {
 
 // PersistentPubSub is like PubSub, but instead of taking in an existing Conn to
 // wrap it will create one on the fly. If the connection is ever terminated then
-// a new one will be created using the dialFn. None of the methods on the
-// returned Conn will ever return an error, they will instead block until a
-// connection can be successfully reinstated.
-func PersistentPubSub(dialFn func() (Conn, error)) PubSubConn {
+// a new one will be created using the connFn (which defaults to Dial if nil).
+// None of the methods on the returned PubSubConn will ever return an error,
+// they will instead block until a connection can be successfully reinstated.
+func PersistentPubSub(network, addr string, connFn ConnFunc) PubSubConn {
+	if connFn == nil {
+		connFn = Dial
+	}
 	p := &persistentPubSub{
-		dial:    dialFn,
+		dial:    func() (Conn, error) { return connFn(network, addr) },
 		subs:    chanSet{},
 		psubs:   chanSet{},
 		closeCh: make(chan struct{}),
