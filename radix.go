@@ -1,4 +1,86 @@
-// Package radix is a simple redis driver. It needs better docs
+// Package radix implements all functionality needed to work with redis and all
+// things related to it, including redis cluster, pubsub, sentinel, scanning,
+// lua scripting, and more.
+//
+// Creating a client
+//
+// For a single node redis instance use NewPool to create a connection pool. The
+// connection pool is thread-safe and will automatically create, reuse, and
+// recreate connections as needed:
+//
+//	pool, err := radix.NewPool("tcp", "127.0.0.1:6379", 10, nil)
+//	if err != nil {
+//		// handle error
+//	}
+//
+// If you're using sentinel or cluster you should use NewSentinel or NewCluster
+// (respectively) to create your client instead.
+//
+// Commands
+//
+// Any redis command can be performed by passing a Cmd into a Client's Do
+// method. The return from the Cmd can be captured into any appopriate go
+// primitive type, or a slice or map if the commands returns an array.
+//
+//	err := client.Do(radix.Cmd(nil, "SET", "foo", "someval"))
+//
+//	var fooVal string
+//	err := client.Do(radix.Cmd(&fooVal, "GET", "foo"))
+//
+//	var fooValB []byte
+//	err := client.Do(radix.Cmd(&fooValB, "GET", "foo"))
+//
+//	var barI int
+//	err := client.Do(radix.Cmd(&barI, "INCR", "bar"))
+//
+//	var bazEls []string
+//	err := client.Do(radix.Cmd(&bazEls, "LRANGE", "baz", "0", "-1"))
+//
+//	var buzMap map[string]string
+//	err := client.Do(radix.Cmd(&buzMap, "HGETALL", "buz"))
+//
+// FlatCmd can also be used if you wish to use non-string arguments like
+// integers, slices, or maps, and have them automatically be flattened into a
+// single string slice.
+//
+// AUTH and other settings via ConnFunc and ClientFunc
+//
+// All the client creation functions (e.g. NewPool) take in either a ConnFunc or
+// a ClientFunc. These can be used in order to set up timeouts on connections,
+// perform authentication commands, or even implement custom pools.
+//
+//	// this is a ConnFunc which will set up a connection which is authenticated
+//	// and has a 1 minute timeout on all operations
+//	customConnFunc := func(network, addr string) (radix.Conn, error) {
+//		conn, err := radix.DialTimeout(network, addr, 1 * time.Minute)
+//		if err != nil {
+//			return nil, err
+//		}
+//
+//		if err := conn.Do(radix.Cmd("AUTH", "mySuperSecretPassword")); err != nil {
+//			conn.Close()
+//			return nil, err
+//		}
+//		return conn, nil
+//	}
+//
+//	// this pool will use our ConnFunc for all connections it creates
+//	pool, err := radix.NewPool("tcp", redisAddr, 10, customConnFunc)
+//
+//	// this cluster will use the ClientFunc to create a pool to each node in the
+//	// cluster. The pools also use our customConnFunc, but have more connections
+//	clientFunc := func(network, addr string) (radix.Client, error) {
+//		return radix.NewPool(network, addr, 100, customConnFunc)
+//	}
+//	cluster, err := radix.NewCluster(clientFunc, redisAddr1, redisAddr2)
+//
+// Custom implementations
+//
+// All interfaces in this package were designed such that they could have custom
+// implementations, there is no dependency within radix that demands any
+// interface be implemented by a particular underlying type. So feel free to
+// create your Pools or Conns or Actions or whatever makes your life easier.
+//
 package radix
 
 import (

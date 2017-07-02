@@ -141,6 +141,9 @@ type cmdAction struct {
 //	}
 //	fmt.Println(fooVal) // "bar"
 //
+// If the receiver value of Cmd is a primitive or slice/map a pointer must be
+// passed in. It may also be an io.Writer, an encoding.Text/BinaryUnmarshaler,
+// or a resp.Unmarshaler.
 func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 	return &cmdAction{
 		rcv:  rcv,
@@ -207,6 +210,11 @@ type flatCmdAction struct {
 //	client.Do(radix.FlatCmd(nil, "HMSET", "fooHash", m))
 //	// performs "HMSET" "foohash" "a" "1" "b" "2" "c" "3"
 //
+// FlatCmd also supports using a resp.LenReader (such as a *bytes.Buffer) as an
+// argument, as well as encoding.Text/BinaryMarshalers. It does _not_ currently
+// support resp.Marshaler.
+//
+// The receiver to FlatCmd follows the same rules as for Cmd.
 func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
 	return &flatCmdAction{
 		rcv:  rcv,
@@ -300,9 +308,9 @@ type evalAction struct {
 	eval bool
 }
 
-// Cmd is like the top-level Cmd but it uses the the EvalScript to perform EVAL
-// an EVAL command. args must be at least as long as the numKeys argument of
-// NewEvalScript.
+// Cmd is like the top-level Cmd but it uses the the EvalScript to perform an
+// EVALSHA command (and will automatically fallback to EVAL as necessary). args
+// must be at least as long as the numKeys argument of NewEvalScript.
 func (es EvalScript) Cmd(rcv interface{}, args ...string) Action {
 	if len(args) < es.numKeys {
 		panic("not enough arguments passed into EvalScript.Cmd")
