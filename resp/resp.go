@@ -187,8 +187,7 @@ func readFloat(r io.Reader, precision int) (float64, error) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// SimpleString represents the simple string type in the RESP protocol. An S
-// value of nil is equivalent to empty string.
+// SimpleString represents the simple string type in the RESP protocol
 type SimpleString struct {
 	S string
 }
