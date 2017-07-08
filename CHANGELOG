@@ -1,7 +1,0 @@
-* Make many types into interfaces
-* Scanner interface is slightly different
-* Pool uses a Done method on the ConnCmder it returns, instead of having a Put
-  method
-* Now use encoder/decoder, instead of returning Resp objects. This affects the
-  Cmd interface as well as Pipeline, and anything that uses them directly (or
-  probably indirectly).
