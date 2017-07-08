@@ -1,4 +1,3 @@
-* Go scorecard
 * Clean
   - Should NewPool/NewSentinel follow the arg ordering of NewCluster, with the
     ClientFunc in the front?

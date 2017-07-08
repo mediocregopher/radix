@@ -19,7 +19,7 @@ type persistentPubSub struct {
 // a new one will be created using the connFn (which defaults to Dial if nil)
 // and will be reset to the previous connection's state.
 //
-// This is effectively a way to have a permanant PubSubConn established which
+// This is effectively a way to have a permanent PubSubConn established which
 // supports subscribing/unsubscribing but without the hassle of implementing
 // reconnect/re-subscribe logic.
 //

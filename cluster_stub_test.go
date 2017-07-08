@@ -25,7 +25,7 @@ type clusterDatasetStub struct {
 	slots map[uint16]clusterSlotStub
 }
 
-func (sd clusterDatasetStub) slotRanges() [][2]uint16 {
+func (sd *clusterDatasetStub) slotRanges() [][2]uint16 {
 	slotIs := make([]uint16, 0, len(sd.slots))
 	for i := range sd.slots {
 		slotIs = append(slotIs, i)
@@ -127,9 +127,8 @@ func (s *clusterNodeStub) newConn() Conn {
 				}
 				s.clusterDatasetStub.Unlock()
 				return []interface{}{"1", keys}
-			} else {
-				return []interface{}{"0", []string{}}
 			}
+			return []interface{}{"0", []string{}}
 		}
 
 		return resp.Error{E: fmt.Errorf("unknown command %#v", args)}

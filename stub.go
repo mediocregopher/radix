@@ -161,7 +161,7 @@ type stub struct {
 }
 
 // Stub returns a Conn which pretends it is a Conn to a real redis instance, but
-// is instead using the given callback to service requests. It is primarly
+// is instead using the given callback to service requests. It is primarily
 // useful for writing tests.
 //
 // When Encode is called the given value is marshalled into bytes then

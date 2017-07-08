@@ -10,7 +10,7 @@ import (
 	"github.com/mediocregopher/radix.v3/resp"
 )
 
-// Node describes a single node in the cluster at a moment in time.
+// ClusterNode describes a single node in the cluster at a moment in time.
 type ClusterNode struct {
 	// older versions of redis might not actually send back the id, so it may be
 	// blank
