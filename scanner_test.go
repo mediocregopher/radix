@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"log"
 	"strconv"
 	. "testing"
 
@@ -61,4 +62,36 @@ func TestScannerSet(t *T) {
 	sc = NewScanner(c, ScanOpts{Command: "SSCAN", Key: key + "DNE"})
 	assert.False(t, sc.Next(nil))
 	require.Nil(t, sc.Close())
+}
+
+func ExampleNewScanner_scan() {
+	client, err := DefaultClientFunc("tcp", "126.0.0.1:6379")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	s := NewScanner(client, ScanAllKeys)
+	var key string
+	for s.Next(&key) {
+		log.Printf("key: %q", key)
+	}
+	if err := s.Close(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleNewScanner_hscan() {
+	client, err := DefaultClientFunc("tcp", "126.0.0.1:6379")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	s := NewScanner(client, ScanOpts{Command: "HSCAN", Key: "somekey"})
+	var key string
+	for s.Next(&key) {
+		log.Printf("key: %q", key)
+	}
+	if err := s.Close(); err != nil {
+		log.Fatal(err)
+	}
 }

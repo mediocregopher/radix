@@ -11,18 +11,20 @@ import (
 // sentinel node and handles all of the following:
 //
 // * Creates a Pool to the current master instance, as advertised by the
-//   sentinel
+// sentinel
+//
 // * Listens for events indicating the master has changed, and automatically
-//   creates a new Pool to the new master
-// * Keeps track of other sentinels in the cluster, and use them if the
-//   currently connected one becomes unreachable
+// creates a new Client to the new master
+//
+// * Keeps track of other sentinels in the cluster, and uses them if the
+// currently connected one becomes unreachable
 //
 type Sentinel struct {
 	initAddrs []string
 
 	// we read lock when calling methods on cl, and normal lock when swapping
 	// the value of cl, clAddr, and addrs
-	sync.RWMutex
+	l      sync.RWMutex
 	cl     Client
 	clAddr string
 	addrs  map[string]bool // the known sentinel addresses
@@ -125,8 +127,8 @@ func (sc *Sentinel) testEvent(event string) {
 }
 
 func (sc *Sentinel) dial() (Conn, error) {
-	sc.RLock()
-	defer sc.RUnlock()
+	sc.l.RLock()
+	defer sc.l.RUnlock()
 
 	var conn Conn
 	var err error
@@ -149,17 +151,21 @@ func (sc *Sentinel) dial() (Conn, error) {
 }
 
 // Do implements the method for the Client interface. It will pass the given
-// action onto the current master.
+// action on to the current master.
+//
+// NOTE it's possible that in between Do being called and the Action being
+// actually carried out that there could be a failover event. In that case, the
+// Action will likely fail and return an error.
 func (sc *Sentinel) Do(a Action) error {
-	sc.RLock()
-	defer sc.RUnlock()
+	sc.l.RLock()
+	defer sc.l.RUnlock()
 	return sc.cl.Do(a)
 }
 
 // Close implements the method for the Client interface.
 func (sc *Sentinel) Close() error {
-	sc.Lock()
-	defer sc.Unlock()
+	sc.l.Lock()
+	defer sc.l.Unlock()
 	closeErr := errClientClosed
 	sc.closeOnce.Do(func() {
 		close(sc.closeCh)
@@ -172,9 +178,9 @@ func (sc *Sentinel) Close() error {
 // given a connection to a sentinel, ensures that the pool currently being held
 // agrees with what the sentinel thinks it should be
 func (sc *Sentinel) ensureMaster(conn Conn) error {
-	sc.RLock()
+	sc.l.RLock()
 	lastAddr := sc.clAddr
-	sc.RUnlock()
+	sc.l.RUnlock()
 
 	var m map[string]string
 	err := conn.Do(Cmd(&m, "SENTINEL", "MASTER", sc.name))
@@ -196,13 +202,13 @@ func (sc *Sentinel) setMaster(newAddr string) error {
 		return err
 	}
 
-	sc.Lock()
+	sc.l.Lock()
 	if sc.cl != nil {
 		sc.cl.Close()
 	}
 	sc.cl = newPool
 	sc.clAddr = newAddr
-	sc.Unlock()
+	sc.l.Unlock()
 
 	return nil
 }
@@ -221,9 +227,9 @@ func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 		addrs[m["ip"]+":"+m["port"]] = true
 	}
 
-	sc.Lock()
+	sc.l.Lock()
 	sc.addrs = addrs
-	sc.Unlock()
+	sc.l.Unlock()
 	return nil
 }
 

@@ -70,28 +70,8 @@ type scanner struct {
 // NewScanner creates a new Scanner instance which will iterate over the redis
 // instance's Client using the ScanOpts.
 //
-// Example SCAN command
-//
-//	s := radix.NewScanner(pool, radix.ScanAllKeys)
-//	var key string
-//	for s.Next(&key) {
-//		log.Printf("key: %q", key)
-//	}
-//	if err := s.Err(); err != nil {
-//		log.Fatal(err)
-//	}
-//
-// Example HSCAN command
-//
-//	s := radix.NewScanner(pool, radix.ScanOpts{Command: "HSCAN", Key: "somekey"})
-//	var key string
-//	for s.Next(&key) {
-//		log.Printf("key", s.Next())
-//	}
-//	if err := s.Err(); err != nil {
-//		log.Fatal(err)
-//	}
-//
+// NOTE if Client is a *Cluster this will not work correctly, use the NewScanner
+// method on Cluster instead.
 func NewScanner(c Client, o ScanOpts) Scanner {
 	return &scanner{
 		Client:   c,

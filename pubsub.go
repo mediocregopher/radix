@@ -171,13 +171,13 @@ func (cs chanSet) inverse() map[chan<- PubSubMessage][]string {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// PubSubConn wraps a Conn to support redis' pubsub system. User-created
-// channels can be subscribed to redis channels to receive PubSubMessages which
-// have been published.
+// PubSubConn wraps an existing Conn to support redis' pubsub system.
+// User-created channels can be subscribed to redis channels to receive
+// PubSubMessages which have been published.
 //
 // If any methods return an error it means the PubSubConn has been Close'd and
 // subscribed msgCh's will no longer receive PubSubMessages from it. All methods
-// are threadsafe.
+// are threadsafe and non-blocking.
 //
 // NOTE if any channels block when being written to they will block all other
 // channels from receiving a publish.
@@ -206,7 +206,8 @@ type PubSubConn interface {
 	Ping() error
 
 	// Close closes the PubSubConn so it can't be used anymore. All subscribed
-	// channels will stop receiving PubSubMessages from this Conn.
+	// channels will stop receiving PubSubMessages from this Conn (but will not
+	// themselves be closed).
 	Close() error
 }
 
@@ -231,7 +232,8 @@ type pubSubConn struct {
 	closeErrCh chan error
 }
 
-// PubSub wraps the given Conn so that it becomes a PubSubConn.
+// PubSub wraps the given Conn so that it becomes a PubSubConn. The passed in
+// Conn should not be used after this call.
 func PubSub(rc Conn) PubSubConn {
 	return newPubSub(rc, nil)
 }
