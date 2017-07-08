@@ -4,7 +4,8 @@ go:
   - 1.7
   - 1.8
 
-# TODO set up redis instance
+services:
+  - redis-server
 
 env:
   - REDIS_VERSION=stable
