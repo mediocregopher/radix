@@ -1,93 +1,55 @@
 # Radix
 
-[![Build Status](https://travis-ci.org/mediocregopher/radix.v2.svg)](https://travis-ci.org/mediocregopher/radix.v2)
-[![GoDoc](https://godoc.org/github.com/mediocregopher/radix.v2?status.svg)](https://godoc.org/github.com/mediocregopher/radix.v2)
+[![Build Status](https://travis-ci.org/mediocregopher/radix.v3.svg)](https://travis-ci.org/mediocregopher/radix.v3)
+[![GoDoc](https://godoc.org/github.com/mediocregopher/radix.v3?status.svg)][godoc]
 
-Radix is a minimalistic [Redis][redis] client for Go. It is broken up into
-small, single-purpose packages for ease of use.
+Radix is a full-featured [Redis][redis] client for Go. See the [GoDoc][godoc]
+for documentation and general usage examples.
 
-* [redis](http://godoc.org/github.com/mediocregopher/radix.v2/redis) - A wrapper
-  around a single, *non-thread-safe* redis connection. Supports normal
-  commands/response as well as pipelining.
-
-* [pool](http://godoc.org/github.com/mediocregopher/radix.v2/pool) - a simple,
-  automatically expanding/cleaning connection pool. If you have multiple
-  go-routines using the same redis instance you'll need this.
-
-* [pubsub](http://godoc.org/github.com/mediocregopher/radix.v2/pubsub) - a
-  simple wrapper providing convenient access to Redis Pub/Sub functionality.
-
-* [sentinel](http://godoc.org/github.com/mediocregopher/radix.v2/sentinel) - a
-  client for [redis sentinel][sentinel] which acts as a connection pool for a
-  cluster of redis nodes. A sentinel client connects to a sentinel instance and
-  any master redis instances that instance is monitoring. If a master becomes
-  unavailable, the sentinel client will automatically start distributing
-  connections from the slave chosen by the sentinel instance.
-
-* [cluster](http://godoc.org/github.com/mediocregopher/radix.v2/cluster) - a
-  client for a [redis cluster][cluster] which automatically handles interacting
-  with a redis cluster, transparently handling redirects and pooling. This
-  client keeps a mapping of slots to nodes internally, and automatically keeps
-  it up-to-date.
-
-* [util](http://godoc.org/github.com/mediocregopher/radix.v2/util) - a
-  package containing a number of helper methods for doing common tasks with the
-  radix package, such as SCANing either a single redis instance or every one in
-  a cluster, or executing server-side lua
+_*THIS PROJECT IS IN BETA. THE TESTS ALL PASS, BUT IT HAS NOT BEEN TESTED IN ANY
+KIND OF PRODUCTION ENVIRONMENT YET. ALSO, THE DOCS STILL NEED WORK*_
 
 ## Installation
 
-    go get github.com/mediocregopher/radix.v2/...
+    go get github.com/mediocregopher/radix.v3
 
 ## Testing
 
-    go test github.com/mediocregopher/radix.v2/...
+    # requires a redis server running on 127.0.0.1:6379
+    go test github.com/mediocregopher/radix.v3
 
-The test action assumes you have the following running:
+## Features
 
-* A redis server listening on port 6379
+* Standard print-like API which supports all current and future redis commands
 
-* A redis cluster node listening on port 7000, handling slots 0 through 8191
+* Support for using an io.Reader as a command argument and writing responses to
+  an io.Writer.
 
-* A redis cluster node listening on port 7001, handling slots 8192 through 16383
+* Connection pooling
 
-* A redis server listening on port 8000
+* Helpers for [EVAL][eval], [SCAN][scan], and [pipelining][pipelining]
 
-* A redis server listening on port 8001, slaved to the one on 8000
+* Support for [pubsub][pubsub], as well as persistent pubsub wherein if a
+  connection is lost a new one transparently replaces it.
 
-* A redis sentinel listening on port 28000, watching the one on port 8000 as a
-  master named `test`.
+* Full support for [sentinel][sentinel] and [cluster][cluster]
 
-The slot number are particularly important as the tests for the cluster package
-do some trickery which depends on certain keys being assigned to certain nodes
+* Nearly all important types are interfaces, allowing for custom implementations
+  of nearly anything.
 
-You can do `make start` and `make stop` to automatically start and stop a test
-environment matching these requirements.
+## Benchmarks
 
-## Why is this V2?
+As of writing redigo and radix.v3 are fairly comparable; the serial benchmarks
+tend to go back and forth, but radix.v3 is consistently faster for the parallel
+benchmark.
 
-V1 of radix was started by [fzzy](https://github.com/fzzy) and can be found
-[here](https://github.com/fzzy/radix). Some time in 2014 I took over the project
-and reached a point where I couldn't make improvements that I wanted to make due
-to past design decisions (mostly my own). So I've started V2, which has
-redesigned some core aspects of the api and hopefully made things easier to use
-and faster.
-
-Here are some of the major changes since V1:
-
-* Combining resp and redis packages
-
-* Reply is now Resp
-
-* Hash is now Map
-
-* Append is now PipeAppend, GetReply is now PipeResp
-
-* PipelineQueueEmptyError is now ErrPipelineEmpty
-
-* Significant changes to pool, making it easier to use
-
-* More functionality in cluster
+```
+# go test -v -run=XXX -bench=. -benchmem -memprofilerate=1
+BenchmarkSerialGetSet/radix-2              10000            147320 ns/op             196 B/op          7 allocs/op
+BenchmarkSerialGetSet/redigo-2             10000            144489 ns/op             134 B/op          8 allocs/op
+BenchmarkParallelGetSet/radix-2            20000             74952 ns/op             230 B/op          8 allocs/op
+BenchmarkParallelGetSet/redigo-2           20000             79980 ns/op             280 B/op         12 allocs/op
+```
 
 ## Copyright and licensing
 
@@ -95,5 +57,10 @@ Unless otherwise noted, the source files are distributed under the *MIT License*
 found in the LICENSE.txt file.
 
 [redis]: http://redis.io
+[godoc]: https://godoc.org/github.com/mediocregopher/radix.v3
+[eval]: https://redis.io/commands/eval
+[scan]: https://redis.io/commands/scan
+[pipelining]: https://redis.io/topics/pipelining
+[pubsub]: https://redis.io/topics/pubsub
 [sentinel]: http://redis.io/topics/sentinel
 [cluster]: http://redis.io/topics/cluster-spec
