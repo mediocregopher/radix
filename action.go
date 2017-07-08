@@ -210,8 +210,14 @@ type flatCmdAction struct {
 //	client.Do(radix.FlatCmd(nil, "HMSET", "fooHash", m))
 //	// performs "HMSET" "foohash" "a" "1" "b" "2" "c" "3"
 //
-// FlatCmd also supports using a resp.LenReader (such as a *bytes.Buffer) as an
-// argument, as well as encoding.Text/BinaryMarshalers. It does _not_ currently
+//	// FlatCmd also supports using a resp.LenReader (an io.Reader with a Len()
+//	// method) as an argument. *bytes.Buffer is an example of a LenReader,
+//	// and the resp package has a NewLenReader function which can wrap an
+//	// existing io.Reader. For example, if writing an http.Request body:
+//	bl := resp.NewLenReader(req.Body, req.ContentLength)
+//	client.Do(radix.FlatCmd(nil, "SET", "fooReq", bl))
+//
+// FlatCmd also supports encoding.Text/BinaryMarshalers. It does _not_ currently
 // support resp.Marshaler.
 //
 // The receiver to FlatCmd follows the same rules as for Cmd.

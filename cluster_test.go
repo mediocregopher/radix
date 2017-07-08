@@ -56,8 +56,8 @@ func TestClusterSync(t *T) {
 	c, scl := newTestCluster()
 	assertClusterState := func() {
 		require.Nil(t, c.Sync())
-		c.RLock()
-		defer c.RUnlock()
+		c.l.RLock()
+		defer c.l.RUnlock()
 		assert.Equal(t, c.tt, scl.topo().Masters())
 		mtt := c.tt.Masters()
 		assert.Len(t, c.pools, len(mtt))

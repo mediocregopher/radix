@@ -20,7 +20,7 @@
 //
 // Any redis command can be performed by passing a Cmd into a Client's Do
 // method. The return from the Cmd can be captured into any appopriate go
-// primitive type, or a slice or map if the commands returns an array.
+// primitive type, or a slice or map if the command returns an array.
 //
 //	err := client.Do(radix.Cmd(nil, "SET", "foo", "someval"))
 //
@@ -42,6 +42,22 @@
 // FlatCmd can also be used if you wish to use non-string arguments like
 // integers, slices, or maps, and have them automatically be flattened into a
 // single string slice.
+//
+// Actions
+//
+// Cmd and FlatCmd both implement the Action interface. Other Actions include
+// Pipeline, WithConn, and EvalScript.Cmd. Any of these may be passed into any
+// Client's Do method.
+//
+//	var fooVal string
+//	p := radix.Pipeline(
+//		radix.FlatCmd(nil, "SET", "foo", 1),
+//		radix.Cmd(&fooVal, "GET", "foo"),
+//	)
+//	if err := client.Do(p); err != nil {
+//		panic(err)
+//	}
+//	fmt.Printf("fooVal: %q\n", fooVal)
 //
 // AUTH and other settings via ConnFunc and ClientFunc
 //
@@ -77,9 +93,9 @@
 // Custom implementations
 //
 // All interfaces in this package were designed such that they could have custom
-// implementations, there is no dependency within radix that demands any
-// interface be implemented by a particular underlying type. So feel free to
-// create your Pools or Conns or Actions or whatever makes your life easier.
+// implementations. There is no dependency within radix that demands any
+// interface be implemented by a particular underlying type, so feel free to
+// create your own Pools or Conns or Actions or whatever makes your life easier.
 //
 package radix
 
@@ -112,13 +128,17 @@ type Client interface {
 type ClientFunc func(network, addr string) (Client, error)
 
 // DefaultClientFunc is a ClientFunc which will return a Client for a redis
-// instance using sane defaults. This is used in this package when
+// instance using sane defaults. This is used in this package when nil is passed
+// in as a ClientFunc.
 var DefaultClientFunc = func(network, addr string) (Client, error) {
 	return NewPool(network, addr, 20, nil)
 }
 
 // Conn is a Client wrapping a single network connection which synchronously
 // reads/writes data using the redis resp protocol.
+//
+// A Conn can be used directly as a Client, but in general you probably want to
+// use a *Pool instead
 type Conn interface {
 	Client
 
@@ -229,11 +249,10 @@ func (cw *connWrap) NetConn() net.Conn {
 // ConnFunc is a function which returns an initialized, ready-to-be-used Conn.
 // Functions like NewPool or NewCluster take in a ConnFunc in order to allow for
 // things like calls to AUTH on each new connection, setting timeouts, custom
-// Conn implementations, etc...
+// Conn implementations, etc... See the package docs for more details.
 type ConnFunc func(network, addr string) (Conn, error)
 
-// Dial is a ConnFunc creates a network connection using net.Dial and passes it
-// into NewConn.
+// Dial is a ConnFunc which creates a Conn using net.Dial and NewConn.
 func Dial(network, addr string) (Conn, error) {
 	c, err := net.Dial(network, addr)
 	if err != nil {

@@ -161,42 +161,21 @@ type stub struct {
 }
 
 // Stub returns a Conn which pretends it is a Conn to a real redis instance, but
-// is instead using the given callback to service requests.
+// is instead using the given callback to service requests. It is primarly
+// useful for writing tests.
 //
 // When Encode is called the given value is marshalled into bytes then
 // unmarshalled into a []string, which is passed to the callback. The return
-// from the callback is then marshalled and buffered, and will be unmarshalled
-// in the next call to Decode.
+// from the callback is then marshalled and buffered interanlly, and will be
+// unmarshalled in the next call to Decode.
 //
 // remoteNetwork and remoteAddr can be empty, but if given will be used as the
 // return from the RemoteAddr method.
 //
-// Decode will block until Encode is called in a separate go-routine, if
-// necessary. The SetDeadline and SetReadDeadline methods can be used as usual
-// to limit how long Decode blocks. All other inherited net.Conn methods will
-// panic.
-//
-// This can then be used to easily mock a redis instance, like so:
-//
-//	m := map[string]string{}
-//	stub := radix.Stub("tcp", "127.0.0.1:6379", func(args []string) interface{} {
-//		switch args[0] {
-//		case "GET":
-//			return m[args[1]]
-//		case "SET":
-//			m[args[1]] = args[2]
-//			return nil
-//		default:
-//			return fmt.Errorf("getSet doesn't support command %q", args[0])
-//		}
-//	})
-//
-//	stub.Do(radix.Cmd("SET", "foo", 1))
-//
-//	var foo int
-//	stub.Do(radix.Cmd("GET", "foo").Into(&foo))
-//	fmt.Printf("foo: %d\n", foo)
-//
+// If the internal buffer is empty then Decode will block until Encode is called
+// in a separate go-routine. The SetDeadline and SetReadDeadline methods can be
+// used as usual to limit how long Decode blocks. All other inherited net.Conn
+// methods will panic.
 func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn {
 	return &stub{
 		buffer: newBuffer(remoteNetwork, remoteAddr),

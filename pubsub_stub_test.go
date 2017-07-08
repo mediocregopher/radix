@@ -1,7 +1,9 @@
 package radix
 
 import (
+	"log"
 	. "testing"
+	"time"
 
 	"github.com/mediocregopher/radix.v3/resp"
 	"github.com/stretchr/testify/assert"
@@ -70,4 +72,39 @@ func TestPubSubStub(t *T) {
 	// No longer in pubsub mode, normal requests should work again
 	assertEncode("wat")
 	assertDecode("wat")
+}
+
+func ExamplePubSubStub() {
+	// Make a pubsub stub conn which will return nil for everything except
+	// pubsub commands (which will be handled automatically)
+	stub, stubCh := PubSubStub("tcp", "127.0.0.1:6379", func([]string) interface{} {
+		return nil
+	})
+
+	// These writes shouldn't do anything, initially, since we haven't
+	// subscribed to anything
+	go func() {
+		for {
+			stubCh <- PubSubMessage{
+				Channel: "foo",
+				Message: []byte("bar"),
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
+	// Use PubSub to wrap the stub like we would for a normal redis connection
+	pstub := PubSub(stub)
+
+	// Subscribe msgCh to "foo"
+	msgCh := make(chan PubSubMessage)
+	if err := pstub.Subscribe(msgCh, "foo"); err != nil {
+		log.Fatal(err)
+	}
+
+	// now msgCh is subscribed the publishes being made by the go-routine above
+	// will start being written to it
+	for m := range msgCh {
+		log.Printf("read m: %#v", m)
+	}
 }

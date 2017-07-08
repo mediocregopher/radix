@@ -44,7 +44,7 @@ type Cluster struct {
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
 
-	sync.RWMutex
+	l     sync.RWMutex
 	pools map[string]Client
 	tt    ClusterTopo
 
@@ -125,8 +125,8 @@ func assertKeysSlot(keys []string) error {
 
 // may return nil, nil if no pool for the addr
 func (c *Cluster) rpool(addr string) (Client, error) {
-	c.RLock()
-	defer c.RUnlock()
+	c.l.RLock()
+	defer c.l.RUnlock()
 	if addr == "" {
 		for _, p := range c.pools {
 			return p, nil
@@ -159,14 +159,14 @@ func (c *Cluster) pool(addr string) (Client, error) {
 	// we've made a new pool, but we need to double-check someone else didn't
 	// make one at the same time and add it in first. If they did, close this
 	// one and return that one
-	c.Lock()
+	c.l.Lock()
 	if p2, ok := c.pools[addr]; ok {
-		c.Unlock()
+		c.l.Unlock()
 		p.Close()
 		return p2, nil
 	}
 	c.pools[addr] = p
-	c.Unlock()
+	c.l.Unlock()
 	return p, nil
 }
 
@@ -219,8 +219,8 @@ func (c *Cluster) sync(p Client) error {
 
 	// this is a big bit of code to totally lockdown the cluster for, but at the
 	// same time Close _shouldn't_ block significantly
-	c.Lock()
-	defer c.Unlock()
+	c.l.Lock()
+	defer c.l.Unlock()
 	c.tt = tt
 
 	tm := tt.Map()
@@ -256,8 +256,8 @@ func (c *Cluster) syncEvery(d time.Duration) {
 
 func (c *Cluster) addrForKey(key string) string {
 	s := ClusterSlot([]byte(key))
-	c.RLock()
-	defer c.RUnlock()
+	c.l.RLock()
+	defer c.l.RUnlock()
 	for _, t := range c.tt {
 		for _, slot := range t.Slots {
 			if s >= slot[0] && s < slot[1] {
@@ -354,17 +354,17 @@ func (c *Cluster) WithMasters(fn func(string, Client) error) error {
 	// we get all addrs first, then unlock. Then we go through each master
 	// individually, locking/unlocking for each one, so that we don't have to
 	// worry as much about the callback blocking pool updates
-	c.RLock()
+	c.l.RLock()
 	addrs := make([]string, 0, len(c.pools))
 	for addr := range c.pools {
 		addrs = append(addrs, addr)
 	}
-	c.RUnlock()
+	c.l.RUnlock()
 
 	for _, addr := range addrs {
-		c.RLock()
+		c.l.RLock()
 		client, ok := c.pools[addr]
-		c.RUnlock()
+		c.l.RUnlock()
 		if !ok {
 			continue
 		} else if err := fn(addr, client); err != nil {
@@ -383,8 +383,8 @@ func (c *Cluster) Close() error {
 		c.closeWG.Wait()
 		close(c.ErrCh)
 
-		c.Lock()
-		defer c.Unlock()
+		c.l.Lock()
+		defer c.l.Unlock()
 		var pErr error
 		for _, p := range c.pools {
 			if err := p.Close(); pErr == nil && err != nil {

@@ -44,12 +44,12 @@ func (spc *staticPoolConn) Close() error {
 }
 
 // Pool a semi-dynamic pool which holds a fixed number of connections open. If a
-// connection needs to be retrieved from the pool but the pool is empty a new
-// connection will be created on-the-fly using ConnFunc. If connection is being
-// put back in the pool but the pool is full then the connection will be closed
-// and discarded.  In this way spikes are handled rather well, but sustained
-// over-use will cause connection churn and will need the pool size to be
-// increased.
+// connection needs to be retrieved from the pool but the pool is empty then a
+// new connection will be created on-the-fly using ConnFunc. If a connection is
+// being put back in the pool but the pool is full then the connection will be
+// closed and discarded. In this way brief load spikes are handled rather well,
+// but sustained over-use will cause connection churn and will require the pool
+// size to be increased.
 type Pool struct {
 	df            ConnFunc
 	network, addr string

@@ -90,3 +90,24 @@ func TestStubLockingTimeout(t *T) {
 	assert.True(t, ok)
 	assert.True(t, nerr.Timeout())
 }
+
+func ExampleStub() {
+	m := map[string]string{}
+	stub := Stub("tcp", "127.0.0.1:6379", func(args []string) interface{} {
+		switch args[0] {
+		case "GET":
+			return m[args[1]]
+		case "SET":
+			m[args[1]] = args[2]
+			return nil
+		default:
+			return fmt.Errorf("this stub doesn't support command %q", args[0])
+		}
+	})
+
+	stub.Do(Cmd(nil, "SET", "foo", "1"))
+
+	var foo int
+	stub.Do(Cmd(&foo, "GET", "foo"))
+	fmt.Printf("foo: %d\n", foo)
+}

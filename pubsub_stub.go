@@ -51,51 +51,8 @@ type pubSubStub struct {
 //
 // This is intended to be used so that it can mock services which can perform
 // both normal redis commands and pubsub (e.g. a real redis instance, redis
-// sentinel). Once created this stub can be wrapped in a normal PubSubConn using
-// PubSub and treated like a real connection. Here's an example:
-//
-//	// Make a pubsub stub conn which handles normal redis commands. This one
-//	// will return nil for everything except pubsub commands (which will be
-//	// handled automatically)
-//	stub, stubCh := radix.PubSubStub("tcp", "127.0.0.1:6379", func([]string) interface{} {
-//		return nil
-//	})
-//
-//	// These writes shouldn't do anything, initially, since we haven't
-//	// subscribed to anything
-//	go func() {
-//		for {
-//			stubCh <- radix.PubSubMessage{
-//				Channel: "foo",
-//				Message: []byte("bar"),
-//			}
-//			time.Sleep(1 * time.Second)
-//		}
-//	}()
-//
-//	// Wrap the stub like we would for a normal redis connection
-//	pstub := radix.PubSub(stub)
-//	msgCh := make(chan radix.PubSubMessage)
-//
-//	// Subscribe to "foo"
-//	if err := pstub.Subscribe(msgCh, "foo"); err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// listen for messages and also periodically Ping the connection
-//	pingTick := time.Tick(10 * time.Second)
-//	for {
-//		select {
-//		case <-pingTick:
-//			if err := pstub.Ping(); err != nil {
-//				log.Fatal(err)
-//			}
-//		case m := <-msgCh:
-//			log.Printf("read m: %#v", m)
-//		}
-//	}
-//
-// TODO probably make this into an example
+// sentinel). Once created this stub can be passed into PubSub and treated like
+// a real connection.
 func PubSubStub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (Conn, chan<- PubSubMessage) {
 	ch := make(chan PubSubMessage)
 	s := &pubSubStub{

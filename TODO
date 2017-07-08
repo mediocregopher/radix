@@ -1,10 +1,10 @@
-* New repo
 * Go scorecard
 * Clean
+  - Should NewPool/NewSentinel follow the arg ordering of NewCluster, with the
+    ClientFunc in the front?
   - Read through docs, ensure everything is clean and sensical
   - Read through code, make sure all code comments are correct
   - Don't use testify?
-  - update/delete Makefile
 * Documentation
   - Examples where necessary
   - Simplify
