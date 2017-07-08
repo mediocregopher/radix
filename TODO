@@ -1,9 +1,4 @@
 * Clean
-  - CmdAction is ugly
-    - the way Cluster.Do works is... iffy. Casting Action to CmdAction feels
-      weird
-    - If someone were to make a "RetryAction" kind of thing it would not play
-      nicely with cluster
   - Read through docs, ensure everything is clean and sensical
   - Read through code, make sure all code comments are correct
   - Don't use testify?

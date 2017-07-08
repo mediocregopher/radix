@@ -307,10 +307,9 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 
 	if err == nil {
 		return nil
-	} else if _, ok := a.(CmdAction); !ok {
-		return err
 	}
 
+	// if the error was a MOVED or ASK we can potentially retry
 	msg := err.Error()
 	moved := strings.HasPrefix(msg, "MOVED ")
 	ask = strings.HasPrefix(msg, "ASK ")
@@ -319,13 +318,20 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	}
 
 	// if we get an ASK there's no need to do a sync quite yet, we can continue
-	// normally. But MOVED always prompts a sync. In the following section we
-	// figure out what address to use based on the returned error so the sync
+	// normally. But MOVED always prompts a sync. In the section after this one
+	// we figure out what address to use based on the returned error so the sync
 	// isn't used _immediately_, but it still needs to happen.
+	//
+	// Also, even if the Action isn't a CmdAction we want a MOVED to prompt a
+	// Sync
 	if moved {
-		if err := c.Sync(); err != nil {
-			return err
+		if serr := c.Sync(); serr != nil {
+			return serr
 		}
+	}
+
+	if _, ok := a.(CmdAction); !ok {
+		return err
 	}
 
 	msgParts := strings.Split(msg, " ")
