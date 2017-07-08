@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mediocregopher/radix.v2/resp"
+	"github.com/mediocregopher/radix.v3/resp"
 )
 
 type staticPoolConn struct {

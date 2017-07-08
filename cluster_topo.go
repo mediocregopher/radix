@@ -7,7 +7,7 @@ import (
 	"net"
 	"sort"
 
-	"github.com/mediocregopher/radix.v2/resp"
+	"github.com/mediocregopher/radix.v3/resp"
 )
 
 // Node describes a single node in the cluster at a moment in time.

@@ -90,7 +90,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mediocregopher/radix.v2/resp"
+	"github.com/mediocregopher/radix.v3/resp"
 )
 
 var errClientClosed = errors.New("client is closed")

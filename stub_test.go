@@ -8,7 +8,7 @@ import (
 	. "testing"
 	"time"
 
-	"github.com/mediocregopher/radix.v2/resp"
+	"github.com/mediocregopher/radix.v3/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

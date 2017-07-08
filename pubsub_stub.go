@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mediocregopher/radix.v2/resp"
+	"github.com/mediocregopher/radix.v3/resp"
 )
 
 var errPubSubMode = resp.Error{
