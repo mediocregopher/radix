@@ -217,9 +217,6 @@ func (ss *SimpleString) UnmarshalRESP(br *bufio.Reader) error {
 // represents an actual error message being read/written on the stream, it is
 // separate from network or parsing errors. An E value of nil is equivalent to
 // an empty error string
-//
-// Note that the non-pointer form of Error implements the error and Marshaler
-// interfaces, and the pointer form implements the Unmarshaler interface.
 type Error struct {
 	E error
 }
@@ -454,7 +451,7 @@ func (a Array) MarshalRESP(w io.Writer) error {
 
 // Any represents any primitive go type, such as integers, floats, strings,
 // bools, etc... It also includes encoding.Text(Un)Marshalers and
-// encoding.(Un)BinaryMarshalers. It will _not_ handle resp.Marshalers.
+// encoding.(Un)BinaryMarshalers. It will _not_ marshal resp.Marshalers.
 //
 // Most things will be treated as bulk strings, except for those that have their
 // own corresponding type in the RESP protocol (e.g. ints). strings and []bytes
