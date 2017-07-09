@@ -88,7 +88,7 @@
 //	clientFunc := func(network, addr string) (radix.Client, error) {
 //		return radix.NewPool(network, addr, 100, customConnFunc)
 //	}
-//	cluster, err := radix.NewCluster(clientFunc, redisAddr1, redisAddr2)
+//	cluster, err := radix.NewCluster([]string{redisAddr1, redisAdd2}, clientFunc)
 //
 // Custom implementations
 //
