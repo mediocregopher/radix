@@ -65,7 +65,7 @@ type Cluster struct {
 // The ClientFunc is used to make the internal clients for the instances
 // discovered here and all new ones in the future. If nil is given then
 // radix.DefaultClientFunc will be used.
-func NewCluster(cf ClientFunc, addrs ...string) (*Cluster, error) {
+func NewCluster(clusterAddrs []string, cf ClientFunc) (*Cluster, error) {
 	if cf == nil {
 		cf = DefaultClientFunc
 	}
@@ -78,7 +78,7 @@ func NewCluster(cf ClientFunc, addrs ...string) (*Cluster, error) {
 	}
 
 	// make a pool to base the cluster on
-	for _, addr := range addrs {
+	for _, addr := range clusterAddrs {
 		p, err := cf("tcp", addr)
 		if err != nil {
 			continue
