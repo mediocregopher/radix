@@ -42,12 +42,16 @@ type pubSubStub struct {
 	mDoneCh chan struct{}
 }
 
-// PubSubStub returns a Conn much like Stub does. It differs in that Encode
-// calls for (P)SUBSCRIBE, (P)UNSUBSCRIBE, MESSAGE, and PING will be intercepted
-// and handled as per redis' expected pubsub functionality. A PubSubMessage may
-// be written to the returned channel at any time, and if the PubSubStub has had
-// (P)SUBSCRIBE called matching that PubSubMessage it will be written to the
-// PubSubStub's internal buffer as expected.
+// PubSubStub returns a (fake) Conn, much like Stub does, which pretends it is a
+// Conn to a real redis instance, but is instead using the given callback to
+// service requests. It is primarily useful for writing tests.
+//
+// PubSubStub differes from Stub in that Encode calls for (P)SUBSCRIBE,
+// (P)UNSUBSCRIBE, MESSAGE, and PING will be intercepted and handled as per
+// redis' expected pubsub functionality. A PubSubMessage may be written to the
+// returned channel at any time, and if the PubSubStub has had (P)SUBSCRIBE
+// called matching that PubSubMessage it will be written to the PubSubStub's
+// internal buffer as expected.
 //
 // This is intended to be used so that it can mock services which can perform
 // both normal redis commands and pubsub (e.g. a real redis instance, redis

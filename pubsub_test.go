@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"log"
 	"strconv"
 	"sync"
 	. "testing"
@@ -182,4 +183,26 @@ func TestPubSubPSubscribe(t *T) {
 	publish(t, pubC, ch2, msgStr)
 	time.Sleep(250 * time.Millisecond)
 	assertMsgNoRead(t, msgCh)
+}
+
+func ExamplePubSub() {
+	// Create a normal redis connection
+	conn, err := Dial("tcp", "127.0.0.1:6379")
+	if err != nil {
+		panic(err)
+	}
+
+	// Pass that connection into PubSub, conn should never get used after this
+	ps := PubSub(conn)
+
+	// Subscribe to a channel called "myChannel". All publishes to "myChannel"
+	// will get sent to msgCh after this
+	msgCh := make(chan PubSubMessage)
+	if err := ps.Subscribe(msgCh, "myChannel"); err != nil {
+		panic(err)
+	}
+
+	for msg := range msgCh {
+		log.Printf("publish to channel %q received: %q", msg.Channel, msg.Message)
+	}
 }
