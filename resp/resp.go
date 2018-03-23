@@ -78,6 +78,50 @@ func putBytes(b *[]byte) {
 	bytePool.Put(b)
 }
 
+// parseInt is a specialized version of strconv.ParseInt that parses a base-10 encoded signed integer.
+func parseInt(b []byte) (int64, error) {
+	if len(b) == 0 {
+		return 0, errors.New("empty slice given to parseInt")
+	}
+
+	var neg bool
+	if b[0] == '-' || b[0] == '+' {
+		neg = b[0] == '-'
+		b = b[1:]
+	}
+
+	n, err := parseUint(b)
+	if err != nil {
+		return 0, err
+	}
+
+	if neg {
+		return -int64(n), nil
+	}
+
+	return int64(n), nil
+}
+
+// parseUint is a specialized version of strconv.ParseUint that parses a base-10 encoded integer
+func parseUint(b []byte) (uint64, error) {
+	if len(b) == 0 {
+		return 0, errors.New("empty slice given to parseUint")
+	}
+
+	var n uint64
+
+	for i, c := range b {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("invalid character %c at position %d in parseUint", c, i)
+		}
+
+		n *= 10
+		n += uint64(c - '0')
+	}
+
+	return n, nil
+}
+
 // Marshaler is the interface implemented by types that can marshal themselves
 // into valid RESP.
 type Marshaler interface {
@@ -131,7 +175,7 @@ func bufferedIntDelim(br *bufio.Reader) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return strconv.ParseInt(string(b), 10, 64)
+	return parseInt(b)
 }
 
 func readAllAppend(r io.Reader, b []byte) ([]byte, error) {
@@ -160,7 +204,7 @@ func readInt(r io.Reader) (int64, error) {
 	if (*scratch), err = readAllAppend(r, *scratch); err != nil {
 		return 0, err
 	}
-	return strconv.ParseInt(string(*scratch), 10, 64)
+	return parseInt(*scratch)
 }
 
 func readUint(r io.Reader) (uint64, error) {
@@ -171,7 +215,7 @@ func readUint(r io.Reader) (uint64, error) {
 	if (*scratch), err = readAllAppend(r, (*scratch)); err != nil {
 		return 0, err
 	}
-	return strconv.ParseUint(string(*scratch), 10, 64)
+	return parseUint(*scratch)
 }
 
 func readFloat(r io.Reader, precision int) (float64, error) {
@@ -725,7 +769,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 	case errPrefix[0]:
 		return Error{E: errors.New(string(b))}
 	case arrayPrefix[0]:
-		l, err := strconv.ParseInt(string(b), 10, 64)
+		l, err := parseInt(b)
 		if err != nil {
 			return err
 		} else if l == -1 {
@@ -733,7 +777,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		}
 		return a.unmarshalArray(br, l)
 	case bulkStrPrefix[0]:
-		l, err := strconv.ParseInt(string(b), 10, 64) // fuck DRY
+		l, err := parseInt(b) // fuck DRY
 		if err != nil {
 			return err
 		} else if l == -1 {
@@ -949,7 +993,7 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 
 	switch b[0] {
 	case arrayPrefix[0]:
-		l, err := strconv.ParseInt(string(body), 10, 64)
+		l, err := parseInt(body)
 		if err != nil {
 			return err
 		} else if l == -1 {
@@ -962,7 +1006,7 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 		}
 		return nil
 	case bulkStrPrefix[0]:
-		l, err := strconv.ParseInt(string(body), 10, 64) // fuck DRY
+		l, err := parseInt(body) // fuck DRY
 		if err != nil {
 			return err
 		} else if l == -1 {
