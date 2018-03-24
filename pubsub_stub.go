@@ -118,24 +118,26 @@ func (s *pubSubStub) innerFn(ss []string) interface{} {
 		return mm
 	case "MESSAGE":
 		m := PubSubMessage{
+			Type:    "message",
 			Channel: ss[1],
 			Message: []byte(ss[2]),
 		}
 
 		var mm multiMarshal
-		for channel := range s.subbed {
-			if channel != m.Channel {
-				continue
-			}
-			m.Type = "message"
+		if s.subbed[m.Channel] {
 			mm = append(mm, m)
 		}
-		for pattern := range s.psubbed {
-			if !globMatch(pattern, m.Channel) {
-				continue
-			}
-			m.Type = "pmessage"
-			m.Pattern = pattern
+		return mm
+	case "PMESSAGE":
+		m := PubSubMessage{
+			Type:    "pmessage",
+			Pattern: ss[1],
+			Channel: ss[2],
+			Message: []byte(ss[3]),
+		}
+
+		var mm multiMarshal
+		if s.psubbed[m.Pattern] {
 			mm = append(mm, m)
 		}
 		return mm
@@ -162,8 +164,6 @@ func (s *pubSubStub) spin() {
 			if !ok {
 				panic("PubSubStub message channel was closed")
 			}
-			m.Type = "message"
-			m.Pattern = ""
 			if err := s.Conn.Encode(m); err != nil {
 				panic(fmt.Sprintf("error encoding message in PubSubStub: %s", err))
 			}

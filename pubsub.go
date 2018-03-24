@@ -254,20 +254,14 @@ func (c *pubSubConn) publish(m PubSubMessage) {
 	c.csL.RLock()
 	defer c.csL.RUnlock()
 
-	for ch := range c.subs[m.Channel] {
-		m.Type = "message"
-		m.Pattern = ""
-		ch <- m
+	subs := c.subs[m.Channel]
+
+	if m.Type == "pmessage" {
+		subs = c.psubs[m.Pattern]
 	}
-	for pattern, csm := range c.psubs {
-		if !globMatch(pattern, m.Channel) {
-			continue
-		}
-		m.Type = "pmessage"
-		m.Pattern = pattern
-		for ch := range csm {
-			ch <- m
-		}
+
+	for ch := range subs {
+		ch <- m
 	}
 }
 

@@ -15,7 +15,11 @@ func TestPubSubStub(t *T) {
 		return in
 	})
 	message := func(channel, val string) {
-		stubCh <- PubSubMessage{Channel: channel, Message: []byte(val)}
+		stubCh <- PubSubMessage{Type: "message", Channel: channel, Message: []byte(val)}
+		<-conn.(*pubSubStub).mDoneCh
+	}
+	pmessage := func(pattern, channel, val string) {
+		stubCh <- PubSubMessage{Type: "pmessage", Pattern: pattern, Channel: channel, Message: []byte(val)}
 		<-conn.(*pubSubStub).mDoneCh
 	}
 
@@ -53,21 +57,27 @@ func TestPubSubStub(t *T) {
 
 	assertEncode("PSUBSCRIBE", "b*z")
 	assertDecode("psubscribe", "b*z", "3")
-	message("buz", "d")
-	message("biz", "e")
+	assertEncode("PSUBSCRIBE", "b[au]z")
+	assertDecode("psubscribe", "b[au]z", "4")
+	pmessage("b*z", "buz", "d")
+	pmessage("b[au]z", "buz", "d")
+	pmessage("b*z", "biz", "e")
 	assertDecode("pmessage", "b*z", "buz", "d")
+	assertDecode("pmessage", "b[au]z", "buz", "d")
 	assertDecode("pmessage", "b*z", "biz", "e")
 
 	assertEncode("UNSUBSCRIBE", "foo")
-	assertDecode("unsubscribe", "foo", "2")
+	assertDecode("unsubscribe", "foo", "3")
 	message("foo", "f")
 	message("bar", "g")
 	assertDecode("message", "bar", "g")
 
 	assertEncode("UNSUBSCRIBE", "bar")
-	assertDecode("unsubscribe", "bar", "1")
+	assertDecode("unsubscribe", "bar", "2")
 	assertEncode("PUNSUBSCRIBE", "b*z")
-	assertDecode("punsubscribe", "b*z", "0")
+	assertDecode("punsubscribe", "b*z", "1")
+	assertEncode("PUNSUBSCRIBE", "b[au]z")
+	assertDecode("punsubscribe", "b[au]z", "0")
 
 	// No longer in pubsub mode, normal requests should work again
 	assertEncode("wat")

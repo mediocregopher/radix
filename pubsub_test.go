@@ -128,7 +128,9 @@ func TestPubSubPSubscribe(t *T) {
 
 	p1, p2, msgStr := randStr()+"_*", randStr()+"_*", randStr()
 	ch1, ch2 := p1+"_"+randStr(), p2+"_"+randStr()
-	require.Nil(t, c.PSubscribe(msgCh, p1, p2))
+	p3, p4 := randStr()+"_?", randStr()+"_[ae]"
+	ch3, ch4 := p3[:len(p3)-len("?")]+"a", p4[:len(p4)-len("[ae]")]+"a"
+	require.Nil(t, c.PSubscribe(msgCh, p1, p2, p3, p4))
 
 	count := 1000
 	wg := new(sync.WaitGroup)
@@ -173,6 +175,24 @@ func TestPubSubPSubscribe(t *T) {
 		Type:    "pmessage",
 		Pattern: p2,
 		Channel: ch2,
+		Message: []byte(msgStr),
+	}, msg)
+
+	publish(t, pubC, ch3, msgStr)
+	msg = assertMsgRead(t, msgCh)
+	assert.Equal(t, PubSubMessage{
+		Type:    "pmessage",
+		Pattern: p3,
+		Channel: ch3,
+		Message: []byte(msgStr),
+	}, msg)
+
+	publish(t, pubC, ch4, msgStr)
+	msg = assertMsgRead(t, msgCh)
+	assert.Equal(t, PubSubMessage{
+		Type:    "pmessage",
+		Pattern: p4,
+		Channel: ch4,
 		Message: []byte(msgStr),
 	}, msg)
 
