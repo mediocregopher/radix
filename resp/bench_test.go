@@ -9,7 +9,7 @@ import (
 
 func BenchmarkIntUnmarshalRESP(b *testing.B) {
 	tests := []struct {
-		Input string
+		In string
 	}{
 		{"-1"},
 		{"-123"},
@@ -20,9 +20,9 @@ func BenchmarkIntUnmarshalRESP(b *testing.B) {
 	}
 
 	for _, test := range tests {
-		input := ":" + test.Input + "\r\n"
+		input := ":" + test.In + "\r\n"
 
-		b.Run(fmt.Sprint(test.Input), func(b *testing.B) {
+		b.Run(fmt.Sprint(test.In), func(b *testing.B) {
 			var sr strings.Reader
 			br := bufio.NewReader(&sr)
 
@@ -32,7 +32,7 @@ func BenchmarkIntUnmarshalRESP(b *testing.B) {
 
 				var i Int
 				if err := i.UnmarshalRESP(br); err != nil {
-					b.Fatalf("failed to unmarshal %q: %s", test.Input, err)
+					b.Fatalf("failed to unmarshal %q: %s", input, err)
 				}
 			}
 		})
@@ -54,13 +54,13 @@ func BenchmarkReadFloat(b *testing.B) {
 	}
 
 	for _, test := range tests {
-		test := test
+		input := test.In
 
 		b.Run(fmt.Sprint(test.In), func(b *testing.B) {
 			var r strings.Reader
 
 			for i := 0; i < b.N; i++ {
-				r.Reset(test.In)
+				r.Reset(input)
 				bfloat, _ = readFloat(&r, 64)
 			}
 		})
@@ -82,13 +82,13 @@ func BenchmarkReadInt(b *testing.B) {
 	}
 
 	for _, test := range tests {
-		test := test
+		input := test.In
 
 		b.Run(fmt.Sprint(test.In), func(b *testing.B) {
 			var r strings.Reader
 
 			for i := 0; i < b.N; i++ {
-				r.Reset(test.In)
+				r.Reset(input)
 				bint, _ = readInt(&r)
 			}
 		})
@@ -106,13 +106,13 @@ func BenchmarkReadUint(b *testing.B) {
 	}
 
 	for _, test := range tests {
-		test := test
+		input := test.In
 
 		b.Run(fmt.Sprint(test.In), func(b *testing.B) {
 			var r strings.Reader
 
 			for i := 0; i < b.N; i++ {
-				r.Reset(test.In)
+				r.Reset(input)
 				buint, _ = readUint(&r)
 			}
 		})
