@@ -205,6 +205,43 @@ func TestPubSubPSubscribe(t *T) {
 	assertMsgNoRead(t, msgCh)
 }
 
+func TestPubSubMixedSubscribe(t *T) {
+	pubC := dial()
+	defer pubC.Close()
+
+	c := PubSub(dial())
+	defer c.Close()
+
+	msgCh := make(chan PubSubMessage, 2)
+
+	const msgStr = "bar"
+
+	require.Nil(t, c.Subscribe(msgCh, "foo"))
+	require.Nil(t, c.PSubscribe(msgCh, "f[aeiou]o"))
+
+	publish(t, pubC, "foo", msgStr)
+
+	msg1, msg2 := assertMsgRead(t, msgCh), assertMsgRead(t, msgCh)
+
+	// If we received the pmessage first we must swap msg1 and msg1.
+	if msg1.Type == "pmessage" {
+		msg1, msg2 = msg2, msg1
+	}
+
+	assert.Equal(t, PubSubMessage{
+		Type:    "message",
+		Channel: "foo",
+		Message: []byte(msgStr),
+	}, msg1)
+
+	assert.Equal(t, PubSubMessage{
+		Type:    "pmessage",
+		Channel: "foo",
+		Pattern: "f[aeiou]o",
+		Message: []byte(msgStr),
+	}, msg2)
+}
+
 func ExamplePubSub() {
 	// Create a normal redis connection
 	conn, err := Dial("tcp", "127.0.0.1:6379")
