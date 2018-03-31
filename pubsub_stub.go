@@ -164,6 +164,13 @@ func (s *pubSubStub) spin() {
 			if !ok {
 				panic("PubSubStub message channel was closed")
 			}
+			if m.Type == "" {
+				if m.Pattern == "" {
+					m.Type = "message"
+				} else {
+					m.Type = "pmessage"
+				}
+			}
 			if err := s.Conn.Encode(m); err != nil {
 				panic(fmt.Sprintf("error encoding message in PubSubStub: %s", err))
 			}
