@@ -35,11 +35,27 @@ func (d *dedupe) do(fn func()) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type clusterOpts struct {
+	pf ClientFunc
+}
+
+// ClusterOpt is an optional behavior which can be applied to the NewCluster
+// function to effect a Cluster's behavior
+type ClusterOpt func(*clusterOpts)
+
+// ClusterPoolFunc tells the Cluster to use the given ClientFunc when creating
+// pools of connections to cluster members.
+func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.pf = pf
+	}
+}
+
 // Cluster contains all information about a redis cluster needed to interact
 // with it, including a set of pools to each of its instances. All methods on
 // Cluster are thread-safe
 type Cluster struct {
-	cf ClientFunc
+	co clusterOpts
 
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
@@ -59,27 +75,38 @@ type Cluster struct {
 }
 
 // NewCluster initializes and returns a Cluster instance. It will try every
-// address given until it finds a usable one. From there it use CLUSTER SLOTS to
-// discover the cluster topology and make all the necessary connections.
+// address given until it finds a usable one. From there it uses CLUSTER SLOTS
+// to discover the cluster topology and make all the necessary connections.
 //
-// The ClientFunc is used to make the internal clients for the instances
-// discovered here and all new ones in the future. If nil is given then
-// radix.DefaultClientFunc will be used.
-func NewCluster(clusterAddrs []string, cf ClientFunc) (*Cluster, error) {
-	if cf == nil {
-		cf = DefaultClientFunc
-	}
+// NewCluster takes in a number of options which can overwrite its default
+// behavior. The default options NewCluster uses are:
+//
+//	ClusterPoolFunc(DefaultClientFunc)
+//
+func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c := &Cluster{
-		cf:         cf,
 		syncDedupe: newDedupe(),
 		pools:      map[string]Client{},
 		closeCh:    make(chan struct{}),
 		ErrCh:      make(chan error, 1),
 	}
 
+	defaultClusterOpts := []ClusterOpt{
+		ClusterPoolFunc(DefaultClientFunc),
+	}
+
+	for _, opt := range append(defaultClusterOpts, opts...) {
+		// the other args to NewCluster used to be a ClientFunc, which someone
+		// might have left as nil, in which case this now gives a weird panic.
+		// Just handle it
+		if opt != nil {
+			opt(&(c.co))
+		}
+	}
+
 	// make a pool to base the cluster on
 	for _, addr := range clusterAddrs {
-		p, err := cf("tcp", addr)
+		p, err := c.co.pf("tcp", addr)
 		if err != nil {
 			continue
 		}
@@ -152,7 +179,7 @@ func (c *Cluster) pool(addr string) (Client, error) {
 
 	// it's important that the cluster pool set isn't locked while this is
 	// happening, because this could block for a while
-	if p, err = c.cf("tcp", addr); err != nil {
+	if p, err = c.co.pf("tcp", addr); err != nil {
 		return nil, err
 	}
 

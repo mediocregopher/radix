@@ -7,10 +7,35 @@ import (
 	"time"
 )
 
+type sentinelOpts struct {
+	cf ConnFunc
+	pf ClientFunc
+}
+
+// SentinelOpt is an optional behavior which can be applied to the NewSentinel
+// function to effect a Sentinel's behavior.
+type SentinelOpt func(*sentinelOpts)
+
+// SentinelConnFunc tells the Sentinel to use the given ConnFunc when connecting
+// to sentinel instances.
+func SentinelConnFunc(cf ConnFunc) SentinelOpt {
+	return func(so *sentinelOpts) {
+		so.cf = cf
+	}
+}
+
+// SentinelPoolFunc tells the Sentinel to use the given ClientFunc when creating
+// a pool of connections to the sentinel's master.
+func SentinelPoolFunc(pf ClientFunc) SentinelOpt {
+	return func(so *sentinelOpts) {
+		so.pf = pf
+	}
+}
+
 // Sentinel is a Client which, in the background, connects to an available
 // sentinel node and handles all of the following:
 //
-// * Creates a Pool to the current master instance, as advertised by the
+// * Creates a pool to the current master instance, as advertised by the
 // sentinel
 //
 // * Listens for events indicating the master has changed, and automatically
@@ -20,7 +45,9 @@ import (
 // currently connected one becomes unreachable
 //
 type Sentinel struct {
+	so        sentinelOpts
 	initAddrs []string
+	name      string
 
 	// we read lock when calling methods on cl, and normal lock when swapping
 	// the value of cl, clAddr, and addrs
@@ -28,10 +55,6 @@ type Sentinel struct {
 	cl     Client
 	clAddr string
 	addrs  map[string]bool // the known sentinel addresses
-
-	name string
-	dfn  ConnFunc // the function used to dial sentinel instances
-	cfn  ClientFunc
 
 	// We use a persistent PubSubConn here, so we don't need to do much after
 	// initialization. The pconn is only really kept around for closing
@@ -52,20 +75,16 @@ type Sentinel struct {
 	testEventCh chan string
 }
 
-// NewSentinel creates and returns a *Sentinel. connFn may be nil, but if given
-// can specify a custom ConnFunc to use when connecting to sentinels. clientFn
-// may be nil, but if given can specify a custom ClientFunc to use when creating
-// a client to the master instance.
-func NewSentinel(masterName string, sentinelAddrs []string, connFn ConnFunc, clientFn ClientFunc) (*Sentinel, error) {
-	if connFn == nil {
-		connFn = func(net, addr string) (Conn, error) {
-			return DialTimeout(net, addr, 5*time.Second)
-		}
-	}
-	if clientFn == nil {
-		clientFn = DefaultClientFunc
-	}
-
+// NewSentinel creates and returns a *Sentinel instance. NewSentinel takes in a
+// number of options which can overwrite its default behavior. The default
+// options NewSentinel uses are:
+//
+//	SentinelConnFunc(func(net, addr string) (Conn, error) {
+//		return DialTimeout(net, addr, 5*time.Second)
+//	})
+//	SentinelPoolFunc(DefaultClientFunc)
+//
+func NewSentinel(masterName string, sentinelAddrs []string, opts ...SentinelOpt) (*Sentinel, error) {
 	addrs := map[string]bool{}
 	for _, addr := range sentinelAddrs {
 		addrs[addr] = true
@@ -75,12 +94,26 @@ func NewSentinel(masterName string, sentinelAddrs []string, connFn ConnFunc, cli
 		initAddrs:   sentinelAddrs,
 		name:        masterName,
 		addrs:       addrs,
-		dfn:         connFn,
-		cfn:         clientFn,
 		pconnCh:     make(chan PubSubMessage),
 		ErrCh:       make(chan error, 1),
 		closeCh:     make(chan bool),
 		testEventCh: make(chan string, 1),
+	}
+
+	defaultSentinelOpts := []SentinelOpt{
+		SentinelConnFunc(func(net, addr string) (Conn, error) {
+			return DialTimeout(net, addr, 5*time.Second)
+		}),
+		SentinelPoolFunc(DefaultClientFunc),
+	}
+
+	for _, opt := range append(defaultSentinelOpts, opts...) {
+		// the other args to NewSentinel used to be a ConnFunc and a ClientFunc,
+		// which someone might have left as nil, in which case this now gives a
+		// weird panic. Just handle it
+		if opt != nil {
+			opt(&(sc.so))
+		}
 	}
 
 	// first thing is to retrieve the state and create a pool using the first
@@ -133,7 +166,7 @@ func (sc *Sentinel) dial() (Conn, error) {
 	var conn Conn
 	var err error
 	for addr := range sc.addrs {
-		conn, err = sc.dfn("tcp", addr)
+		conn, err = sc.so.cf("tcp", addr)
 		if err == nil {
 			return conn, nil
 		}
@@ -142,7 +175,7 @@ func (sc *Sentinel) dial() (Conn, error) {
 	// try the initAddrs as a last ditch, but don't return their error if this
 	// doesn't work
 	for _, addr := range sc.initAddrs {
-		if conn, err := sc.dfn("tcp", addr); err == nil {
+		if conn, err := sc.so.cf("tcp", addr); err == nil {
 			return conn, nil
 		}
 	}
@@ -197,7 +230,7 @@ func (sc *Sentinel) ensureMaster(conn Conn) error {
 }
 
 func (sc *Sentinel) setMaster(newAddr string) error {
-	newPool, err := sc.cfn("tcp", newAddr)
+	newPool, err := sc.so.pf("tcp", newAddr)
 	if err != nil {
 		return err
 	}

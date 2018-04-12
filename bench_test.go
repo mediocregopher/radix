@@ -63,7 +63,7 @@ func BenchmarkParallelGetSet(b *B) {
 		wg.Wait()
 	}
 
-	radix, err := NewPool("tcp", "127.0.0.1:6379", parallel, nil)
+	radix, err := NewPool("tcp", "127.0.0.1:6379", parallel)
 	if err != nil {
 		b.Fatal(err)
 	}

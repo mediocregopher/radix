@@ -8,7 +8,7 @@
 // connection pool is thread-safe and will automatically create, reuse, and
 // recreate connections as needed:
 //
-//	pool, err := radix.NewPool("tcp", "127.0.0.1:6379", 10, nil)
+//	pool, err := radix.NewPool("tcp", "127.0.0.1:6379", 10)
 //	if err != nil {
 //		// handle error
 //	}
@@ -62,8 +62,9 @@
 // AUTH and other settings via ConnFunc and ClientFunc
 //
 // All the client creation functions (e.g. NewPool) take in either a ConnFunc or
-// a ClientFunc. These can be used in order to set up timeouts on connections,
-// perform authentication commands, or even implement custom pools.
+// a ClientFunc via their options. These can be used in order to set up timeouts
+// on connections, perform authentication commands, or even implement custom
+// pools.
 //
 //	// this is a ConnFunc which will set up a connection which is authenticated
 //	// and has a 1 minute timeout on all operations
@@ -81,14 +82,14 @@
 //	}
 //
 //	// this pool will use our ConnFunc for all connections it creates
-//	pool, err := radix.NewPool("tcp", redisAddr, 10, customConnFunc)
+//	pool, err := radix.NewPool("tcp", redisAddr, 10, PoolConnFunc(customConnFunc))
 //
 //	// this cluster will use the ClientFunc to create a pool to each node in the
 //	// cluster. The pools also use our customConnFunc, but have more connections
-//	clientFunc := func(network, addr string) (radix.Client, error) {
-//		return radix.NewPool(network, addr, 100, customConnFunc)
+//	poolFunc := func(network, addr string) (radix.Client, error) {
+//		return radix.NewPool(network, addr, 100, PoolConnFunc(customConnFunc))
 //	}
-//	cluster, err := radix.NewCluster([]string{redisAddr1, redisAdd2}, clientFunc)
+//	cluster, err := radix.NewCluster([]string{redisAddr1, redisAddr2}, ClusterPoolFunc(poolFunc))
 //
 // Custom implementations
 //
@@ -128,10 +129,9 @@ type Client interface {
 type ClientFunc func(network, addr string) (Client, error)
 
 // DefaultClientFunc is a ClientFunc which will return a Client for a redis
-// instance using sane defaults. This is used in this package when nil is passed
-// in as a ClientFunc.
+// instance using sane defaults.
 var DefaultClientFunc = func(network, addr string) (Client, error) {
-	return NewPool(network, addr, 20, nil)
+	return NewPool(network, addr, 20)
 }
 
 // Conn is a Client wrapping a single network connection which synchronously

@@ -231,7 +231,7 @@ func (scl *clusterStub) addrs() []string {
 }
 
 func (scl *clusterStub) newCluster() *Cluster {
-	c, err := NewCluster(scl.addrs(), scl.clientFunc())
+	c, err := NewCluster(scl.addrs(), ClusterPoolFunc(scl.clientFunc()))
 	if err != nil {
 		panic(err)
 	}
