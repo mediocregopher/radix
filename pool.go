@@ -296,6 +296,14 @@ func (sp *Pool) doRefill() {
 }
 
 func (sp *Pool) doOverflowDrain() {
+	// the other do* processes inherently handle this case, this one needs to do
+	// it manually
+	sp.l.RLock()
+	defer sp.l.RUnlock()
+	if sp.closed {
+		return
+	}
+
 	// If the overflow has a connection we first try to move it to the main
 	// pool, but if that's full then just close the connection
 	select {
@@ -406,8 +414,13 @@ emptyLoop:
 		select {
 		case spc := <-sp.pool:
 			spc.Close()
+		case spc := <-sp.overflow:
+			spc.Close()
 		default:
 			close(sp.pool)
+			if sp.overflow != nil {
+				close(sp.overflow)
+			}
 			break emptyLoop
 		}
 	}
