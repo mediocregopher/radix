@@ -133,7 +133,7 @@ func TestPoolOnFull(t *T) {
 		<-pool.pool
 		assert.Equal(t, 0, len(pool.pool))
 		assert.Equal(t, 1, len(pool.overflow))
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 		assert.Equal(t, 1, len(pool.pool))
 		assert.Equal(t, 0, len(pool.overflow))
 
@@ -143,7 +143,7 @@ func TestPoolOnFull(t *T) {
 		pool.put(spc)
 		assert.Equal(t, 1, len(pool.pool))
 		assert.Equal(t, 1, len(pool.overflow))
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 		assert.Equal(t, 1, len(pool.pool))
 		assert.Equal(t, 0, len(pool.overflow))
 	})
