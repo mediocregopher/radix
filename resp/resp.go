@@ -78,6 +78,22 @@ func putBytes(b *[]byte) {
 	bytePool.Put(b)
 }
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, 0, bytes.MinRead)
+		return bytes.NewBuffer(b)
+	},
+}
+
+func getBuffer() *bytes.Buffer {
+	return bufferPool.Get().(*bytes.Buffer)
+}
+
+func putBuffer(b *bytes.Buffer) {
+	b.Reset()
+	bufferPool.Put(b)
+}
+
 // parseInt is a specialized version of strconv.ParseInt that parses a base-10 encoded signed integer.
 func parseInt(b []byte) (int64, error) {
 	if len(b) == 0 {
@@ -179,12 +195,19 @@ func bufferedIntDelim(br *bufio.Reader) (int64, error) {
 }
 
 func readAllAppend(r io.Reader, b []byte) ([]byte, error) {
-	buf := bytes.NewBuffer(b)
-	// a side effect of this is that the given b will be re-allocated if
-	// it's less than bytes.MinRead. Since this b could be all the way from the
-	// user we can't guarantee it within the library
+	buf := getBuffer()
 	_, err := buf.ReadFrom(r)
-	return buf.Bytes(), err
+	// reading into buf and copying is in most cases faster than creating
+	// a new buffer for b since it can avoid allocating the buffer (when
+	// there is a buffer in the pool). It also avoids reallocating b when
+	// b is smaller than bytes.MinRead bytes (see the documentation on
+	// bytes.MinRead) and the data fits into b.
+	b = append(b, buf.Bytes()...)
+	putBuffer(buf)
+	if b == nil {
+		b = []byte{}
+	}
+	return b, err
 }
 
 func multiWrite(w io.Writer, bb ...[]byte) error {

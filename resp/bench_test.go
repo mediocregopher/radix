@@ -2,7 +2,9 @@ package resp
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -114,6 +116,25 @@ func BenchmarkReadUint(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				r.Reset(input)
 				buint, _ = readUint(&r)
+			}
+		})
+	}
+}
+
+func BenchmarkReadAllAppend(b *testing.B) {
+	respBytes := []byte("$5\r\nhello\r\n")
+
+	for _, bcap := range []int{0, len(respBytes), len(respBytes) + bytes.MinRead} {
+		b.Run("Capacity"+strconv.Itoa(bcap), func(b *testing.B) {
+			var br bytes.Reader
+			buf := make([]byte, 0, bcap)
+
+			for i := 0; i < b.N; i++ {
+				br.Reset(respBytes)
+
+				if _, err := readAllAppend(&br, buf); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
