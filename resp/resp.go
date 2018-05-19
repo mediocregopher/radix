@@ -196,10 +196,12 @@ func bufferedIntDelim(br *bufio.Reader) (int64, error) {
 
 func readAllAppend(r io.Reader, b []byte) ([]byte, error) {
 	buf := getBuffer()
-	// a side effect of this is that the given b will be re-allocated if
-	// it's less than bytes.MinRead. Since this b could be all the way from the
-	// user we can't guarantee it within the library
 	_, err := buf.ReadFrom(r)
+	// reading into buf and copying is in most cases faster than creating
+	// a new buffer for b since it can avoid allocating the buffer (when
+	// there is a buffer in the pool). It also avoids reallocating b when
+	// b is smaller than bytes.MinRead bytes (see the documentation on
+	// bytes.MinRead) and the data fits into b.
 	b = append(b, buf.Bytes()...)
 	putBuffer(buf)
 	if b == nil {
