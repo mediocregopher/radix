@@ -401,6 +401,7 @@ func (sp *Pool) NumAvailConns() int {
 func (sp *Pool) Close() error {
 	sp.l.Lock()
 	if sp.closed {
+		sp.l.Unlock()
 		return errClientClosed
 	}
 	sp.closed = true
