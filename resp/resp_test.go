@@ -414,7 +414,8 @@ func TestAnyUnmarshal(t *T) {
 
 func TestRawMessage(t *T) {
 	rmtests := []struct {
-		b string
+		b     string
+		isNil bool
 	}{
 		{b: "+\r\n"},
 		{b: "+foo\r\n"},
@@ -423,12 +424,12 @@ func TestRawMessage(t *T) {
 		{b: ":5\r\n"},
 		{b: ":0\r\n"},
 		{b: ":-5\r\n"},
-		{b: "$-1\r\n"},
+		{b: "$-1\r\n", isNil: true},
 		{b: "$0\r\n\r\n"},
 		{b: "$3\r\nfoo\r\n"},
 		{b: "$8\r\nfoo\r\nbar\r\n"},
 		{b: "*2\r\n:1\r\n:2\r\n"},
-		{b: "*-1\r\n"},
+		{b: "*-1\r\n", isNil: true},
 	}
 
 	// one at a time
@@ -438,6 +439,7 @@ func TestRawMessage(t *T) {
 			rm := RawMessage(rmt.b)
 			require.Nil(t, rm.MarshalRESP(buf))
 			assert.Equal(t, rmt.b, buf.String())
+			assert.Equal(t, rmt.isNil, rm.IsNil())
 		}
 		{
 			var rm RawMessage

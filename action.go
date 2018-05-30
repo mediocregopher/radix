@@ -268,6 +268,41 @@ func (c *flatCmdAction) String() string {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// MaybeNil is a type which wraps a receiver. It will first detect if what's
+// being received is a nil RESP type (either bulk string or array), and if so
+// set Nil to true. If not the return value will be unmarshaled into Rcv
+// normally.
+//
+//	var rcv int64
+//	mn := MaybeNil{Rcv: &rcv}
+//	if err := client.Do(radix.Cmd(&mn, "GET", "foo")); err != nil {
+//		panic(err)
+//	} else if mn.Nil {
+//		fmt.Println("rcv is nil")
+//	} else {
+//		fmt.Printf("rcv is %d\n", rcv)
+//	}
+//
+type MaybeNil struct {
+	Nil bool
+	Rcv interface{}
+}
+
+// UnmarshalRESP implements the method for the resp.Unmarshaler interface.
+func (mn *MaybeNil) UnmarshalRESP(br *bufio.Reader) error {
+	var rm resp.RawMessage
+	if err := rm.UnmarshalRESP(br); err != nil {
+		return err
+	} else if rm.IsNil() {
+		mn.Nil = true
+		return nil
+	}
+
+	return rm.UnmarshalInto(resp.Any{I: mn.Rcv})
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // EvalScript contains the body of a script to be used with redis' EVAL
 // functionality. Call Cmd on a EvalScript to actually create an Action which
 // can be run.

@@ -743,6 +743,7 @@ func saneDefault(prefix byte) interface{} {
 // which has a simple string or bulk string (the vast majority of them) is going
 // to go through one of these.
 var (
+	// RawMessage.UnmarshalInto also uses this
 	byteReaderPool = sync.Pool{
 		New: func() interface{} {
 			return bytes.NewReader(nil)
@@ -1049,6 +1050,13 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 // from calling UnmarshalRESP is returned, and the RawMessage is unaffected in
 // all cases.
 func (rm RawMessage) UnmarshalInto(u Unmarshaler) error {
-	br := bufio.NewReader(bytes.NewBuffer(rm))
-	return u.UnmarshalRESP(br)
+	r := byteReaderPool.Get().(*bytes.Reader)
+	defer byteReaderPool.Put(r)
+	r.Reset(rm)
+	return u.UnmarshalRESP(bufio.NewReader(r))
+}
+
+// IsNil returns true if the contents of RawMessage are one of the nil values.
+func (rm RawMessage) IsNil() bool {
+	return bytes.Equal(rm, nilBulkString) || bytes.Equal(rm, nilArray)
 }
