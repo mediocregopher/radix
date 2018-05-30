@@ -1,8 +1,11 @@
 package radix
 
 import (
+	"bufio"
+	"bytes"
 	. "testing"
 
+	"github.com/mediocregopher/radix.v3/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -101,4 +104,38 @@ func TestWithConnAction(t *T) {
 		return nil
 	}))
 	require.Nil(t, err)
+}
+
+func TestMaybeNil(t *T) {
+	mntests := []struct {
+		b     string
+		isNil bool
+	}{
+		{b: "$-1\r\n", isNil: true},
+		{b: "*-1\r\n", isNil: true},
+		{b: "+foo\r\n"},
+		{b: "-\r\n"},
+		{b: "-foo\r\n"},
+		{b: ":5\r\n"},
+		{b: ":0\r\n"},
+		{b: ":-5\r\n"},
+		{b: "$0\r\n\r\n"},
+		{b: "$3\r\nfoo\r\n"},
+		{b: "$8\r\nfoo\r\nbar\r\n"},
+		{b: "*2\r\n:1\r\n:2\r\n"},
+	}
+
+	for _, mnt := range mntests {
+		buf := bytes.NewBufferString(mnt.b)
+		{
+			var rm resp.RawMessage
+			mn := MaybeNil{Rcv: &rm}
+			require.Nil(t, mn.UnmarshalRESP(bufio.NewReader(buf)))
+			if mnt.isNil {
+				assert.True(t, mn.Nil)
+			} else {
+				assert.Equal(t, mnt.b, string(rm))
+			}
+		}
+	}
 }
