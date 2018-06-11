@@ -3,6 +3,7 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	. "testing"
 
 	"github.com/mediocregopher/radix.v3/resp"
@@ -71,6 +72,29 @@ func TestEvalAction(t *T) {
 	}
 }
 
+func ExampleEvalScript() {
+	// set as a global variable, this script is equivalent to the builtin GETSET
+	// redis command
+	var getSet = NewEvalScript(1, `
+		local prev = redis.call("GET", KEYS[1])
+		redis.call("SET", KEYS[1], ARGV[1])
+		return prev
+`)
+
+	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	if err != nil {
+		// handle error
+	}
+
+	key := "someKey"
+	var prevVal string
+	if err := client.Do(getSet.Cmd(&prevVal, key, "myVal")); err != nil {
+		// handle error
+	}
+
+	fmt.Printf("value of key %q used to be %q\n", key, prevVal)
+}
+
 func TestPipelineAction(t *T) {
 	c := dial()
 	for i := 0; i < 10; i++ {
@@ -92,6 +116,23 @@ func TestPipelineAction(t *T) {
 	}
 }
 
+func ExamplePipeline() {
+	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	if err != nil {
+		// handle error
+	}
+	var fooVal string
+	p := Pipeline(
+		FlatCmd(nil, "SET", "foo", 1),
+		Cmd(&fooVal, "GET", "foo"),
+	)
+	if err := client.Do(p); err != nil {
+		// handle error
+	}
+	fmt.Printf("fooVal: %q\n", fooVal)
+	// Output: fooVal: "1"
+}
+
 func TestWithConnAction(t *T) {
 	c := dial()
 	k, v := randStr(), 10
@@ -104,6 +145,88 @@ func TestWithConnAction(t *T) {
 		return nil
 	}))
 	require.Nil(t, err)
+}
+
+func ExampleWithConn() {
+	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	if err != nil {
+		// handle error
+	}
+
+	// This example retrieves the current integer value of `key` and sets its
+	// new value to be the increment of that, all using the same connection
+	// instance. NOTE that it does not do this atomically like the INCR command
+	// would.
+	key := "someKey"
+	err = client.Do(WithConn(key, func(conn Conn) error {
+		var curr int
+		if err := conn.Do(Cmd(&curr, "GET", key)); err != nil {
+			return err
+		}
+
+		curr++
+		return conn.Do(FlatCmd(nil, "SET", key, curr))
+	}))
+	if err != nil {
+		// handle error
+	}
+}
+
+func ExampleWithConn_transaction() {
+	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	if err != nil {
+		// handle error
+	}
+
+	// This example retrieves the current value of `key` and then sets a new
+	// value on it in an atomic transaction.
+	key := "someKey"
+	var prevVal string
+
+	err = client.Do(WithConn(key, func(c Conn) error {
+
+		// Begin the transaction with a MULTI command
+		if err := c.Do(Cmd(nil, "MULTI")); err != nil {
+			return err
+		}
+
+		// If any of the calls after the MULTI call error it's important that
+		// the transaction is discarded. This isn't strictly necessary if the
+		// error was a network error, as the connection would be closed by the
+		// client anyway, but it's important otherwise.
+		var err error
+		defer func() {
+			if err != nil {
+				// The return from DISCARD doesn't matter. If it's an error then
+				// it's a network error and the Conn will be closed by the
+				// client.
+				c.Do(Cmd(nil, "DISCARD"))
+			}
+		}()
+
+		// queue up the transaction's commands
+		if err = c.Do(Cmd(nil, "GET", key)); err != nil {
+			return err
+		}
+		if err = c.Do(Cmd(nil, "SET", key, "someOtherValue")); err != nil {
+			return err
+		}
+
+		// execute the transaction, capturing the result
+		var result []string
+		if err = c.Do(Cmd(&result, "EXEC")); err != nil {
+			return err
+		}
+
+		// capture the output of the first transaction command, i.e. the GET
+		prevVal = result[0]
+		return nil
+	}))
+	if err != nil {
+		// handle error
+	}
+
+	fmt.Printf("the value of key %q was %q\n", key, prevVal)
 }
 
 func TestMaybeNil(t *T) {
@@ -138,4 +261,22 @@ func TestMaybeNil(t *T) {
 			}
 		}
 	}
+}
+
+func ExampleMaybeNil() {
+	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	if err != nil {
+		// handle error
+	}
+
+	var rcv int64
+	mn := MaybeNil{Rcv: &rcv}
+	if err := client.Do(Cmd(&mn, "GET", "foo")); err != nil {
+		// handle error
+	} else if mn.Nil {
+		fmt.Println("rcv is nil")
+	} else {
+		fmt.Printf("rcv is %d\n", rcv)
+	}
+
 }

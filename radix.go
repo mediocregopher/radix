@@ -59,6 +59,18 @@
 //	}
 //	fmt.Printf("fooVal: %q\n", fooVal)
 //
+// Transactions
+//
+// There are two ways to perform transactions in redis. The first is with the
+// MULTI/EXEC commands, which can be done using the WithConn Action (see its
+// example). The second is using EVAL with lua scripting, which can be done
+// using the EvalScript Action (again, see its example).
+//
+// EVAL with lua scripting is recommended in almost all cases. It only requires
+// a single round-trip, it's infinitely more flexible than MULTI/EXEC, it's
+// simpler to code, and for complex transactions, which would otherwise need a
+// WATCH statement with MULTI/EXEC, it's significantly faster.
+//
 // AUTH and other settings via ConnFunc and ClientFunc
 //
 // All the client creation functions (e.g. NewPool) take in either a ConnFunc or

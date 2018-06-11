@@ -272,17 +272,6 @@ func (c *flatCmdAction) String() string {
 // being received is a nil RESP type (either bulk string or array), and if so
 // set Nil to true. If not the return value will be unmarshaled into Rcv
 // normally.
-//
-//	var rcv int64
-//	mn := MaybeNil{Rcv: &rcv}
-//	if err := client.Do(radix.Cmd(&mn, "GET", "foo")); err != nil {
-//		panic(err)
-//	} else if mn.Nil {
-//		fmt.Println("rcv is nil")
-//	} else {
-//		fmt.Printf("rcv is %d\n", rcv)
-//	}
-//
 type MaybeNil struct {
 	Nil bool
 	Rcv interface{}
@@ -306,19 +295,6 @@ func (mn *MaybeNil) UnmarshalRESP(br *bufio.Reader) error {
 // EvalScript contains the body of a script to be used with redis' EVAL
 // functionality. Call Cmd on a EvalScript to actually create an Action which
 // can be run.
-//
-//	var getSet = NewEvalScript(1, `
-//		local prev = redis.call("GET", KEYS[1])
-//		redis.call("SET", KEYS[1], ARGV[1])
-//		return prev
-//	`)
-//
-//	func doAThing(c radix.Client) (string, error) {
-//		var prevVal string
-//		err := c.Do(getSet.Cmd(&string, "myKey", "myVal"))
-//		return prevVal, err
-//	}
-//
 type EvalScript struct {
 	script, sum string
 	numKeys     int
@@ -413,16 +389,10 @@ type pipeline []CmdAction
 // a single write, then reads their responses in a single read. This reduces
 // network delay into a single round-trip.
 //
-//	var fooVal string
-//	p := radix.Pipeline(
-//		radix.FlatCmd(nil, "SET", "foo", 1),
-//		radix.Cmd(&fooVal, "GET", "foo"),
-//	)
-//	if err := conn.Do(p); err != nil {
-//		panic(err)
-//	}
-//	fmt.Printf("fooVal: %q\n", fooVal)
-//
+// NOTE that, while a Pipeline performs all commands on a single Conn, it
+// shouldn't be used for MULTI/EXEC transactions, because if there's an error it
+// won't discard the incomplete transaction. Use WithConn or EvalScript for
+// transactional functionality instead.
 func Pipeline(cmds ...CmdAction) Action {
 	return pipeline(cmds)
 }
@@ -468,19 +438,9 @@ type withConn struct {
 // actually carry out the inner actions, and the error it returns will be
 // passed back up immediately.
 //
-//	err := pool.Do(WithConn("someKey", func(conn Conn) error {
-//		var curr int
-//		if err := conn.Do(radix.Cmd(&curr, "GET", "someKey")); err != nil {
-//			return err
-//		}
-//
-//		curr++
-//		return conn.Do(radix.Cmd(nil, "SET", "someKey", curr))
-//	})
-//
 // NOTE that WithConn only ensures all inner Actions are performed on the same
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
-// WithConn or Pipeline for transactions, or use EvalScript
+// WithConn for transactions, or use EvalScript
 func WithConn(key string, fn func(Conn) error) Action {
 	return &withConn{key, fn}
 }
