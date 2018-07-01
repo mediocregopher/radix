@@ -147,18 +147,16 @@ func PoolOnFullClose() PoolOpt {
 }
 
 // PoolOnFullBuffer effects the Pool's behavior when it is full. The effect is
-// to cause any connection which is being put back into a full pool to be put
-// instead into an overflow buffer which can hold up to the given number of
-// connections. If the overflow buffer is also full then the connection is
-// closed and discarded.
+// to give the pool an additional buffer for connections, called the overflow.
+// If a connection is being put back into a full pool it will be put into the
+// overflow. If the overflow is also full then the connection will be closed and
+// discarded.
 //
 // drainInterval specifies the interval at which a drain event happens. On each
-// drain event a connection is removed from the overflow buffer and put into the
-// pool. If the pool is full the connection is closed and discarded.
+// drain event a connection will be removed from the overflow buffer (if any are
+// present in it), closed, and discarded.
 //
-// When Actions are performed with the Pool the connection used may come from
-// either the main pool or the overflow buffer. Connections do _not_ have to
-// wait to be drained into the main pool before they will be used.
+// If drainInterval is zero then drain events will never occur.
 func PoolOnFullBuffer(size int, drainInterval time.Duration) PoolOpt {
 	return func(po *poolOpts) {
 		po.overflowSize = size
@@ -172,10 +170,11 @@ func PoolOnFullBuffer(size int, drainInterval time.Duration) PoolOpt {
 type Pool struct {
 	po            poolOpts
 	network, addr string
+	size          int
 
-	l              sync.RWMutex
-	pool, overflow chan *staticPoolConn
-	closed         bool
+	l      sync.RWMutex
+	pool   chan *staticPoolConn
+	closed bool
 
 	wg       sync.WaitGroup
 	closeCh  chan bool
@@ -198,7 +197,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	sp := &Pool{
 		network:  network,
 		addr:     addr,
-		pool:     make(chan *staticPoolConn, size),
+		size:     size,
 		closeCh:  make(chan bool),
 		initDone: make(chan struct{}),
 	}
@@ -223,6 +222,9 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 			opt(&(sp.po))
 		}
 	}
+
+	totalSize := size + sp.po.overflowSize
+	sp.pool = make(chan *staticPoolConn, totalSize)
 
 	// make one Conn synchronously to ensure there's actually a redis instance
 	// present. The rest will be created asynchronously
@@ -250,8 +252,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	if sp.po.refillInterval > 0 && size > 0 {
 		sp.atIntervalDo(sp.po.refillInterval, sp.doRefill)
 	}
-	if sp.po.overflowDrainInterval > 0 && sp.po.overflowSize > 0 {
-		sp.overflow = make(chan *staticPoolConn, sp.po.overflowSize)
+	if sp.po.overflowDrainInterval > 0 {
 		sp.atIntervalDo(sp.po.overflowDrainInterval, sp.doOverflowDrain)
 	}
 	return sp, nil
@@ -288,10 +289,11 @@ func (sp *Pool) atIntervalDo(d time.Duration, do func()) {
 }
 
 func (sp *Pool) doRefill() {
-	if len(sp.pool) == cap(sp.pool) {
+	if len(sp.pool) >= sp.size {
 		return
 	}
 	spc, err := sp.newConn()
+	// TODO do something with this error?
 	if err == nil {
 		sp.put(spc)
 	}
@@ -302,20 +304,17 @@ func (sp *Pool) doOverflowDrain() {
 	// it manually
 	sp.l.RLock()
 	defer sp.l.RUnlock()
-	if sp.closed {
+
+	if sp.closed || len(sp.pool) <= sp.size {
 		return
 	}
 
-	// If the overflow has a connection we first try to move it to the main
-	// pool, but if that's full then just close the connection
+	// pop a connection off and close it, if there's any to pop off
 	select {
-	case spc := <-sp.overflow:
-		select {
-		case sp.pool <- spc:
-		default:
-			spc.Close()
-		}
+	case spc := <-sp.pool:
+		spc.Close()
 	default:
+		// pool is empty, nothing to drain
 	}
 }
 
@@ -351,8 +350,6 @@ func (sp *Pool) get() (*staticPoolConn, error) {
 	select {
 	case spc := <-sp.pool:
 		return spc, nil
-	case spc := <-sp.overflow:
-		return spc, nil
 	case err := <-waitCh:
 		if err != nil {
 			return nil, err
@@ -372,11 +369,7 @@ func (sp *Pool) put(spc *staticPoolConn) {
 	select {
 	case sp.pool <- spc:
 	default:
-		select {
-		case sp.overflow <- spc:
-		default:
-			spc.Close()
-		}
+		spc.Close()
 	}
 }
 
@@ -396,7 +389,7 @@ func (sp *Pool) Do(a Action) error {
 // NumAvailConns returns the number of connections currently available in the
 // pool, as well as in the overflow buffer if that option is enabled.
 func (sp *Pool) NumAvailConns() int {
-	return len(sp.pool) + len(sp.overflow)
+	return len(sp.pool)
 }
 
 // Close implements the Close method of the Client
@@ -417,13 +410,8 @@ emptyLoop:
 		select {
 		case spc := <-sp.pool:
 			spc.Close()
-		case spc := <-sp.overflow:
-			spc.Close()
 		default:
 			close(sp.pool)
-			if sp.overflow != nil {
-				close(sp.overflow)
-			}
 			break emptyLoop
 		}
 	}

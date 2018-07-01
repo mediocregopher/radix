@@ -99,53 +99,44 @@ func TestPoolOnFull(t *T) {
 		pool := testPool(1, PoolOnFullClose())
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, 0, len(pool.overflow))
 
 		spc, err := pool.newConn()
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, 0, len(pool.overflow))
 	})
 
 	t.Run("onFullBuffer", func(t *T) {
 		pool := testPool(1, PoolOnFullBuffer(1, 1*time.Second))
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, 0, len(pool.overflow))
 
 		// putting a conn should overflow
 		spc, err := pool.newConn()
 		assert.NoError(t, err)
 		pool.put(spc)
-		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, 1, len(pool.overflow))
+		assert.Equal(t, 2, len(pool.pool))
 
 		// another shouldn't, overflow is full
 		spc, err = pool.newConn()
 		assert.NoError(t, err)
 		pool.put(spc)
-		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, 1, len(pool.overflow))
+		assert.Equal(t, 2, len(pool.pool))
 
-		// retrieve from the main, so that drain will move the overflow conn
-		// into it
+		// retrieve from the pool, drain shouldn't do anything because the
+		// overflow is empty now
 		<-pool.pool
-		assert.Equal(t, 0, len(pool.pool))
-		assert.Equal(t, 1, len(pool.overflow))
+		assert.Equal(t, 1, len(pool.pool))
 		time.Sleep(2 * time.Second)
 		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, 0, len(pool.overflow))
 
 		// if both are full then drain should remove the overflow one
 		spc, err = pool.newConn()
 		assert.NoError(t, err)
 		pool.put(spc)
-		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, 1, len(pool.overflow))
+		assert.Equal(t, 2, len(pool.pool))
 		time.Sleep(2 * time.Second)
 		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, 0, len(pool.overflow))
 	})
 }
 
