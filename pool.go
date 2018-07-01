@@ -13,6 +13,8 @@ import (
 // ErrPoolEmpty is used by Pools created using the PoolOnEmptyErrAfter option
 var ErrPoolEmpty = errors.New("connection pool is empty")
 
+var errPoolFull = errors.New("connection pool is full")
+
 // TODO do something with errors which happen asynchronously
 
 type staticPoolConn struct {
@@ -164,6 +166,8 @@ func PoolOnFullBuffer(size int, drainInterval time.Duration) PoolOpt {
 	}
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 // Pool is a semi-dynamic pool which holds a fixed number of connections open
 // and which implements the Client interface. It takes in a number of options
 // which can effect its specific behavior, see the NewPool method.
@@ -172,7 +176,12 @@ type Pool struct {
 	network, addr string
 	size          int
 
-	l      sync.RWMutex
+	l sync.RWMutex
+	// totalConns is only really needed by the refill part of the code to ensure
+	// it's not overly refilling the pool. It is protected by l.
+	totalConns int
+	// pool is read-protected by l, and should not be written to or read from
+	// when closed is true (closed is also protected by l)
 	pool   chan *staticPoolConn
 	closed bool
 
@@ -227,8 +236,8 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	sp.pool = make(chan *staticPoolConn, totalSize)
 
 	// make one Conn synchronously to ensure there's actually a redis instance
-	// present. The rest will be created asynchronously
-	spc, err := sp.newConn()
+	// present. The rest will be created asynchronously.
+	spc, err := sp.newConn(false) // false in case size is zero
 	if err != nil {
 		return nil, err
 	}
@@ -238,10 +247,11 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	go func() {
 		defer sp.wg.Done()
 		for i := 0; i < size-1; i++ {
-			spc, err := sp.newConn()
+			spc, err := sp.newConn(true)
 			if err == nil {
 				sp.put(spc)
 			}
+			// TODO do something with that error?
 		}
 		close(sp.initDone)
 	}()
@@ -258,16 +268,31 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	return sp, nil
 }
 
-func (sp *Pool) newConn() (*staticPoolConn, error) {
+// this must always be called with sp.l unlocked
+func (sp *Pool) newConn(errIfFull bool) (*staticPoolConn, error) {
 	c, err := sp.po.cf(sp.network, sp.addr)
 	if err != nil {
 		return nil, err
 	}
-
 	spc := &staticPoolConn{
 		Conn: c,
 		sp:   sp,
 	}
+
+	// We don't want to wrap the entire function in a lock because dialing might
+	// take a while, but we also don't want to be making any new connections if
+	// the pool is closed
+	sp.l.Lock()
+	defer sp.l.Unlock()
+	if sp.closed {
+		spc.Close()
+		return nil, errClientClosed
+	} else if errIfFull && sp.totalConns >= sp.size {
+		spc.Close()
+		return nil, errPoolFull
+	}
+	sp.totalConns++
+
 	return spc, nil
 }
 
@@ -289,11 +314,19 @@ func (sp *Pool) atIntervalDo(d time.Duration, do func()) {
 }
 
 func (sp *Pool) doRefill() {
-	if len(sp.pool) >= sp.size {
+	// this is a preliminary check to see if more conns are needed. Technically
+	// it's not needed, as newConn will do the same one, but it will also incur
+	// creating a connection and fully locking the mutex. We can handle the
+	// majority of cases here with a much less expensive read-lock.
+	sp.l.RLock()
+	if sp.totalConns >= sp.size {
+		sp.l.RUnlock()
 		return
 	}
-	spc, err := sp.newConn()
-	// TODO do something with this error?
+	sp.l.RUnlock()
+
+	spc, err := sp.newConn(true)
+	// TODO do something with this error? not if it's errPoolFull
 	if err == nil {
 		sp.put(spc)
 	}
@@ -303,74 +336,105 @@ func (sp *Pool) doOverflowDrain() {
 	// the other do* processes inherently handle this case, this one needs to do
 	// it manually
 	sp.l.RLock()
-	defer sp.l.RUnlock()
 
 	if sp.closed || len(sp.pool) <= sp.size {
+		sp.l.RUnlock()
 		return
 	}
 
 	// pop a connection off and close it, if there's any to pop off
+	var spc *staticPoolConn
 	select {
-	case spc := <-sp.pool:
-		spc.Close()
+	case spc = <-sp.pool:
 	default:
 		// pool is empty, nothing to drain
 	}
+	sp.l.RUnlock()
+
+	if spc == nil {
+		return
+	}
+
+	spc.Close()
+	sp.l.Lock()
+	sp.totalConns--
+	sp.l.Unlock()
 }
 
 func (sp *Pool) get() (*staticPoolConn, error) {
-	sp.l.RLock()
-	defer sp.l.RUnlock()
-	if sp.closed {
-		return nil, errClientClosed
-	}
+	// it's easier to manage the locks using an inner lock like this. If the
+	// conn returned is nil it means that it needs to be created.
+	inner := func() (*staticPoolConn, error) {
+		sp.l.RLock()
+		defer sp.l.RUnlock()
+		if sp.closed {
+			return nil, errClientClosed
+		}
 
-	// if an error is written to waitCh get returns that, otherwise if it's
-	// closed get will make a new connection
-	waitCh := make(chan error, 1)
-	effectWaitCh := func() {
-		if sp.po.onEmptyErr {
-			waitCh <- ErrPoolEmpty
+		// if an error is written to waitCh get returns that, otherwise if it's
+		// closed get will make a new connection
+		waitCh := make(chan error, 1)
+		effectWaitCh := func() {
+			if sp.po.onEmptyErr {
+				waitCh <- ErrPoolEmpty
+			} else {
+				close(waitCh)
+			}
+		}
+
+		if sp.po.onEmptyWait == -1 {
+			// block, waitCh is never effected
+		} else if sp.po.onEmptyWait == 0 {
+			effectWaitCh()
 		} else {
-			close(waitCh)
+			// TODO it might be worthwhile to use a sync.Pool for timers, rather
+			// than creating a new one for every single get
+			t := time.AfterFunc(sp.po.onEmptyWait, effectWaitCh)
+			defer t.Stop()
+		}
+
+		select {
+		case spc := <-sp.pool:
+			return spc, nil
+		case err := <-waitCh:
+			if err != nil {
+				return nil, err
+			}
+			return nil, nil
 		}
 	}
 
-	if sp.po.onEmptyWait == -1 {
-		// block, waitCh is never effected
-	} else if sp.po.onEmptyWait == 0 {
-		effectWaitCh()
-	} else {
-		// TODO it might be worthwhile to use a sync.Pool for timers, rather
-		// than creating a new one for every single get
-		t := time.AfterFunc(sp.po.onEmptyWait, effectWaitCh)
-		defer t.Stop()
-	}
-
-	select {
-	case spc := <-sp.pool:
+	spc, err := inner()
+	if err != nil {
+		return nil, err
+	} else if spc != nil {
 		return spc, nil
-	case err := <-waitCh:
-		if err != nil {
-			return nil, err
-		}
-		return sp.newConn()
 	}
+
+	// at this point everything is unlocked and the conn needs to be created.
+	// newConn will handle checking if the pool has been closed since the inner
+	// was called.
+	return sp.newConn(false)
 }
 
 func (sp *Pool) put(spc *staticPoolConn) {
 	sp.l.RLock()
-	defer sp.l.RUnlock()
-	if spc.lastIOErr != nil || sp.closed {
-		spc.Close()
-		return
+	if spc.lastIOErr == nil && !sp.closed {
+		select {
+		case sp.pool <- spc:
+			sp.l.RUnlock()
+			return
+		default:
+		}
 	}
 
-	select {
-	case sp.pool <- spc:
-	default:
-		spc.Close()
-	}
+	sp.l.RUnlock()
+	// the pool might close here, but that's fine, because all that's happening
+	// at this point is that the connection is being closed
+	spc.Close()
+	sp.l.Lock()
+	sp.totalConns--
+	sp.l.Unlock()
 }
 
 // Do implements the Do method of the Client interface by retrieving a Conn out
@@ -401,7 +465,6 @@ func (sp *Pool) Close() error {
 	}
 	sp.closed = true
 	close(sp.closeCh)
-	sp.l.Unlock()
 
 	// at this point get and put won't work anymore, so it's safe to empty and
 	// close the pool channel
@@ -410,11 +473,13 @@ emptyLoop:
 		select {
 		case spc := <-sp.pool:
 			spc.Close()
+			sp.totalConns--
 		default:
 			close(sp.pool)
 			break emptyLoop
 		}
 	}
+	sp.l.Unlock()
 
 	// by now the pool's go-routines should have bailed, wait to make sure they
 	// do
