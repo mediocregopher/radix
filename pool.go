@@ -2,6 +2,7 @@ package radix
 
 import (
 	"errors"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -46,6 +47,7 @@ func (spc *staticPoolConn) Do(a Action) error {
 }
 
 func (spc *staticPoolConn) Close() error {
+	spc.lastIOErr = io.EOF
 	return spc.Conn.Close()
 }
 
