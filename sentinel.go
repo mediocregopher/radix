@@ -2,10 +2,10 @@ package radix
 
 import (
 	"errors"
+	"net"
 	"strings"
 	"sync"
 	"time"
-	"net"
 )
 
 type sentinelOpts struct {
