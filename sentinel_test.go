@@ -111,7 +111,7 @@ func (s *sentinelStub) switchMaster(newAddr string) {
 func TestSentinel(t *T) {
 	stub := sentinelStub{
 		instAddr:  "127.0.0.1:6379",
-		sentAddrs: []string{"127.0.0.1:26379", "127.0.0.2:26379"},
+		sentAddrs: []string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"},
 		stubChs:   map[chan<- PubSubMessage]bool{},
 	}
 
@@ -152,13 +152,13 @@ func TestSentinel(t *T) {
 		wg.Wait()
 	}
 
-	assertState("127.0.0.1:6379", "127.0.0.1:26379", "127.0.0.2:26379")
+	assertState("127.0.0.1:6379", "127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379")
 	assertPoolWorks()
 
 	stub.switchMaster("127.0.0.2:6379")
 	go assertPoolWorks()
 	assert.Equal(t, "switch-master completed", <-scc.testEventCh)
-	assertState("127.0.0.2:6379", "127.0.0.1:26379", "127.0.0.2:26379")
+	assertState("127.0.0.2:6379", "127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379")
 
 	assertPoolWorks()
 }

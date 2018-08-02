@@ -2,6 +2,7 @@ package radix
 
 import (
 	"errors"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -222,7 +223,7 @@ func (sc *Sentinel) ensureMaster(conn Conn) error {
 	} else if m["ip"] == "" || m["port"] == "" {
 		return errors.New("malformed SENTINEL MASTER response")
 	}
-	newAddr := m["ip"] + ":" + m["port"]
+	newAddr := net.JoinHostPort(m["ip"], m["port"])
 	if newAddr == lastAddr {
 		return nil
 	}
@@ -257,7 +258,7 @@ func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 
 	addrs := map[string]bool{conn.NetConn().RemoteAddr().String(): true}
 	for _, m := range mm {
-		addrs[m["ip"]+":"+m["port"]] = true
+		addrs[net.JoinHostPort(m["ip"], m["port"])] = true
 	}
 
 	sc.l.Lock()
