@@ -86,7 +86,7 @@
 //			return nil, err
 //		}
 //
-//		if err := conn.Do(radix.Cmd("AUTH", "mySuperSecretPassword")); err != nil {
+//		if err := conn.Do(radix.Cmd(nil, "AUTH", "mySuperSecretPassword")); err != nil {
 //			conn.Close()
 //			return nil, err
 //		}
