@@ -153,10 +153,29 @@ func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 	}
 }
 
+func findStreamsKeys(args []string) []string {
+	for i, arg := range args {
+		if strings.ToUpper(arg) != "STREAMS" {
+			continue
+		}
+
+		// after STREAMS only stream keys and IDs can be given and since there must be the same number of keys and ids
+		// we can just take half of remaining arguments as keys. If the number of IDs does not match the number of
+		// keys the command will fail later when send to Redis so no need for us to handle that case.
+		ids := len(args[i+1:]) / 2
+
+		return args[i+1:len(args)-ids]
+	}
+
+	return nil
+}
+
 func (c *cmdAction) Keys() []string {
 	cmd := strings.ToUpper(c.cmd)
 	if cmd == "BITOP" && len(c.args) > 1 { // antirez why you do this
 		return c.args[1:]
+	} else if cmd == "XREAD" || cmd == "XREADGROUP" { // antirez why you still do this
+		return findStreamsKeys(c.args)
 	} else if noKeyCmds[cmd] || len(c.args) == 0 {
 		return nil
 	}
