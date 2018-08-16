@@ -17,6 +17,7 @@ import (
 type Action interface {
 	// Keys returns the keys which will be acted on. Empty slice or nil may be
 	// returned if no keys are being acted on.
+	// The returned slice must not be modified.
 	Keys() []string
 
 	// Run actually performs the Action using the given Conn
@@ -159,7 +160,7 @@ func (c *cmdAction) Keys() []string {
 	} else if noKeyCmds[cmd] || len(c.args) == 0 {
 		return nil
 	}
-	return []string{c.args[0]}
+	return c.args[:1]
 }
 
 func (c *cmdAction) MarshalRESP(w io.Writer) error {
@@ -189,9 +190,10 @@ func (c *cmdAction) String() string {
 ////////////////////////////////////////////////////////////////////////////////
 
 type flatCmdAction struct {
-	rcv      interface{}
-	cmd, key string
-	args     []interface{}
+	rcv  interface{}
+	cmd  string
+	key  [1]string // use array to avoid allocation in Keys
+	args []interface{}
 }
 
 // FlatCmd is like Cmd, but the arguments can be of almost any type, and FlatCmd
@@ -225,13 +227,13 @@ func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
 	return &flatCmdAction{
 		rcv:  rcv,
 		cmd:  cmd,
-		key:  key,
+		key:  [1]string{key},
 		args: args,
 	}
 }
 
 func (c *flatCmdAction) Keys() []string {
-	return []string{c.key}
+	return c.key[:]
 }
 
 func (c *flatCmdAction) MarshalRESP(w io.Writer) error {
@@ -244,7 +246,7 @@ func (c *flatCmdAction) MarshalRESP(w io.Writer) error {
 	arrL := 2 + a.NumElems()
 	err = resp.ArrayHeader{N: arrL}.MarshalRESP(w)
 	err = marshalBulkString(err, w, c.cmd)
-	err = marshalBulkString(err, w, c.key)
+	err = marshalBulkString(err, w, c.key[0])
 	if err != nil {
 		return err
 	}
@@ -428,7 +430,7 @@ func (p pipeline) Run(c Conn) error {
 ////////////////////////////////////////////////////////////////////////////////
 
 type withConn struct {
-	key string
+	key [1]string // use array to avoid allocation in Keys
 	fn  func(Conn) error
 }
 
@@ -442,11 +444,11 @@ type withConn struct {
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
 // WithConn for transactions, or use EvalScript
 func WithConn(key string, fn func(Conn) error) Action {
-	return &withConn{key, fn}
+	return &withConn{[1]string{key}, fn}
 }
 
 func (wc *withConn) Keys() []string {
-	return []string{wc.key}
+	return wc.key[:]
 }
 
 func (wc *withConn) Run(c Conn) error {

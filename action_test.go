@@ -280,3 +280,23 @@ func ExampleMaybeNil() {
 	}
 
 }
+
+var benchCmdActionKeys []string // global variable used to store the action keys in benchmarks
+
+func BenchmarkCmdActionKeys(b *B) {
+	for i := 0; i < b.N; i++ {
+		benchCmdActionKeys = Cmd(nil, "GET", "a").Keys()
+	}
+}
+
+func BenchmarkFlatCmdActionKeys(b *B) {
+	for i := 0; i < b.N; i++ {
+		benchCmdActionKeys = FlatCmd(nil, "GET", "a").Keys()
+	}
+}
+
+func BenchmarkWithConnKeys(b *B) {
+	for i := 0; i < b.N; i++ {
+		benchCmdActionKeys = WithConn("a", func(Conn) error { return nil }).Keys()
+	}
+}
