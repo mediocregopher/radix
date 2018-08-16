@@ -30,6 +30,62 @@ func TestCmdAction(t *T) {
 	assert.Equal(t, val, dstval)
 }
 
+func TestCmdActionStreams(t *T) {
+	c := dial()
+	key, val := randStr(), randStr()
+
+	// only execute commands when streams are supported
+	// TODO: remove once Redis 5.0 is stable and Travis starts providing it
+	streamsSupported := c.Do(Cmd(nil, "XLEN", randStr())) == nil
+
+	if streamsSupported {
+		t.Log("stream support detected")
+	} else {
+		t.Log("no stream support detected. only testing client side logic")
+	}
+
+	// talking about weird commands, here are XREAD and XREADGROUP
+	group := randStr()
+	skeys := []string{"1", "1-", "1-1", "s1", ""} // make sure that we can handle empty and ID-like keys
+	for _, skey := range skeys {
+		if streamsSupported {
+			require.Nil(t, c.Do(Cmd(nil, "DEL", skey)))
+			require.NoError(t, c.Do(Cmd(nil, "XADD", skey, "1-1", key, val)))
+			require.NoError(t, c.Do(Cmd(nil, "XGROUP", "CREATE", skey, group, "0-0")))
+		}
+
+		// so many possible arguments, so many tests...
+		for _, args := range [][]string{
+			{"XREAD", "STREAMS", skey, "0"},
+			{"XREAD", "BLOCK", "1", "STREAMS", skey, "0"},
+			{"XREAD", "COUNT", "1", "STREAMS", skey, "0"},
+			{"XREAD", "COUNT", "1", "BLOCK", "1", "STREAMS", skey, "0"},
+			{"XREADGROUP", "GROUP", group, "test", "STREAMS", skey, ">"},
+			{"XREADGROUP", "GROUP", group, "test", "BLOCK", "1", "STREAMS", skey, ">"},
+			{"XREADGROUP", "GROUP", group, "test", "COUNT", "1", "STREAMS", skey, ">"},
+			{"XREADGROUP", "GROUP", group, "test", "COUNT", "1", "BLOCK", "1", "STREAMS", skey, ">"},
+		}{
+			xCmd := Cmd(nil, args[0], args[1:]...)
+			assert.Equal(t, []string{skey}, xCmd.Keys())
+			if streamsSupported {
+				require.NoError(t, c.Do(xCmd))
+			}
+		}
+	}
+
+	// test that we correctly handle multiple keys. we just use 3 keys since it's shorter
+	for _, args := range [][]string{
+		{"XREAD", "STREAMS", skeys[0], skeys[1], skeys[2], "0", "0", "0"},
+		{"XREADGROUP", "GROUP", group, "test", "STREAMS", skeys[0], skeys[1], skeys[2], "0", ">", "0"},
+	} {
+		xCmd := Cmd(nil, args[0], args[1:]...)
+		assert.Equal(t, skeys[:3], xCmd.Keys())
+		if streamsSupported {
+			require.NoError(t, c.Do(xCmd))
+		}
+	}
+}
+
 func TestFlatAction(t *T) {
 	c := dial()
 	key := randStr()
