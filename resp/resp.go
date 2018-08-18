@@ -951,7 +951,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		if size%2 != 0 {
 			return errors.New("cannot decode redis array with odd number of elements into map")
 		} else if v.IsNil() {
-			v.Set(reflect.MakeMap(v.Type()))
+			v.Set(reflect.MakeMapWithSize(v.Type(), size / 2))
 		}
 
 		for i := 0; i < size; i += 2 {
