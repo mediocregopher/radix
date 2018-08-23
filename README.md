@@ -46,6 +46,9 @@ tend to go back and forth, but radix.v3 is consistently faster for the parallel
 benchmark.
 
 ```
+# NOTE these are currently not up-to-date, see
+# https://github.com/mediocregopher/radix.v3/issues/29
+
 # go test -v -run=XXX -bench=. -benchmem -memprofilerate=1
 BenchmarkSerialGetSet/radix-2              10000            147320 ns/op             196 B/op          7 allocs/op
 BenchmarkSerialGetSet/redigo-2             10000            144489 ns/op             134 B/op          8 allocs/op
