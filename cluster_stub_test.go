@@ -19,7 +19,7 @@ type clusterSlotStub struct {
 
 // clusterDatasetStub describes a dataset hosted by a clusterStub instance. This
 // is separated out because different instances can host the same dataset
-// (master and slaves)
+// (primary and secondaries)
 type clusterDatasetStub struct {
 	sync.Mutex
 	slots map[uint16]clusterSlotStub
@@ -49,8 +49,8 @@ func (sd *clusterDatasetStub) slotRanges() [][2]uint16 {
 
 // equivalent to a single redis instance
 type clusterNodeStub struct {
-	addr, id               string
-	slaveOfAddr, slaveOfID string // set if slave
+	addr, id                       string
+	secondaryOfAddr, secondaryOfID string // set if secondary
 	*clusterDatasetStub
 	*clusterStub
 }
@@ -155,8 +155,8 @@ func newStubCluster(tt ClusterTopo) *clusterStub {
 
 	for _, t := range tt {
 		addr := t.Addr
-		if t.SlaveOfAddr != "" {
-			addr = t.SlaveOfAddr
+		if t.SecondaryOfAddr != "" {
+			addr = t.SecondaryOfAddr
 		}
 
 		sd, ok := m[addr]
@@ -173,8 +173,8 @@ func newStubCluster(tt ClusterTopo) *clusterStub {
 		sc.stubs[t.Addr] = &clusterNodeStub{
 			addr:               t.Addr,
 			id:                 t.ID,
-			slaveOfAddr:        t.SlaveOfAddr,
-			slaveOfID:          t.SlaveOfID,
+			secondaryOfAddr:    t.SecondaryOfAddr,
+			secondaryOfID:      t.SecondaryOfID,
 			clusterDatasetStub: sd,
 			clusterStub:        sc,
 		}
@@ -185,7 +185,7 @@ func newStubCluster(tt ClusterTopo) *clusterStub {
 
 func (scl *clusterStub) stubForSlot(slot uint16) *clusterNodeStub {
 	for _, s := range scl.stubs {
-		if slot, ok := s.clusterDatasetStub.slots[slot]; ok && s.slaveOfAddr == "" && slot.importing == "" {
+		if slot, ok := s.clusterDatasetStub.slots[slot]; ok && s.secondaryOfAddr == "" && slot.importing == "" {
 			return s
 		}
 	}
@@ -200,11 +200,11 @@ func (scl *clusterStub) topo() ClusterTopo {
 			continue
 		}
 		tt = append(tt, ClusterNode{
-			Addr:        s.addr,
-			ID:          s.id,
-			Slots:       slotRanges,
-			SlaveOfAddr: s.slaveOfAddr,
-			SlaveOfID:   s.slaveOfID,
+			Addr:            s.addr,
+			ID:              s.id,
+			Slots:           slotRanges,
+			SecondaryOfAddr: s.secondaryOfAddr,
+			SecondaryOfID:   s.secondaryOfID,
 		})
 	}
 	tt.sort()
@@ -240,7 +240,7 @@ func (scl *clusterStub) newCluster() *Cluster {
 
 func (scl *clusterStub) randStub() *clusterNodeStub {
 	for _, s := range scl.stubs {
-		if s.slaveOfAddr != "" {
+		if s.secondaryOfAddr != "" {
 			return s
 		}
 	}

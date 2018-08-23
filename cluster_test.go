@@ -58,8 +58,8 @@ func TestClusterSync(t *T) {
 		require.Nil(t, c.Sync())
 		c.l.RLock()
 		defer c.l.RUnlock()
-		assert.Equal(t, c.tt, scl.topo().Masters())
-		mtt := c.tt.Masters()
+		assert.Equal(t, c.tt, scl.topo().Primaries())
+		mtt := c.tt.Primaries()
 		assert.Len(t, c.pools, len(mtt))
 		for _, node := range mtt {
 			assert.Contains(t, c.pools, node.Addr)
@@ -136,18 +136,18 @@ func TestClusterDo(t *T) {
 	}
 }
 
-func TestClusterWithMasters(t *T) {
+func TestClusterWithPrimaries(t *T) {
 	c, _ := newTestCluster()
 	var topo ClusterTopo
 	require.Nil(t, c.Do(Cmd(&topo, "CLUSTER", "SLOTS")))
 
-	masterAddrs := make([]string, 0, len(topo))
-	for _, node := range topo.Masters() {
-		masterAddrs = append(masterAddrs, node.Addr)
+	primaryAddrs := make([]string, 0, len(topo))
+	for _, node := range topo.Primaries() {
+		primaryAddrs = append(primaryAddrs, node.Addr)
 	}
 
-	addrs := make([]string, 0, len(masterAddrs))
-	err := c.WithMasters(func(addr string, client Client) error {
+	addrs := make([]string, 0, len(primaryAddrs))
+	err := c.WithPrimaries(func(addr string, client Client) error {
 		var thisAddr string
 		require.Nil(t, client.Do(Cmd(&thisAddr, "ADDR")))
 		assert.Equal(t, addr, thisAddr)
@@ -156,7 +156,7 @@ func TestClusterWithMasters(t *T) {
 	})
 	require.Nil(t, err)
 
-	sort.Strings(masterAddrs)
+	sort.Strings(primaryAddrs)
 	sort.Strings(addrs)
-	assert.Equal(t, masterAddrs, addrs)
+	assert.Equal(t, primaryAddrs, addrs)
 }

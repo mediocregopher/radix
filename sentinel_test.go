@@ -15,7 +15,7 @@ type sentinelStub struct {
 	sync.Mutex
 
 	// The address of the actual instance this stub returns. We ignore the
-	// master name for the tests
+	// primary name for the tests
 	instAddr string
 
 	// addresses of all "sentinels" in the cluster
@@ -94,7 +94,7 @@ func (s *sentinelStub) newConn(network, addr string) (Conn, error) {
 	}, nil
 }
 
-func (s *sentinelStub) switchMaster(newAddr string) {
+func (s *sentinelStub) switchPrimary(newAddr string) {
 	s.Lock()
 	defer s.Unlock()
 	oldSplit := strings.Split(s.instAddr, ":")
@@ -155,7 +155,7 @@ func TestSentinel(t *T) {
 	assertState("127.0.0.1:6379", "127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379")
 	assertPoolWorks()
 
-	stub.switchMaster("127.0.0.2:6379")
+	stub.switchPrimary("127.0.0.2:6379")
 	go assertPoolWorks()
 	assert.Equal(t, "switch-master completed", <-scc.testEventCh)
 	assertState("127.0.0.2:6379", "127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379")

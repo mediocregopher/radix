@@ -21,7 +21,7 @@ func (c *Cluster) NewScanner(o ScanOpts) Scanner {
 	}
 
 	var addrs []string
-	c.WithMasters(func(addr string, _ Client) error {
+	c.WithPrimaries(func(addr string, _ Client) error {
 		addrs = append(addrs, addr)
 		return nil
 	})

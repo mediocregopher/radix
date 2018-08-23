@@ -26,7 +26,7 @@ func SentinelConnFunc(cf ConnFunc) SentinelOpt {
 }
 
 // SentinelPoolFunc tells the Sentinel to use the given ClientFunc when creating
-// a pool of connections to the sentinel's master.
+// a pool of connections to the sentinel's primary.
 func SentinelPoolFunc(pf ClientFunc) SentinelOpt {
 	return func(so *sentinelOpts) {
 		so.pf = pf
@@ -36,11 +36,11 @@ func SentinelPoolFunc(pf ClientFunc) SentinelOpt {
 // Sentinel is a Client which, in the background, connects to an available
 // sentinel node and handles all of the following:
 //
-// * Creates a pool to the current master instance, as advertised by the
+// * Creates a pool to the current primary instance, as advertised by the
 // sentinel
 //
-// * Listens for events indicating the master has changed, and automatically
-// creates a new Client to the new master
+// * Listens for events indicating the primary has changed, and automatically
+// creates a new Client to the new primary
 //
 // * Keeps track of other sentinels in the cluster, and uses them if the
 // currently connected one becomes unreachable
@@ -85,7 +85,7 @@ type Sentinel struct {
 //	})
 //	SentinelPoolFunc(DefaultClientFunc)
 //
-func NewSentinel(masterName string, sentinelAddrs []string, opts ...SentinelOpt) (*Sentinel, error) {
+func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt) (*Sentinel, error) {
 	addrs := map[string]bool{}
 	for _, addr := range sentinelAddrs {
 		addrs[addr] = true
@@ -93,7 +93,7 @@ func NewSentinel(masterName string, sentinelAddrs []string, opts ...SentinelOpt)
 
 	sc := &Sentinel{
 		initAddrs:   sentinelAddrs,
-		name:        masterName,
+		name:        primaryName,
 		addrs:       addrs,
 		pconnCh:     make(chan PubSubMessage),
 		ErrCh:       make(chan error, 1),
@@ -129,7 +129,7 @@ func NewSentinel(masterName string, sentinelAddrs []string, opts ...SentinelOpt)
 
 		if err := sc.ensureSentinelAddrs(conn); err != nil {
 			return nil, err
-		} else if err := sc.ensureMaster(conn); err != nil {
+		} else if err := sc.ensurePrimary(conn); err != nil {
 			return nil, err
 		}
 	}
@@ -185,7 +185,7 @@ func (sc *Sentinel) dial() (Conn, error) {
 }
 
 // Do implements the method for the Client interface. It will pass the given
-// action on to the current master.
+// action on to the current primary.
 //
 // NOTE it's possible that in between Do being called and the Action being
 // actually carried out that there could be a failover event. In that case, the
@@ -211,7 +211,7 @@ func (sc *Sentinel) Close() error {
 
 // given a connection to a sentinel, ensures that the pool currently being held
 // agrees with what the sentinel thinks it should be
-func (sc *Sentinel) ensureMaster(conn Conn) error {
+func (sc *Sentinel) ensurePrimary(conn Conn) error {
 	sc.l.RLock()
 	lastAddr := sc.clAddr
 	sc.l.RUnlock()
@@ -227,10 +227,10 @@ func (sc *Sentinel) ensureMaster(conn Conn) error {
 	if newAddr == lastAddr {
 		return nil
 	}
-	return sc.setMaster(newAddr)
+	return sc.setPrimary(newAddr)
 }
 
-func (sc *Sentinel) setMaster(newAddr string) error {
+func (sc *Sentinel) setPrimary(newAddr string) error {
 	newPool, err := sc.so.pf("tcp", newAddr)
 	if err != nil {
 		return err
@@ -248,7 +248,7 @@ func (sc *Sentinel) setMaster(newAddr string) error {
 }
 
 // annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_
-// sentinel instance, only the others it knows about for that master
+// sentinel instance, only the others it knows about for that primary
 func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 	var mm []map[string]string
 	err := conn.Do(Cmd(&mm, "SENTINEL", "SENTINELS", sc.name))
@@ -292,7 +292,7 @@ func (sc *Sentinel) spin() {
 // * Listening for switch-master events (from pconn, which has reconnect logic
 //   external to this package)
 // * Periodically re-ensuring that the list of sentinel addresses is up-to-date
-// * Periodically re-checking the current master, in case the switch-master was
+// * Periodically re-checking the current primary, in case the switch-master was
 //   missed somehow
 func (sc *Sentinel) innerSpin() error {
 	conn, err := sc.dial()
@@ -309,7 +309,7 @@ func (sc *Sentinel) innerSpin() error {
 			if err := sc.ensureSentinelAddrs(conn); err != nil {
 				return err
 			}
-			if err := sc.ensureMaster(conn); err != nil {
+			if err := sc.ensurePrimary(conn); err != nil {
 				return err
 			}
 			sc.pconn.Ping()
@@ -331,7 +331,7 @@ func (sc *Sentinel) pubsubSpin() {
 				continue
 			}
 			newAddr := parts[3] + ":" + parts[4]
-			if err := sc.setMaster(newAddr); err != nil {
+			if err := sc.setPrimary(newAddr); err != nil {
 				sc.err(err)
 			}
 			sc.testEvent("switch-master completed")

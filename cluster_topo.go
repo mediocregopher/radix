@@ -17,13 +17,13 @@ type ClusterNode struct {
 	Addr, ID string
 	// start is inclusive, end is exclusive
 	Slots [][2]uint16
-	// address and id this node is the slave of, if it's a slave
-	SlaveOfAddr, SlaveOfID string
+	// address and id this node is the secondary of, if it's a secondary
+	SecondaryOfAddr, SecondaryOfID string
 }
 
 // ClusterTopo describes the cluster topology at a given moment. It will be
-// sorted first by slot number of each node and then by slave status, so masters
-// will come before slaves.
+// sorted first by slot number of each node and then by secondary status, so
+// primaries will come before secondaries.
 type ClusterTopo []ClusterNode
 
 // MarshalRESP implements the resp.Marshaler interface, and will marshal the
@@ -108,9 +108,9 @@ func (tt ClusterTopo) sort() {
 		if tt[i].Slots[0] != tt[j].Slots[0] {
 			return tt[i].Slots[0][0] < tt[j].Slots[0][0]
 		}
-		// we want slaves to come after, which actually means they should be
-		// sorted as greater
-		return tt[i].SlaveOfAddr == ""
+		// we want secondaries to come after, which actually means they should
+		// be sorted as greater
+		return tt[i].SecondaryOfAddr == ""
 	})
 
 }
@@ -124,12 +124,12 @@ func (tt ClusterTopo) Map() map[string]ClusterNode {
 	return m
 }
 
-// Masters returns a ClusterTopo instance containing only the master nodes from
-// the ClusterTopo being called on
-func (tt ClusterTopo) Masters() ClusterTopo {
+// Primaries returns a ClusterTopo instance containing only the primary nodes
+// from the ClusterTopo being called on
+func (tt ClusterTopo) Primaries() ClusterTopo {
 	mtt := make(ClusterTopo, 0, len(tt))
 	for _, node := range tt {
-		if node.SlaveOfAddr == "" {
+		if node.SecondaryOfAddr == "" {
 			mtt = append(mtt, node)
 		}
 	}
@@ -183,7 +183,7 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 	tss.slots[1]++
 	arrHead.N -= len(tss.slots)
 
-	var masterNode ClusterNode
+	var primaryNode ClusterNode
 	for i := 0; i < arrHead.N; i++ {
 		var nodeStrs []string
 		if err := (resp.Any{I: &nodeStrs}).UnmarshalRESP(br); err != nil {
@@ -204,10 +204,10 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 		}
 
 		if i == 0 {
-			masterNode = node
+			primaryNode = node
 		} else {
-			node.SlaveOfAddr = masterNode.Addr
-			node.SlaveOfID = masterNode.ID
+			node.SecondaryOfAddr = primaryNode.Addr
+			node.SecondaryOfID = primaryNode.ID
 		}
 
 		tss.nodes = append(tss.nodes, node)

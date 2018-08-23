@@ -235,7 +235,7 @@ func (c *Cluster) sync(p Client) error {
 	if err != nil {
 		return err
 	}
-	tt = tt.Masters()
+	tt = tt.Primaries()
 
 	for _, t := range tt {
 		// call pool just to ensure one exists for this addr
@@ -374,11 +374,11 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	return c.doInner(a, addr, key, ask, attempts)
 }
 
-// WithMasters calls the given callback with the address and Client instance of
-// each master in the pool. If the callback returns an error that error is
-// returned from WithMasters immediately.
-func (c *Cluster) WithMasters(fn func(string, Client) error) error {
-	// we get all addrs first, then unlock. Then we go through each master
+// WithPrimaries calls the given callback with the address and Client instance
+// of each primary in the pool. If the callback returns an error that error is
+// returned from WithPrimaries immediately.
+func (c *Cluster) WithPrimaries(fn func(string, Client) error) error {
+	// we get all addrs first, then unlock. Then we go through each primary
 	// individually, locking/unlocking for each one, so that we don't have to
 	// worry as much about the callback blocking pool updates
 	c.l.RLock()
