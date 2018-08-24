@@ -433,16 +433,33 @@ func (p pipeline) Keys() []string {
 }
 
 func (p pipeline) Run(c Conn) error {
-	for _, cmd := range p {
-		if err := c.Encode(cmd); err != nil {
-			return err
-		}
+	if err := c.Encode(p); err != nil {
+		return err
 	}
 	for _, cmd := range p {
 		if err := c.Decode(cmd); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// MarshalRESP implements the resp.Marshaler interface, so that the pipeline can pass itself to the Conn.Encode method
+// instead of calling Conn.Encode for each CmdAction in the pipeline.
+//
+// This helps with Conn implementations that flush their underlying buffers after each call to Encode, like the default
+// default Conn implementation (connWrap) does, making better use of internal buffering and automatic flushing as well
+// as reducing the number of syscalls that both the client and Redis need to do.
+//
+// Without this, using the default Conn implementation, big pipelines can easily spend much of their time just in
+// flushing (in one case measured, up to 40%).
+func (p pipeline) MarshalRESP(w io.Writer) error {
+	for _, cmd := range p {
+		if err := cmd.MarshalRESP(w); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
