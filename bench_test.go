@@ -1,7 +1,7 @@
 package radix
 
 import (
-	"sync"
+	"runtime"
 	. "testing"
 
 	redigo "github.com/garyburd/redigo/redis"
@@ -43,24 +43,15 @@ func BenchmarkSerialGetSet(b *B) {
 }
 
 func BenchmarkParallelGetSet(b *B) {
-	const parallel = 100
+	parallel := runtime.GOMAXPROCS(0)
+
 	do := func(b *B, fn func()) {
-		doCh := make(chan bool)
-		wg := new(sync.WaitGroup)
-		for i := 0; i < parallel; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for range doCh {
-					fn()
-				}
-			}()
-		}
-		for i := 0; i < b.N; i++ {
-			doCh <- true
-		}
-		close(doCh)
-		wg.Wait()
+		b.SetParallelism(parallel)
+		b.RunParallel(func(pb *PB) {
+			for pb.Next() {
+				fn()
+			}
+		})
 	}
 
 	radix, err := NewPool("tcp", "127.0.0.1:6379", parallel)
