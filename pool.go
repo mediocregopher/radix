@@ -361,55 +361,53 @@ func (sp *Pool) doOverflowDrain() {
 	sp.l.Unlock()
 }
 
-func (sp *Pool) get() (*staticPoolConn, error) {
-	// it's easier to manage the locks using an inner lock like this. If the
-	// conn returned is nil it means that it needs to be created.
-	inner := func() (*staticPoolConn, error) {
-		sp.l.RLock()
-		defer sp.l.RUnlock()
+func (sp *Pool) getExisting() (*staticPoolConn, error) {
+	sp.l.RLock()
+	defer sp.l.RUnlock()
 
-		if sp.closed {
-			return nil, errClientClosed
-		}
-
-		// Fast-path if the pool is not empty.
-		select {
-		case spc := <-sp.pool:
-			return spc, nil
-		default:
-		}
-
-		if sp.po.onEmptyWait == 0 {
-			// If we should not wait we return without allocating a timer.
-			if sp.po.onEmptyErr {
-				return nil, ErrPoolEmpty
-			}
-
-			return nil, nil
-		}
-
-		// only set when we have a timeout, since a nil channel always blocks which is what we want
-		var tc <-chan time.Time
-		if sp.po.onEmptyWait > 0 {
-			t := time.NewTimer(sp.po.onEmptyWait)
-			defer t.Stop()
-
-			tc = t.C
-		}
-
-		select {
-		case spc := <-sp.pool:
-			return spc, nil
-		case <-tc:
-			if sp.po.onEmptyErr {
-				return nil, ErrPoolEmpty
-			}
-
-			return nil, nil
-		}
+	if sp.closed {
+		return nil, errClientClosed
 	}
 
-	spc, err := inner()
+	// Fast-path if the pool is not empty.
+	select {
+	case spc := <-sp.pool:
+		return spc, nil
+	default:
+	}
+
+	if sp.po.onEmptyWait == 0 {
+		// If we should not wait we return without allocating a timer.
+		if sp.po.onEmptyErr {
+			return nil, ErrPoolEmpty
+		}
+
+		return nil, nil
+	}
+
+	// only set when we have a timeout, since a nil channel always blocks which is what we want
+	var tc <-chan time.Time
+	if sp.po.onEmptyWait > 0 {
+		t := time.NewTimer(sp.po.onEmptyWait)
+		defer t.Stop()
+
+		tc = t.C
+	}
+
+	select {
+	case spc := <-sp.pool:
+		return spc, nil
+	case <-tc:
+		if sp.po.onEmptyErr {
+			return nil, ErrPoolEmpty
+		}
+
+		return nil, nil
+	}
+}
+
+func (sp *Pool) get() (*staticPoolConn, error) {
+	spc, err := sp.getExisting()
 	if err != nil {
 		return nil, err
 	} else if spc != nil {
