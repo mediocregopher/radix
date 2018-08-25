@@ -388,8 +388,8 @@ func (sp *Pool) getExisting() (*staticPoolConn, error) {
 	// only set when we have a timeout, since a nil channel always blocks which is what we want
 	var tc <-chan time.Time
 	if sp.po.onEmptyWait > 0 {
-		t := time.NewTimer(sp.po.onEmptyWait)
-		defer t.Stop()
+		t := getTimer(sp.po.onEmptyWait)
+		defer putTimer(t)
 
 		tc = t.C
 	}
