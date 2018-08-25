@@ -367,39 +367,44 @@ func (sp *Pool) get() (*staticPoolConn, error) {
 	inner := func() (*staticPoolConn, error) {
 		sp.l.RLock()
 		defer sp.l.RUnlock()
+
 		if sp.closed {
 			return nil, errClientClosed
 		}
 
-		// if an error is written to waitCh get returns that, otherwise if it's
-		// closed get will make a new connection
-		waitCh := make(chan error, 1)
-		effectWaitCh := func() {
-			if sp.po.onEmptyErr {
-				waitCh <- ErrPoolEmpty
-			} else {
-				close(waitCh)
-			}
+		// Fast-path if the pool is not empty.
+		select {
+		case spc := <-sp.pool:
+			return spc, nil
+		default:
 		}
 
-		if sp.po.onEmptyWait == -1 {
-			// block, waitCh is never effected
-		} else if sp.po.onEmptyWait == 0 {
-			effectWaitCh()
-		} else {
-			// TODO it might be worthwhile to use a sync.Pool for timers, rather
-			// than creating a new one for every single get
-			t := time.AfterFunc(sp.po.onEmptyWait, effectWaitCh)
+		if sp.po.onEmptyWait == 0 {
+			// If we should not wait we return without allocating a timer.
+			if sp.po.onEmptyErr {
+				return nil, ErrPoolEmpty
+			}
+
+			return nil, nil
+		}
+
+		// only set when we have a timeout, since a nil channel always blocks which is what we want
+		var tc <-chan time.Time
+		if sp.po.onEmptyWait > 0 {
+			t := time.NewTimer(sp.po.onEmptyWait)
 			defer t.Stop()
+
+			tc = t.C
 		}
 
 		select {
 		case spc := <-sp.pool:
 			return spc, nil
-		case err := <-waitCh:
-			if err != nil {
-				return nil, err
+		case <-tc:
+			if sp.po.onEmptyErr {
+				return nil, ErrPoolEmpty
 			}
+
 			return nil, nil
 		}
 	}
