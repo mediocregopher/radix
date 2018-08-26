@@ -61,8 +61,8 @@ type poolOpts struct {
 	refillInterval        time.Duration
 	overflowDrainInterval time.Duration
 	overflowSize          int
-	onEmptyErr            bool
 	onEmptyWait           time.Duration
+	errOnEmpty            error
 }
 
 // PoolOpt is an optional behavior which can be applied to the NewPool function
@@ -121,7 +121,7 @@ func PoolOnEmptyWait() PoolOpt {
 func PoolOnEmptyCreateAfter(wait time.Duration) PoolOpt {
 	return func(po *poolOpts) {
 		po.onEmptyWait = wait
-		po.onEmptyErr = false
+		po.errOnEmpty = nil
 	}
 }
 
@@ -134,7 +134,7 @@ func PoolOnEmptyCreateAfter(wait time.Duration) PoolOpt {
 func PoolOnEmptyErrAfter(wait time.Duration) PoolOpt {
 	return func(po *poolOpts) {
 		po.onEmptyWait = wait
-		po.onEmptyErr = true
+		po.errOnEmpty = ErrPoolEmpty
 	}
 }
 
@@ -378,14 +378,11 @@ func (sp *Pool) getExisting() (*staticPoolConn, error) {
 
 	if sp.po.onEmptyWait == 0 {
 		// If we should not wait we return without allocating a timer.
-		if sp.po.onEmptyErr {
-			return nil, ErrPoolEmpty
-		}
-
-		return nil, nil
+		return nil, sp.po.errOnEmpty
 	}
 
-	// only set when we have a timeout, since a nil channel always blocks which is what we want
+	// only set when we have a timeout, since a nil channel always blocks which
+	// is what we want
 	var tc <-chan time.Time
 	if sp.po.onEmptyWait > 0 {
 		t := getTimer(sp.po.onEmptyWait)
@@ -398,11 +395,7 @@ func (sp *Pool) getExisting() (*staticPoolConn, error) {
 	case spc := <-sp.pool:
 		return spc, nil
 	case <-tc:
-		if sp.po.onEmptyErr {
-			return nil, ErrPoolEmpty
-		}
-
-		return nil, nil
+		return nil, sp.po.errOnEmpty
 	}
 }
 
