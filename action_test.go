@@ -64,7 +64,7 @@ func TestCmdActionStreams(t *T) {
 			{"XREADGROUP", "GROUP", group, "test", "BLOCK", "1", "STREAMS", skey, ">"},
 			{"XREADGROUP", "GROUP", group, "test", "COUNT", "1", "STREAMS", skey, ">"},
 			{"XREADGROUP", "GROUP", group, "test", "COUNT", "1", "BLOCK", "1", "STREAMS", skey, ">"},
-		}{
+		} {
 			xCmd := Cmd(nil, args[0], args[1:]...)
 			assert.Equal(t, []string{skey}, xCmd.Keys())
 			if streamsSupported {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mediocregopher/radix.v3/resp"
 )
@@ -30,6 +31,9 @@ type Action interface {
 //
 // A CmdAction can be used like an Action, but it can also be used by marshaling
 // the command and unmarshaling the response manually.
+//
+// A CmdAction should not be used again once UnmarshalRESP returns successfully
+// from it.
 type CmdAction interface {
 	Action
 	resp.Marshaler
@@ -127,6 +131,20 @@ type cmdAction struct {
 	rcv  interface{}
 	cmd  string
 	args []string
+
+	flat     bool
+	flatKey  [1]string // use array to avoid allocation in Keys
+	flatArgs []interface{}
+}
+
+// BREAM: Benchmarks Rule Everything Around Me
+var cmdActionPool sync.Pool
+
+func getCmdAction() *cmdAction {
+	if ci := cmdActionPool.Get(); ci != nil {
+		return ci.(*cmdAction)
+	}
+	return new(cmdAction)
 }
 
 // Cmd is used to perform a redis command and retrieve a result. See the package
@@ -146,73 +164,13 @@ type cmdAction struct {
 // passed in. It may also be an io.Writer, an encoding.Text/BinaryUnmarshaler,
 // or a resp.Unmarshaler.
 func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
-	return &cmdAction{
+	c := getCmdAction()
+	*c = cmdAction{
 		rcv:  rcv,
 		cmd:  cmd,
 		args: args,
 	}
-}
-
-func findStreamsKeys(args []string) []string {
-	for i, arg := range args {
-		if strings.ToUpper(arg) != "STREAMS" {
-			continue
-		}
-
-		// after STREAMS only stream keys and IDs can be given and since there must be the same number of keys and ids
-		// we can just take half of remaining arguments as keys. If the number of IDs does not match the number of
-		// keys the command will fail later when send to Redis so no need for us to handle that case.
-		ids := len(args[i+1:]) / 2
-
-		return args[i+1:len(args)-ids]
-	}
-
-	return nil
-}
-
-func (c *cmdAction) Keys() []string {
-	cmd := strings.ToUpper(c.cmd)
-	if cmd == "BITOP" && len(c.args) > 1 { // antirez why you do this
-		return c.args[1:]
-	} else if cmd == "XREAD" || cmd == "XREADGROUP" { // antirez why you still do this
-		return findStreamsKeys(c.args)
-	} else if noKeyCmds[cmd] || len(c.args) == 0 {
-		return nil
-	}
-	return c.args[:1]
-}
-
-func (c *cmdAction) MarshalRESP(w io.Writer) error {
-	err := resp.ArrayHeader{N: len(c.args) + 1}.MarshalRESP(w)
-	err = marshalBulkString(err, w, c.cmd)
-	for i := range c.args {
-		err = marshalBulkString(err, w, c.args[i])
-	}
-	return err
-}
-
-func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
-	return resp.Any{I: c.rcv}.UnmarshalRESP(br)
-}
-
-func (c *cmdAction) Run(conn Conn) error {
-	if err := conn.Encode(c); err != nil {
-		return err
-	}
-	return conn.Decode(c)
-}
-
-func (c *cmdAction) String() string {
-	return cmdString(c)
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-type flatCmdAction struct {
-	rcv  interface{}
-	cmd  string
-	key  [1]string // use array to avoid allocation in Keys
-	args []interface{}
+	return c
 }
 
 // FlatCmd is like Cmd, but the arguments can be of almost any type, and FlatCmd
@@ -243,47 +201,96 @@ type flatCmdAction struct {
 //
 // The receiver to FlatCmd follows the same rules as for Cmd.
 func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
-	return &flatCmdAction{
-		rcv:  rcv,
-		cmd:  cmd,
-		key:  [1]string{key},
-		args: args,
+	c := getCmdAction()
+	*c = cmdAction{
+		rcv:      rcv,
+		cmd:      cmd,
+		flat:     true,
+		flatKey:  [1]string{key},
+		flatArgs: args,
 	}
+	return c
 }
 
-func (c *flatCmdAction) Keys() []string {
-	return c.key[:]
+func findStreamsKeys(args []string) []string {
+	for i, arg := range args {
+		if strings.ToUpper(arg) != "STREAMS" {
+			continue
+		}
+
+		// after STREAMS only stream keys and IDs can be given and since there must be the same number of keys and ids
+		// we can just take half of remaining arguments as keys. If the number of IDs does not match the number of
+		// keys the command will fail later when send to Redis so no need for us to handle that case.
+		ids := len(args[i+1:]) / 2
+
+		return args[i+1 : len(args)-ids]
+	}
+
+	return nil
 }
 
-func (c *flatCmdAction) MarshalRESP(w io.Writer) error {
+func (c *cmdAction) Keys() []string {
+	if c.flat {
+		return c.flatKey[:]
+	}
+
+	cmd := strings.ToUpper(c.cmd)
+	if cmd == "BITOP" && len(c.args) > 1 { // antirez why you do this
+		return c.args[1:]
+	} else if cmd == "XREAD" || cmd == "XREADGROUP" { // antirez why you still do this
+		return findStreamsKeys(c.args)
+	} else if noKeyCmds[cmd] || len(c.args) == 0 {
+		return nil
+	}
+	return c.args[:1]
+}
+
+func (c *cmdAction) flatMarshalRESP(w io.Writer) error {
 	var err error
 	a := resp.Any{
-		I:                     c.args,
+		I:                     c.flatArgs,
 		MarshalBulkString:     true,
 		MarshalNoArrayHeaders: true,
 	}
 	arrL := 2 + a.NumElems()
 	err = resp.ArrayHeader{N: arrL}.MarshalRESP(w)
 	err = marshalBulkString(err, w, c.cmd)
-	err = marshalBulkString(err, w, c.key[0])
+	err = marshalBulkString(err, w, c.flatKey[0])
 	if err != nil {
 		return err
 	}
 	return a.MarshalRESP(w)
 }
 
-func (c *flatCmdAction) UnmarshalRESP(br *bufio.Reader) error {
-	return resp.Any{I: c.rcv}.UnmarshalRESP(br)
+func (c *cmdAction) MarshalRESP(w io.Writer) error {
+	if c.flat {
+		return c.flatMarshalRESP(w)
+	}
+
+	err := resp.ArrayHeader{N: len(c.args) + 1}.MarshalRESP(w)
+	err = marshalBulkString(err, w, c.cmd)
+	for i := range c.args {
+		err = marshalBulkString(err, w, c.args[i])
+	}
+	return err
 }
 
-func (c *flatCmdAction) Run(conn Conn) error {
+func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
+	if err := (resp.Any{I: c.rcv}).UnmarshalRESP(br); err != nil {
+		return err
+	}
+	cmdActionPool.Put(c)
+	return nil
+}
+
+func (c *cmdAction) Run(conn Conn) error {
 	if err := conn.Encode(c); err != nil {
 		return err
 	}
 	return conn.Decode(c)
 }
 
-func (c *flatCmdAction) String() string {
+func (c *cmdAction) String() string {
 	return cmdString(c)
 }
 
