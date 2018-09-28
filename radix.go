@@ -116,7 +116,6 @@ import (
 	"bufio"
 	"errors"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/mediocregopher/radix.v3/resp"
@@ -126,9 +125,11 @@ var errClientClosed = errors.New("client is closed")
 
 // Client describes an entity which can carry out Actions, e.g. a connection
 // pool for a single redis instance or the cluster client.
+//
+// Implementations of Client are expected to be thread-safe, except in cases
+// like Conn where they specify otherwise.
 type Client interface {
-	// Do performs an Action, returning any error. A Client's Do method will
-	// always be thread-safe.
+	// Do performs an Action, returning any error.
 	Do(Action) error
 
 	// Once Close() is called all future method calls on the Client will return
@@ -152,6 +153,7 @@ var DefaultClientFunc = func(network, addr string) (Client, error) {
 // A Conn can be used directly as a Client, but in general you probably want to
 // use a *Pool instead
 type Conn interface {
+	// The Do method of a Conn is _not_ expected to be thread-safe.
 	Client
 
 	// Encode and Decode may be called at the same time by two different
@@ -191,7 +193,6 @@ func (cl connLimited) Close() error {
 type connWrap struct {
 	net.Conn
 	brw *bufio.ReadWriter
-	doL sync.Mutex
 }
 
 // NewConn takes an existing net.Conn and wraps it to support the Conn interface
@@ -207,28 +208,8 @@ func NewConn(conn net.Conn) Conn {
 	}
 }
 
-var connWrapPool = sync.Pool{
-	New: func() interface{} {
-		return new(connWrap)
-	},
-}
-
 func (cw *connWrap) Do(a Action) error {
-	cw.doL.Lock()
-	defer cw.doL.Unlock()
-	// the action may want to call Do on the Conn (possibly more than once), but
-	// if we passed in this connWrap as-is it would be locked and that wouldn't
-	// be possible. By making an inner one we can let the outer one stay locked,
-	// and the inner one's Do calls will lock themselves correctly as well.
-	//
-	// Since this inner wrapper causes an allocation and this is in the critical
-	// path for any heavy load we use a pool to try to absorb some of that.
-	inner := connWrapPool.Get().(*connWrap)
-	inner.Conn = cw.Conn
-	inner.brw = cw.brw
-	err := a.Run(inner)
-	connWrapPool.Put(inner)
-	return err
+	return a.Run(cw)
 }
 
 func (cw *connWrap) Encode(m resp.Marshaler) error {
