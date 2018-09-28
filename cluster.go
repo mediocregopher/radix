@@ -36,7 +36,8 @@ func (d *dedupe) do(fn func()) {
 ////////////////////////////////////////////////////////////////////////////////
 
 type clusterOpts struct {
-	pf ClientFunc
+	pf        ClientFunc
+	syncEvery time.Duration
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -48,6 +49,15 @@ type ClusterOpt func(*clusterOpts)
 func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.pf = pf
+	}
+}
+
+// ClusterSyncEvery tells the Cluster to synchronize itself with the cluster's
+// topology at the given interval. On every synchronization Cluster will ask the
+// cluster for its topology and make/destroy its connections as necessary.
+func ClusterSyncEvery(d time.Duration) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.syncEvery = d
 	}
 }
 
@@ -82,6 +92,7 @@ type Cluster struct {
 // behavior. The default options NewCluster uses are:
 //
 //	ClusterPoolFunc(DefaultClientFunc)
+//	ClusterSyncEvery(30 * time.Second)
 //
 func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c := &Cluster{
@@ -93,6 +104,7 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 
 	defaultClusterOpts := []ClusterOpt{
 		ClusterPoolFunc(DefaultClientFunc),
+		ClusterSyncEvery(30 * time.Second),
 	}
 
 	for _, opt := range append(defaultClusterOpts, opts...) {
@@ -121,7 +133,7 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		return nil, err
 	}
 
-	c.syncEvery(30 * time.Second)
+	c.syncEvery(c.co.syncEvery)
 
 	return c, nil
 }
