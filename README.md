@@ -41,19 +41,31 @@ MAKE MINOR CHANGES STILL. ALL FEEDBACK IS APPRECIATED!*_
 
 ## Benchmarks
 
-As of writing redigo and radix.v3 are fairly comparable; the serial benchmarks
-tend to go back and forth, but radix.v3 is consistently faster for the parallel
-benchmark.
+As of writing redigo and radix.v3 are fairly comparable, with radix being a
+couple microseconds slower on average. This is in exchange for being
+significantly more flexible in most use-cases, but nevertheless is an area for
+future improvement.
 
 ```
-# NOTE these are currently not up-to-date, see
-# https://github.com/mediocregopher/radix.v3/issues/29
+# go test -v -run=XXX -bench=GetSet -benchmem >/tmp/radix.stat
+# benchstat radix.stat
+name                   time/op
+SerialGetSet/radix     89.1µs ± 7%
+SerialGetSet/redigo    87.3µs ± 7%
+ParallelGetSet/radix   92.4µs ± 8%
+ParallelGetSet/redigo  90.4µs ± 3%
 
-# go test -v -run=XXX -bench=. -benchmem -memprofilerate=1
-BenchmarkSerialGetSet/radix-2              10000            147320 ns/op             196 B/op          7 allocs/op
-BenchmarkSerialGetSet/redigo-2             10000            144489 ns/op             134 B/op          8 allocs/op
-BenchmarkParallelGetSet/radix-2            20000             74952 ns/op             230 B/op          8 allocs/op
-BenchmarkParallelGetSet/redigo-2           20000             79980 ns/op             280 B/op         12 allocs/op
+name                   alloc/op
+SerialGetSet/radix      67.0B ± 0%
+SerialGetSet/redigo     86.0B ± 0%
+ParallelGetSet/radix    99.0B ± 0%
+ParallelGetSet/redigo    118B ± 0%
+
+name                   allocs/op
+SerialGetSet/radix       4.00 ± 0%
+SerialGetSet/redigo      5.00 ± 0%
+ParallelGetSet/radix     5.00 ± 0%
+ParallelGetSet/redigo    6.00 ± 0%
 ```
 
 ## Copyright and licensing
