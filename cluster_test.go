@@ -136,6 +136,19 @@ func TestClusterDo(t *T) {
 	}
 }
 
+func BenchmarkClusterDo(b *B) {
+	c, _ := newTestCluster()
+
+	k, v := clusterSlotKeys[0], randStr()
+	require.Nil(b, c.Do(Cmd(nil, "SET", k, v)))
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		require.Nil(b, c.Do(Cmd(nil, "GET", k)))
+	}
+}
+
 func TestClusterWithPrimaries(t *T) {
 	c, _ := newTestCluster()
 	var topo ClusterTopo

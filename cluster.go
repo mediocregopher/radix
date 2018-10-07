@@ -335,14 +335,22 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 		return err
 	}
 
-	err = p.Do(WithConn(key, func(conn Conn) error {
-		if ask {
+	// We only need to use WithConn if we want to send an ASKING command before
+	// our Action a. If ask is false we can thus skip the WithConn call, which
+	// avoids a few allocations, and execute our Action directly on p. This helps
+	// with most calls since ask will only be true when a key gets migrated
+	// between nodes.
+	if ask {
+		err = p.Do(WithConn(key, func(conn Conn) error {
 			if err := conn.Do(Cmd(nil, "ASKING")); err != nil {
 				return err
 			}
-		}
-		return conn.Do(a)
-	}))
+
+			return conn.Do(a)
+		}))
+	} else {
+		err = p.Do(a)
+	}
 
 	if err == nil {
 		return nil
