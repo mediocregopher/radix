@@ -54,7 +54,9 @@ func (lrp *limitedReaderPlus) Read(b []byte) (int, error) {
 	}
 
 	i, err := lrp.lr.Read(b)
-	if err == io.EOF {
+	// we need to check lrp.lr.N manually since lrp.lr.Read will not
+	// return io.EOF if len(b) == 0.
+	if lrp.lr.N <= 0 {
 		lrp.eof = true
 		_, err = lrp.lr.R.(*bufio.Reader).Discard(2)
 		return i, err
