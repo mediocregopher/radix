@@ -129,10 +129,44 @@ func BenchmarkReadAllAppend(b *testing.B) {
 			var br bytes.Reader
 			buf := make([]byte, 0, bcap)
 
+			b.ResetTimer()
+
 			for i := 0; i < b.N; i++ {
 				br.Reset(respBytes)
 
 				if _, err := readAllAppend(&br, buf); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+type nothingReader struct{}
+
+func (nothingReader) Read(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
+// BenchmarkReadAllAppendLRP benchmarks for the common case
+// where the io.Reader passed to readAllAppend is an
+// *limitedReaderPlus.
+func BenchmarkReadAllAppendLRP(b *testing.B) {
+	for _, n := range []int{0, 64, 512, 4096} {
+		b.Run("N=" + strconv.Itoa(n), func(b *testing.B) {
+			br := bufio.NewReader(nothingReader{})
+			buf := *getBytes()
+
+			lrp := &limitedReaderPlus{}
+			lrp.lr.R = br
+
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				lrp.eof = false
+				lrp.lr.N = int64(n)
+
+				if _, err := readAllAppend(lrp, buf); err != nil {
 					b.Fatal(err)
 				}
 			}
