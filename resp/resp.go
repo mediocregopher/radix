@@ -195,6 +195,16 @@ func bufferedIntDelim(br *bufio.Reader) (int64, error) {
 }
 
 func readAllAppend(r io.Reader, b []byte) ([]byte, error) {
+	// tests expect a non-nil slice so make sure we always have a non-nil b.
+	// otherwise if we don't append anything (0 bytes) b would still be nil.
+	if b == nil {
+		b = []byte{}
+	}
+	// if we know the amount of data we can skip the overhead of getBuffer
+	// and putBuffer as well as the extra copy into a *bytes.Buffer.
+	if lrp, ok := r.(*limitedReaderPlus); ok {
+		return readNAppend(r, b, int(lrp.lr.N))
+	}
 	buf := getBuffer()
 	_, err := buf.ReadFrom(r)
 	// reading into buf and copying is in most cases faster than creating
@@ -204,10 +214,24 @@ func readAllAppend(r io.Reader, b []byte) ([]byte, error) {
 	// bytes.MinRead) and the data fits into b.
 	b = append(b, buf.Bytes()...)
 	putBuffer(buf)
-	if b == nil {
-		b = []byte{}
-	}
 	return b, err
+}
+
+// readNAppend appends exactly n bytes from r into b.
+func readNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
+	// ReadFull does not call Read if n == 0, but some readers (like
+	// limitedReaderPlus) need at least one call to Read, so we just
+	// call Read with an empty []byte if n == 0.
+	if n == 0 {
+		_, err := r.Read(b[len(b):])
+		return b, err
+	} else if m := cap(b) - len(b); n > m {
+		// Go 1.11 optimizes append(x, make([]T, y)...) calls by
+		// avoiding unnecessary allocations and copies. (CL 109517)
+		b = append(b[:cap(b)], make([]byte, n-m)...)[:len(b)]
+	}
+	_, err := io.ReadFull(r, b[len(b):len(b)+n])
+	return b[:len(b)+n], err
 }
 
 func multiWrite(w io.Writer, bb ...[]byte) error {
@@ -951,7 +975,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		if size%2 != 0 {
 			return errors.New("cannot decode redis array with odd number of elements into map")
 		} else if v.IsNil() {
-			v.Set(reflect.MakeMapWithSize(v.Type(), size / 2))
+			v.Set(reflect.MakeMapWithSize(v.Type(), size/2))
 		}
 
 		for i := 0; i < size; i += 2 {
