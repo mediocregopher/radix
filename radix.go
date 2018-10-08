@@ -81,16 +81,10 @@
 //	// this is a ConnFunc which will set up a connection which is authenticated
 //	// and has a 1 minute timeout on all operations
 //	customConnFunc := func(network, addr string) (radix.Conn, error) {
-//		conn, err := radix.DialTimeout(network, addr, 1 * time.Minute)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		if err := conn.Do(radix.Cmd(nil, "AUTH", "mySuperSecretPassword")); err != nil {
-//			conn.Close()
-//			return nil, err
-//		}
-//		return conn, nil
+//		return radix.Dial(network, addr,
+//			radix.DialTimeout(1 * time.Minute),
+//			radix.DialAuthPass("mySuperSecretPassword"),
+//		)
 //	}
 //
 //	// this pool will use our ConnFunc for all connections it creates
@@ -116,6 +110,9 @@ import (
 	"bufio"
 	"errors"
 	"net"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mediocregopher/radix.v3/resp"
@@ -245,42 +242,169 @@ func (cw *connWrap) NetConn() net.Conn {
 // Conn implementations, etc... See the package docs for more details.
 type ConnFunc func(network, addr string) (Conn, error)
 
-// Dial is a ConnFunc which creates a Conn using net.Dial and NewConn.
-func Dial(network, addr string) (Conn, error) {
-	c, err := net.Dial(network, addr)
-	if err != nil {
-		return nil, err
+// DefaultConnFunc is a ConnFunc which will return a Conn for a redis instance
+// using sane defaults.
+var DefaultConnFunc = func(network, addr string) (Conn, error) {
+	return Dial(network, addr)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type dialOpts struct {
+	connectTimeout, readTimeout, writeTimeout time.Duration
+	authPass                                  string
+	selectDB                                  string
+}
+
+// DialOpt is an optional behavior which can be applied to the Dial function to
+// effect its behavior, or the behavior of the Conn it creates.
+type DialOpt func(*dialOpts)
+
+// DialConnectTimeout determines the timeout value to pass into net.DialTimeout
+// when creating the connection. If not set then net.Dial is called instead.
+func DialConnectTimeout(d time.Duration) DialOpt {
+	return func(do *dialOpts) {
+		do.connectTimeout = d
 	}
-	return NewConn(c), nil
+}
+
+// DialReadTimeout determines the deadline to set when reading from a dialed
+// connection. If not set then SetReadDeadline is never called.
+func DialReadTimeout(d time.Duration) DialOpt {
+	return func(do *dialOpts) {
+		do.readTimeout = d
+	}
+}
+
+// DialWriteTimeout determines the deadline to set when writing to a dialed
+// connection. If not set then SetWriteDeadline is never called.
+func DialWriteTimeout(d time.Duration) DialOpt {
+	return func(do *dialOpts) {
+		do.writeTimeout = d
+	}
+}
+
+// DialTimeout is the equivalent to using DialConnectTimeout, DialReadTimeout,
+// and DialWriteTimeout all with the same value.
+func DialTimeout(d time.Duration) DialOpt {
+	return func(do *dialOpts) {
+		DialConnectTimeout(d)(do)
+		DialReadTimeout(d)(do)
+		DialWriteTimeout(d)(do)
+	}
+}
+
+// DialAuthPass will cause Dial to perform an AUTH command once the connection
+// is created, using the given pass.
+//
+// If this is set and a redis URI is passed to Dial which also has a password
+// set, this takes precedence.
+func DialAuthPass(pass string) DialOpt {
+	return func(do *dialOpts) {
+		do.authPass = pass
+	}
+}
+
+// DialSelectDB will cause Dial to perform a SELECT command once the connection
+// is created, using the given database index.
+//
+// If this is set and a redis URI is passed to Dial which also has a database
+// index set, this takes precedence.
+func DialSelectDB(db int) DialOpt {
+	return func(do *dialOpts) {
+		do.selectDB = strconv.Itoa(db)
+	}
 }
 
 type timeoutConn struct {
 	net.Conn
-	timeout time.Duration
-}
-
-func (tc *timeoutConn) setDeadline() {
-	if tc.timeout > 0 {
-		tc.Conn.SetDeadline(time.Now().Add(tc.timeout))
-	}
+	readTimeout, writeTimeout time.Duration
 }
 
 func (tc *timeoutConn) Read(b []byte) (int, error) {
-	tc.setDeadline()
+	if tc.readTimeout > 0 {
+		tc.Conn.SetReadDeadline(time.Now().Add(tc.readTimeout))
+	}
 	return tc.Conn.Read(b)
 }
 
 func (tc *timeoutConn) Write(b []byte) (int, error) {
-	tc.setDeadline()
+	if tc.writeTimeout > 0 {
+		tc.Conn.SetWriteDeadline(time.Now().Add(tc.writeTimeout))
+	}
 	return tc.Conn.Write(b)
 }
 
-// DialTimeout is like Dial, but the given timeout is used to set read/write
-// deadlines on all reads/writes
-func DialTimeout(network, addr string, timeout time.Duration) (Conn, error) {
-	c, err := net.DialTimeout(network, addr, timeout)
+// Dial is a ConnFunc which creates a Conn using net.Dial and NewConn. It takes
+// in a number of options which can overwrite its default behavior as well.
+//
+// In place of a host:port address, Dial also accepts a URI, as per:
+// 	https://www.iana.org/assignments/uri-schemes/prov/redis
+// If the URI has an AUTH password or db specified Dial will attempt to perform
+// the AUTH and/or SELECT as well.
+//
+// If either DialAuthPass or DialSelectDB is used it overwrites the associated
+// value passed in by the URI.
+func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
+	var do dialOpts
+	for _, opt := range opts {
+		opt(&do)
+	}
+
+	// do a quick check before we bust out url.Parse, in case that is very
+	// unperformant
+	if strings.HasPrefix(addr, "redis://") {
+		if u, err := url.Parse(addr); err == nil {
+			addr = u.Host
+			q := u.Query()
+			if do.authPass == "" {
+				if p, ok := u.User.Password(); ok {
+					do.authPass = p
+				} else if qpw := q.Get("password"); qpw != "" {
+					do.authPass = qpw
+				}
+			}
+			if do.selectDB == "" {
+				if u.Path != "" && u.Path != "/" {
+					do.selectDB = u.Path[1:]
+				} else if qdb := q.Get("db"); qdb != "" {
+					do.selectDB = qdb
+				}
+			}
+		}
+	}
+
+	var netConn net.Conn
+	var err error
+	if do.connectTimeout > 0 {
+		netConn, err = net.DialTimeout(network, addr, do.connectTimeout)
+	} else {
+		netConn, err = net.Dial(network, addr)
+	}
+
 	if err != nil {
 		return nil, err
 	}
-	return NewConn(&timeoutConn{Conn: c, timeout: timeout}), nil
+
+	conn := NewConn(&timeoutConn{
+		readTimeout:  do.readTimeout,
+		writeTimeout: do.writeTimeout,
+		Conn:         netConn,
+	})
+
+	if do.authPass != "" {
+		if err := conn.Do(Cmd(nil, "AUTH", do.authPass)); err != nil {
+			conn.Close()
+			return nil, err
+		}
+	}
+
+	if do.selectDB != "" {
+		if err := conn.Do(Cmd(nil, "SELECT", do.selectDB)); err != nil {
+			conn.Close()
+			return nil, err
+		}
+	}
+
+	return conn, nil
 }

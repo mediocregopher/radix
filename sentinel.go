@@ -81,7 +81,7 @@ type Sentinel struct {
 // options NewSentinel uses are:
 //
 //	SentinelConnFunc(func(net, addr string) (Conn, error) {
-//		return DialTimeout(net, addr, 5*time.Second)
+//		return Dial(net, addr, DialTimeout(5 * time.Second))
 //	})
 //	SentinelPoolFunc(DefaultClientFunc)
 //
@@ -103,7 +103,7 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 
 	defaultSentinelOpts := []SentinelOpt{
 		SentinelConnFunc(func(net, addr string) (Conn, error) {
-			return DialTimeout(net, addr, 5*time.Second)
+			return Dial(net, addr, DialTimeout(5*time.Second))
 		}),
 		SentinelPoolFunc(DefaultClientFunc),
 	}

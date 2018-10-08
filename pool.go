@@ -196,7 +196,7 @@ type Pool struct {
 // NewPool takes in a number of options which can overwrite its default
 // behavior. The default options NewPool uses are:
 //
-//	PoolConnFunc(Dial)
+//	PoolConnFunc(DefaultConnFunc)
 //	PoolOnEmptyCreateAfter(1 * time.Second)
 //	PoolRefillInterval(1 * time.Second)
 //	PoolOnFullClose()
@@ -212,7 +212,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	}
 
 	defaultPoolOpts := []PoolOpt{
-		PoolConnFunc(Dial),
+		PoolConnFunc(DefaultConnFunc),
 		PoolOnEmptyCreateAfter(1 * time.Second),
 		PoolRefillInterval(1 * time.Second),
 		PoolOnFullClose(),
