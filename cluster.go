@@ -92,7 +92,7 @@ type Cluster struct {
 // behavior. The default options NewCluster uses are:
 //
 //	ClusterPoolFunc(DefaultClientFunc)
-//	ClusterSyncEvery(30 * time.Second)
+//	ClusterSyncEvery(5 * time.Second)
 //
 func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c := &Cluster{
@@ -104,7 +104,7 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 
 	defaultClusterOpts := []ClusterOpt{
 		ClusterPoolFunc(DefaultClientFunc),
-		ClusterSyncEvery(30 * time.Second),
+		ClusterSyncEvery(5 * time.Second),
 	}
 
 	for _, opt := range append(defaultClusterOpts, opts...) {
