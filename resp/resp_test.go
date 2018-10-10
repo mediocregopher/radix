@@ -277,7 +277,7 @@ func TestAnyUnmarshal(t *T) {
 			{in: "$-1\r\n", preload: []byte{1}, out: []byte(nil)},
 			{in: "$-1\r\n", preloadEmpty: true, out: []byte(nil)},
 			{in: "$0\r\n\r\n", out: ""},
-			{in: "$0\r\n\r\n", out: []byte("")},
+			{in: "$0\r\n\r\n", out: []byte(nil)},
 			{in: "$4\r\nohey\r\n", out: "ohey"},
 			{in: "$4\r\nohey\r\n", out: []byte("ohey")},
 			{in: "$4\r\nohey\r\n", preload: []byte(nil), out: []byte("ohey")},
@@ -296,7 +296,7 @@ func TestAnyUnmarshal(t *T) {
 
 			// Simple string
 			{in: "+\r\n", out: ""},
-			{in: "+\r\n", out: []byte("")},
+			{in: "+\r\n", out: []byte(nil)},
 			{in: "+ohey\r\n", out: "ohey"},
 			{in: "+ohey\r\n", out: []byte("ohey")},
 			{in: "+ohey\r\n", out: textCPUnmarshaler("ohey")},
