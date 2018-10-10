@@ -155,8 +155,13 @@ type Unmarshaler interface {
 ////////////////////////////////////////////////////////////////////////////////
 
 func expand(b []byte, to int) []byte {
-	if b == nil || cap(b) < to {
+	if b == nil {
 		return make([]byte, to)
+	}
+	if from := cap(b) - len(b); from < to {
+		// Go 1.11 optimizes append(x, make([]T, y)...) calls by
+		// avoiding unnecessary allocations and copies. (CL 109517)
+		b = append(b[:cap(b)], make([]byte, to - from)...)
 	}
 	return b[:to]
 }
@@ -220,13 +225,11 @@ func readNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
 	if n == 0 {
 		_, err := r.Read(b[len(b):])
 		return b, err
-	} else if m := cap(b) - len(b); n > m {
-		// Go 1.11 optimizes append(x, make([]T, y)...) calls by
-		// avoiding unnecessary allocations and copies. (CL 109517)
-		b = append(b[:cap(b)], make([]byte, n-m)...)[:len(b)]
 	}
-	_, err := io.ReadFull(r, b[len(b):len(b)+n])
-	return b[:len(b)+n], err
+	m := len(b)
+	b = expand(b, len(b) + n)
+	_, err := io.ReadFull(r, b[m:])
+	return b, err
 }
 
 func multiWrite(w io.Writer, bb ...[]byte) error {
