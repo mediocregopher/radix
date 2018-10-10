@@ -155,13 +155,10 @@ type Unmarshaler interface {
 ////////////////////////////////////////////////////////////////////////////////
 
 func expand(b []byte, to int) []byte {
-	if b == nil {
-		return make([]byte, to)
-	}
-	if from := cap(b) - len(b); from < to {
-		// Go 1.11 optimizes append(x, make([]T, y)...) calls by
-		// avoiding unnecessary allocations and copies. (CL 109517)
-		b = append(b[:cap(b)], make([]byte, to - from)...)
+	if cap(b) < to {
+		nb := make([]byte, to)
+		copy(nb, b)
+		return nb
 	}
 	return b[:to]
 }
@@ -398,6 +395,9 @@ func (b *BulkStringBytes) UnmarshalRESP(br *bufio.Reader) error {
 		return nil
 	} else {
 		b.B = expand(b.B, nn)
+		if b.B == nil {
+			b.B = []byte{}
+		}
 	}
 
 	if _, err := io.ReadFull(br, b.B); err != nil {

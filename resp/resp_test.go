@@ -463,3 +463,11 @@ func TestRawMessage(t *T) {
 		}
 	}
 }
+
+func TestReadNAppend(t *T) {
+	buf := []byte("hello")
+	buf, err := readNAppend(bytes.NewReader([]byte(" world!")), buf, len(" world"))
+	require.Nil(t, err)
+	assert.Len(t, buf, len("hello world"))
+	assert.Equal(t, buf, []byte("hello world"))
+}
