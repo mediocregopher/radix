@@ -196,32 +196,10 @@ func bufferedIntDelim(br *bufio.Reader) (int64, error) {
 	return parseInt(b)
 }
 
-func readAllAppend(r io.Reader, b []byte) ([]byte, error) {
-	// if we know the amount of data we can skip the overhead of getBuffer
-	// and putBuffer as well as the extra copy into a *bytes.Buffer.
-	if lrp, ok := r.(*limitedReaderPlus); ok {
-		return readNAppend(r, b, int(lrp.lr.N))
-	}
-	buf := getBuffer()
-	_, err := buf.ReadFrom(r)
-	// reading into buf and copying is in most cases faster than creating
-	// a new buffer for b since it can avoid allocating the buffer (when
-	// there is a buffer in the pool). It also avoids reallocating b when
-	// b is smaller than bytes.MinRead bytes (see the documentation on
-	// bytes.MinRead) and the data fits into b.
-	b = append(b, buf.Bytes()...)
-	putBuffer(buf)
-	return b, err
-}
-
 // readNAppend appends exactly n bytes from r into b.
 func readNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
-	// ReadFull does not call Read if n == 0, but some readers (like
-	// limitedReaderPlus) need at least one call to Read, so we just
-	// call Read with an empty []byte if n == 0.
 	if n == 0 {
-		_, err := r.Read(b[len(b):])
-		return b, err
+		return b, nil
 	}
 	m := len(b)
 	b = expand(b, len(b) + n)
@@ -238,34 +216,34 @@ func multiWrite(w io.Writer, bb ...[]byte) error {
 	return nil
 }
 
-func readInt(r io.Reader) (int64, error) {
+func readInt(r io.Reader, n int) (int64, error) {
 	scratch := getBytes()
 	defer putBytes(scratch)
 
 	var err error
-	if (*scratch), err = readAllAppend(r, *scratch); err != nil {
+	if *scratch, err = readNAppend(r, *scratch, n); err != nil {
 		return 0, err
 	}
 	return parseInt(*scratch)
 }
 
-func readUint(r io.Reader) (uint64, error) {
+func readUint(r io.Reader, n int) (uint64, error) {
 	scratch := getBytes()
 	defer putBytes(scratch)
 
 	var err error
-	if (*scratch), err = readAllAppend(r, (*scratch)); err != nil {
+	if *scratch, err = readNAppend(r, *scratch, n); err != nil {
 		return 0, err
 	}
 	return parseUint(*scratch)
 }
 
-func readFloat(r io.Reader, precision int) (float64, error) {
+func readFloat(r io.Reader, precision, n int) (float64, error) {
 	scratch := getBytes()
 	defer putBytes(scratch)
 
 	var err error
-	if (*scratch), err = readAllAppend(r, *scratch); err != nil {
+	if *scratch, err = readNAppend(r, *scratch, n); err != nil {
 		return 0, err
 	}
 	return strconv.ParseFloat(string(*scratch), precision)
@@ -771,12 +749,6 @@ var (
 			return bytes.NewReader(nil)
 		},
 	}
-
-	lrpPool = sync.Pool{
-		New: func() interface{} {
-			return new(limitedReaderPlus)
-		},
-	}
 )
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -829,21 +801,22 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		} else if l == -1 {
 			return a.unmarshalNil()
 		}
-		lrp := lrpPool.Get().(*limitedReaderPlus)
-		defer lrpPool.Put(lrp)
-		lrp.reset(br, l)
-		return a.unmarshalSingle(lrp)
+		if err := a.unmarshalSingle(br, int(l)); err != nil && err != io.EOF {
+			return err
+		}
+		_, err = br.Discard(2)
+		return err
 	case simpleStrPrefix[0], intPrefix[0]:
 		reader := byteReaderPool.Get().(*bytes.Reader)
 		defer byteReaderPool.Put(reader)
 		reader.Reset(b)
-		return a.unmarshalSingle(reader)
+		return a.unmarshalSingle(reader, reader.Len())
 	default:
 		return fmt.Errorf("unknown type prefix %q", b[0])
 	}
 }
 
-func (a Any) unmarshalSingle(body io.Reader) error {
+func (a Any) unmarshalSingle(body io.Reader, n int) error {
 	var (
 		err error
 		i   int64
@@ -853,65 +826,65 @@ func (a Any) unmarshalSingle(body io.Reader) error {
 	switch ai := a.I.(type) {
 	case nil:
 		// just read it and do nothing
-		_, err = io.Copy(ioutil.Discard, body)
+		_, err = io.CopyN(ioutil.Discard, body, int64(n))
 	case *string:
 		scratch := getBytes()
-		(*scratch), err = readAllAppend(body, *scratch)
+		*scratch, err = readNAppend(body, *scratch, n)
 		*ai = string(*scratch)
 		putBytes(scratch)
 	case *[]byte:
-		*ai, err = readAllAppend(body, (*ai)[:0])
+		*ai, err = readNAppend(body, (*ai)[:0], n)
 	case *bool:
-		ui, err = readUint(body)
-		*ai = (ui > 0)
+		ui, err = readUint(body, n)
+		*ai = ui > 0
 	case *int:
-		i, err = readInt(body)
+		i, err = readInt(body, n)
 		*ai = int(i)
 	case *int8:
-		i, err = readInt(body)
+		i, err = readInt(body, n)
 		*ai = int8(i)
 	case *int16:
-		i, err = readInt(body)
+		i, err = readInt(body, n)
 		*ai = int16(i)
 	case *int32:
-		i, err = readInt(body)
+		i, err = readInt(body, n)
 		*ai = int32(i)
 	case *int64:
-		i, err = readInt(body)
+		i, err = readInt(body, n)
 		*ai = int64(i)
 	case *uint:
-		ui, err = readUint(body)
+		ui, err = readUint(body, n)
 		*ai = uint(ui)
 	case *uint8:
-		ui, err = readUint(body)
+		ui, err = readUint(body, n)
 		*ai = uint8(ui)
 	case *uint16:
-		ui, err = readUint(body)
+		ui, err = readUint(body, n)
 		*ai = uint16(ui)
 	case *uint32:
-		ui, err = readUint(body)
+		ui, err = readUint(body, n)
 		*ai = uint32(ui)
 	case *uint64:
-		ui, err = readUint(body)
+		ui, err = readUint(body, n)
 		*ai = uint64(ui)
 	case *float32:
 		var f float64
-		f, err = readFloat(body, 32)
+		f, err = readFloat(body, 32, n)
 		*ai = float32(f)
 	case *float64:
-		*ai, err = readFloat(body, 64)
+		*ai, err = readFloat(body, 64, n)
 	case io.Writer:
-		_, err = io.Copy(ai, body)
+		_, err = io.CopyN(ai, body, int64(n))
 	case encoding.TextUnmarshaler:
 		scratch := getBytes()
-		if (*scratch), err = readAllAppend(body, *scratch); err != nil {
+		if *scratch, err = readNAppend(body, *scratch, n); err != nil {
 			break
 		}
 		err = ai.UnmarshalText(*scratch)
 		putBytes(scratch)
 	case encoding.BinaryUnmarshaler:
 		scratch := getBytes()
-		if (*scratch), err = readAllAppend(body, *scratch); err != nil {
+		if *scratch, err = readNAppend(body, *scratch, n); err != nil {
 			break
 		}
 		err = ai.UnmarshalBinary(*scratch)
@@ -1058,7 +1031,7 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 		} else if l == -1 {
 			return nil
 		}
-		*rm, err = readAllAppend(io.LimitReader(br, l+2), *rm)
+		*rm, err = readNAppend(br, *rm, int(l+2))
 		return err
 	case errPrefix[0], simpleStrPrefix[0], intPrefix[0]:
 		return nil
