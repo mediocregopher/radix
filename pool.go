@@ -190,8 +190,8 @@ type Pool struct {
 	initDone chan struct{} // used for tests
 }
 
-// NewPool creates a *Pool which will hold up to the given number of connections
-// to the redis instance at the given address.
+// NewPool creates a *Pool which will keep open at least the given number of
+// connections to the redis instance at the given address.
 //
 // NewPool takes in a number of options which can overwrite its default
 // behavior. The default options NewPool uses are:
@@ -199,8 +199,8 @@ type Pool struct {
 //	PoolConnFunc(DefaultConnFunc)
 //	PoolOnEmptyCreateAfter(1 * time.Second)
 //	PoolRefillInterval(1 * time.Second)
-//	PoolOnFullClose()
-//	PoolPingInterval(10 * time.Second / size)
+//	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
+//	PoolPingInterval(10 * time.Second / (size+1))
 //
 func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	sp := &Pool{
@@ -215,12 +215,8 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolConnFunc(DefaultConnFunc),
 		PoolOnEmptyCreateAfter(1 * time.Second),
 		PoolRefillInterval(1 * time.Second),
-		PoolOnFullClose(),
-	}
-	// if pool size is 0 don't start up a pingSpin, cause there'd be no point
-	if size > 0 {
-		pingOpt := PoolPingInterval(10 * time.Second / time.Duration(size))
-		defaultPoolOpts = append(defaultPoolOpts, pingOpt)
+		PoolOnFullBuffer((size/3)+1, 1*time.Second),
+		PoolPingInterval(10 * time.Second / time.Duration(size+1)),
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {
@@ -256,13 +252,13 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		close(sp.initDone)
 	}()
 
-	if sp.po.pingInterval > 0 {
+	if sp.po.pingInterval > 0 && size > 0 {
 		sp.atIntervalDo(sp.po.pingInterval, func() { sp.Do(Cmd(nil, "PING")) })
 	}
 	if sp.po.refillInterval > 0 && size > 0 {
 		sp.atIntervalDo(sp.po.refillInterval, sp.doRefill)
 	}
-	if sp.po.overflowDrainInterval > 0 {
+	if sp.po.overflowSize > 0 && sp.po.overflowDrainInterval > 0 {
 		sp.atIntervalDo(sp.po.overflowDrainInterval, sp.doOverflowDrain)
 	}
 	return sp, nil

@@ -28,6 +28,7 @@ func TestPool(t *T) {
 	}
 
 	do := func(opts ...PoolOpt) {
+		opts = append(opts, PoolOnFullClose())
 		size := 10
 		pool := testPool(size, opts...)
 		var wg sync.WaitGroup
@@ -81,7 +82,7 @@ func TestPoolGet(t *T) {
 	// the rest are pretty straightforward
 	gen := func(mkOpt func(time.Duration) PoolOpt, d time.Duration, expErr error) func(*T) {
 		return func(t *T) {
-			pool := testPool(0, mkOpt(d))
+			pool := testPool(0, PoolOnFullClose(), mkOpt(d))
 			took, err := getBlock(pool)
 			assert.Equal(t, expErr, err)
 			assert.True(t, took-d < 20*time.Millisecond)
