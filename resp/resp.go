@@ -195,11 +195,6 @@ func bufferedIntDelim(br *bufio.Reader) (int64, error) {
 }
 
 func readAllAppend(r io.Reader, b []byte) ([]byte, error) {
-	// tests expect a non-nil slice so make sure we always have a non-nil b.
-	// otherwise if we don't append anything (0 bytes) b would still be nil.
-	if b == nil {
-		b = []byte{}
-	}
 	// if we know the amount of data we can skip the overhead of getBuffer
 	// and putBuffer as well as the extra copy into a *bytes.Buffer.
 	if lrp, ok := r.(*limitedReaderPlus); ok {
