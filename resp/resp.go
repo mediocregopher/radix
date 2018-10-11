@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"reflect"
 	"strconv"
 	"sync"
@@ -189,6 +188,41 @@ func readNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
 	b = expand(b, len(b)+n)
 	_, err := io.ReadFull(r, b[m:])
 	return b, err
+}
+
+func readNDiscard(r io.Reader, n int) error {
+	type discarder interface {
+		Discard(int) (int, error)
+	}
+
+	if n == 0 {
+		return nil
+	} else if d, ok := r.(discarder); ok {
+		_, err := d.Discard(n)
+		return err
+	}
+
+	scratch := getBytes()
+	defer putBytes(scratch)
+	*scratch = (*scratch)[:cap(*scratch)]
+	if len(*scratch) < n {
+		// Large strings should get read in as bulk strings, in which case
+		// *bufio.Reader will be read from directly, and so Discard will be
+		// used. Any other kind of strings shouldn't be more than this.
+		*scratch = make([]byte, 8192)
+	}
+
+	for {
+		buf := *scratch
+		if len(buf) > n {
+			buf = buf[:n]
+		}
+		nr, err := r.Read(buf)
+		n -= nr
+		if n == 0 || err != nil {
+			return err
+		}
+	}
 }
 
 func multiWrite(w io.Writer, bb ...[]byte) error {
@@ -810,7 +844,7 @@ func (a Any) unmarshalSingle(body io.Reader, n int) error {
 	switch ai := a.I.(type) {
 	case nil:
 		// just read it and do nothing
-		_, err = io.CopyN(ioutil.Discard, body, int64(n))
+		err = readNDiscard(body, n)
 	case *string:
 		scratch := getBytes()
 		*scratch, err = readNAppend(body, *scratch, n)
