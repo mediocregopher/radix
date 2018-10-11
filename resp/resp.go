@@ -785,7 +785,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		} else if l == -1 {
 			return a.unmarshalNil()
 		}
-		if err := a.unmarshalSingle(br, int(l)); err != nil && err != io.EOF {
+		if err := a.unmarshalSingle(br, int(l)); err != nil {
 			return err
 		}
 		_, err = br.Discard(2)
