@@ -78,22 +78,6 @@ func putBytes(b *[]byte) {
 	bytePool.Put(b)
 }
 
-var bufferPool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 0, bytes.MinRead)
-		return bytes.NewBuffer(b)
-	},
-}
-
-func getBuffer() *bytes.Buffer {
-	return bufferPool.Get().(*bytes.Buffer)
-}
-
-func putBuffer(b *bytes.Buffer) {
-	b.Reset()
-	bufferPool.Put(b)
-}
-
 // parseInt is a specialized version of strconv.ParseInt that parses a base-10 encoded signed integer.
 func parseInt(b []byte) (int64, error) {
 	if len(b) == 0 {
@@ -202,7 +186,7 @@ func readNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
 		return b, nil
 	}
 	m := len(b)
-	b = expand(b, len(b) + n)
+	b = expand(b, len(b)+n)
 	_, err := io.ReadFull(r, b[m:])
 	return b, err
 }
