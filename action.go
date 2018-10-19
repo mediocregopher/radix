@@ -237,6 +237,13 @@ func (c *cmdAction) Keys() []string {
 	cmd := strings.ToUpper(c.cmd)
 	if cmd == "BITOP" && len(c.args) > 1 { // antirez why you do this
 		return c.args[1:]
+	} else if cmd == "XINFO" {
+		if len(c.args) < 2 {
+			return nil
+		}
+		return c.args[1:2]
+	} else if cmd == "XGROUP" && len(c.args) > 1 {
+		return c.args[1:2]
 	} else if cmd == "XREAD" || cmd == "XREADGROUP" { // antirez why you still do this
 		return findStreamsKeys(c.args)
 	} else if noKeyCmds[cmd] || len(c.args) == 0 {

@@ -46,6 +46,7 @@ func TestCmdActionStreams(t *T) {
 
 	// talking about weird commands, here are XREAD and XREADGROUP
 	group := randStr()
+	consumer := randStr()
 	skeys := []string{"1", "1-", "1-1", "s1", ""} // make sure that we can handle empty and ID-like keys
 	for _, skey := range skeys {
 		if streamsSupported {
@@ -60,10 +61,17 @@ func TestCmdActionStreams(t *T) {
 			{"XREAD", "BLOCK", "1", "STREAMS", skey, "0"},
 			{"XREAD", "COUNT", "1", "STREAMS", skey, "0"},
 			{"XREAD", "COUNT", "1", "BLOCK", "1", "STREAMS", skey, "0"},
-			{"XREADGROUP", "GROUP", group, "test", "STREAMS", skey, ">"},
-			{"XREADGROUP", "GROUP", group, "test", "BLOCK", "1", "STREAMS", skey, ">"},
-			{"XREADGROUP", "GROUP", group, "test", "COUNT", "1", "STREAMS", skey, ">"},
-			{"XREADGROUP", "GROUP", group, "test", "COUNT", "1", "BLOCK", "1", "STREAMS", skey, ">"},
+			{"XREADGROUP", "GROUP", group, consumer, "STREAMS", skey, ">"},
+			{"XREADGROUP", "GROUP", group, consumer, "BLOCK", "1", "STREAMS", skey, ">"},
+			{"XREADGROUP", "GROUP", group, consumer, "COUNT", "1", "STREAMS", skey, ">"},
+			{"XREADGROUP", "GROUP", group, consumer, "COUNT", "1", "BLOCK", "1", "STREAMS", skey, ">"},
+			{"XINFO", "CONSUMERS", skey, group},
+			{"XINFO", "GROUPS", skey},
+			{"XINFO", "STREAM", skey},
+			{"XGROUP", "DELCONSUMER", skey, group, consumer},
+			{"XGROUP", "DESTROY", skey, group},
+			{"XGROUP", "CREATE", skey, group, "$"},
+			{"XGROUP", "SETID", skey, group, "$"},
 		} {
 			xCmd := Cmd(nil, args[0], args[1:]...)
 			assert.Equal(t, []string{skey}, xCmd.Keys())
@@ -83,6 +91,12 @@ func TestCmdActionStreams(t *T) {
 		if streamsSupported {
 			require.NoError(t, c.Do(xCmd))
 		}
+	}
+
+	xCmd := Cmd(nil, "XINFO", "HELP")
+	assert.Equal(t, []string(nil), xCmd.Keys())
+	if streamsSupported {
+		require.NoError(t, c.Do(xCmd))
 	}
 }
 
