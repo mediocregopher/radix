@@ -301,6 +301,10 @@ func (c *cmdAction) String() string {
 	return cmdString(c)
 }
 
+func (c *cmdAction) ClusterCanRetry() bool {
+	return true
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // MaybeNil is a type which wraps a receiver. It will first detect if what's
@@ -414,6 +418,10 @@ func (ec *evalAction) Run(conn Conn) error {
 		err = run(true)
 	}
 	return err
+}
+
+func (ec *evalAction) ClusterCanRetry() bool {
+	return true
 }
 
 ////////////////////////////////////////////////////////////////////////////////

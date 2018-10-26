@@ -1,8 +1,10 @@
 package radix
 
 import (
+	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	. "testing"
@@ -103,6 +105,22 @@ func (s *clusterNodeStub) newConn() Conn {
 			return s.withKey(k, asking, func(slot clusterSlotStub) interface{} {
 				slot.kv[k] = args[2]
 				return resp.SimpleString{S: "OK"}
+			})
+		case "EVALSHA":
+			return resp.Error{E: errors.New("NOSCRIPT: clusterNodeStub does not support EVALSHA")}
+		case "EVAL":
+			// see if any keys were sent
+			if len(args) < 3 {
+				return resp.Error{E: errors.New("malformed EVAL command")}
+			}
+			numKeys, err := strconv.Atoi(args[2])
+			if err != nil {
+				return resp.Error{E: err}
+			} else if numKeys == 0 {
+				return "EVAL: no keys"
+			}
+			return s.withKey(args[3], asking, func(slot clusterSlotStub) interface{} {
+				return "EVAL: success!"
 			})
 		case "PING":
 			return resp.SimpleString{S: "PONG"}

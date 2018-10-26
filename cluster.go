@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mediocregopher/radix.v3/resp"
 )
 
 // dedupe is used to deduplicate a function invocation, so if multiple
@@ -31,6 +33,21 @@ func (d *dedupe) do(fn func()) {
 		d.s = new(sync.Once)
 		d.l.Unlock()
 	})
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// ClusterCanRetryAction is an Action which is aware of Cluster's retry behavior
+// in the event of a slot migration. If an Action receives an error from a
+// Cluster node which is either MOVED or ASK, and that Action implements
+// ClusterCanRetryAction, and the ClusterCanRetry method returns true, then the
+// Action will be retried on the correct node.
+//
+// NOTE that the Actions which are returned by Cmd, FlatCmd, and EvalScript.Cmd
+// all implicitly implement this interface.
+type ClusterCanRetryAction interface {
+	Action
+	ClusterCanRetry() bool
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -307,13 +324,35 @@ func (c *Cluster) addrForKey(key string) string {
 	return ""
 }
 
+type askConn struct {
+	Conn
+}
+
+func (ac askConn) Encode(m resp.Marshaler) error {
+	if err := ac.Conn.Encode(Cmd(nil, "ASKING")); err != nil {
+		return err
+	}
+	return ac.Conn.Encode(m)
+}
+
+func (ac askConn) Decode(um resp.Unmarshaler) error {
+	if err := ac.Conn.Decode(resp.Any{}); err != nil {
+		return err
+	}
+	return ac.Conn.Decode(um)
+}
+
+func (ac askConn) Do(a Action) error {
+	return a.Run(ac)
+}
+
 const doAttempts = 5
 
 // Do performs an Action on a redis instance in the cluster, with the instance
 // being determeined by the key returned from the Action's Key() method.
 //
-// If the Action is a CmdAction then Cluster will handled MOVED and ASK errors
-// correctly, for other Action types those errors will be returned as is.
+// This method handles MOVED and ASK errors automatically in most cases, see
+// ClusterCanRetryAction's docs for more.
 func (c *Cluster) Do(a Action) error {
 	var addr, key string
 	keys := a.Keys()
@@ -337,22 +376,17 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 
 	// We only need to use WithConn if we want to send an ASKING command before
 	// our Action a. If ask is false we can thus skip the WithConn call, which
-	// avoids a few allocations, and execute our Action directly on p. This helps
-	// with most calls since ask will only be true when a key gets migrated
-	// between nodes.
+	// avoids a few allocations, and execute our Action directly on p. This
+	// helps with most calls since ask will only be true when a key gets
+	// migrated between nodes.
+	thisA := a
 	if ask {
-		err = p.Do(WithConn(key, func(conn Conn) error {
-			if err := conn.Do(Cmd(nil, "ASKING")); err != nil {
-				return err
-			}
-
-			return conn.Do(a)
-		}))
-	} else {
-		err = p.Do(a)
+		thisA = WithConn(key, func(conn Conn) error {
+			return askConn{conn}.Do(a)
+		})
 	}
 
-	if err == nil {
+	if err = p.Do(thisA); err == nil {
 		return nil
 	}
 
@@ -369,15 +403,15 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	// we figure out what address to use based on the returned error so the sync
 	// isn't used _immediately_, but it still needs to happen.
 	//
-	// Also, even if the Action isn't a CmdAction we want a MOVED to prompt a
-	// Sync
+	// Also, even if the Action isn't a ClusterCanRetryAction we want a MOVED to
+	// prompt a Sync
 	if moved {
 		if serr := c.Sync(); serr != nil {
 			return serr
 		}
 	}
 
-	if _, ok := a.(CmdAction); !ok {
+	if ccra, ok := a.(ClusterCanRetryAction); !ok || !ccra.ClusterCanRetry() {
 		return err
 	}
 

@@ -161,6 +161,11 @@ type Conn interface {
 	//
 	// If either Encode or Decode encounter a net.Error the Conn will be
 	// automatically closed.
+	//
+	// Encode is expected to encode an entire resp message, not a partial one.
+	// In other words, when sending commands to redis, Encode should only be
+	// called once per command. Similarly, Decode is expected to decode an
+	// entire resp response.
 	Encode(resp.Marshaler) error
 	Decode(resp.Unmarshaler) error
 

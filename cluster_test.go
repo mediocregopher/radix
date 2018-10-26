@@ -173,3 +173,18 @@ func TestClusterWithPrimaries(t *T) {
 	sort.Strings(addrs)
 	assert.Equal(t, primaryAddrs, addrs)
 }
+
+func TestClusterEval(t *T) {
+	c, scl := newTestCluster()
+	key := clusterSlotKeys[0]
+	dst := scl.stubForSlot(10000)
+	scl.migrateInit(dst.addr, 0)
+	// now, when interacting with key, the stub should return an ASK error
+
+	eval := NewEvalScript(1, `return nil`)
+	var rcv string
+	err := c.Do(eval.Cmd(&rcv, key, "foo"))
+
+	assert.Nil(t, err)
+	assert.Equal(t, "EVAL: success!", rcv)
+}
