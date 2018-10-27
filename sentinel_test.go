@@ -14,9 +14,10 @@ import (
 type sentinelStub struct {
 	sync.Mutex
 
-	// The address of the actual instance this stub returns. We ignore the
+	// The addresses of the actual instances this stub returns. We ignore the
 	// primary name for the tests
-	instAddr string
+	primAddr string
+	secAddrs []string
 
 	// addresses of all "sentinels" in the cluster
 	sentAddrs []string
@@ -71,7 +72,14 @@ func (s *sentinelStub) newConn(network, addr string) (Conn, error) {
 
 		switch args[1] {
 		case "MASTER":
-			return addrToM(s.instAddr)
+			return addrToM(s.primAddr)
+
+		case "SLAVES":
+			mm := make([]map[string]string, len(s.secAddrs))
+			for i := range s.secAddrs {
+				mm[i] = addrToM(s.secAddrs[i])
+			}
+			return mm
 
 		case "SENTINELS":
 			ret := []map[string]string{}
@@ -94,15 +102,17 @@ func (s *sentinelStub) newConn(network, addr string) (Conn, error) {
 	}, nil
 }
 
-func (s *sentinelStub) switchPrimary(newAddr string) {
+func (s *sentinelStub) switchPrimary(newPrimAddr string, newSecAddrs ...string) {
 	s.Lock()
 	defer s.Unlock()
-	oldSplit := strings.Split(s.instAddr, ":")
-	newSplit := strings.Split(newAddr, ":")
+	oldSplit := strings.Split(s.primAddr, ":")
+	newSplit := strings.Split(newPrimAddr, ":")
 	msg := PubSubMessage{
 		Channel: "switch-master",
 		Message: []byte(fmt.Sprintf("stub %s %s %s %s", oldSplit[0], oldSplit[1], newSplit[0], newSplit[1])),
 	}
+	s.primAddr = newPrimAddr
+	s.secAddrs = newSecAddrs
 	for stubCh := range s.stubChs {
 		stubCh <- msg
 	}
@@ -110,7 +120,8 @@ func (s *sentinelStub) switchPrimary(newAddr string) {
 
 func TestSentinel(t *T) {
 	stub := sentinelStub{
-		instAddr:  "127.0.0.1:6379",
+		primAddr:  "127.0.0.1:6379",
+		secAddrs:  []string{"127.0.0.2:6379", "127.0.0.3:6379"},
 		sentAddrs: []string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"},
 		stubChs:   map[chan<- PubSubMessage]bool{},
 	}
@@ -127,11 +138,16 @@ func TestSentinel(t *T) {
 	)
 	require.Nil(t, err)
 
-	assertState := func(clAddr string, sentAddrs ...string) {
-		assert.Equal(t, clAddr, scc.clAddr)
-		assert.Len(t, scc.addrs, len(sentAddrs))
+	assertState := func(primAddr string, secAddrs, sentAddrs []string) {
+		gotPrimAddr, gotSecAddrs := scc.Addrs()
+		assert.Equal(t, primAddr, gotPrimAddr)
+		assert.Len(t, gotSecAddrs, len(secAddrs))
+		for i := range secAddrs {
+			assert.Contains(t, gotSecAddrs, secAddrs[i])
+		}
+		assert.Len(t, scc.sentinelAddrs, len(sentAddrs))
 		for i := range sentAddrs {
-			assert.Contains(t, scc.addrs, sentAddrs[i])
+			assert.Contains(t, scc.sentinelAddrs, sentAddrs[i])
 		}
 	}
 
@@ -152,13 +168,21 @@ func TestSentinel(t *T) {
 		wg.Wait()
 	}
 
-	assertState("127.0.0.1:6379", "127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379")
+	assertState(
+		"127.0.0.1:6379",
+		[]string{"127.0.0.2:6379", "127.0.0.3:6379"},
+		[]string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"},
+	)
 	assertPoolWorks()
 
-	stub.switchPrimary("127.0.0.2:6379")
+	stub.switchPrimary("127.0.0.2:6379", "127.0.0.3:6379")
 	go assertPoolWorks()
 	assert.Equal(t, "switch-master completed", <-scc.testEventCh)
-	assertState("127.0.0.2:6379", "127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379")
+	assertState(
+		"127.0.0.2:6379",
+		[]string{"127.0.0.3:6379"},
+		[]string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"},
+	)
 
 	assertPoolWorks()
 }

@@ -2,8 +2,8 @@ package radix
 
 import (
 	"errors"
+	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 )
@@ -50,12 +50,13 @@ type Sentinel struct {
 	initAddrs []string
 	name      string
 
-	// we read lock when calling methods on cl, and normal lock when swapping
-	// the value of cl, clAddr, and addrs
-	l      sync.RWMutex
-	cl     Client
-	clAddr string
-	addrs  map[string]bool // the known sentinel addresses
+	// we read lock when calling methods on prim, and normal lock when swapping
+	// the value of prim, primAddr, and sentAddrs
+	l             sync.RWMutex
+	prim          Client
+	primAddr      string
+	secsM         map[string]bool
+	sentinelAddrs map[string]bool // the known sentinel addresses
 
 	// We use a persistent PubSubConn here, so we don't need to do much after
 	// initialization. The pconn is only really kept around for closing
@@ -92,13 +93,13 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	}
 
 	sc := &Sentinel{
-		initAddrs:   sentinelAddrs,
-		name:        primaryName,
-		addrs:       addrs,
-		pconnCh:     make(chan PubSubMessage),
-		ErrCh:       make(chan error, 1),
-		closeCh:     make(chan bool),
-		testEventCh: make(chan string, 1),
+		initAddrs:     sentinelAddrs,
+		name:          primaryName,
+		sentinelAddrs: addrs,
+		pconnCh:       make(chan PubSubMessage, 1),
+		ErrCh:         make(chan error, 1),
+		closeCh:       make(chan bool),
+		testEventCh:   make(chan string, 1),
 	}
 
 	defaultSentinelOpts := []SentinelOpt{
@@ -121,7 +122,7 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	// connectable connection. This connection is only used during
 	// initialization, it gets closed right after
 	{
-		conn, err := sc.dial()
+		conn, err := sc.dialSentinel()
 		if err != nil {
 			return nil, err
 		}
@@ -129,20 +130,19 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 
 		if err := sc.ensureSentinelAddrs(conn); err != nil {
 			return nil, err
-		} else if err := sc.ensurePrimary(conn); err != nil {
+		} else if err := sc.ensureClients(conn); err != nil {
 			return nil, err
 		}
 	}
 
 	// because we're using persistent these can't _really_ fail
 	sc.pconn = PersistentPubSub("", "", func(_, _ string) (Conn, error) {
-		return sc.dial()
+		return sc.dialSentinel()
 	})
 	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
 
-	sc.closeWG.Add(2)
+	sc.closeWG.Add(1)
 	go sc.spin()
-	go sc.pubsubSpin()
 	return sc, nil
 }
 
@@ -160,13 +160,13 @@ func (sc *Sentinel) testEvent(event string) {
 	}
 }
 
-func (sc *Sentinel) dial() (Conn, error) {
+func (sc *Sentinel) dialSentinel() (Conn, error) {
 	sc.l.RLock()
 	defer sc.l.RUnlock()
 
 	var conn Conn
 	var err error
-	for addr := range sc.addrs {
+	for addr := range sc.sentinelAddrs {
 		conn, err = sc.so.cf("tcp", addr)
 		if err == nil {
 			return conn, nil
@@ -193,7 +193,39 @@ func (sc *Sentinel) dial() (Conn, error) {
 func (sc *Sentinel) Do(a Action) error {
 	sc.l.RLock()
 	defer sc.l.RUnlock()
-	return sc.cl.Do(a)
+	return sc.prim.Do(a)
+}
+
+// Addrs returns the currently known network address of the current primary
+// instance and the addresses of the secondaries.
+func (sc *Sentinel) Addrs() (string, []string) {
+	sc.l.RLock()
+	defer sc.l.RUnlock()
+	secAddrs := make([]string, 0, len(sc.secsM))
+	for addr := range sc.secsM {
+		secAddrs = append(secAddrs, addr)
+	}
+	return sc.primAddr, secAddrs
+}
+
+// Client returns a Client for the given address, which could be either the
+// primary or one of the secondaries (see Addrs method for retrieving known
+// addresses).
+//
+// NOTE that if there is a failover while a Client returned by this method is
+// being used the Client may or may not continue to work as expected, depending
+// on the nature of the failover.
+func (sc *Sentinel) Client(addr string) (Client, error) {
+	sc.l.RLock()
+	defer sc.l.RUnlock()
+	if addr == sc.primAddr {
+		return sc.prim, nil
+	} else if _, ok := sc.secsM[addr]; ok {
+		// TODO instead of creating an instance right here, keep track of
+		// secondary Clients within Sentinel
+		return sc.so.pf("tcp", addr)
+	}
+	return nil, errors.New("unknown address")
 }
 
 // Close implements the method for the Client interface.
@@ -204,44 +236,100 @@ func (sc *Sentinel) Close() error {
 	sc.closeOnce.Do(func() {
 		close(sc.closeCh)
 		sc.closeWG.Wait()
-		closeErr = sc.cl.Close()
+		closeErr = sc.prim.Close()
 	})
 	return closeErr
 }
 
-// given a connection to a sentinel, ensures that the pool currently being held
-// agrees with what the sentinel thinks it should be
-func (sc *Sentinel) ensurePrimary(conn Conn) error {
-	sc.l.RLock()
-	lastAddr := sc.clAddr
-	sc.l.RUnlock()
-
-	var m map[string]string
-	err := conn.Do(Cmd(&m, "SENTINEL", "MASTER", sc.name))
-	if err != nil {
-		return err
-	} else if m["ip"] == "" || m["port"] == "" {
-		return errors.New("malformed SENTINEL MASTER response")
+// cmd should be the command called which generated m
+func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
+	if m["ip"] == "" || m["port"] == "" {
+		return "", fmt.Errorf("malformed %s response", cmd)
 	}
-	newAddr := net.JoinHostPort(m["ip"], m["port"])
-	if newAddr == lastAddr {
-		return nil
-	}
-	return sc.setPrimary(newAddr)
+	return net.JoinHostPort(m["ip"], m["port"]), nil
 }
 
-func (sc *Sentinel) setPrimary(newAddr string) error {
-	newPool, err := sc.so.pf("tcp", newAddr)
+// returns added/removed
+func (sc *Sentinel) secsDiff(
+	oldSecs, newSecs map[string]bool,
+) (
+	map[string]bool, map[string]bool,
+) {
+	removed := map[string]bool{}
+	for addr := range oldSecs {
+		if _, ok := newSecs[addr]; !ok {
+			removed[addr] = true
+		}
+	}
+	added := map[string]bool{}
+	for addr := range newSecs {
+		if _, ok := oldSecs[addr]; !ok {
+			added[addr] = true
+		}
+	}
+	return added, removed
+}
+
+// given a connection to a sentinel, ensures that the Clients currently being
+// held agrees with what the sentinel thinks they should be
+func (sc *Sentinel) ensureClients(conn Conn) error {
+	// TODO it'd be ideal to pipeline these two commands, but doing so breaks
+	// test since stub doesn't properly handle pipelining
+	var primM map[string]string
+	var secMM []map[string]string
+	if err := conn.Do(Cmd(&primM, "SENTINEL", "MASTER", sc.name)); err != nil {
+		return err
+	} else if err := conn.Do(Cmd(&secMM, "SENTINEL", "SLAVES", sc.name)); err != nil {
+		return err
+	}
+
+	newPrimAddr, err := sentinelMtoAddr(primM, "SENTINEL MASTER")
+	if err != nil {
+		return err
+	}
+
+	newSecsM := map[string]bool{}
+	for _, secM := range secMM {
+		newSecAddr, err := sentinelMtoAddr(secM, "SENTINEL SLAVES")
+		if err != nil {
+			return err
+		}
+		newSecsM[newSecAddr] = true
+	}
+
+	return sc.setClients(newPrimAddr, newSecsM)
+}
+
+// one day we might keep track of the secondary clients in here, not sure yet
+func (sc *Sentinel) setClients(newPrimAddr string, newSecsM map[string]bool) error {
+	sc.l.RLock()
+	oldPrimAddr := sc.primAddr
+	secsAdded, secsRemoved := sc.secsDiff(sc.secsM, newSecsM)
+	sc.l.RUnlock()
+
+	primChanged := oldPrimAddr != newPrimAddr
+	if !primChanged && len(secsAdded) == 0 && len(secsRemoved) == 0 {
+		return nil
+
+	} else if !primChanged {
+		sc.l.Lock()
+		sc.secsM = newSecsM
+		sc.l.Unlock()
+		return nil
+	}
+
+	newPool, err := sc.so.pf("tcp", newPrimAddr)
 	if err != nil {
 		return err
 	}
 
 	sc.l.Lock()
-	if sc.cl != nil {
-		sc.cl.Close()
+	if sc.prim != nil {
+		sc.prim.Close()
 	}
-	sc.cl = newPool
-	sc.clAddr = newAddr
+	sc.prim = newPool
+	sc.primAddr = newPrimAddr
+	sc.secsM = newSecsM
 	sc.l.Unlock()
 
 	return nil
@@ -262,13 +350,14 @@ func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 	}
 
 	sc.l.Lock()
-	sc.addrs = addrs
+	sc.sentinelAddrs = addrs
 	sc.l.Unlock()
 	return nil
 }
 
 func (sc *Sentinel) spin() {
 	defer sc.closeWG.Done()
+	defer sc.pconn.Close()
 	for {
 		if err := sc.innerSpin(); err != nil {
 			sc.err(err)
@@ -295,7 +384,7 @@ func (sc *Sentinel) spin() {
 // * Periodically re-checking the current primary, in case the switch-master was
 //   missed somehow
 func (sc *Sentinel) innerSpin() error {
-	conn, err := sc.dial()
+	conn, err := sc.dialSentinel()
 	if err != nil {
 		return err
 	}
@@ -303,43 +392,31 @@ func (sc *Sentinel) innerSpin() error {
 
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
+
+	var switchMaster bool
 	for {
+		if err := sc.ensureSentinelAddrs(conn); err != nil {
+			return err
+		} else if err := sc.ensureClients(conn); err != nil {
+			return err
+		}
+		sc.pconn.Ping()
+
+		// the tests want to know when the client state has been updated due to
+		// a switch-master event
+		if switchMaster {
+			sc.testEvent("switch-master completed")
+			switchMaster = false
+		}
+
 		select {
 		case <-tick.C:
-			if err := sc.ensureSentinelAddrs(conn); err != nil {
-				return err
-			}
-			if err := sc.ensurePrimary(conn); err != nil {
-				return err
-			}
-			sc.pconn.Ping()
+			// loop
+		case <-sc.pconnCh:
+			switchMaster = true
+			// loop
 		case <-sc.closeCh:
 			return nil
-		}
-	}
-}
-
-func (sc *Sentinel) pubsubSpin() {
-	defer sc.closeWG.Done()
-	tick := time.NewTicker(30 * time.Second)
-	defer tick.Stop()
-	for {
-		select {
-		case msg := <-sc.pconnCh:
-			parts := strings.Split(string(msg.Message), " ")
-			if len(parts) < 5 || parts[0] != sc.name || msg.Channel != "switch-master" {
-				continue
-			}
-			newAddr := parts[3] + ":" + parts[4]
-			if err := sc.setPrimary(newAddr); err != nil {
-				sc.err(err)
-			}
-			sc.testEvent("switch-master completed")
-		case <-tick.C:
-			sc.pconn.Ping()
-		case <-sc.closeCh:
-			sc.pconn.Close()
-			return
 		}
 	}
 }
