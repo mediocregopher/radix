@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"sort"
 	. "testing"
 
 	"github.com/stretchr/testify/assert"
@@ -58,10 +57,9 @@ func TestClusterSync(t *T) {
 		require.Nil(t, c.Sync())
 		c.l.RLock()
 		defer c.l.RUnlock()
-		assert.Equal(t, c.tt, scl.topo().Primaries())
-		mtt := c.tt.Primaries()
-		assert.Len(t, c.pools, len(mtt))
-		for _, node := range mtt {
+		assert.Equal(t, c.topo, scl.topo())
+		assert.Len(t, c.pools, len(c.topo))
+		for _, node := range c.topo {
 			assert.Contains(t, c.pools, node.Addr)
 		}
 	}
@@ -147,31 +145,6 @@ func BenchmarkClusterDo(b *B) {
 	for i := 0; i < b.N; i++ {
 		require.Nil(b, c.Do(Cmd(nil, "GET", k)))
 	}
-}
-
-func TestClusterWithPrimaries(t *T) {
-	c, _ := newTestCluster()
-	var topo ClusterTopo
-	require.Nil(t, c.Do(Cmd(&topo, "CLUSTER", "SLOTS")))
-
-	primaryAddrs := make([]string, 0, len(topo))
-	for _, node := range topo.Primaries() {
-		primaryAddrs = append(primaryAddrs, node.Addr)
-	}
-
-	addrs := make([]string, 0, len(primaryAddrs))
-	err := c.WithPrimaries(func(addr string, client Client) error {
-		var thisAddr string
-		require.Nil(t, client.Do(Cmd(&thisAddr, "ADDR")))
-		assert.Equal(t, addr, thisAddr)
-		addrs = append(addrs, addr)
-		return nil
-	})
-	require.Nil(t, err)
-
-	sort.Strings(primaryAddrs)
-	sort.Strings(addrs)
-	assert.Equal(t, primaryAddrs, addrs)
 }
 
 func TestClusterEval(t *T) {

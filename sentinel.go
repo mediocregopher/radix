@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -215,6 +214,8 @@ func (sc *Sentinel) Addrs() (string, []string) {
 // NOTE that if there is a failover while a Client returned by this method is
 // being used the Client may or may not continue to work as expected, depending
 // on the nature of the failover.
+//
+// NOTE the Client should _not_ be closed.
 func (sc *Sentinel) Client(addr string) (Client, error) {
 	sc.l.RLock()
 	defer sc.l.RUnlock()
@@ -225,7 +226,7 @@ func (sc *Sentinel) Client(addr string) (Client, error) {
 		// secondary Clients within Sentinel
 		return sc.so.pf("tcp", addr)
 	}
-	return nil, errors.New("unknown address")
+	return nil, errUnknownAddress
 }
 
 // Close implements the method for the Client interface.

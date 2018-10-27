@@ -15,16 +15,18 @@ type clusterScanner struct {
 
 // NewScanner will return a Scanner which will scan over every node in the
 // cluster. This will panic if the ScanOpt's Command isn't "SCAN".
+//
+// If the cluster topology changes during a scan the Scanner may or may not
+// error out due to it, depending on the nature of the change.
 func (c *Cluster) NewScanner(o ScanOpts) Scanner {
 	if strings.ToUpper(o.Command) != "SCAN" {
 		panic("Cluster.NewScanner can only perform SCAN operations")
 	}
 
 	var addrs []string
-	c.WithPrimaries(func(addr string, _ Client) error {
-		addrs = append(addrs, addr)
-		return nil
-	})
+	for _, node := range c.Topo().Primaries() {
+		addrs = append(addrs, node.Addr)
+	}
 
 	cs := &clusterScanner{
 		cluster: c,

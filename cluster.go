@@ -87,9 +87,9 @@ type Cluster struct {
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
 
-	l     sync.RWMutex
-	pools map[string]Client
-	tt    ClusterTopo
+	l              sync.RWMutex
+	pools          map[string]Client
+	primTopo, topo ClusterTopo
 
 	closeCh   chan struct{}
 	closeWG   sync.WaitGroup
@@ -194,6 +194,31 @@ func (c *Cluster) rpool(addr string) (Client, error) {
 	return nil, nil
 }
 
+var errUnknownAddress = errors.New("unknown address")
+
+// Client returns a Client for the given address, which could be either the
+// primary or one of the secondaries (see Topo method for retrieving known
+// addresses).
+//
+// NOTE that if there is a failover while a Client returned by this method is
+// being used the Client may or may not continue to work as expected, depending
+// on the nature of the failover.
+//
+// NOTE the Client should _not_ be closed.
+func (c *Cluster) Client(addr string) (Client, error) {
+	// rpool allows the address to be "", handle that case manually
+	if addr == "" {
+		return nil, errUnknownAddress
+	}
+	cl, err := c.rpool(addr)
+	if err != nil {
+		return nil, err
+	} else if cl == nil {
+		return nil, errUnknownAddress
+	}
+	return cl, nil
+}
+
 // if addr is "" returns a random pool. If addr is given but there's no pool for
 // it one will be created on-the-fly
 func (c *Cluster) pool(addr string) (Client, error) {
@@ -226,17 +251,15 @@ func (c *Cluster) pool(addr string) (Client, error) {
 	return p, nil
 }
 
-// Topo will pick a randdom node in the cluster, call CLUSTER SLOTS on it, and
-// unmarshal the result into a ClusterTopo instance, returning that instance
-func (c *Cluster) Topo() (ClusterTopo, error) {
-	p, err := c.pool("")
-	if err != nil {
-		return ClusterTopo{}, err
-	}
-	return c.topo(p)
+// Topo returns the Cluster's topology as it currently knows it. See
+// ClusterTopo's docs for more on its default order.
+func (c *Cluster) Topo() ClusterTopo {
+	c.l.RLock()
+	defer c.l.RUnlock()
+	return c.topo
 }
 
-func (c *Cluster) topo(p Client) (ClusterTopo, error) {
+func (c *Cluster) getTopo(p Client) (ClusterTopo, error) {
 	var tt ClusterTopo
 	err := p.Do(Cmd(&tt, "CLUSTER", "SLOTS"))
 	return tt, err
@@ -260,11 +283,10 @@ func (c *Cluster) Sync() error {
 // while this method is normally deduplicated by the Sync method's use of
 // dedupe it is perfectly thread-safe on its own and can be used whenever.
 func (c *Cluster) sync(p Client) error {
-	tt, err := c.topo(p)
+	tt, err := c.getTopo(p)
 	if err != nil {
 		return err
 	}
-	tt = tt.Primaries()
 
 	for _, t := range tt {
 		// call pool just to ensure one exists for this addr
@@ -277,7 +299,8 @@ func (c *Cluster) sync(p Client) error {
 	// same time Close _shouldn't_ block significantly
 	c.l.Lock()
 	defer c.l.Unlock()
-	c.tt = tt
+	c.topo = tt
+	c.primTopo = tt.Primaries()
 
 	tm := tt.Map()
 	for addr, p := range c.pools {
@@ -314,7 +337,7 @@ func (c *Cluster) addrForKey(key string) string {
 	s := ClusterSlot([]byte(key))
 	c.l.RLock()
 	defer c.l.RUnlock()
-	for _, t := range c.tt {
+	for _, t := range c.primTopo {
 		for _, slot := range t.Slots {
 			if s >= slot[0] && s < slot[1] {
 				return t.Addr
@@ -426,33 +449,6 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	}
 
 	return c.doInner(a, addr, key, ask, attempts)
-}
-
-// WithPrimaries calls the given callback with the address and Client instance
-// of each primary in the pool. If the callback returns an error that error is
-// returned from WithPrimaries immediately.
-func (c *Cluster) WithPrimaries(fn func(string, Client) error) error {
-	// we get all addrs first, then unlock. Then we go through each primary
-	// individually, locking/unlocking for each one, so that we don't have to
-	// worry as much about the callback blocking pool updates
-	c.l.RLock()
-	addrs := make([]string, 0, len(c.pools))
-	for addr := range c.pools {
-		addrs = append(addrs, addr)
-	}
-	c.l.RUnlock()
-
-	for _, addr := range addrs {
-		c.l.RLock()
-		client, ok := c.pools[addr]
-		c.l.RUnlock()
-		if !ok {
-			continue
-		} else if err := fn(addr, client); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // Close cleans up all goroutines spawned by Cluster and closes all of its
