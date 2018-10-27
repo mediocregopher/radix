@@ -507,8 +507,11 @@ func TestReadNDiscard(t *T) {
 		if err := readNDiscard(r, test.n); err != nil {
 			t.Fatalf("error calling readNDiscard: %s (%#v)", err, test)
 
-		} else if test.discarder && !d.didDiscard {
+		} else if test.discarder && test.n > 0 && !d.didDiscard {
 			t.Fatalf("Discard not called on discarder (%#v)", test)
+
+		} else if test.discarder && test.n == 0 && d.didDiscard {
+			t.Fatalf("Unecessary Discard call (%#v)", test)
 
 		} else if buf.Len() > 0 {
 			t.Fatalf("%d bytes not discarded (%#v)", buf.Len(), test)
@@ -523,4 +526,7 @@ func TestReadNDiscard(t *T) {
 		}
 		assert(test)
 	}
+
+	// edge cases
+	assert(testT{n: 0, discarder: true})
 }
