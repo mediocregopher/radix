@@ -145,10 +145,13 @@ func TestSentinel(t *T) {
 		for i := range secAddrs {
 			assert.Contains(t, gotSecAddrs, secAddrs[i])
 		}
+
+		scc.l.RLock()
 		assert.Len(t, scc.sentinelAddrs, len(sentAddrs))
 		for i := range sentAddrs {
 			assert.Contains(t, scc.sentinelAddrs, sentAddrs[i])
 		}
+		scc.l.RUnlock()
 	}
 
 	assertPoolWorks := func() {
