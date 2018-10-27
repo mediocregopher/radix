@@ -45,7 +45,7 @@ var bfloat float64
 func BenchmarkReadFloat(b *testing.B) {
 	tests := []struct {
 		In string
-		N int
+		N  int
 	}{
 		{"1", 1},
 		{"1.23", 4},
@@ -74,7 +74,7 @@ var bint int64
 func BenchmarkReadInt(b *testing.B) {
 	tests := []struct {
 		In string
-		N int
+		N  int
 	}{
 		{"1", 1},
 		{"123", 3},
@@ -103,7 +103,7 @@ var buint uint64
 func BenchmarkReadUint(b *testing.B) {
 	tests := []struct {
 		In string
-		N int
+		N  int
 	}{
 		{"1", 1},
 		{"123", 123},
@@ -131,7 +131,7 @@ func (nothingReader) Read(p []byte) (n int, err error) {
 
 func BenchmarkReadNAppend(b *testing.B) {
 	for _, n := range []int{0, 64, 512, 4096} {
-		b.Run("N=" + strconv.Itoa(n), func(b *testing.B) {
+		b.Run("N="+strconv.Itoa(n), func(b *testing.B) {
 			var r nothingReader
 			buf := *getBytes()
 
