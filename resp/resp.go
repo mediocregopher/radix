@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"reflect"
 	"strconv"
 	"sync"
@@ -227,9 +226,12 @@ func readNDiscard(r io.Reader, n int) error {
 }
 
 func multiWrite(w io.Writer, bb ...[]byte) error {
-	nb := net.Buffers(bb)
-	_, err := nb.WriteTo(w)
-	return err
+	for _, b := range bb {
+		if _, err := w.Write(b); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func readInt(r io.Reader, n int) (int64, error) {
