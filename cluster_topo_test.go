@@ -6,17 +6,18 @@ import (
 	. "testing"
 
 	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func respArr(ii ...interface{}) resp.Marshaler {
-	var ar resp.Array
+	var ar resp2.Array
 	for _, i := range ii {
 		if m, ok := i.(resp.Marshaler); ok {
 			ar.A = append(ar.A, m)
 		} else {
-			ar.A = append(ar.A, resp.Any{I: i})
+			ar.A = append(ar.A, resp2.Any{I: i})
 		}
 	}
 	return ar

@@ -9,7 +9,7 @@ import (
 	"sync"
 	. "testing"
 
-	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,13 +65,13 @@ func (s *clusterNodeStub) withKey(key string, asking bool, fn func(clusterSlotSt
 	slot, ok := s.clusterDatasetStub.slots[slotI]
 	if !ok {
 		movedStub := s.clusterStub.stubForSlot(slotI)
-		return resp.Error{E: fmt.Errorf("MOVED %d %s", slotI, movedStub.addr)}
+		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, movedStub.addr)}
 
 	} else if _, ok := slot.kv[key]; !ok && slot.migrating != "" {
-		return resp.Error{E: fmt.Errorf("ASK %d %s", slotI, slot.migrating)}
+		return resp2.Error{E: fmt.Errorf("ASK %d %s", slotI, slot.migrating)}
 
 	} else if slot.importing != "" && !asking {
-		return resp.Error{E: fmt.Errorf("MOVED %d %s", slotI, slot.importing)}
+		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, slot.importing)}
 	}
 
 	return fn(slot)
@@ -104,18 +104,18 @@ func (s *clusterNodeStub) newConn() Conn {
 			k := args[1]
 			return s.withKey(k, asking, func(slot clusterSlotStub) interface{} {
 				slot.kv[k] = args[2]
-				return resp.SimpleString{S: "OK"}
+				return resp2.SimpleString{S: "OK"}
 			})
 		case "EVALSHA":
-			return resp.Error{E: errors.New("NOSCRIPT: clusterNodeStub does not support EVALSHA")}
+			return resp2.Error{E: errors.New("NOSCRIPT: clusterNodeStub does not support EVALSHA")}
 		case "EVAL":
 			// see if any keys were sent
 			if len(args) < 3 {
-				return resp.Error{E: errors.New("malformed EVAL command")}
+				return resp2.Error{E: errors.New("malformed EVAL command")}
 			}
 			numKeys, err := strconv.Atoi(args[2])
 			if err != nil {
-				return resp.Error{E: err}
+				return resp2.Error{E: err}
 			} else if numKeys == 0 {
 				return "EVAL: no keys"
 			}
@@ -123,7 +123,7 @@ func (s *clusterNodeStub) newConn() Conn {
 				return "EVAL: success!"
 			})
 		case "PING":
-			return resp.SimpleString{S: "PONG"}
+			return resp2.SimpleString{S: "PONG"}
 		case "CLUSTER":
 			switch strings.ToUpper(args[1]) {
 			case "SLOTS":
@@ -131,7 +131,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			}
 		case "ASKING":
 			asking = true
-			return resp.SimpleString{S: "OK"}
+			return resp2.SimpleString{S: "OK"}
 		case "ADDR":
 			return s.addr
 		case "SCAN":
@@ -149,7 +149,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			return []interface{}{"0", []string{}}
 		}
 
-		return resp.Error{E: fmt.Errorf("unknown command %#v", args)}
+		return resp2.Error{E: fmt.Errorf("unknown command %#v", args)}
 	})
 }
 

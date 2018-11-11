@@ -1,4 +1,4 @@
-package resp
+package resp2
 
 import (
 	"bufio"
@@ -10,18 +10,19 @@ import (
 	. "testing"
 
 	"github.com/mediocregopher/mediocre-go-lib/mrand"
+	"github.com/mediocregopher/radix.v3/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRESPTypes(t *T) {
-	newLR := func(s string) LenReader {
+	newLR := func(s string) resp.LenReader {
 		buf := bytes.NewBufferString(s)
-		return NewLenReader(buf, int64(buf.Len()))
+		return resp.NewLenReader(buf, int64(buf.Len()))
 	}
 
 	type encodeTest struct {
-		in  Marshaler
+		in  resp.Marshaler
 		out string
 	}
 
@@ -45,9 +46,9 @@ func TestRESPTypes(t *T) {
 			{in: &ArrayHeader{N: 5}, out: "*5\r\n"},
 			{in: &ArrayHeader{N: -1}, out: "*-1\r\n"},
 			{in: &Array{}, out: "*-1\r\n"},
-			{in: &Array{A: []Marshaler{}}, out: "*0\r\n"},
+			{in: &Array{A: []resp.Marshaler{}}, out: "*0\r\n"},
 			{
-				in: &Array{A: []Marshaler{
+				in: &Array{A: []resp.Marshaler{
 					SimpleString{S: "foo"},
 					Int{I: 5},
 				}},
@@ -64,7 +65,7 @@ func TestRESPTypes(t *T) {
 
 		br := bufio.NewReader(buf)
 		umr := reflect.New(reflect.TypeOf(et.in).Elem())
-		um, ok := umr.Interface().(Unmarshaler)
+		um, ok := umr.Interface().(resp.Unmarshaler)
 		if !ok {
 			br.Discard(len(et.out))
 			continue
@@ -85,7 +86,7 @@ func TestRESPTypes(t *T) {
 		br := bufio.NewReader(buf)
 		for _, et := range ett {
 			umr := reflect.New(reflect.TypeOf(et.in).Elem())
-			um, ok := umr.Interface().(Unmarshaler)
+			um, ok := umr.Interface().(resp.Unmarshaler)
 			if !ok {
 				br.Discard(len(et.out))
 				continue

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	. "testing"
 
-	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -321,7 +321,7 @@ func TestMaybeNil(t *T) {
 	for _, mnt := range mntests {
 		buf := bytes.NewBufferString(mnt.b)
 		{
-			var rm resp.RawMessage
+			var rm resp2.RawMessage
 			mn := MaybeNil{Rcv: &rm}
 			require.Nil(t, mn.UnmarshalRESP(bufio.NewReader(buf)))
 			if mnt.isNil {

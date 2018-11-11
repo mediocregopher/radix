@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 )
 
 type bufferAddr struct {
@@ -193,11 +194,11 @@ func (s *stub) Encode(m resp.Marshaler) error {
 	if err := m.MarshalRESP(buf); err != nil {
 		return err
 	}
-	rm := resp.RawMessage(buf.Bytes())
+	rm := resp2.RawMessage(buf.Bytes())
 
 	// unmarshal that into a string slice
 	var ss []string
-	if err := rm.UnmarshalInto(resp.Any{I: &ss}); err != nil {
+	if err := rm.UnmarshalInto(resp2.Any{I: &ss}); err != nil {
 		return err
 	}
 
@@ -210,7 +211,7 @@ func (s *stub) Encode(m resp.Marshaler) error {
 	} else if err, _ := ret.(error); err != nil {
 		return err
 	}
-	return s.buffer.Encode(resp.Any{I: ret})
+	return s.buffer.Encode(resp2.Any{I: ret})
 }
 
 func (s *stub) NetConn() net.Conn {

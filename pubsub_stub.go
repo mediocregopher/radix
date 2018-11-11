@@ -8,9 +8,10 @@ import (
 	"sync"
 
 	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 )
 
-var errPubSubMode = resp.Error{
+var errPubSubMode = resp2.Error{
 	E: errors.New("ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context"),
 }
 
@@ -79,7 +80,7 @@ func (s *pubSubStub) innerFn(ss []string) interface{} {
 	writeRes := func(mm multiMarshal, cmd, subj string) multiMarshal {
 		c := len(s.subbed) + len(s.psubbed)
 		s.pubsubMode = c > 0
-		return append(mm, resp.Any{I: []interface{}{cmd, subj, c}})
+		return append(mm, resp2.Any{I: []interface{}{cmd, subj, c}})
 	}
 
 	switch strings.ToUpper(ss[0]) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 )
 
 // dedupe is used to deduplicate a function invocation, so if multiple
@@ -359,7 +360,7 @@ func (ac askConn) Encode(m resp.Marshaler) error {
 }
 
 func (ac askConn) Decode(um resp.Unmarshaler) error {
-	if err := ac.Conn.Decode(resp.Any{}); err != nil {
+	if err := ac.Conn.Decode(resp2.Any{}); err != nil {
 		return err
 	}
 	return ac.Conn.Decode(um)

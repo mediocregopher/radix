@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 )
 
 type timeoutOkConn struct {
@@ -75,24 +76,24 @@ func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 	}
 
 	if m.Type == "message" {
-		marshal(resp.ArrayHeader{N: 3})
-		marshal(resp.BulkString{S: m.Type})
+		marshal(resp2.ArrayHeader{N: 3})
+		marshal(resp2.BulkString{S: m.Type})
 	} else if m.Type == "pmessage" {
-		marshal(resp.ArrayHeader{N: 4})
-		marshal(resp.BulkString{S: m.Type})
-		marshal(resp.BulkString{S: m.Pattern})
+		marshal(resp2.ArrayHeader{N: 4})
+		marshal(resp2.BulkString{S: m.Type})
+		marshal(resp2.BulkString{S: m.Pattern})
 	} else {
 		return errors.New("unknown message Type")
 	}
-	marshal(resp.BulkString{S: m.Channel})
-	marshal(resp.BulkStringBytes{B: m.Message})
+	marshal(resp2.BulkString{S: m.Channel})
+	marshal(resp2.BulkStringBytes{B: m.Message})
 	return err
 }
 
 // UnmarshalRESP implements the Unmarshaler interface
 func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 	bb := make([][]byte, 0, 4)
-	if err := (resp.Any{I: &bb}).UnmarshalRESP(br); err != nil {
+	if err := (resp2.Any{I: &bb}).UnmarshalRESP(br); err != nil {
 		return err
 	}
 
@@ -267,7 +268,7 @@ func (c *pubSubConn) publish(m PubSubMessage) {
 
 func (c *pubSubConn) spin() {
 	for {
-		var rm resp.RawMessage
+		var rm resp2.RawMessage
 		err := c.conn.Decode(&rm)
 		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 			continue

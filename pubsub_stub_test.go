@@ -5,7 +5,7 @@ import (
 	. "testing"
 	"time"
 
-	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,11 +24,11 @@ func TestPubSubStub(t *T) {
 	}
 
 	assertEncode := func(in ...string) {
-		require.Nil(t, conn.Encode(resp.Any{I: in}))
+		require.Nil(t, conn.Encode(resp2.Any{I: in}))
 	}
 	assertDecode := func(exp ...string) {
 		var into []string
-		require.Nil(t, conn.Decode(resp.Any{I: &into}))
+		require.Nil(t, conn.Decode(resp2.Any{I: &into}))
 		assert.Equal(t, exp, into)
 	}
 
@@ -44,7 +44,7 @@ func TestPubSubStub(t *T) {
 
 	// should error because we're in pubsub mode
 	assertEncode("wat")
-	assert.Equal(t, errPubSubMode.Error(), conn.Decode(resp.Any{}).Error())
+	assert.Equal(t, errPubSubMode.Error(), conn.Decode(resp2.Any{}).Error())
 
 	assertEncode("PING")
 	assertDecode("pong", "")

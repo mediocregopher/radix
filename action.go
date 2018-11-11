@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix.v3/resp/resp2"
 )
 
 // Action can perform one or more tasks using a Conn
@@ -101,7 +102,7 @@ func cmdString(m resp.Marshaler) string {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
 	var ss []string
-	err := resp.RawMessage(buf.Bytes()).UnmarshalInto(resp.Any{I: &ss})
+	err := resp2.RawMessage(buf.Bytes()).UnmarshalInto(resp2.Any{I: &ss})
 	if err != nil {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
@@ -115,14 +116,14 @@ func marshalBulkString(prevErr error, w io.Writer, str string) error {
 	if prevErr != nil {
 		return prevErr
 	}
-	return resp.BulkString{S: str}.MarshalRESP(w)
+	return resp2.BulkString{S: str}.MarshalRESP(w)
 }
 
 func marshalBulkStringBytes(prevErr error, w io.Writer, b []byte) error {
 	if prevErr != nil {
 		return prevErr
 	}
-	return resp.BulkStringBytes{B: b}.MarshalRESP(w)
+	return resp2.BulkStringBytes{B: b}.MarshalRESP(w)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -254,13 +255,13 @@ func (c *cmdAction) Keys() []string {
 
 func (c *cmdAction) flatMarshalRESP(w io.Writer) error {
 	var err error
-	a := resp.Any{
+	a := resp2.Any{
 		I:                     c.flatArgs,
 		MarshalBulkString:     true,
 		MarshalNoArrayHeaders: true,
 	}
 	arrL := 2 + a.NumElems()
-	err = resp.ArrayHeader{N: arrL}.MarshalRESP(w)
+	err = resp2.ArrayHeader{N: arrL}.MarshalRESP(w)
 	err = marshalBulkString(err, w, c.cmd)
 	err = marshalBulkString(err, w, c.flatKey[0])
 	if err != nil {
@@ -274,7 +275,7 @@ func (c *cmdAction) MarshalRESP(w io.Writer) error {
 		return c.flatMarshalRESP(w)
 	}
 
-	err := resp.ArrayHeader{N: len(c.args) + 1}.MarshalRESP(w)
+	err := resp2.ArrayHeader{N: len(c.args) + 1}.MarshalRESP(w)
 	err = marshalBulkString(err, w, c.cmd)
 	for i := range c.args {
 		err = marshalBulkString(err, w, c.args[i])
@@ -283,7 +284,7 @@ func (c *cmdAction) MarshalRESP(w io.Writer) error {
 }
 
 func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
-	if err := (resp.Any{I: c.rcv}).UnmarshalRESP(br); err != nil {
+	if err := (resp2.Any{I: c.rcv}).UnmarshalRESP(br); err != nil {
 		return err
 	}
 	cmdActionPool.Put(c)
@@ -318,7 +319,7 @@ type MaybeNil struct {
 
 // UnmarshalRESP implements the method for the resp.Unmarshaler interface.
 func (mn *MaybeNil) UnmarshalRESP(br *bufio.Reader) error {
-	var rm resp.RawMessage
+	var rm resp2.RawMessage
 	if err := rm.UnmarshalRESP(br); err != nil {
 		return err
 	} else if rm.IsNil() {
@@ -326,7 +327,7 @@ func (mn *MaybeNil) UnmarshalRESP(br *bufio.Reader) error {
 		return nil
 	}
 
-	return rm.UnmarshalInto(resp.Any{I: mn.Rcv})
+	return rm.UnmarshalInto(resp2.Any{I: mn.Rcv})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -384,7 +385,7 @@ func (ec *evalAction) Keys() []string {
 
 func (ec *evalAction) MarshalRESP(w io.Writer) error {
 	// EVAL(SHA) script/sum numkeys args...
-	if err := (resp.ArrayHeader{N: 3 + len(ec.args)}).MarshalRESP(w); err != nil {
+	if err := (resp2.ArrayHeader{N: 3 + len(ec.args)}).MarshalRESP(w); err != nil {
 		return err
 	}
 
@@ -410,7 +411,7 @@ func (ec *evalAction) Run(conn Conn) error {
 		if err := conn.Encode(ec); err != nil {
 			return err
 		}
-		return conn.Decode(resp.Any{I: ec.rcv})
+		return conn.Decode(resp2.Any{I: ec.rcv})
 	}
 
 	err := run(false)
