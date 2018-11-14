@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix/v3/resp"
 )
 
 // ErrPoolEmpty is used by Pools created using the PoolOnEmptyErrAfter option

@@ -10,7 +10,7 @@ import (
 	. "testing"
 
 	"github.com/mediocregopher/mediocre-go-lib/mrand"
-	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/mediocregopher/radix.v3/resp"
+	"github.com/mediocregopher/radix/v3/resp"
 )
 
 var delim = []byte{'\r', '\n'}

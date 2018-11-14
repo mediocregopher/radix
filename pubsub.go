@@ -9,8 +9,8 @@ import (
 	"net"
 	"sync"
 
-	"github.com/mediocregopher/radix.v3/resp"
-	"github.com/mediocregopher/radix.v3/resp/resp2"
+	"github.com/mediocregopher/radix/v3/resp"
+	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
 
 type timeoutOkConn struct {
