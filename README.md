@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/mediocregopher/radix/v3.svg)](https://travis-ci.org/mediocregopher/radix/v3)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mediocregopher/radix/v3)](https://goreportcard.com/report/github.com/mediocregopher/radix/v3)
-[![GoDoc](https://godoc.org/github.com/mediocregopher/radix/v3?status.svg)][godoc]
+[![GoDoc](https://godoc.org/github.com/mediocregopher/radix?status.svg)][godoc]
 
 Radix is a full-featured [Redis][redis] client for Go. See the [GoDoc][godoc]
 for documentation and general usage examples.
@@ -91,7 +91,7 @@ Unless otherwise noted, the source files are distributed under the *MIT License*
 found in the LICENSE.txt file.
 
 [redis]: http://redis.io
-[godoc]: https://godoc.org/github.com/mediocregopher/radix/v3
+[godoc]: https://godoc.org/github.com/mediocregopher/radix
 [eval]: https://redis.io/commands/eval
 [scan]: https://redis.io/commands/scan
 [pipelining]: https://redis.io/topics/pipelining
