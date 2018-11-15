@@ -7,23 +7,30 @@
 Radix is a full-featured [Redis][redis] client for Go. See the [GoDoc][godoc]
 for documentation and general usage examples.
 
-**This project was recently changed from `radix.v3` to `radix/v3`, to account
-for go's new [module](https://github.com/golang/go/wiki/Modules). As long as you
-are using the latest updated of your major go version (1.9.7+, 1.10.3+, 1.11+)
-the go get should work correctly with the new import path.**
+This is the third revision of this project, the previous one has been deprecated
+but can be found [here](https://github.com/mediocregopher/radix.v2).
+
+**This project's name was recently changed from `radix.v3` to `radix`, to
+account for go's new [module][module] system. As long as you are using the
+latest update of your major go version (1.9.7+, 1.10.3+, 1.11+) the module-aware
+go get should work correctly with the new import path.**
 
 **I'm sorry to anyone for whom this change broke their build, I tried very hard
 to not have to do it, but ultimately it was the only way that made sense for the
 future. Hopefully the only thing needed to fix the breakage is to change the
-import paths to and re-run 'go get'.**
+import paths and re-run 'go get'.**
 
-## Installation
+## Installation and Usage
+
+[Module][module]-aware mode:
 
     go get github.com/mediocregopher/radix/v3
+    // import github.com/mediocregopher/radix/v3
 
-Or, if you're using `go mod`:
+Legacy GOPATH mode:
 
-    go mod edit -require github.com/mediocregopher/radix/v3@latest
+    go get github.com/mediocregopher/radix
+    // import github.com/mediocregopher/radix
 
 ## Testing
 
@@ -91,3 +98,4 @@ found in the LICENSE.txt file.
 [pubsub]: https://redis.io/topics/pubsub
 [sentinel]: http://redis.io/topics/sentinel
 [cluster]: http://redis.io/topics/cluster-spec
+[module]: https://github.com/golang/go/wiki/Modules
