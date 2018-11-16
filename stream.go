@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"io"
@@ -93,14 +94,12 @@ func (s *StreamEntryID) UnmarshalRESP(br *bufio.Reader) error {
 		return errInvalidStreamID
 	}
 
-	// TODO(nussjustin): use readUint from the resp2 package
-	time, err := strconv.ParseUint(string(bsb.B[:split]), 10, 64)
+	time, err := bytesutil.ParseUint(bsb.B[:split])
 	if err != nil {
 		return errInvalidStreamID
 	}
 
-	// TODO(nussjustin): use readUint from the resp2 package
-	seq, err := strconv.ParseUint(string(bsb.B[split+1:]), 10, 64)
+	seq, err := bytesutil.ParseUint(bsb.B[split+1:])
 	if err != nil {
 		return errInvalidStreamID
 	}
