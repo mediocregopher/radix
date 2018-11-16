@@ -3,12 +3,13 @@ package radix
 import (
 	"bufio"
 	"bytes"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"math"
 	"strings"
 	. "testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStreamEntryID(t *T) {
@@ -346,7 +347,6 @@ func TestStreamEntry(t *T) {
 	assert.True(t, entries[0].ID.Before(entries[1].ID))
 }
 
-
 func BenchmarkStreamEntry(b *B) {
 	c := dial()
 	defer c.Close()
@@ -359,7 +359,7 @@ func BenchmarkStreamEntry(b *B) {
 	// preallocate so we don't measure the slice allocation cost
 	entries := make([]StreamEntry, 0, 1)
 
-	for i := 0; i< b.N; i++ {
+	for i := 0; i < b.N; i++ {
 		entries = entries[:0]
 		benchErr = c.Do(Cmd(&entries, "XRANGE", stream, "-", "+"))
 	}
