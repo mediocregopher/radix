@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"io"
 	"reflect"
 	. "testing"
@@ -568,7 +569,7 @@ func TestRawMessage(t *T) {
 
 func TestReadNAppend(t *T) {
 	buf := []byte("hello")
-	buf, err := readNAppend(bytes.NewReader([]byte(" world!")), buf, len(" world"))
+	buf, err := bytesutil.ReadNAppend(bytes.NewReader([]byte(" world!")), buf, len(" world"))
 	require.Nil(t, err)
 	assert.Len(t, buf, len("hello world"))
 	assert.Equal(t, buf, []byte("hello world"))
@@ -603,7 +604,7 @@ func TestReadNDiscard(t *T) {
 			r = d
 		}
 
-		if err := readNDiscard(r, test.n); err != nil {
+		if err := bytesutil.ReadNDiscard(r, test.n); err != nil {
 			t.Fatalf("error calling readNDiscard: %s (%#v)", err, test)
 
 		} else if test.discarder && test.n > 0 && !d.didDiscard {

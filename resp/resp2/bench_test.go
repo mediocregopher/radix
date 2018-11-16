@@ -3,6 +3,7 @@ package resp2
 import (
 	"bufio"
 	"fmt"
+	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"strconv"
 	"strings"
 	"testing"
@@ -63,7 +64,7 @@ func BenchmarkReadFloat(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				r.Reset(input)
-				bfloat, _ = readFloat(&r, 64, n)
+				bfloat, _ = bytesutil.ReadFloat(&r, 64, n)
 			}
 		})
 	}
@@ -92,7 +93,7 @@ func BenchmarkReadInt(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				r.Reset(input)
-				bint, _ = readInt(&r, n)
+				bint, _ = bytesutil.ReadInt(&r, n)
 			}
 		})
 	}
@@ -117,7 +118,7 @@ func BenchmarkReadUint(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				r.Reset(input)
-				buint, _ = readUint(&r, n)
+				buint, _ = bytesutil.ReadUint(&r, n)
 			}
 		})
 	}
@@ -133,12 +134,12 @@ func BenchmarkReadNAppend(b *testing.B) {
 	for _, n := range []int{0, 64, 512, 4096} {
 		b.Run("N="+strconv.Itoa(n), func(b *testing.B) {
 			var r nothingReader
-			buf := *getBytes()
+			buf := *bytesutil.GetBytes()
 
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				if _, err := readNAppend(&r, buf, n); err != nil {
+				if _, err := bytesutil.ReadNAppend(&r, buf, n); err != nil {
 					b.Fatal(err)
 				}
 			}
