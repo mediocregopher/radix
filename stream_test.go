@@ -589,6 +589,7 @@ func TestStreamReader(t *T) {
 
 			end := time.Now()
 
+			// FIXME(nussjustin): Flacky
 			assert.WithinDuration(t, start.Add(500 * time.Millisecond), end, 100 * time.Millisecond)
 
 			idChan := make(chan StreamEntryID, 1)
@@ -631,15 +632,17 @@ func BenchmarkStreamReader(b *B) {
 	})
 
 	b.Run("NoGroup", func(b *B) {
+		entries := make(map[string][]StreamEntry)
+		streams := map[string]*StreamEntryID{
+			stream: {Time: 0, Seq: 0},
+		}
+
 		for i := 0; i < b.N; i++ {
 			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: {Time: 0, Seq: 0},
-				},
+				Streams: streams,
 				Block: -1,
 			})
 
-			var entries map[string][]StreamEntry
 			for r.Next(&entries) > 0 {
 				benchErr = r.Err()
 			}
