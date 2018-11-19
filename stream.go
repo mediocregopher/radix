@@ -84,9 +84,10 @@ var errInvalidStreamID = errors.New("invalid stream entry id")
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
 func (s *StreamEntryID) UnmarshalRESP(br *bufio.Reader) error {
-	var buf [maxUint64Len*2 + 1]byte
+	buf := bytesutil.GetBytes()
+	defer bytesutil.PutBytes(buf)
 
-	bsb := resp2.BulkStringBytes{B: buf[:0]}
+	bsb := resp2.BulkStringBytes{B: (*buf)[:0]}
 	if err := bsb.UnmarshalRESP(br); err != nil {
 		return err
 	}
