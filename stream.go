@@ -150,7 +150,39 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 		return err
 	}
 
-	return resp2.Any{I: &s.Fields}.UnmarshalRESP(br)
+	return s.unmarshalFields(br)
+}
+
+func (s *StreamEntry) unmarshalFields(br *bufio.Reader) error {
+	// resp2.Any{I: &s.Fields}.UnmarshalRESP(br)
+	var ah resp2.ArrayHeader
+	if err := ah.UnmarshalRESP(br); err != nil {
+		return err
+	}
+	if ah.N % 2 != 0 {
+		return errInvalidStreamEntry
+	}
+
+	if s.Fields == nil {
+		s.Fields = make(map[string]string, ah.N / 2)
+	} else {
+		for k := range s.Fields {
+			delete(s.Fields, k)
+		}
+	}
+
+	var bs resp2.BulkString
+	for i := 0; i < ah.N; i+= 2 {
+		if err := bs.UnmarshalRESP(br); err != nil {
+			return err
+		}
+		key := bs.S
+		if err := bs.UnmarshalRESP(br); err != nil {
+			return err
+		}
+		s.Fields[key] = bs.S
+	}
+	return nil
 }
 
 // StreamReaderOpts contains various options given for NewStreamReader that influence the behaviour.
