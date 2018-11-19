@@ -108,13 +108,14 @@ func Expand(b []byte, to int) []byte {
 // effectively an assert that the reader data starts with the given slice,
 // discarding the slice at the same time
 func BufferedPrefix(br *bufio.Reader, prefix []byte) error {
-	b, err := br.ReadSlice(prefix[len(prefix)-1])
+	b, err := br.Peek(len(prefix))
 	if err != nil {
 		return err
 	} else if !bytes.Equal(b, prefix) {
 		return fmt.Errorf("expected prefix %q, got %q", prefix, b)
 	}
-	return nil
+	_, err = br.Discard(len(prefix))
+	return err
 }
 
 // reads bytes up to a delim and returns them, or an error
