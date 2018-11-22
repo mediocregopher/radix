@@ -435,14 +435,14 @@ func TestStreamReader(t *T) {
 			id1 := addStreamEntry(t, c, stream1)
 
 			var entries map[string][]StreamEntry
-			assert.Equal(t, 1, r.Next(&entries), "got no entries")
+			assert.True(t, r.Next(&entries), "got no entries")
 			assert.Len(t, entries, 1)
 			assert.Len(t, entries[stream1], 1)
 			assert.Equal(t, id1, entries[stream1][0].ID)
 
 			id2 := addStreamEntry(t, c, stream2)
 
-			assert.Equal(t, 1, r.Next(&entries), "got no entries")
+			assert.True(t, r.Next(&entries), "got no entries")
 			assert.Len(t, entries, 2)
 			assert.Len(t, entries[stream1], 0)
 			assert.Len(t, entries[stream2], 1)
@@ -474,22 +474,22 @@ func TestStreamReader(t *T) {
 
 			var entries map[string][]StreamEntry
 
-			assert.Equal(t, 2, r.Next(&entries))
+			assert.True(t, r.Next(&entries))
 			assert.Len(t, entries, 2)
 			assert.Len(t, entries[stream1], 2)
 			assert.Len(t, entries[stream2], 2)
 
-			assert.Equal(t, 2, r.Next(&entries))
+			assert.True(t, r.Next(&entries))
 			assert.Len(t, entries, 2)
 			assert.Len(t, entries[stream1], 2)
 			assert.Len(t, entries[stream2], 1)
 
-			assert.Equal(t, 1, r.Next(&entries))
+			assert.True(t, r.Next(&entries))
 			assert.Len(t, entries, 2)
 			assert.Len(t, entries[stream1], 1)
 			assert.Len(t, entries[stream2], 0)
 
-			assert.Equal(t, 0, r.Next(&entries))
+			assert.False(t, r.Next(&entries))
 			assert.Len(t, entries, 2)
 			assert.Len(t, entries[stream1], 0)
 			assert.Len(t, entries[stream2], 0)
@@ -541,7 +541,7 @@ func TestStreamReader(t *T) {
 				idChan <- addStreamEntry(t, c, stream)
 			}()
 
-			assert.Equal(t, 1, r.Next(&entries))
+			assert.True(t, r.Next(&entries))
 			assert.Len(t, entries[stream], 1)
 			id := <-idChan
 			assert.Equal(t, id, entries[stream][0].ID)
@@ -561,7 +561,7 @@ func TestStreamReader(t *T) {
 				idChan <- addStreamEntry(t, c, stream)
 			}()
 
-			assert.Equal(t, 1, r.Next(&entries))
+			assert.True(t, r.Next(&entries))
 			assert.Len(t, entries[stream], 1)
 			id = <-idChan
 			assert.Equal(t, id, entries[stream][0].ID)
@@ -584,7 +584,7 @@ func TestStreamReader(t *T) {
 			start := time.Now()
 
 			var entries map[string][]StreamEntry
-			assert.Zero(t, r.Next(&entries))
+			assert.False(t, r.Next(&entries))
 			assert.NoError(t, r.Err())
 
 			end := time.Now()
@@ -600,7 +600,7 @@ func TestStreamReader(t *T) {
 				idChan <- addStreamEntry(t, c, stream)
 			})
 
-			assert.Equal(t, 1, r.Next(&entries))
+			assert.True(t, r.Next(&entries))
 			assert.Equal(t, <-idChan, entries[stream][0].ID)
 			assert.NoError(t, r.Err())
 		})
@@ -643,7 +643,7 @@ func BenchmarkStreamReader(b *B) {
 				Block: -1,
 			})
 
-			for r.Next(&entries) > 0 {
+			for r.Next(&entries) {
 				benchErr = r.Err()
 			}
 			benchErr = r.Err()
