@@ -234,10 +234,10 @@ type StreamReader interface {
 	// If *entries is nil, a new map will be allocated. If *entries is not empty, Next will
 	// override the values for all streams, even if no new entries were returned.
 	//
-	// Next returns the number of streams with new entries or 0 if there was an error.
+	// Next returns true if at least one stream was read and false otherwise or if there was an error.
 	//
-	// Once an error occured (Err() != nil), all future calls to Next will return 0.
-	Next(entries *map[string][]StreamEntry) int
+	// If there was an error, all future calls to Next will return false.
+	Next(entries *map[string][]StreamEntry) bool
 }
 
 // NewStreamReader returns a new StreamReader for the given client.
@@ -328,9 +328,9 @@ func (sr *streamReader) Err() error {
 }
 
 // Next implements the StreamReader interface.
-func (sr *streamReader) Next(entries *map[string][]StreamEntry) int {
+func (sr *streamReader) Next(entries *map[string][]StreamEntry) bool {
 	if sr.err != nil {
-		return 0
+		return false
 	}
 
 	if *entries == nil {
@@ -342,14 +342,14 @@ func (sr *streamReader) Next(entries *map[string][]StreamEntry) int {
 
 	sr.unmarshaler.entries = *entries
 	if sr.err = sr.do(); sr.err != nil {
-		return 0
+		return false
 	}
 	for k, v := range *entries {
 		if len(v) > 0 {
 			sr.ids[k] = v[len(v)-1].ID.String()
 		}
 	}
-	return sr.unmarshaler.n
+	return sr.unmarshaler.n > 0
 }
 
 // streamReaderUnmarshaler implements unmarshaling of XREAD and XREADGROUP responses.
