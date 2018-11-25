@@ -50,6 +50,18 @@ func TestStub(t *T) {
 	}
 }
 
+func TestStubPipeline(t *T) {
+	stub := testStub()
+	var out string
+	err := stub.Do(Pipeline(
+		Cmd(nil, "SET", "foo", "bar"),
+		Cmd(&out, "GET", "foo"),
+	))
+
+	require.Nil(t, err)
+	assert.Equal(t, "bar", out)
+}
+
 func TestStubLockingTimeout(t *T) {
 	stub := testStub()
 	wg := new(sync.WaitGroup)

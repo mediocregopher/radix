@@ -194,24 +194,35 @@ func (s *stub) Encode(m resp.Marshaler) error {
 	if err := m.MarshalRESP(buf); err != nil {
 		return err
 	}
-	rm := resp2.RawMessage(buf.Bytes())
+	br := bufio.NewReader(buf)
 
-	// unmarshal that into a string slice
-	var ss []string
-	if err := rm.UnmarshalInto(resp2.Any{I: &ss}); err != nil {
-		return err
+	var rm resp2.RawMessage
+	for {
+		if buf.Len() == 0 && br.Buffered() == 0 {
+			break
+		} else if err := rm.UnmarshalRESP(br); err != nil {
+			return err
+		}
+		// unmarshal that into a string slice
+		var ss []string
+		if err := rm.UnmarshalInto(resp2.Any{I: &ss}); err != nil {
+			return err
+		}
+
+		// get return from callback. Results implementing resp.Marshaler are
+		// assumed to be wanting to be written in all cases, otherwise if the
+		// result is an error it is assumed to want to be returned directly.
+		ret := s.fn(ss)
+		if m, ok := ret.(resp.Marshaler); ok {
+			return s.buffer.Encode(m)
+		} else if err, _ := ret.(error); err != nil {
+			return err
+		} else if err = s.buffer.Encode(resp2.Any{I: ret}); err != nil {
+			return err
+		}
 	}
 
-	// get return from callback. Results implementing resp.Marshaler are assumed
-	// to be wanting to be written in all cases, otherwise if the result is an
-	// error it is assumed to want to be returned directly.
-	ret := s.fn(ss)
-	if m, ok := ret.(resp.Marshaler); ok {
-		return s.buffer.Encode(m)
-	} else if err, _ := ret.(error); err != nil {
-		return err
-	}
-	return s.buffer.Encode(resp2.Any{I: ret})
+	return nil
 }
 
 func (s *stub) NetConn() net.Conn {
