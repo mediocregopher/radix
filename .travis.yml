@@ -2,7 +2,8 @@
 language: go
 go:
   - "1.11"
-  - "1.10"
+# disabled due to go dep not being supported on travis
+#  - "1.10"
 
 services:
   - redis-server
