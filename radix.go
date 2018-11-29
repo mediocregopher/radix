@@ -40,8 +40,31 @@
 //	err := client.Do(radix.Cmd(&buzMap, "HGETALL", "buz"))
 //
 // FlatCmd can also be used if you wish to use non-string arguments like
-// integers, slices, or maps, and have them automatically be flattened into a
-// single string slice.
+// integers, slices, maps, or structs, and have them automatically be flattened
+// into a single string slice.
+//
+// Struct Scanning
+//
+// Cmd and FlatCmd can also unmarshal results into a struct. The results must be
+// a key/value array, such as that returned by HGETALL. Exported field names
+// will be used as keys, unless the fields have the "redis" tag:
+//
+//	type MyType struct {
+//		Foo string               // Will be populated with the value for key "Foo"
+//		Bar string `redis:"BAR"` // Will be populated with the value for key "BAR"
+//		Baz string `redis:"-"`   // Will not be populated
+//	}
+//
+// Embedded struct will inline that struct's fields into the parent's:
+//
+//	type MyOtherType struct {
+//		// adds fields "Foo" and "BAR" (from above example) to MyOtherType
+//		MyType
+//		Biz int
+//	}
+//
+// The same rules for field naming apply when a struct is passed into FlatCmd as
+// an argument.
 //
 // Actions
 //

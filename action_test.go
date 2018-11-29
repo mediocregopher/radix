@@ -100,7 +100,7 @@ func TestCmdActionStreams(t *T) {
 	}
 }
 
-func TestFlatAction(t *T) {
+func TestFlatCmdAction(t *T) {
 	c := dial()
 	key := randStr()
 	m := map[string]string{

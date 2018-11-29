@@ -572,9 +572,15 @@ var byteSliceT = reflect.TypeOf([]byte{})
 // Any{I: [][]string{{"foo"}, {"bar", "baz"}, {}}}.NumElems() == 3
 //
 func (a Any) NumElems() int {
-	vv := reflect.ValueOf(a.I)
+	return numElems(reflect.ValueOf(a.I))
+}
+
+func numElems(vv reflect.Value) int {
+	vv = reflect.Indirect(vv)
+
 	switch vv.Kind() {
 	case reflect.Slice, reflect.Array:
+		// TODO does []rune need extra support here?
 		if vv.Type() == byteSliceT {
 			return 1
 		}
@@ -582,7 +588,7 @@ func (a Any) NumElems() int {
 		l := vv.Len()
 		var c int
 		for i := 0; i < l; i++ {
-			c += Any{I: vv.Index(i).Interface()}.NumElems()
+			c += numElems(vv.Index(i))
 		}
 		return c
 
@@ -590,14 +596,49 @@ func (a Any) NumElems() int {
 		kkv := vv.MapKeys()
 		var c int
 		for _, kv := range kkv {
-			c += Any{I: kv.Interface()}.NumElems()
-			c += Any{I: vv.MapIndex(kv).Interface()}.NumElems()
+			c += numElems(kv)
+			c += numElems(vv.MapIndex(kv))
 		}
 		return c
+
+	case reflect.Interface:
+		return numElems(vv.Elem())
+
+	case reflect.Struct:
+		return numElemsStruct(vv, true)
 
 	default:
 		return 1
 	}
+}
+
+// this is separated out of numElems because marshalStruct is only given the
+// reflect.Value and needs to know the numElems, so it wouldn't make sense to
+// recast to an interface{} to pass into NumElems, it would just get turned into
+// a reflect.Value again.
+func numElemsStruct(vv reflect.Value, flat bool) int {
+	tt := vv.Type()
+	l := vv.NumField()
+	var c int
+	for i := 0; i < l; i++ {
+		ft, fv := tt.Field(i), vv.Field(i)
+		if ft.Anonymous {
+			if fv = reflect.Indirect(fv); fv.IsValid() { // fv isn't nil
+				c += numElemsStruct(fv, flat)
+			}
+			continue
+		} else if ft.PkgPath != "" || ft.Tag.Get("redis") == "-" {
+			continue // continue
+		}
+
+		c++ // for the key
+		if flat {
+			c += numElems(fv)
+		} else {
+			c++
+		}
+	}
+	return c
 }
 
 // MarshalRESP implements the Marshaler method
@@ -685,7 +726,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		if a.MarshalNoArrayHeaders || err != nil {
 			return
 		}
-		err = (ArrayHeader{N: l}.MarshalRESP(w))
+		err = ArrayHeader{N: l}.MarshalRESP(w)
 	}
 	arrVal := func(v interface{}) {
 		if err != nil {
@@ -697,10 +738,8 @@ func (a Any) MarshalRESP(w io.Writer) error {
 	switch vv.Kind() {
 	case reflect.Slice, reflect.Array:
 		if vv.IsNil() && !a.MarshalNoArrayHeaders {
-			err = multiWrite(w, nilArray)
-			break
+			return multiWrite(w, nilArray)
 		}
-
 		l := vv.Len()
 		arrHeader(l)
 		for i := 0; i < l; i++ {
@@ -709,8 +748,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 
 	case reflect.Map:
 		if vv.IsNil() && !a.MarshalNoArrayHeaders {
-			err = multiWrite(w, nilArray)
-			break
+			return multiWrite(w, nilArray)
 		}
 		kkv := vv.MapKeys()
 		arrHeader(len(kkv) * 2)
@@ -719,11 +757,52 @@ func (a Any) MarshalRESP(w io.Writer) error {
 			arrVal(vv.MapIndex(kv).Interface())
 		}
 
+	case reflect.Struct:
+		return a.marshalStruct(w, vv, false)
+
 	default:
 		return fmt.Errorf("could not marshal value of type %T", a.I)
 	}
 
 	return err
+}
+
+func (a Any) marshalStruct(w io.Writer, vv reflect.Value, inline bool) error {
+	var err error
+	if !a.MarshalNoArrayHeaders && !inline {
+		numElems := numElemsStruct(vv, a.MarshalNoArrayHeaders)
+		if err = (ArrayHeader{N: numElems}).MarshalRESP(w); err != nil {
+			return err
+		}
+	}
+
+	tt := vv.Type()
+	l := vv.NumField()
+	for i := 0; i < l; i++ {
+		ft, fv := tt.Field(i), vv.Field(i)
+		tag := ft.Tag.Get("redis")
+		if ft.Anonymous {
+			if fv = reflect.Indirect(fv); !fv.IsValid() { // fv is nil
+				continue
+			} else if err := a.marshalStruct(w, fv, true); err != nil {
+				return err
+			}
+			continue
+		} else if ft.PkgPath != "" || tag == "-" {
+			continue // unexported
+		}
+
+		keyName := ft.Name
+		if tag != "" {
+			keyName = tag
+		}
+		if err := (BulkString{S: keyName}).MarshalRESP(w); err != nil {
+			return err
+		} else if err := a.cp(fv.Interface()).MarshalRESP(w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func saneDefault(prefix byte) interface{} {
@@ -970,9 +1049,130 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		}
 		return nil
 
+	case reflect.Struct:
+		if size%2 != 0 {
+			return errors.New("cannot decode redis array with odd number of elements into struct")
+		}
+
+		structFields := getStructFields(v.Type())
+		for i := 0; i < size; i += 2 {
+			var bs BulkString
+			if err := bs.UnmarshalRESP(br); err != nil {
+				return err
+			}
+
+			var vv reflect.Value
+			structField, ok := structFields[bs.S]
+			if ok {
+				vv = getStructField(v, structField.indices)
+			}
+
+			if !ok || !vv.IsValid() {
+				// discard the value
+				if err := (Any{}).UnmarshalRESP(br); err != nil {
+					return err
+				}
+				continue
+			}
+
+			if err := (Any{I: vv.Interface()}).UnmarshalRESP(br); err != nil {
+				return err
+			}
+		}
+
+		return nil
+
 	default:
 		return fmt.Errorf("cannot decode redis array into %v", v.Type())
 	}
+}
+
+type structField struct {
+	name    string
+	fromTag bool // from a tag overwrites a field name
+	indices []int
+}
+
+// encoding/json uses a similar pattern for unmarshaling into structs
+var structFieldsCache sync.Map // aka map[reflect.Type]map[string]structField
+
+func getStructFields(t reflect.Type) map[string]structField {
+	if mV, ok := structFieldsCache.Load(t); ok {
+		return mV.(map[string]structField)
+	}
+
+	getIndices := func(parents []int, i int) []int {
+		indices := make([]int, len(parents), len(parents)+1)
+		copy(indices, parents)
+		indices = append(indices, i)
+		return indices
+	}
+
+	m := map[string]structField{}
+
+	var populateFrom func(reflect.Type, []int)
+	populateFrom = func(t reflect.Type, parents []int) {
+		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+		l := t.NumField()
+
+		// first get all fields which aren't embedded structs
+		for i := 0; i < l; i++ {
+			ft := t.Field(i)
+			if ft.Anonymous || ft.PkgPath != "" {
+				continue
+			}
+
+			key, fromTag := ft.Name, false
+			if tag := ft.Tag.Get("redis"); tag != "" && tag != "-" {
+				key, fromTag = tag, true
+			}
+			if m[key].fromTag {
+				continue
+			}
+			m[key] = structField{
+				name:    key,
+				fromTag: fromTag,
+				indices: getIndices(parents, i),
+			}
+		}
+
+		// then find all embedded structs and descend into them
+		for i := 0; i < l; i++ {
+			ft := t.Field(i)
+			if !ft.Anonymous {
+				continue
+			}
+			populateFrom(ft.Type, getIndices(parents, i))
+		}
+	}
+
+	populateFrom(t, []int{})
+	structFieldsCache.LoadOrStore(t, m)
+	return m
+}
+
+// v must be setable. Always returns a Kind() == reflect.Ptr, unless it returns
+// the zero Value, which means a setable value couldn't be gotten.
+func getStructField(v reflect.Value, ii []int) reflect.Value {
+	if len(ii) == 0 {
+		return v.Addr()
+	}
+	i, ii := ii[0], ii[1:]
+
+	iv := v.Field(i)
+	if iv.Kind() == reflect.Ptr && iv.IsNil() {
+		// If the field is a pointer to an unexported type then it won't be
+		// settable, though if the user pre-sets the value it will be (I think).
+		if !iv.CanSet() {
+			return reflect.Value{}
+		}
+		iv.Set(reflect.New(iv.Type().Elem()))
+	}
+	iv = reflect.Indirect(iv)
+
+	return getStructField(iv, ii)
 }
 
 func (a Any) discardArray(br *bufio.Reader, l int64) error {

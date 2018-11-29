@@ -99,6 +99,29 @@ func TestRESPTypes(t *T) {
 	}
 }
 
+// structs used for tests
+type testStructInner struct {
+	Foo int
+	bar int
+	Baz string `redis:"BAZ"`
+	Buz string `redis:"-"`
+	Boz *int
+}
+
+func intPtr(i int) *int {
+	return &i
+}
+
+type testStructA struct {
+	testStructInner
+	Biz []byte
+}
+
+type testStructB struct {
+	*testStructInner
+	Biz []byte
+}
+
 type textCPMarshaler []byte
 
 func (cm textCPMarshaler) MarshalText() ([]byte, error) {
@@ -203,6 +226,46 @@ func TestAnyMarshal(t *T) {
 			in:   map[string]interface{}{"one": []string{"1", "2"}},
 			flat: true,
 			out:  "$3\r\none\r\n$1\r\n1\r\n$1\r\n2\r\n",
+		},
+
+		// Structs
+		{
+			in: testStructA{
+				testStructInner: testStructInner{
+					Foo: 1,
+					bar: 2,
+					Baz: "3",
+					Buz: "4",
+					Boz: intPtr(5),
+				},
+				Biz: []byte("10"),
+			},
+			out: "*8\r\n" +
+				"$3\r\nFoo\r\n" + ":1\r\n" +
+				"$3\r\nBAZ\r\n" + "$1\r\n3\r\n" +
+				"$3\r\nBoz\r\n" + ":5\r\n" +
+				"$3\r\nBiz\r\n" + "$2\r\n10\r\n",
+		},
+		{
+			in: testStructB{
+				testStructInner: &testStructInner{
+					Foo: 1,
+					bar: 2,
+					Baz: "3",
+					Buz: "4",
+					Boz: intPtr(5),
+				},
+				Biz: []byte("10"),
+			},
+			out: "*8\r\n" +
+				"$3\r\nFoo\r\n" + ":1\r\n" +
+				"$3\r\nBAZ\r\n" + "$1\r\n3\r\n" +
+				"$3\r\nBoz\r\n" + ":5\r\n" +
+				"$3\r\nBiz\r\n" + "$2\r\n10\r\n",
+		},
+		{
+			in:  testStructB{Biz: []byte("10")},
+			out: "*2\r\n" + "$3\r\nBiz\r\n" + "$2\r\n10\r\n",
 		},
 	}
 
@@ -359,6 +422,41 @@ func TestAnyUnmarshal(t *T) {
 			},
 			{in: "*2\r\n:1\r\n:2\r\n", out: map[string]string{"1": "2"}},
 			{in: "*2\r\n*2\r\n+foo\r\n+bar\r\n*1\r\n+baz\r\n", out: nil},
+
+			// Arrays (structs)
+			{
+				in: "*10\r\n" +
+					"$3\r\nBAZ\r\n" + "$1\r\n3\r\n" +
+					"$3\r\nFoo\r\n" + ":1\r\n" +
+					"$3\r\nBoz\r\n" + ":100\r\n" +
+					"$3\r\nDNE\r\n" + ":1000\r\n" +
+					"$3\r\nBiz\r\n" + "$1\r\n5\r\n",
+				out: testStructA{
+					testStructInner: testStructInner{
+						Foo: 1,
+						Baz: "3",
+						Boz: intPtr(100),
+					},
+					Biz: []byte("5"),
+				},
+			},
+			{
+				in: "*10\r\n" +
+					"$3\r\nBAZ\r\n" + "$1\r\n3\r\n" +
+					"$3\r\nBiz\r\n" + "$1\r\n5\r\n" +
+					"$3\r\nBoz\r\n" + ":100\r\n" +
+					"$3\r\nDNE\r\n" + ":1000\r\n" +
+					"$3\r\nFoo\r\n" + ":1\r\n",
+				preload: testStructB{testStructInner: new(testStructInner)},
+				out: testStructB{
+					testStructInner: &testStructInner{
+						Foo: 1,
+						Baz: "3",
+						Boz: intPtr(100),
+					},
+					Biz: []byte("5"),
+				},
+			},
 		}
 	}
 
@@ -512,7 +610,7 @@ func TestReadNDiscard(t *T) {
 			t.Fatalf("Discard not called on discarder (%#v)", test)
 
 		} else if test.discarder && test.n == 0 && d.didDiscard {
-			t.Fatalf("Unecessary Discard call (%#v)", test)
+			t.Fatalf("Unnecessary Discard call (%#v)", test)
 
 		} else if buf.Len() > 0 {
 			t.Fatalf("%d bytes not discarded (%#v)", buf.Len(), test)
