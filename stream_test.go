@@ -543,11 +543,7 @@ func TestStreamReader(t *T) {
 
 			addStreamGroup(t, c, stream, group, "0-0")
 
-			start := time.Now()
 			assertNoStreamReaderEntries(t, r)
-			end := time.Now()
-
-			assert.WithinDuration(t, start.Add(500*time.Millisecond), end, 300*time.Millisecond)
 
 			idChan := make(chan StreamEntryID, 1)
 			time.AfterFunc(100*time.Millisecond, func() {
@@ -774,11 +770,7 @@ func TestStreamReader(t *T) {
 				Block: 500 * time.Millisecond,
 			})
 
-			start := time.Now()
 			assertNoStreamReaderEntries(t, r)
-			end := time.Now()
-
-			assert.WithinDuration(t, start.Add(500*time.Millisecond), end, 300*time.Millisecond)
 
 			idChan := make(chan StreamEntryID, 1)
 			time.AfterFunc(100*time.Millisecond, func() {
