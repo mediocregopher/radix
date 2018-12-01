@@ -3,10 +3,11 @@ package resp2
 import (
 	"bufio"
 	"fmt"
-	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 )
 
 func BenchmarkIntUnmarshalRESP(b *testing.B) {

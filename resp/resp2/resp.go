@@ -12,11 +12,12 @@ import (
 	"encoding"
 	"errors"
 	"fmt"
-	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"io"
 	"reflect"
 	"strconv"
 	"sync"
+
+	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 
 	"github.com/mediocregopher/radix/v3/resp"
 )
