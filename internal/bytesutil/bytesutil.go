@@ -226,4 +226,3 @@ func ReadFloat(r io.Reader, precision, n int) (float64, error) {
 	}
 	return strconv.ParseFloat(string(*scratch), precision)
 }
-

@@ -5,10 +5,11 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
-	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"io"
 	"reflect"
 	. "testing"
+
+	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 
 	"github.com/mediocregopher/mediocre-go-lib/mrand"
 	"github.com/mediocregopher/radix/v3/resp"
