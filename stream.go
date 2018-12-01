@@ -160,12 +160,12 @@ func (s *StreamEntry) unmarshalFields(br *bufio.Reader) error {
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
 	}
-	if ah.N % 2 != 0 {
+	if ah.N%2 != 0 {
 		return errInvalidStreamEntry
 	}
 
 	if s.Fields == nil {
-		s.Fields = make(map[string]string, ah.N / 2)
+		s.Fields = make(map[string]string, ah.N/2)
 	} else {
 		for k := range s.Fields {
 			delete(s.Fields, k)
@@ -173,7 +173,7 @@ func (s *StreamEntry) unmarshalFields(br *bufio.Reader) error {
 	}
 
 	var bs resp2.BulkString
-	for i := 0; i < ah.N; i+= 2 {
+	for i := 0; i < ah.N; i += 2 {
 		if err := bs.UnmarshalRESP(br); err != nil {
 			return err
 		}
@@ -229,15 +229,14 @@ type StreamReader interface {
 	// Once Err returns a non-nil error, all successive calls will return the same error.
 	Err() error
 
-	// Next reads the next batch of stream entries from the Client into entries.
+	// Next returns new entries for any of the configured streams.
 	//
-	// If *entries is nil, a new map will be allocated. If *entries is not empty, Next will
-	// override the values for all streams, even if no new entries were returned.
+	// The returned slice is only valid until the next call to Next.
 	//
-	// Next returns true if at least one stream was read and false otherwise or if there was an error.
+	// If no new entries are available or there was an error, ok will be false.
 	//
-	// If there was an error, all future calls to Next will return false.
-	Next(entries *map[string][]StreamEntry) bool
+	// If there was an error, all future calls to Next will return ok == false.
+	Next() (stream string, entries []StreamEntry, ok bool)
 }
 
 // NewStreamReader returns a new StreamReader for the given client.
@@ -255,14 +254,14 @@ type streamReader struct {
 	opts StreamReaderOpts // copy of the options given to NewStreamReader with Streams == nil
 
 	streams []string
-	ids map[string]string
+	ids     map[string]string
 
 	cmd       string   // command. either XREAD or XREADGROUP
 	fixedArgs []string // fixed arguments that always come directly after the command
 	args      []string // arguments passed to Cmd. reused between calls to Next to avoid allocations.
 
 	unmarshaler streamReaderUnmarshaler
-	err error
+	err         error
 }
 
 func (sr *streamReader) init() {
@@ -302,7 +301,7 @@ func (sr *streamReader) init() {
 	}
 
 	// set to nil so we don't accidentally use it later, since the user could have changed
-	// the map while after using the reader.
+	// the map after using the reader.
 	sr.opts.Streams = nil
 
 	sr.fixedArgs = append(sr.fixedArgs, "STREAMS")
@@ -328,28 +327,35 @@ func (sr *streamReader) Err() error {
 }
 
 // Next implements the StreamReader interface.
-func (sr *streamReader) Next(entries *map[string][]StreamEntry) bool {
+func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 	if sr.err != nil {
-		return false
+		return "", nil, false
 	}
 
-	if *entries == nil {
-		*entries = make(map[string][]StreamEntry, len(sr.streams))
-	}
-	for k, v := range *entries {
-		(*entries)[k] = v[:0]
-	}
+	if len(sr.unmarshaler.A) == 0 {
+		if sr.err = sr.do(); sr.err != nil {
+			return "", nil, false
+		}
 
-	sr.unmarshaler.entries = *entries
-	if sr.err = sr.do(); sr.err != nil {
-		return false
-	}
-	for k, v := range *entries {
-		if len(v) > 0 {
-			sr.ids[k] = v[len(v)-1].ID.String()
+		if len(sr.unmarshaler.A) == 0 {
+			return "", nil, false
 		}
 	}
-	return sr.unmarshaler.n > 0
+
+	sre := sr.unmarshaler.A[len(sr.unmarshaler.A)-1]
+	sr.unmarshaler.A = sr.unmarshaler.A[:len(sr.unmarshaler.A)-1]
+
+	// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
+	if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[sre.stream] != ">") {
+		sr.ids[sre.stream] = sre.entries[len(sre.entries)-1].ID.String()
+	}
+
+	return sre.stream, sre.entries, true
+}
+
+type streamReaderEntry struct {
+	stream  string
+	entries []StreamEntry
 }
 
 // streamReaderUnmarshaler implements unmarshaling of XREAD and XREADGROUP responses.
@@ -357,15 +363,20 @@ func (sr *streamReader) Next(entries *map[string][]StreamEntry) bool {
 // The logic is not part of streamReader so that users can not use streamReader directly
 // as a resp.Unmarshaler.
 type streamReaderUnmarshaler struct {
-	entries map[string][]StreamEntry
-	n int // number of entries read
+	A []streamReaderEntry
+
+	streams map[string]string // map of stream names to avoid string allocations
 }
 
 var _ resp.Unmarshaler = (*streamReaderUnmarshaler)(nil)
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
 func (s *streamReaderUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
-	s.n = 0
+	if s.streams == nil {
+		s.streams = make(map[string]string)
+	}
+
+	s.A = s.A[:0]
 
 	var ah resp2.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
@@ -375,13 +386,16 @@ func (s *streamReaderUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
 		return nil
 	}
 
+	if cap(s.A) < ah.N {
+		s.A = make([]streamReaderEntry, 0, ah.N)
+	}
+
 	for i := 0; i < ah.N; i++ {
 		if err := s.unmarshalNamedStream(br); err != nil {
 			return err
 		}
 	}
 
-	s.n = ah.N
 	return nil
 }
 
@@ -399,30 +413,36 @@ func (s *streamReaderUnmarshaler) unmarshalNamedStream(br *bufio.Reader) error {
 		return err
 	}
 
-	return s.unmarshalEntries(br, nameBytes.B)
-}
-
-func (s *streamReaderUnmarshaler) unmarshalEntries(br *bufio.Reader, stream []byte) error {
-	var ah resp2.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
 	}
 	if ah.N < 0 {
 		return errors.New("invalid xread[group] response")
 	}
-
-	// m[string(k)] does not allocate, so this avoids allocating a string when there is
-	// already a value with the correct key in the map.
-	entries := s.entries[string(stream)]
-	if cap(entries) < ah.N {
-		entries = make([]StreamEntry, ah.N)
-	} else {
-		entries = entries[:ah.N]
+	if ah.N == 0 { // XREADGROUP can return empty responses
+		return nil
 	}
-	s.entries[string(stream)] = entries
 
-	for i := range entries {
-		if err := entries[i].UnmarshalRESP(br); err != nil {
+	s.A = s.A[:len(s.A)+1]
+	dst := &s.A[len(s.A)-1]
+
+	// avoid allocating a string for the stream name by using the string from the s.streams map, if available.
+	// the string conversion in the map access is free since Go 1.3.
+	if name, ok := s.streams[string(nameBytes.B)]; ok {
+		dst.stream = name
+	} else {
+		dst.stream = string(nameBytes.B)
+		s.streams[dst.stream] = dst.stream
+	}
+
+	if cap(dst.entries) < ah.N {
+		dst.entries = make([]StreamEntry, ah.N)
+	} else {
+		dst.entries = dst.entries[:ah.N]
+	}
+
+	for i := range dst.entries {
+		if err := dst.entries[i].UnmarshalRESP(br); err != nil {
 			return err
 		}
 	}

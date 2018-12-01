@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io/ioutil"
 	"math"
+	"strconv"
 	"strings"
 	. "testing"
 	"time"
@@ -368,30 +369,265 @@ func BenchmarkStreamEntry(b *B) {
 
 func TestStreamReader(t *T) {
 	t.Run("Group", func(t *T) {
-		c := dial()
-		defer c.Close()
+		t.Run("Empty", func(t *T) {
+			c := dial()
+			defer c.Close()
 
-		stream1, stream2 := randStr(), randStr()
-		group1, group2 := randStr(), randStr()
+			stream1, stream2 := randStr(), randStr()
 
-		// MKSTREAM is available since 5.0, but not documented as of Nov 19 2018.
-		require.NoError(t, c.Do(Cmd(nil, "XGROUP", "CREATE", stream1, group1, "$", "MKSTREAM")))
-		require.NoError(t, c.Do(Cmd(nil, "XGROUP", "CREATE", stream1, group2, "$")))
-		require.NoError(t, c.Do(Cmd(nil, "XGROUP", "CREATE", stream2, group1, "$", "MKSTREAM")))
-		require.NoError(t, c.Do(Cmd(nil, "XGROUP", "CREATE", stream2, group2, "$")))
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream1: {Time: 0, Seq: 0},
+					stream2: {Time: 0, Seq: 0},
+				},
+				Group: randStr(),
+				Block: -1,
+			})
 
-		t.Skip("not implemented yet")
-		_, _ = stream1, stream2
+			assertNoStreamReaderEntries(t, r)
+		})
 
-		// TODO: empty stream (NOGROUP error)
-		// TODO: error (WRONGTYPE error)
-		// TODO: nothing more to read
-		// TODO: count
-		// TODO: multiple streams
-		// TODO: id (2 stream with IDs, other with no ID)
-		// TODO: consumer name
-		// TODO: blocking
-		// TODO: noack
+		t.Run("EOS", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			consumer, group := randStr(), randStr()
+			stream1, stream2 := randStr(), randStr()
+
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream1: nil,
+					stream2: nil,
+				},
+				Group:    group,
+				Consumer: consumer,
+				Block:    -1,
+			})
+
+			addStreamGroup(t, c, stream1, group, "0-0")
+			addStreamGroup(t, c, stream2, group, "0-0")
+
+			id1 := addStreamEntry(t, c, stream1)
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{stream1: {id1}})
+
+			id2 := addStreamEntry(t, c, stream2)
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{stream2: {id2}})
+
+			assertNoStreamReaderEntries(t, r)
+			assertConsumer(t, c, stream1, group, consumer, 1)
+			assertConsumer(t, c, stream2, group, consumer, 1)
+		})
+
+		t.Run("Count", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			consumer, group := randStr(), randStr()
+			stream1, stream2 := randStr(), randStr()
+
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream1: nil,
+					stream2: nil,
+				},
+				Group:    group,
+				Consumer: consumer,
+				Count:    2,
+				Block:    -1,
+			})
+
+			addStreamGroup(t, c, stream1, group, "0-0")
+			addStreamGroup(t, c, stream2, group, "0-0")
+
+			ids1 := addNStreamEntries(t, c, stream1, 5)
+			ids2 := addNStreamEntries(t, c, stream2, 3)
+
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
+				stream1: ids1[:2],
+				stream2: ids2[:2],
+			})
+
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
+				stream1: ids1[2:4],
+				stream2: ids2[2:],
+			})
+
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
+				stream1: ids1[4:],
+			})
+
+			assertNoStreamReaderEntries(t, r)
+			assertConsumer(t, c, stream1, group, consumer, 5)
+			assertConsumer(t, c, stream2, group, consumer, 3)
+		})
+
+		t.Run("WrongType", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			stream1 := randStr()
+
+			require.NoError(t, c.Do(Cmd(nil, "SET", stream1, "1")))
+
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream1: nil,
+				},
+				Group:    randStr(),
+				Consumer: randStr(),
+			})
+
+			_, _, ok := r.Next()
+			assert.False(t, ok)
+			err := r.Err()
+			assert.Error(t, err)
+
+			_, _, ok = r.Next()
+			assert.False(t, ok)
+			assert.Equal(t, err, r.Err())
+		})
+
+		t.Run("Blocking", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			consumer, group := randStr(), randStr()
+			stream := randStr()
+
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream: nil,
+				},
+				Group:    group,
+				Consumer: consumer,
+				Block:    0,
+				Count:    10,
+			})
+
+			addStreamGroup(t, c, stream, group, "0-0")
+
+			for i := 1; i <= 2; i++ {
+				idChan := make(chan StreamEntryID, 1)
+				time.AfterFunc(5*time.Millisecond, func() {
+					c := dial()
+					defer c.Close()
+					idChan <- addStreamEntry(t, c, stream)
+				})
+
+				_, entries, ok := r.Next()
+				id := <-idChan
+				assert.True(t, ok)
+				assert.Len(t, entries, 1)
+				assert.Equal(t, id, entries[0].ID)
+				assert.NoError(t, r.Err())
+
+				assertConsumer(t, c, stream, group, consumer, i)
+			}
+		})
+
+		t.Run("Timeout", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			consumer, group := randStr(), randStr()
+			stream := randStr()
+
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream: nil,
+				},
+				Group:    group,
+				Consumer: consumer,
+				Block:    500 * time.Millisecond,
+			})
+
+			addStreamGroup(t, c, stream, group, "0-0")
+
+			start := time.Now()
+			assertNoStreamReaderEntries(t, r)
+			end := time.Now()
+
+			assert.WithinDuration(t, start.Add(500*time.Millisecond), end, 300*time.Millisecond)
+
+			idChan := make(chan StreamEntryID, 1)
+			time.AfterFunc(100*time.Millisecond, func() {
+				c := dial()
+				defer c.Close()
+
+				idChan <- addStreamEntry(t, c, stream)
+			})
+
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{stream: {<-idChan}})
+			assertConsumer(t, c, stream, group, consumer, 1)
+		})
+
+		t.Run("NoAck", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			consumer, group := randStr(), randStr()
+			stream := randStr()
+
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream: nil,
+				},
+				Group:    group,
+				Consumer: consumer,
+				Block:    -1,
+				Noack:    true,
+			})
+
+			addStreamGroup(t, c, stream, group, "0-0")
+
+			id := addStreamEntry(t, c, stream)
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{stream: {id}})
+			assertNoStreamReaderEntries(t, r)
+			assertConsumer(t, c, stream, group, consumer, 0)
+		})
+
+		t.Run("Unacknowledged", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			consumer, group := randStr(), randStr()
+			stream := randStr()
+
+			r1 := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream: nil,
+				},
+				Group:    group,
+				Consumer: consumer,
+				Block:    -1,
+			})
+
+			addStreamGroup(t, c, stream, group, "0-0")
+
+			assertNoStreamReaderEntries(t, r1)
+			id1 := addStreamEntry(t, c, stream)
+			assertStreamReaderEntries(t, r1, map[string][]StreamEntryID{stream: {id1}})
+			id2 := addStreamEntry(t, c, stream)
+
+			r2 := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream: {Time: 0, Seq: 0},
+				},
+				Group:    group,
+				Consumer: consumer,
+				Block:    -1,
+			})
+
+			assertStreamReaderEntries(t, r2, map[string][]StreamEntryID{stream: {id1}})
+			assertConsumer(t, c, stream, group, consumer, 1)
+
+			assertStreamReaderEntries(t, r1, map[string][]StreamEntryID{stream: {id2}})
+			assertNoStreamReaderEntries(t, r1)
+
+			assertStreamReaderEntries(t, r2, map[string][]StreamEntryID{stream: {id2}})
+			assertNoStreamReaderEntries(t, r2)
+			assertConsumer(t, c, stream, group, consumer, 2)
+		})
 	})
 
 	t.Run("NoGroup", func(t *T) {
@@ -409,13 +645,7 @@ func TestStreamReader(t *T) {
 				Block: -1,
 			})
 
-			var entries map[string][]StreamEntry
-			assert.Zero(t, r.Next(&entries), "got entries for empty streams")
-			assert.Empty(t, entries, "got entries for empty streams")
-
-			// behaviour shouldn't change on second call
-			assert.Zero(t, r.Next(&entries), "got entries for empty streams")
-			assert.Empty(t, entries, "got entries for empty streams")
+			assertNoStreamReaderEntries(t, r)
 		})
 
 		t.Run("EOS", func(t *T) {
@@ -433,25 +663,12 @@ func TestStreamReader(t *T) {
 			})
 
 			id1 := addStreamEntry(t, c, stream1)
-
-			var entries map[string][]StreamEntry
-			assert.True(t, r.Next(&entries), "got no entries")
-			assert.Len(t, entries, 1)
-			assert.Len(t, entries[stream1], 1)
-			assert.Equal(t, id1, entries[stream1][0].ID)
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{stream1: {id1}})
 
 			id2 := addStreamEntry(t, c, stream2)
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{stream2: {id2}})
 
-			assert.True(t, r.Next(&entries), "got no entries")
-			assert.Len(t, entries, 2)
-			assert.Len(t, entries[stream1], 0)
-			assert.Len(t, entries[stream2], 1)
-			assert.Equal(t, id2, entries[stream2][0].ID)
-
-			assert.Zero(t, r.Next(&entries), "got entries for empty streams")
-			assert.Len(t, entries, 2)
-			assert.Len(t, entries[stream1], 0)
-			assert.Len(t, entries[stream2], 0)
+			assertNoStreamReaderEntries(t, r)
 		})
 
 		t.Run("Count", func(t *T) {
@@ -469,56 +686,51 @@ func TestStreamReader(t *T) {
 				Block: -1,
 			})
 
-			addNStreamEntries(t, c, stream1, 5)
-			addNStreamEntries(t, c, stream2, 3)
+			ids1 := addNStreamEntries(t, c, stream1, 5)
+			ids2 := addNStreamEntries(t, c, stream2, 3)
 
-			var entries map[string][]StreamEntry
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
+				stream1: ids1[:2],
+				stream2: ids2[:2],
+			})
 
-			assert.True(t, r.Next(&entries))
-			assert.Len(t, entries, 2)
-			assert.Len(t, entries[stream1], 2)
-			assert.Len(t, entries[stream2], 2)
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
+				stream1: ids1[2:4],
+				stream2: ids2[2:],
+			})
 
-			assert.True(t, r.Next(&entries))
-			assert.Len(t, entries, 2)
-			assert.Len(t, entries[stream1], 2)
-			assert.Len(t, entries[stream2], 1)
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
+				stream1: ids1[4:],
+			})
 
-			assert.True(t, r.Next(&entries))
-			assert.Len(t, entries, 2)
-			assert.Len(t, entries[stream1], 1)
-			assert.Len(t, entries[stream2], 0)
-
-			assert.False(t, r.Next(&entries))
-			assert.Len(t, entries, 2)
-			assert.Len(t, entries[stream1], 0)
-			assert.Len(t, entries[stream2], 0)
+			assertNoStreamReaderEntries(t, r)
 		})
 
 		t.Run("WrongType", func(t *T) {
 			c := dial()
 			defer c.Close()
 
-			stream1 := randStr()
+			stream := randStr()
 
-			require.NoError(t, c.Do(Cmd(nil, "SET", stream1, "1")))
+			require.NoError(t, c.Do(Cmd(nil, "SET", stream, "1")))
 
 			r := NewStreamReader(c, StreamReaderOpts{
 				Streams: map[string]*StreamEntryID{
-					stream1: nil,
+					stream: nil,
 				},
 			})
 
-			var entries map[string][]StreamEntry
-			assert.Zero(t, r.Next(&entries))
+			_, _, ok := r.Next()
+			assert.False(t, ok)
 			err := r.Err()
 			assert.Error(t, err)
 
-			assert.Zero(t, r.Next(&entries))
+			_, _, ok = r.Next()
+			assert.False(t, ok)
 			assert.Equal(t, err, r.Err())
 		})
 
-		t.Run("LatestEntries", func(t *T) {
+		t.Run("Blocking", func(t *T) {
 			c := dial()
 			defer c.Close()
 
@@ -529,46 +741,27 @@ func TestStreamReader(t *T) {
 					stream: nil,
 				},
 				Block: 0,
+				Count: 10,
 			})
 
-			var entries map[string][]StreamEntry
+			for i := 0; i < 2; i++ {
+				idChan := make(chan StreamEntryID, 1)
+				time.AfterFunc(5*time.Millisecond, func() {
+					c := dial()
+					defer c.Close()
+					idChan <- addStreamEntry(t, c, stream)
+				})
 
-			idChan := make(chan StreamEntryID, 1)
-			go func() {
-				c := dial()
-				defer c.Close()
-
-				idChan <- addStreamEntry(t, c, stream)
-			}()
-
-			assert.True(t, r.Next(&entries))
-			assert.Len(t, entries[stream], 1)
-			id := <-idChan
-			assert.Equal(t, id, entries[stream][0].ID)
-			assert.NoError(t, r.Err())
-
-			r = NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: &id,
-				},
-				Block: 0,
-			})
-
-			go func() {
-				c := dial()
-				defer c.Close()
-
-				idChan <- addStreamEntry(t, c, stream)
-			}()
-
-			assert.True(t, r.Next(&entries))
-			assert.Len(t, entries[stream], 1)
-			id = <-idChan
-			assert.Equal(t, id, entries[stream][0].ID)
-			assert.NoError(t, r.Err())
+				_, entries, ok := r.Next()
+				id := <-idChan
+				assert.True(t, ok)
+				assert.Len(t, entries, 1)
+				assert.Equal(t, id, entries[0].ID)
+				assert.NoError(t, r.Err())
+			}
 		})
 
-		t.Run("Block", func(t *T) {
+		t.Run("Timeout", func(t *T) {
 			c := dial()
 			defer c.Close()
 
@@ -582,27 +775,20 @@ func TestStreamReader(t *T) {
 			})
 
 			start := time.Now()
-
-			var entries map[string][]StreamEntry
-			assert.False(t, r.Next(&entries))
-			assert.NoError(t, r.Err())
-
+			assertNoStreamReaderEntries(t, r)
 			end := time.Now()
 
-			// FIXME(nussjustin): Flacky
-			assert.WithinDuration(t, start.Add(500 * time.Millisecond), end, 100 * time.Millisecond)
+			assert.WithinDuration(t, start.Add(500*time.Millisecond), end, 300*time.Millisecond)
 
 			idChan := make(chan StreamEntryID, 1)
-			time.AfterFunc(100 * time.Millisecond, func() {
+			time.AfterFunc(100*time.Millisecond, func() {
 				c := dial()
 				defer c.Close()
 
 				idChan <- addStreamEntry(t, c, stream)
 			})
 
-			assert.True(t, r.Next(&entries))
-			assert.Equal(t, <-idChan, entries[stream][0].ID)
-			assert.NoError(t, r.Err())
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{stream: {<-idChan}})
 		})
 	})
 }
@@ -612,53 +798,98 @@ func BenchmarkStreamReader(b *B) {
 	defer c.Close()
 
 	stream := randStr()
+	streams := map[string]*StreamEntryID{
+		stream: {Time: 0, Seq: 0},
+	}
 
-	firstID := addStreamEntry(b, c, stream).String()
-	addNStreamEntries(b, c, stream, 31)
+	addNStreamEntries(b, c, stream, 32)
 
-	b.Run("Group", func(b *B) {
-		group := randStr()
-		require.NoError(b, c.Do(Cmd(nil, "XGROUP", "CREATE", stream, group, firstID)))
+	b.ResetTimer()
 
-		b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := NewStreamReader(c, StreamReaderOpts{
+			Streams: streams,
+			Block:   -1,
+		})
 
-		for i := 0; i < b.N; i++ {
-			b.StopTimer()
-			require.NoError(b, c.Do(Cmd(nil, "XGROUP", "SETID", stream, group, firstID)))
-			b.StartTimer()
-
-			b.Skip("not implemented yet")
-		}
-	})
-
-	b.Run("NoGroup", func(b *B) {
-		entries := make(map[string][]StreamEntry)
-		streams := map[string]*StreamEntryID{
-			stream: {Time: 0, Seq: 0},
-		}
-
-		for i := 0; i < b.N; i++ {
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: streams,
-				Block: -1,
-			})
-
-			for r.Next(&entries) {
-				benchErr = r.Err()
-			}
+		for _, _, ok := r.Next(); ok; _, _, ok = r.Next() {
 			benchErr = r.Err()
 		}
-	})
+	}
 }
 
 func addStreamEntry(tb TB, c Client, stream string) StreamEntryID {
+	tb.Helper()
 	var id StreamEntryID
 	require.NoError(tb, c.Do(Cmd(&id, "XADD", stream, "*", randStr(), randStr())))
 	return id
 }
 
-func addNStreamEntries(tb TB, c Client, stream string, n int) {
+func addNStreamEntries(tb TB, c Client, stream string, n int) []StreamEntryID {
+	tb.Helper()
+	ids := make([]StreamEntryID, n)
 	for i := 0; i < n; i++ {
-		addStreamEntry(tb, c, stream)
+		ids[i] = addStreamEntry(tb, c, stream)
 	}
+	return ids
+}
+
+func assertNoStreamReaderEntries(tb TB, r StreamReader) {
+	tb.Helper()
+	stream, entries, ok := r.Next()
+	assert.Empty(tb, stream)
+	assert.Empty(tb, entries)
+	assert.False(tb, ok)
+}
+
+func assertStreamReaderEntries(tb TB, r StreamReader, expected map[string][]StreamEntryID) {
+	tb.Helper()
+
+	for len(expected) > 0 {
+		stream, entries, ok := r.Next()
+		if !ok {
+			break
+		}
+		if _, ok := expected[stream]; !ok {
+			assert.Fail(tb, "unexpected stream entries", "for %s", stream)
+			break
+		}
+
+		got := make([]StreamEntryID, len(entries))
+		for i, e := range entries {
+			got[i] = e.ID
+		}
+
+		assert.Equal(tb, expected[stream], got)
+		delete(expected, stream)
+	}
+
+	if len(expected) > 0 {
+		assert.Fail(tb, "unexpected end of stream", "expected one of: %v", expected)
+	}
+
+	assert.NoError(tb, r.Err())
+}
+
+func addStreamGroup(tb TB, c Client, stream, group, id string) {
+	tb.Helper()
+	require.NoError(tb, c.Do(Cmd(nil, "XGROUP", "CREATE", stream, group, id, "MKSTREAM")))
+}
+
+func assertConsumer(tb TB, c Client, stream, group, consumer string, pending int) {
+	tb.Helper()
+	var cs []map[string]string
+	require.NoError(tb, c.Do(Cmd(&cs, "XINFO", "CONSUMERS", stream, group)))
+
+	for _, c := range cs {
+		if c["name"] != consumer {
+			continue
+		}
+
+		got, _ := strconv.Atoi(c["pending"])
+		assert.Equal(tb, pending, got, "wrong number of pending messages")
+		return
+	}
+
+	assert.Failf(tb, "pending messages assertion failed", "consumer %s not in group %s for stream %s", consumer, group, stream)
 }
