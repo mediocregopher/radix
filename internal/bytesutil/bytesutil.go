@@ -1,3 +1,5 @@
+// Package bytesutil provides utility functions for working with bytes and byte streams that are useful when
+// working with the RESP protocol.
 package bytesutil
 
 import (
@@ -36,7 +38,7 @@ func AnyIntToInt64(m interface{}) int64 {
 	panic(fmt.Sprintf("anyIntToInt64 got bad arg: %#v", m))
 }
 
-var BytePool = sync.Pool{
+var bytePool = sync.Pool{
 	New: func() interface{} {
 		b := make([]byte, 0, 64)
 		return &b
@@ -44,12 +46,12 @@ var BytePool = sync.Pool{
 }
 
 func GetBytes() *[]byte {
-	return BytePool.Get().(*[]byte)
+	return bytePool.Get().(*[]byte)
 }
 
 func PutBytes(b *[]byte) {
 	(*b) = (*b)[:0]
-	BytePool.Put(b)
+	bytePool.Put(b)
 }
 
 // parseInt is a specialized version of strconv.ParseInt that parses a base-10 encoded signed integer.
@@ -166,9 +168,6 @@ func ReadNDiscard(r io.Reader, n int) error {
 	defer PutBytes(scratch)
 	*scratch = (*scratch)[:cap(*scratch)]
 	if len(*scratch) < n {
-		// Large strings should get read in as bulk strings, in which case
-		// *bufio.Reader will be read from directly, and so Discard will be
-		// used. Any other kind of strings shouldn't be more than this.
 		*scratch = make([]byte, 8192)
 	}
 
