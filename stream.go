@@ -346,17 +346,38 @@ func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 	sre := sr.unmarshaler.A[len(sr.unmarshaler.A)-1]
 	sr.unmarshaler.A = sr.unmarshaler.A[:len(sr.unmarshaler.A)-1]
 
+	stream = string(sre.stream)
+
 	// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
-	if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[sre.stream] != ">") {
-		sr.ids[sre.stream] = sre.entries[len(sre.entries)-1].ID.String()
+	if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {
+		sr.ids[stream] = sre.entries[len(sre.entries)-1].ID.String()
 	}
 
-	return sre.stream, sre.entries, true
+	return stream, sre.entries, true
 }
 
 type streamReaderEntry struct {
-	stream  string
+	stream  []byte
 	entries []StreamEntry
+}
+
+func (s *streamReaderEntry) UnmarshalRESP(br *bufio.Reader) error {
+	var ah resp2.ArrayHeader
+	if err := ah.UnmarshalRESP(br); err != nil {
+		return err
+	}
+	if ah.N != 2 {
+		return errors.New("invalid xread[group] response")
+	}
+
+	var stream resp2.BulkStringBytes
+	stream.B = s.stream[:0]
+	if err := stream.UnmarshalRESP(br); err != nil {
+		return err
+	}
+	s.stream = stream.B
+
+	return (resp2.Any{I: &s.entries}).UnmarshalRESP(br)
 }
 
 // streamReaderUnmarshaler implements unmarshaling of XREAD and XREADGROUP responses.
@@ -365,18 +386,12 @@ type streamReaderEntry struct {
 // as a resp.Unmarshaler.
 type streamReaderUnmarshaler struct {
 	A []streamReaderEntry
-
-	streams map[string]string // map of stream names to avoid string allocations
 }
 
 var _ resp.Unmarshaler = (*streamReaderUnmarshaler)(nil)
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
 func (s *streamReaderUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
-	if s.streams == nil {
-		s.streams = make(map[string]string)
-	}
-
 	s.A = s.A[:0]
 
 	var ah resp2.ArrayHeader
@@ -401,51 +416,16 @@ func (s *streamReaderUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
 }
 
 func (s *streamReaderUnmarshaler) unmarshalNamedStream(br *bufio.Reader) error {
-	var ah resp2.ArrayHeader
-	if err := ah.UnmarshalRESP(br); err != nil {
-		return err
-	}
-	if ah.N != 2 {
-		return errors.New("invalid xread[group] response")
-	}
-
-	var nameBytes resp2.BulkStringBytes
-	if err := nameBytes.UnmarshalRESP(br); err != nil {
-		return err
-	}
-
-	if err := ah.UnmarshalRESP(br); err != nil {
-		return err
-	}
-	if ah.N < 0 {
-		return errors.New("invalid xread[group] response")
-	}
-	if ah.N == 0 { // XREADGROUP can return empty responses
-		return nil
-	}
-
 	s.A = s.A[:len(s.A)+1]
 	dst := &s.A[len(s.A)-1]
 
-	// avoid allocating a string for the stream name by using the string from the s.streams map, if available.
-	// the string conversion in the map access is free since Go 1.3.
-	if name, ok := s.streams[string(nameBytes.B)]; ok {
-		dst.stream = name
-	} else {
-		dst.stream = string(nameBytes.B)
-		s.streams[dst.stream] = dst.stream
+	if err := dst.UnmarshalRESP(br); err != nil {
+		return err
 	}
 
-	if cap(dst.entries) < ah.N {
-		dst.entries = make([]StreamEntry, ah.N)
-	} else {
-		dst.entries = dst.entries[:ah.N]
-	}
-
-	for i := range dst.entries {
-		if err := dst.entries[i].UnmarshalRESP(br); err != nil {
-			return err
-		}
+	// ignore empty responses
+	if len(dst.entries) == 0 {
+		s.A = s.A[:len(s.A)-1]
 	}
 
 	return nil
