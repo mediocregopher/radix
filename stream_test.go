@@ -571,7 +571,7 @@ func TestStreamReader(t *T) {
 				Group:    group,
 				Consumer: consumer,
 				Block:    -1,
-				Noack:    true,
+				NoAck:    true,
 			})
 
 			addStreamGroup(t, c, stream, group, "0-0")
