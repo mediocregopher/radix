@@ -209,10 +209,15 @@ type StreamReaderOpts struct {
 
 	// Block specifies the duration in milliseconds that reads will wait for new data before returning.
 	//
-	// If Block is negative, reads will not block (no BLOCK option is set) when there is no new data to read.
+	// If Block is negative, reads will block indefinitely until new entries can be read or there is an error.
 	//
-	// TODO(nussjustin): Make no blocking mode default? How to specify 0 milliseconds (infinite blocking)?
+	// The default, if Block is 0, is 5 seconds.
 	Block time.Duration
+
+	// NoBlock disables blocking when no new data is available.
+	//
+	// If this is true, setting Block will not have any effect.
+	NoBlock bool
 
 	// Count can be used to limit the number of entries retrieved by each call to Next.
 	//
@@ -242,27 +247,7 @@ type StreamReader interface {
 // Any changes on opts after calling NewStreamReader will have no effect.
 func NewStreamReader(c Client, opts StreamReaderOpts) StreamReader {
 	sr := &streamReader{c: c, opts: opts}
-	sr.init()
-	return sr
-}
 
-// streamReader implements the StreamReader interface.
-type streamReader struct {
-	c    Client
-	opts StreamReaderOpts // copy of the options given to NewStreamReader with Streams == nil
-
-	streams []string
-	ids     map[string]string
-
-	cmd       string   // command. either XREAD or XREADGROUP
-	fixedArgs []string // fixed arguments that always come directly after the command
-	args      []string // arguments passed to Cmd. reused between calls to Next to avoid allocations.
-
-	unmarshaler streamReaderUnmarshaler
-	err         error
-}
-
-func (sr *streamReader) init() {
 	if sr.opts.Group != "" {
 		sr.cmd = "XREADGROUP"
 		sr.fixedArgs = []string{"GROUP", sr.opts.Group, sr.opts.Consumer}
@@ -275,9 +260,15 @@ func (sr *streamReader) init() {
 		sr.fixedArgs = append(sr.fixedArgs, "COUNT", strconv.Itoa(sr.opts.Count))
 	}
 
-	if sr.opts.Block >= 0 {
-		sec := int(sr.opts.Block / time.Millisecond)
-		sr.fixedArgs = append(sr.fixedArgs, "BLOCK", strconv.Itoa(sec))
+	if !sr.opts.NoBlock {
+		dur := 5 * time.Second
+		if sr.opts.Block < 0 {
+			dur = 0
+		} else if sr.opts.Block > 0 {
+			dur = sr.opts.Block
+		}
+		msec := int(dur / time.Millisecond)
+		sr.fixedArgs = append(sr.fixedArgs, "BLOCK", strconv.Itoa(msec))
 	}
 
 	if sr.opts.Group != "" && sr.opts.NoAck {
@@ -307,6 +298,24 @@ func (sr *streamReader) init() {
 
 	// preallocate space for all arguments passed to Cmd
 	sr.args = make([]string, 0, len(sr.fixedArgs)+len(sr.streams))
+
+	return sr
+}
+
+// streamReader implements the StreamReader interface.
+type streamReader struct {
+	c    Client
+	opts StreamReaderOpts // copy of the options given to NewStreamReader with Streams == nil
+
+	streams []string
+	ids     map[string]string
+
+	cmd       string   // command. either XREAD or XREADGROUP
+	fixedArgs []string // fixed arguments that always come directly after the command
+	args      []string // arguments passed to Cmd. reused between calls to Next to avoid allocations.
+
+	unmarshaler streamReaderUnmarshaler
+	err         error
 }
 
 func (sr *streamReader) do() error {

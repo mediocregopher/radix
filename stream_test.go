@@ -380,8 +380,8 @@ func TestStreamReader(t *T) {
 					stream1: {Time: 0, Seq: 0},
 					stream2: {Time: 0, Seq: 0},
 				},
-				Group: randStr(),
-				Block: -1,
+				Group:   randStr(),
+				NoBlock: true,
 			})
 
 			assertNoStreamReaderEntries(t, r)
@@ -401,7 +401,7 @@ func TestStreamReader(t *T) {
 				},
 				Group:    group,
 				Consumer: consumer,
-				Block:    -1,
+				NoBlock:  true,
 			})
 
 			addStreamGroup(t, c, stream1, group, "0-0")
@@ -433,7 +433,7 @@ func TestStreamReader(t *T) {
 				Group:    group,
 				Consumer: consumer,
 				Count:    2,
-				Block:    -1,
+				NoBlock:  true,
 			})
 
 			addStreamGroup(t, c, stream1, group, "0-0")
@@ -570,7 +570,7 @@ func TestStreamReader(t *T) {
 				},
 				Group:    group,
 				Consumer: consumer,
-				Block:    -1,
+				NoBlock:  true,
 				NoAck:    true,
 			})
 
@@ -595,7 +595,7 @@ func TestStreamReader(t *T) {
 				},
 				Group:    group,
 				Consumer: consumer,
-				Block:    -1,
+				NoBlock:  true,
 			})
 
 			addStreamGroup(t, c, stream, group, "0-0")
@@ -611,7 +611,7 @@ func TestStreamReader(t *T) {
 				},
 				Group:    group,
 				Consumer: consumer,
-				Block:    -1,
+				NoBlock:  true,
 			})
 
 			assertStreamReaderEntries(t, r2, map[string][]StreamEntryID{stream: {id1}})
@@ -638,7 +638,7 @@ func TestStreamReader(t *T) {
 					stream1: {Time: 0, Seq: 0},
 					stream2: {Time: 0, Seq: 0},
 				},
-				Block: -1,
+				NoBlock: true,
 			})
 
 			assertNoStreamReaderEntries(t, r)
@@ -655,7 +655,7 @@ func TestStreamReader(t *T) {
 					stream1: {Time: 0, Seq: 0},
 					stream2: {Time: 0, Seq: 0},
 				},
-				Block: -1,
+				NoBlock: true,
 			})
 
 			id1 := addStreamEntry(t, c, stream1)
@@ -678,8 +678,8 @@ func TestStreamReader(t *T) {
 					stream1: {Time: 0, Seq: 0},
 					stream2: {Time: 0, Seq: 0},
 				},
-				Count: 2,
-				Block: -1,
+				Count:   2,
+				NoBlock: true,
 			})
 
 			ids1 := addNStreamEntries(t, c, stream1, 5)
@@ -801,7 +801,7 @@ func BenchmarkStreamReader(b *B) {
 	for i := 0; i < b.N; i++ {
 		r := NewStreamReader(c, StreamReaderOpts{
 			Streams: streams,
-			Block:   -1,
+			NoBlock: true,
 		})
 
 		for _, _, ok := r.Next(); ok; _, _, ok = r.Next() {
