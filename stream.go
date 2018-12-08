@@ -70,14 +70,17 @@ var _ resp.Unmarshaler = (*StreamEntryID)(nil)
 
 const maxUint64Len = len("18446744073709551615")
 
-// MarshalRESP implements the resp.Marshaler interface.
-func (s *StreamEntryID) MarshalRESP(w io.Writer) error {
+func (s *StreamEntryID) bytes() []byte {
 	var buf [maxUint64Len*2 + 1]byte
 	b := strconv.AppendUint(buf[:0], s.Time, 10)
 	b = append(b, '-')
 	b = strconv.AppendUint(b, s.Seq, 10)
+	return b
+}
 
-	return resp2.BulkStringBytes{B: b}.MarshalRESP(w)
+// MarshalRESP implements the resp.Marshaler interface.
+func (s *StreamEntryID) MarshalRESP(w io.Writer) error {
+	return resp2.BulkStringBytes{B: s.bytes()}.MarshalRESP(w)
 }
 
 var errInvalidStreamID = errors.New("invalid stream entry id")
@@ -117,11 +120,7 @@ var _ fmt.Stringer = (*StreamEntryID)(nil)
 //
 // String implements the fmt.Stringer interface.
 func (s StreamEntryID) String() string {
-	var buf [maxUint64Len*2 + 1]byte
-	b := strconv.AppendUint(buf[:0], s.Time, 10)
-	b = append(b, '-')
-	b = strconv.AppendUint(b, s.Seq, 10)
-	return string(b)
+	return string(s.bytes())
 }
 
 // StreamEntry is an entry in a Redis stream as returned by XRANGE, XREAD and XREADGROUP.
