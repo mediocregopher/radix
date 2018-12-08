@@ -151,12 +151,7 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 		return err
 	}
 
-	return s.unmarshalFields(br)
-}
-
-func (s *StreamEntry) unmarshalFields(br *bufio.Reader) error {
 	// resp2.Any{I: &s.Fields}.UnmarshalRESP(br)
-	var ah resp2.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
 	}
