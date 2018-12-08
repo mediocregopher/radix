@@ -206,8 +206,8 @@ type StreamReaderOpts struct {
 	// TODO(nussjustin): Automatically detect if empty and Group is set?
 	Consumer string
 
-	// Noack optionally enables passing the NOACK flag to XREADGROUP.
-	Noack bool
+	// NoAck optionally enables passing the NOACK flag to XREADGROUP.
+	NoAck bool
 
 	// Block specifies the duration in milliseconds that reads will wait for new data before returning.
 	//
@@ -282,7 +282,7 @@ func (sr *streamReader) init() {
 		sr.fixedArgs = append(sr.fixedArgs, "BLOCK", strconv.Itoa(sec))
 	}
 
-	if sr.opts.Group != "" && sr.opts.Noack {
+	if sr.opts.Group != "" && sr.opts.NoAck {
 		sr.fixedArgs = append(sr.fixedArgs, "NOACK")
 	}
 
