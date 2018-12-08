@@ -202,8 +202,6 @@ type StreamReaderOpts struct {
 	Group string
 
 	// Consumer is an optional consumer name for use with Group.
-	//
-	// TODO(nussjustin): Automatically detect if empty and Group is set?
 	Consumer string
 
 	// NoAck optionally enables passing the NOACK flag to XREADGROUP.
