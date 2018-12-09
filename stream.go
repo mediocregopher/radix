@@ -68,11 +68,11 @@ func (s StreamEntryID) Next() StreamEntryID {
 var _ resp.Marshaler = (*StreamEntryID)(nil)
 var _ resp.Unmarshaler = (*StreamEntryID)(nil)
 
-const maxUint64Len = len("18446744073709551615")
+var maxUint64Len = len(strconv.FormatUint(math.MaxUint64, 10))
 
 func (s *StreamEntryID) bytes() []byte {
-	var buf [maxUint64Len*2 + 1]byte
-	b := strconv.AppendUint(buf[:0], s.Time, 10)
+	b := make([]byte, 0, maxUint64Len*2+1)
+	b = strconv.AppendUint(b, s.Time, 10)
 	b = append(b, '-')
 	b = strconv.AppendUint(b, s.Seq, 10)
 	return b
