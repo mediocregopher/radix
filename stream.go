@@ -308,18 +308,30 @@ type streamReader struct {
 	fixedArgs []string // fixed arguments that always come directly after the command
 	args      []string // arguments passed to Cmd. reused between calls to Next to avoid allocations.
 
-	unmarshaler streamReaderUnmarshaler
-	err         error
+	unread []streamReaderEntry
+	err    error
 }
 
-func (sr *streamReader) do() error {
+func (sr *streamReader) backfill() bool {
 	sr.args = append(sr.args[:0], sr.fixedArgs...)
 
 	for _, s := range sr.streams {
 		sr.args = append(sr.args, sr.ids[s])
 	}
 
-	return sr.c.Do(Cmd(&sr.unmarshaler, sr.cmd, sr.args...))
+	if sr.err = sr.c.Do(Cmd(&sr.unread, sr.cmd, sr.args...)); sr.err != nil {
+		return false
+	}
+
+	// Redis can return streams without entries when doing XREADGROUP of unacknowledged entries.
+	// This makes sure that we don't return empty streams in Next, which could cause users to spin forever.
+	for i := range sr.unread {
+		if len(sr.unread[i].entries) > 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Err implements the StreamReader interface.
@@ -333,18 +345,12 @@ func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 		return "", nil, false
 	}
 
-	if len(sr.unmarshaler.A) == 0 {
-		if sr.err = sr.do(); sr.err != nil {
-			return "", nil, false
-		}
-
-		if len(sr.unmarshaler.A) == 0 {
-			return "", nil, false
-		}
+	if len(sr.unread) == 0 && !sr.backfill() {
+		return "", nil, false
 	}
 
-	sre := sr.unmarshaler.A[len(sr.unmarshaler.A)-1]
-	sr.unmarshaler.A = sr.unmarshaler.A[:len(sr.unmarshaler.A)-1]
+	sre := sr.unread[len(sr.unread)-1]
+	sr.unread = sr.unread[:len(sr.unread)-1]
 
 	stream = string(sre.stream)
 
@@ -378,55 +384,4 @@ func (s *streamReaderEntry) UnmarshalRESP(br *bufio.Reader) error {
 	s.stream = stream.B
 
 	return (resp2.Any{I: &s.entries}).UnmarshalRESP(br)
-}
-
-// streamReaderUnmarshaler implements unmarshaling of XREAD and XREADGROUP responses.
-//
-// The logic is not part of streamReader so that users can not use streamReader directly
-// as a resp.Unmarshaler.
-type streamReaderUnmarshaler struct {
-	A []streamReaderEntry
-}
-
-var _ resp.Unmarshaler = (*streamReaderUnmarshaler)(nil)
-
-// UnmarshalRESP implements the resp.Unmarshaler interface.
-func (s *streamReaderUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
-	s.A = s.A[:0]
-
-	var ah resp2.ArrayHeader
-	if err := ah.UnmarshalRESP(br); err != nil {
-		return err
-	}
-	if ah.N < 1 {
-		return nil
-	}
-
-	if cap(s.A) < ah.N {
-		s.A = make([]streamReaderEntry, 0, ah.N)
-	}
-
-	for i := 0; i < ah.N; i++ {
-		if err := s.unmarshalNamedStream(br); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s *streamReaderUnmarshaler) unmarshalNamedStream(br *bufio.Reader) error {
-	s.A = s.A[:len(s.A)+1]
-	dst := &s.A[len(s.A)-1]
-
-	if err := dst.UnmarshalRESP(br); err != nil {
-		return err
-	}
-
-	// ignore empty responses
-	if len(dst.entries) == 0 {
-		s.A = s.A[:len(s.A)-1]
-	}
-
-	return nil
 }
