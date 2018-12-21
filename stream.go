@@ -236,7 +236,7 @@ type StreamReader interface {
 	//
 	// If no new entries are available or there was an error, ok will be false.
 	//
-	// If there was an error, all future calls to Next will return ok == false.
+	// If there was an error, which is not a temporary timeout, all future calls to Next will return ok == false.
 	Next() (stream string, entries []StreamEntry, ok bool)
 }
 
@@ -323,7 +323,12 @@ func (sr *streamReader) backfill() bool {
 		sr.args = append(sr.args, sr.ids[s])
 	}
 
-	if sr.err = sr.c.Do(Cmd(&sr.unread, sr.cmd, sr.args...)); sr.err != nil {
+	err := sr.c.Do(Cmd(&sr.unread, sr.cmd, sr.args...))
+
+	if err != nil {
+		if !isTemporaryTimeout(err) {
+			sr.err = err
+		}
 		return false
 	}
 
