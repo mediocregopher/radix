@@ -206,6 +206,10 @@ type StreamReaderOpts struct {
 	// If Block is negative, reads will block indefinitely until new entries can be read or there is an error.
 	//
 	// The default, if Block is 0, is 5 seconds.
+	//
+	// If Block is non-negative, the Client used for the StreamReader must not have a timeout for commands or
+	// the timeout duration must be substantial higher than the Block duration (at least 50% for small Block values,
+	// but may be less for higher values).
 	Block time.Duration
 
 	// NoBlock disables blocking when no new data is available.
