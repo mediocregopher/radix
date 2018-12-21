@@ -287,13 +287,12 @@ func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
 // given a connection to a sentinel, ensures that the Clients currently being
 // held agrees with what the sentinel thinks they should be
 func (sc *Sentinel) ensureClients(conn Conn) error {
-	// TODO it'd be ideal to pipeline these two commands, but doing so breaks
-	// test since stub doesn't properly handle pipelining
 	var primM map[string]string
 	var secMM []map[string]string
-	if err := conn.Do(Cmd(&primM, "SENTINEL", "MASTER", sc.name)); err != nil {
-		return err
-	} else if err := conn.Do(Cmd(&secMM, "SENTINEL", "SLAVES", sc.name)); err != nil {
+	if err := conn.Do(Pipeline(
+		Cmd(&primM, "SENTINEL", "MASTER", sc.name),
+		Cmd(&secMM, "SENTINEL", "SLAVES", sc.name),
+	)); err != nil {
 		return err
 	}
 
