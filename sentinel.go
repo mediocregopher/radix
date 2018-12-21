@@ -54,7 +54,7 @@ type Sentinel struct {
 	l             sync.RWMutex
 	prim          Client
 	primAddr      string
-	secsM         map[string]bool
+	secsM         map[string]Client
 	sentinelAddrs map[string]bool // the known sentinel addresses
 
 	// We use a persistent PubSubConn here, so we don't need to do much after
@@ -218,15 +218,44 @@ func (sc *Sentinel) Addrs() (string, []string) {
 // NOTE the Client should _not_ be closed.
 func (sc *Sentinel) Client(addr string) (Client, error) {
 	sc.l.RLock()
-	defer sc.l.RUnlock()
 	if addr == sc.primAddr {
+		defer sc.l.RUnlock()
 		return sc.prim, nil
-	} else if _, ok := sc.secsM[addr]; ok {
-		// TODO instead of creating an instance right here, keep track of
-		// secondary Clients within Sentinel
-		return sc.so.pf("tcp", addr)
 	}
-	return nil, errUnknownAddress
+
+	// if the address is in secsM then it's a secondary, secsM might already
+	// have a client created. If it's not in secsM it's an unknown address
+	client, ok := sc.secsM[addr]
+	sc.l.RUnlock()
+	if client != nil {
+		return client, nil
+	} else if !ok {
+		return nil, errUnknownAddress
+	}
+
+	// if client was nil but ok was true it means the address is a secondary but
+	// a Client for it has never been created. Create one now and store it into
+	// secsM
+	newClient, err := sc.so.pf("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	// two routines might be requesting the same addr at the same time, and
+	// both create the pool. The second one needs to make sure it closes its own
+	// pool when it sees the other got there first.
+	sc.l.Lock()
+	if client = sc.secsM[addr]; client == nil {
+		sc.secsM[addr] = newClient
+	}
+	sc.l.Unlock()
+
+	if client != nil {
+		newClient.Close()
+		return client, nil
+	}
+
+	return newClient, nil
 }
 
 // Close implements the method for the Client interface.
@@ -238,6 +267,11 @@ func (sc *Sentinel) Close() error {
 		close(sc.closeCh)
 		sc.closeWG.Wait()
 		closeErr = sc.prim.Close()
+		for _, secClient := range sc.secsM {
+			if secClient != nil {
+				secClient.Close()
+			}
+		}
 	})
 	return closeErr
 }
@@ -248,27 +282,6 @@ func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
 		return "", fmt.Errorf("malformed %s response", cmd)
 	}
 	return net.JoinHostPort(m["ip"], m["port"]), nil
-}
-
-// returns added/removed
-func (sc *Sentinel) secsDiff(
-	oldSecs, newSecs map[string]bool,
-) (
-	map[string]bool, map[string]bool,
-) {
-	removed := map[string]bool{}
-	for addr := range oldSecs {
-		if _, ok := newSecs[addr]; !ok {
-			removed[addr] = true
-		}
-	}
-	added := map[string]bool{}
-	for addr := range newSecs {
-		if _, ok := oldSecs[addr]; !ok {
-			added[addr] = true
-		}
-	}
-	return added, removed
 }
 
 // given a connection to a sentinel, ensures that the Clients currently being
@@ -289,49 +302,59 @@ func (sc *Sentinel) ensureClients(conn Conn) error {
 		return err
 	}
 
-	newSecsM := map[string]bool{}
+	newSecsM := map[string]Client{}
 	for _, secM := range secMM {
 		newSecAddr, err := sentinelMtoAddr(secM, "SENTINEL SLAVES")
 		if err != nil {
 			return err
 		}
-		newSecsM[newSecAddr] = true
+		newSecsM[newSecAddr] = nil
 	}
 
 	return sc.setClients(newPrimAddr, newSecsM)
 }
 
-// one day we might keep track of the secondary clients in here, not sure yet
-func (sc *Sentinel) setClients(newPrimAddr string, newSecsM map[string]bool) error {
+func (sc *Sentinel) setClients(newPrimAddr string, newSecsM map[string]Client) error {
+	var toClose []Client
+
 	sc.l.RLock()
 	oldPrimAddr := sc.primAddr
-	secsAdded, secsRemoved := sc.secsDiff(sc.secsM, newSecsM)
+	oldPrim := sc.prim
+
+	// for each actual Client instance in sc.secsM, either move it over to
+	// newSecsM (if the address is shared) or make sure it is closed.
+	for addr, client := range sc.secsM {
+		if client == nil {
+			// do nothing
+		} else if _, ok := newSecsM[addr]; ok {
+			newSecsM[addr] = client
+		} else {
+			toClose = append(toClose, client)
+		}
+	}
 	sc.l.RUnlock()
 
-	primChanged := oldPrimAddr != newPrimAddr
-	if !primChanged && len(secsAdded) == 0 && len(secsRemoved) == 0 {
-		return nil
-
-	} else if !primChanged {
-		sc.l.Lock()
-		sc.secsM = newSecsM
-		sc.l.Unlock()
-		return nil
-	}
-
-	newPool, err := sc.so.pf("tcp", newPrimAddr)
-	if err != nil {
-		return err
+	var newPrim Client
+	var err error
+	if oldPrimAddr != newPrimAddr {
+		if newPrim, err = sc.so.pf("tcp", newPrimAddr); err != nil {
+			return err
+		} else if oldPrim != nil { // will be nil for first initialization
+			toClose = append(toClose, oldPrim)
+		}
 	}
 
 	sc.l.Lock()
-	if sc.prim != nil {
-		sc.prim.Close()
+	if newPrim != nil {
+		sc.prim = newPrim
+		sc.primAddr = newPrimAddr
 	}
-	sc.prim = newPool
-	sc.primAddr = newPrimAddr
 	sc.secsM = newSecsM
 	sc.l.Unlock()
+
+	for _, client := range toClose {
+		client.Close()
+	}
 
 	return nil
 }
