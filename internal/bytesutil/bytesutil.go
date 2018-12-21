@@ -12,6 +12,9 @@ import (
 	"sync"
 )
 
+// AnyIntToInt64 converts a value of any of Go's integer types (signed and unsigned) into a signed int64.
+//
+// If m is not of one of Go's built in integer types the call will panic.
 func AnyIntToInt64(m interface{}) int64 {
 	switch mt := m.(type) {
 	case int:
@@ -45,16 +48,24 @@ var bytePool = sync.Pool{
 	},
 }
 
+// GetBytes returns a non-nil pointer to a byte slice from a pool of byte slices.
+//
+// The returned byte slice should be put back into the pool using PutBytes after usage.
 func GetBytes() *[]byte {
 	return bytePool.Get().(*[]byte)
 }
 
+// PutBytes puts the given byte slice pointer into a pool that can be accessed via GetBytes.
+//
+// After calling PutBytes the given pointer and byte slice must not be accessed anymore.
 func PutBytes(b *[]byte) {
-	(*b) = (*b)[:0]
+	*b = (*b)[:0]
 	bytePool.Put(b)
 }
 
-// parseInt is a specialized version of strconv.ParseInt that parses a base-10 encoded signed integer.
+// ParseInt is a specialized version of strconv.ParseInt that parses a base-10 encoded signed integer from a []byte.
+//
+// This can be used to avoid allocating a string, since strconv.ParseInt only takes a string.
 func ParseInt(b []byte) (int64, error) {
 	if len(b) == 0 {
 		return 0, errors.New("empty slice given to parseInt")
@@ -78,7 +89,9 @@ func ParseInt(b []byte) (int64, error) {
 	return int64(n), nil
 }
 
-// parseUint is a specialized version of strconv.ParseUint that parses a base-10 encoded integer
+// ParseUint is a specialized version of strconv.ParseUint that parses a base-10 encoded integer from a []byte.
+//
+// This can be used to avoid allocating a string, since strconv.ParseUint only takes a string.
 func ParseUint(b []byte) (uint64, error) {
 	if len(b) == 0 {
 		return 0, errors.New("empty slice given to parseUint")
@@ -98,17 +111,20 @@ func ParseUint(b []byte) (uint64, error) {
 	return n, nil
 }
 
-func Expand(b []byte, to int) []byte {
-	if cap(b) < to {
-		nb := make([]byte, to)
+// Expand expands the given byte slice to exactly n bytes.
+//
+// If cap(b) < n, a new slice will be allocated and filled with the bytes from b.
+func Expand(b []byte, n int) []byte {
+	if cap(b) < n {
+		nb := make([]byte, n)
 		copy(nb, b)
 		return nb
 	}
-	return b[:to]
+	return b[:n]
 }
 
-// effectively an assert that the reader data starts with the given slice,
-// discarding the slice at the same time
+// BufferedPrefix checks that the next bytes in the given *bufio.Reader are equal to prefix and discards them if
+// they are equal.
 func BufferedPrefix(br *bufio.Reader, prefix []byte) error {
 	b, err := br.Peek(len(prefix))
 	if err != nil {
@@ -120,19 +136,18 @@ func BufferedPrefix(br *bufio.Reader, prefix []byte) error {
 	return err
 }
 
-// reads bytes up to a delim and returns them, or an error
+// BufferedBytesDelim reads a line from br and checks that the line ends with \r\n, returning the line without \r\n.
 func BufferedBytesDelim(br *bufio.Reader) ([]byte, error) {
 	b, err := br.ReadSlice('\n')
 	if err != nil {
 		return nil, err
-	} else if len(b) < 2 {
+	} else if len(b) < 2 || b[len(b)-2] != '\r' {
 		return nil, fmt.Errorf("malformed resp %q", b)
 	}
 	return b[:len(b)-2], err
 }
 
-// reads an integer out of the buffer, followed by a delim. It parses the
-// integer, or returns an error
+// BufferedIntDelim reads the current line from br as an integer.
 func BufferedIntDelim(br *bufio.Reader) (int64, error) {
 	b, err := BufferedBytesDelim(br)
 	if err != nil {
@@ -141,7 +156,7 @@ func BufferedIntDelim(br *bufio.Reader) (int64, error) {
 	return ParseInt(b)
 }
 
-// readNAppend appends exactly n bytes from r into b.
+// ReadNAppend appends exactly n bytes from r into b.
 func ReadNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
 	if n == 0 {
 		return b, nil
@@ -152,6 +167,7 @@ func ReadNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
 	return b, err
 }
 
+// ReadNDicard discards exactly n bytes from r.
 func ReadNDiscard(r io.Reader, n int) error {
 	type discarder interface {
 		Discard(int) (int, error)
@@ -184,6 +200,10 @@ func ReadNDiscard(r io.Reader, n int) error {
 	}
 }
 
+// MultiWrite writes multiple byte slices into one writer.
+//
+// This is equivalent to calling w.Write for each byte slice in bb, but may be optimized to reduce calls
+// for some types of io.Writer.
 func MultiWrite(w io.Writer, bb ...[]byte) error {
 	for _, b := range bb {
 		if _, err := w.Write(b); err != nil {
@@ -193,6 +213,7 @@ func MultiWrite(w io.Writer, bb ...[]byte) error {
 	return nil
 }
 
+// ReadInt reads the next n bytes from r as a signed 64 bit integer.
 func ReadInt(r io.Reader, n int) (int64, error) {
 	scratch := GetBytes()
 	defer PutBytes(scratch)
@@ -204,6 +225,7 @@ func ReadInt(r io.Reader, n int) (int64, error) {
 	return ParseInt(*scratch)
 }
 
+// ReadUint reads the next n bytes from r as an unsigned 64 bit integer.
 func ReadUint(r io.Reader, n int) (uint64, error) {
 	scratch := GetBytes()
 	defer PutBytes(scratch)
@@ -215,6 +237,7 @@ func ReadUint(r io.Reader, n int) (uint64, error) {
 	return ParseUint(*scratch)
 }
 
+// ReadFloat reads the next n bytes from r as a 64 bit floating point number with the given precision.
 func ReadFloat(r io.Reader, precision, n int) (float64, error) {
 	scratch := GetBytes()
 	defer PutBytes(scratch)
