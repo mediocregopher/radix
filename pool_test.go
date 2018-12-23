@@ -154,7 +154,7 @@ func TestPoolPut(t *T) {
 	// network error
 	pool.Do(WithConn("", func(conn Conn) error {
 		assertPoolConns(9)
-		conn.(*staticPoolConn).lastIOErr = io.EOF
+		conn.(*ioErrConn).lastIOErr = io.EOF
 		return nil
 	}))
 	assertPoolConns(9)
@@ -163,7 +163,7 @@ func TestPoolPut(t *T) {
 	// marshal/unmarshal error
 	pool.Do(WithConn("", func(conn Conn) error {
 		assert.NotNil(t, conn.Do(FlatCmd(nil, "ECHO", "", func() {})))
-		assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
+		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
 		return nil
 	}))
 	assertPoolConns(9)
@@ -172,7 +172,7 @@ func TestPoolPut(t *T) {
 	// resp error
 	pool.Do(WithConn("", func(conn Conn) error {
 		assert.NotNil(t, Cmd(nil, "CMDDNE"))
-		assert.Nil(t, conn.(*staticPoolConn).lastIOErr)
+		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
 		return nil
 	}))
 	assertPoolConns(9)
