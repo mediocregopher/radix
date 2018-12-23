@@ -314,32 +314,65 @@ func (sc *Sentinel) ensureClients(conn Conn) error {
 }
 
 func (sc *Sentinel) setClients(newPrimAddr string, newSecsM map[string]Client) error {
+
+	var stateChanged bool
 	var toClose []Client
+	var newPrim Client
 
 	sc.l.RLock()
 	oldPrimAddr := sc.primAddr
 	oldPrim := sc.prim
 
 	// for each actual Client instance in sc.secsM, either move it over to
-	// newSecsM (if the address is shared) or make sure it is closed.
+	// newSecsM (if the address is shared) or make sure it is closed if it's
+	// not becoming the primary.
 	for addr, client := range sc.secsM {
-		if client == nil {
+		if client == nil || addr == newPrimAddr {
 			// do nothing
 		} else if _, ok := newSecsM[addr]; ok {
 			newSecsM[addr] = client
 		} else {
 			toClose = append(toClose, client)
+			stateChanged = true
 		}
 	}
-	sc.l.RUnlock()
 
-	var newPrim Client
-	var err error
+	// this is only checks if a secondary was added so we know the replica set
+	// state has changed later in the method.
+	for addr := range newSecsM {
+		if _, ok := sc.secsM[addr]; !ok {
+			stateChanged = true
+		}
+	}
+
+	// if the primary is now a secondary it can be moved into newSecsM too,
+	// otherwise it can be closed. oldPrim might be nil if this is the first
+	// initialization.
+	if _, ok := newSecsM[oldPrimAddr]; ok {
+		newSecsM[oldPrimAddr] = oldPrim
+	} else if oldPrim != nil {
+		toClose = append(toClose, oldPrim)
+	}
+
+	// if the primary has then record that the replica set state has changed,
+	// and while we're here try to pre-emtively populate newPrim from the old
+	// secondary set.
 	if oldPrimAddr != newPrimAddr {
+		stateChanged = true
+		newPrim = sc.secsM[newPrimAddr] // will stay nil if not in secsM
+	}
+
+	sc.l.RUnlock()
+	if !stateChanged {
+		return nil
+	}
+
+	// if there's a new primary and it didn't come from the old secsM, create it
+	// here outside the lock where it won't block everything else.
+	var err error
+	if newPrim == nil && oldPrimAddr != newPrimAddr {
 		if newPrim, err = sc.so.pf("tcp", newPrimAddr); err != nil {
 			return err
-		} else if oldPrim != nil { // will be nil for first initialization
-			toClose = append(toClose, oldPrim)
 		}
 	}
 
