@@ -21,8 +21,8 @@ func randStr() string {
 	return hex.EncodeToString(b)
 }
 
-func dial() Conn {
-	c, err := Dial("tcp", "127.0.0.1:6379")
+func dial(opts ...DialOpt) Conn {
+	c, err := Dial("tcp", "127.0.0.1:6379", opts...)
 	if err != nil {
 		panic(err)
 	}

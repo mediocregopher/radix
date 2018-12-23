@@ -226,11 +226,15 @@ type pubSubConn struct {
 
 	close    sync.Once
 	closeErr error
+
 	// This one is optional, and kind of cheating. We use it in persistent to
 	// get on-the-fly updates of when the connection fails. Maybe one day this
 	// could be exposed if there's a clean way of doing so, or another way
 	// accomplishing the same thing could be done instead.
 	closeErrCh chan error
+
+	// only used during testing
+	testEventCh chan string
 }
 
 // PubSub wraps the given Conn so that it becomes a PubSubConn. The passed in
@@ -249,6 +253,12 @@ func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
 	}
 	go c.spin()
 	return c
+}
+
+func (c *pubSubConn) testEvent(str string) {
+	if c.testEventCh != nil {
+		c.testEventCh <- str
+	}
 }
 
 func (c *pubSubConn) publish(m PubSubMessage) {
@@ -271,6 +281,7 @@ func (c *pubSubConn) spin() {
 		var rm resp2.RawMessage
 		err := c.conn.Decode(&rm)
 		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			c.testEvent("timeout")
 			continue
 		} else if err != nil {
 			c.closeInner(err)

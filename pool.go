@@ -17,6 +17,8 @@ var errPoolFull = errors.New("connection pool is full")
 
 // TODO do something with errors which happen asynchronously
 
+// ioErrConn is a Conn which tracks the last net.Error which was seen either
+// during an Encode call or a Decode call
 type ioErrConn struct {
 	Conn
 
@@ -25,6 +27,10 @@ type ioErrConn struct {
 	// level error, e.g. a timeout, disconnect, etc... Close is automatically
 	// called on the client when it encounters a critical network error
 	lastIOErr error
+}
+
+func newIOErrConn(c Conn) *ioErrConn {
+	return &ioErrConn{Conn: c}
 }
 
 func (ioc *ioErrConn) Encode(m resp.Marshaler) error {
@@ -269,7 +275,7 @@ func (p *Pool) newConn(errIfFull bool) (*ioErrConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	ioc := &ioErrConn{Conn: c}
+	ioc := newIOErrConn(c)
 
 	// We don't want to wrap the entire function in a lock because dialing might
 	// take a while, but we also don't want to be making any new connections if

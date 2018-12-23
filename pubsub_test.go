@@ -242,6 +242,28 @@ func TestPubSubMixedSubscribe(t *T) {
 	}, msg2)
 }
 
+// Ensure that PubSubConn properly handles the case where the Conn it's reading
+// from returns a timeout error
+func TestPubSubTimeout(t *T) {
+	rawC := newIOErrConn(dial(DialReadTimeout(1 * time.Second)))
+	c, pubC := PubSub(rawC), dial()
+	c.(*pubSubConn).testEventCh = make(chan string, 1)
+
+	ch, msgCh := randStr(), make(chan PubSubMessage, 1)
+	require.Nil(t, c.Subscribe(msgCh, ch))
+
+	msgStr := randStr()
+	go func() {
+		time.Sleep(2 * time.Second)
+		assert.Nil(t, pubC.Do(Cmd(nil, "PUBLISH", ch, msgStr)))
+	}()
+
+	assert.Equal(t, "timeout", <-c.(*pubSubConn).testEventCh)
+	msg := assertMsgRead(t, msgCh)
+	assert.Nil(t, rawC.lastIOErr)
+	assert.Equal(t, msgStr, string(msg.Message))
+}
+
 func ExamplePubSub() {
 	// Create a normal redis connection
 	conn, err := Dial("tcp", "127.0.0.1:6379")
