@@ -234,7 +234,7 @@ type StreamReader interface {
 	//
 	// The returned slice is only valid until the next call to Next.
 	//
-	// If no new entries are available or there was an error, ok will be false.
+	// If there was an error, ok will be false. Otherwise, even if no entries were read, ok will be true.
 	//
 	// If there was an error, which is not a temporary timeout, all future calls to Next will return ok == false.
 	Next() (stream string, entries []StreamEntry, ok bool)
@@ -332,15 +332,7 @@ func (sr *streamReader) backfill() bool {
 		return false
 	}
 
-	// Redis can return streams without entries when doing XREADGROUP of unacknowledged entries.
-	// This makes sure that we don't return empty streams in Next, which could cause users to spin forever.
-	for i := range sr.unread {
-		if len(sr.unread[i].entries) > 0 {
-			return true
-		}
-	}
-
-	return false
+	return true
 }
 
 // Err implements the StreamReader interface.
@@ -358,17 +350,26 @@ func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 		return "", nil, false
 	}
 
-	sre := sr.unread[len(sr.unread)-1]
-	sr.unread = sr.unread[:len(sr.unread)-1]
+	for len(sr.unread) > 0 {
+		sre := sr.unread[len(sr.unread)-1]
+		sr.unread = sr.unread[:len(sr.unread)-1]
 
-	stream = string(sre.stream)
+		// entries can be empty if we are using XREADGROUP and reading unacknowledged entries.
+		if len(sre.entries) == 0 {
+			continue
+		}
 
-	// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
-	if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {
-		sr.ids[stream] = sre.entries[len(sre.entries)-1].ID.String()
+		stream = string(sre.stream)
+
+		// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
+		if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {
+			sr.ids[stream] = sre.entries[len(sre.entries)-1].ID.String()
+		}
+
+		return stream, sre.entries, true
 	}
 
-	return stream, sre.entries, true
+	return "", nil, true
 }
 
 type streamReaderEntry struct {

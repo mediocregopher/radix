@@ -373,6 +373,29 @@ func TestStreamReader(t *T) {
 			c := dial()
 			defer c.Close()
 
+			consumer, group := randStr(), randStr()
+			stream1, stream2 := randStr(), randStr()
+
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream1: {Time: 0, Seq: 0},
+					stream2: {Time: 0, Seq: 0},
+				},
+				Group:   group,
+				Consumer: consumer,
+				NoBlock: true,
+			})
+
+			addStreamGroup(t, c, stream1, group, "0-0")
+			addStreamGroup(t, c, stream2, group, "0-0")
+
+			assertNoStreamReaderEntries(t, r)
+		})
+
+		t.Run("NoGroup", func(t *T) {
+			c := dial()
+			defer c.Close()
+
 			stream1, stream2 := randStr(), randStr()
 
 			r := NewStreamReader(c, StreamReaderOpts{
@@ -384,7 +407,10 @@ func TestStreamReader(t *T) {
 				NoBlock: true,
 			})
 
-			assertNoStreamReaderEntries(t, r)
+			_, _, ok := r.Next()
+			assert.False(t, ok)
+			err := r.Err()
+			assert.Error(t, err)
 		})
 
 		t.Run("EOS", func(t *T) {
@@ -831,7 +857,7 @@ func assertNoStreamReaderEntries(tb TB, r StreamReader) {
 	stream, entries, ok := r.Next()
 	assert.Empty(tb, stream)
 	assert.Empty(tb, entries)
-	assert.False(tb, ok)
+	assert.True(tb, ok)
 }
 
 func assertStreamReaderEntries(tb TB, r StreamReader, expected map[string][]StreamEntryID) {
