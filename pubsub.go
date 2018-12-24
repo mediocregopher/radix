@@ -25,21 +25,34 @@ func timeoutOk(c Conn) Conn {
 }
 
 func (toc *timeoutOkConn) Decode(u resp.Unmarshaler) error {
-	err := toc.Conn.Decode(u)
+	err := toc.Conn.Decode(timeoutOkUnmarshaler{u})
 	if err == nil {
 		return nil
 	}
-	if !isTemporaryTimeout(err) {
+	if te, ok := err.(errTimeout); ok {
+		err = te.err
+	} else {
 		toc.Close()
 	}
 	return err
 }
 
-func isTemporaryTimeout(err error) bool {
-	if nerr, ok := err.(net.Error); ok && nerr.Temporary() && nerr.Timeout() {
-		return true
+type timeoutOkUnmarshaler struct {
+	u resp.Unmarshaler
+}
+
+type errTimeout struct {
+	err error
+}
+
+func (et errTimeout) Error() string { return et.err.Error() }
+
+func (tou timeoutOkUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
+	err := tou.u.UnmarshalRESP(br)
+	if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+		err = errTimeout{err}
 	}
-	return false
+	return err
 }
 
 ////////////////////////////////////////////////////////////////////////////////
