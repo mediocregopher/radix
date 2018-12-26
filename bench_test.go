@@ -43,7 +43,7 @@ func BenchmarkSerialGetSet(b *B) {
 }
 
 func BenchmarkParallelGetSet(b *B) {
-	parallel := runtime.GOMAXPROCS(0)
+	parallel := runtime.GOMAXPROCS(0) * 8
 
 	do := func(b *B, fn func()) {
 		b.SetParallelism(parallel)
@@ -67,11 +67,32 @@ func BenchmarkParallelGetSet(b *B) {
 				var out string
 				if err := conn.Do(Cmd(&out, "GET", "foo")); err != nil {
 					return err
+				} else if out != "bar" {
+					b.Fatal("got wrong value")
 				}
 				return nil
 			}))
 			if err != nil {
 				b.Fatal(err)
+			}
+		})
+	})
+
+	radixConn, err := Dial("tcp", "127.0.0.1:6379")
+	if err != nil {
+		b.Fatal(err)
+	}
+	radixPC := NewPipelineClient(radixConn)
+	b.Run("radix (pipelined)", func(b *B) {
+		do(b, func() {
+			if err := radixPC.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+				b.Fatal(err)
+			}
+			var out string
+			if err := radixPC.Do(Cmd(&out, "GET", "foo")); err != nil {
+				b.Fatal(err)
+			} else if out != "bar" {
+				b.Fatal("got wrong value")
 			}
 		})
 	})
@@ -86,8 +107,10 @@ func BenchmarkParallelGetSet(b *B) {
 			if _, err := conn.Do("SET", "foo", "bar"); err != nil {
 				b.Fatal(err)
 			}
-			if _, err := redigo.String(conn.Do("GET", "foo")); err != nil {
+			if out, err := redigo.String(conn.Do("GET", "foo")); err != nil {
 				b.Fatal(err)
+			} else if out != "bar" {
+				b.Fatal("got wrong value")
 			}
 		})
 	})
