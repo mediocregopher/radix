@@ -2,17 +2,18 @@
 language: go
 go:
   - "1.11"
-# disabled due to go dep not being supported on travis
-#  - "1.10"
+  - "1.10.7"
 
 services:
   - redis-server
 
-env:
-  - REDIS_VERSION=stable
+before_install:
+  # update to latest version of redis
+  - sudo apt-get install -y redis-server
 
 script:
-  - go test -v -race ./...
+  # for some reason go test -v -race ./... doesn't work on travis, so use this
+  - go list ./... | xargs -n1 go test -v -race
 
 after_failure:
   - tail -n100 ./*.log
