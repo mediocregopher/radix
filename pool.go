@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,23 @@ import (
 var ErrPoolEmpty = errors.New("connection pool is empty")
 
 var errPoolFull = errors.New("connection pool is full")
+
+var blockingCmds = map[string]bool{
+	"WAIT": true,
+
+	// taken from https://github.com/joomcode/redispipe#limitations
+	"BLPOP":      true,
+	"BRPOP":      true,
+	"BRPOPLPUSH": true,
+
+	"BZPOPMIN": true,
+	"BZPOPMAX": true,
+
+	"XREAD":      true,
+	"XREADGROUP": true,
+
+	"SAVE": true,
+}
 
 // TODO do something with errors which happen asynchronously
 
@@ -68,6 +86,9 @@ type poolOpts struct {
 	overflowSize          int
 	onEmptyWait           time.Duration
 	errOnEmpty            error
+	pipelineConcurrency   int
+	pipelineLimit         int
+	pipelineWindow        time.Duration
 }
 
 // PoolOpt is an optional behavior which can be applied to the NewPool function
@@ -171,6 +192,38 @@ func PoolOnFullBuffer(size int, drainInterval time.Duration) PoolOpt {
 	}
 }
 
+// PoolPipelineConcurrency sets the maximum number of pipelines that can be
+// executed concurrently.
+//
+// If limit is zero or greater than the pool size, the limit will be set to the
+// pool size.
+func PoolPipelineConcurrency(limit int) PoolOpt {
+	return func(po *poolOpts) {
+		po.pipelineConcurrency = limit
+	}
+}
+
+// PoolPipelineLimit sets the maximum number of concurrent commands that can be
+// automatically pipelined onto a single Redis connection.
+//
+// If limit is zero then no limit will be used and pipelines will only be limited
+// by the specified time window.
+func PoolPipelineLimit(limit int) PoolOpt {
+	return func(po *poolOpts) {
+		po.pipelineLimit = limit
+	}
+}
+
+// PoolPipelineLimit sets the duration after which internal pipelines will be
+// flushed.
+//
+// If window is zero then automatic pipelining will be disabled.
+func PoolPipelineWindow(window time.Duration) PoolOpt {
+	return func(po *poolOpts) {
+		po.pipelineWindow = window
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Pool is a semi-dynamic pool which holds a fixed number of connections open
@@ -190,6 +243,8 @@ type Pool struct {
 	pool   chan *ioErrConn
 	closed bool
 
+	pipelineReqCh chan pipedCmd
+
 	wg       sync.WaitGroup
 	closeCh  chan bool
 	initDone chan struct{} // used for tests
@@ -206,6 +261,9 @@ type Pool struct {
 //	PoolRefillInterval(1 * time.Second)
 //	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
 //	PoolPingInterval(10 * time.Second / (size+1))
+//  PoolPipelineConcurrency(0)
+//	PoolPipelineLimit(0)
+//	PoolPipelineWindow(150 * time.Microsecond)
 //
 func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
@@ -222,6 +280,9 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolRefillInterval(1 * time.Second),
 		PoolOnFullBuffer((size/3)+1, 1*time.Second),
 		PoolPingInterval(10 * time.Second / time.Duration(size+1)),
+		PoolPipelineConcurrency(0),
+		PoolPipelineLimit(0),
+		PoolPipelineWindow(150 * time.Microsecond),
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {
@@ -265,6 +326,16 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	}
 	if p.opts.overflowSize > 0 && p.opts.overflowDrainInterval > 0 {
 		p.atIntervalDo(p.opts.overflowDrainInterval, p.doOverflowDrain)
+	}
+	if p.opts.pipelineWindow > 0 {
+		p.pipelineReqCh = make(chan pipedCmd, 32) // https://xkcd.com/221/
+
+		// wrap the execution in an function call so that we can have the wg.Add and wg.Done calls in one place.
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			p.pipelineLoop()
+		}()
 	}
 	return p, nil
 }
@@ -433,8 +504,45 @@ func (p *Pool) put(ioc *ioErrConn) {
 
 // Do implements the Do method of the Client interface by retrieving a Conn out
 // of the pool, calling Run on the given Action with it, and returning the Conn
-// to the pool
+// to the pool.
+//
+// If the given Action is a CmdAction, it will be pipelined with other concurrent
+// calls to Do, which can improve the performance and resource usage of the Redis
+// server, but will increase the latency for some of the Actions. To avoid the
+// automatic pipelining you can either set PoolPipelineWindow(0) when creating the
+// Pool or use WithConn. Pipelines created manually (via Pipeline) are also excluded
+// from this and will be executed as if using WithConn.
+// Due to a limitation in the implementation, custom CmdAction implementations
+// are currently not automatically pipelined.
 func (p *Pool) Do(a Action) error {
+	if p.pipelineReqCh != nil && p.canPipeline(a) {
+		return p.doPipelined(a.(CmdAction))
+	}
+
+	return p.do(a)
+}
+
+func (p *Pool) canPipeline(a Action) bool {
+	switch v := a.(type) {
+	case *cmdAction:
+		// blocking commands can not be multiplexed so we must skip them
+		return !blockingCmds[strings.ToUpper(v.cmd)]
+	case pipeline:
+		// do not merge user defined pipelines with our own pipelines so that
+		// users can better control pipelining
+		return false
+	case *withConn:
+		return false
+	case CmdAction:
+		// there is currently no way to get the command for CmdAction implementations
+		// from outside the radix package so we can not multiplex these commands.
+		return false
+	default:
+		return false
+	}
+}
+
+func (p *Pool) do(a Action) error {
 	c, err := p.get()
 	if err != nil {
 		return err
@@ -442,6 +550,22 @@ func (p *Pool) Do(a Action) error {
 	defer p.put(c)
 
 	return c.Do(a)
+}
+
+func (p *Pool) doPipelined(cmd CmdAction) error {
+	req := getPipedCmd(cmd) // get this outside the lock to avoid
+
+	p.l.RLock()
+	if p.closed {
+		p.l.RUnlock()
+		return errClientClosed
+	}
+	p.pipelineReqCh <- *req
+	p.l.RUnlock()
+
+	err := <-req.resCh
+	poolPipedCmd(req)
+	return err
 }
 
 // NumAvailConns returns the number of connections currently available in the
@@ -478,5 +602,134 @@ emptyLoop:
 	// by now the pool's go-routines should have bailed, wait to make sure they
 	// do
 	p.wg.Wait()
+	return nil
+}
+
+func (p *Pool) pipelineLoop() {
+	var reqs []pipedCmd
+	if p.opts.pipelineLimit > 0 {
+		reqs = make([]pipedCmd, 0, p.opts.pipelineLimit)
+	}
+
+	concurrency := p.opts.pipelineConcurrency
+	if concurrency < 1 || concurrency > p.size {
+		concurrency = p.size
+	}
+
+	// limits the number of concurrent flush calls to improve performance and avoiding errors
+	flushSema := newSemaphore(concurrency)
+	defer flushSema.acquireAll()
+
+	flush := func() {
+		if len(reqs) == 0 {
+			return
+		}
+
+		// copy requests into a pipeline so that we can flush the pipeline in
+		// the background, to avoid blocking the main loop.
+		pipe := make(pipedCmdPipeline, len(reqs))
+		copy(pipe, reqs)
+
+		reqs = reqs[:0]
+
+		flushSema.acquire()
+		go func() {
+			defer flushSema.release()
+
+			if err := p.do(pipe); err != nil {
+				for _, req := range pipe {
+					req.resCh <- err
+				}
+			}
+		}()
+	}
+
+	t := getTimer(time.Hour)
+	defer putTimer(t)
+
+	t.Stop()
+
+	for {
+		select {
+		case req := <-p.pipelineReqCh:
+			reqs = append(reqs, req)
+
+			if p.opts.pipelineLimit > 0 && len(reqs) == p.opts.pipelineLimit {
+				// if we reached the pipeline limit, execute now to avoid unnecessary waiting
+				t.Stop()
+				flush()
+			} else if len(reqs) == 1 {
+				t.Reset(p.opts.pipelineWindow)
+			}
+		case <-t.C:
+			flush()
+		case <-p.closeCh:
+			flush()
+			return
+		}
+	}
+}
+
+type pipedCmd struct {
+	cmd   CmdAction
+	resCh chan error
+}
+
+var pipedCmdPool sync.Pool
+
+func getPipedCmd(cmd CmdAction) *pipedCmd {
+	req, _ := pipedCmdPool.Get().(*pipedCmd)
+	if req != nil {
+		req.cmd = cmd
+		return req
+	}
+	return &pipedCmd{
+		cmd: cmd,
+		// using a buffer of 1 is faster than no buffer in most cases
+		resCh: make(chan error, 1),
+	}
+}
+
+func poolPipedCmd(req *pipedCmd) {
+	req.cmd = nil
+	pipedCmdPool.Put(req)
+}
+
+type pipedCmdPipeline []pipedCmd
+
+func (p pipedCmdPipeline) Keys() []string {
+	m := map[string]bool{}
+	for _, rc := range p {
+		for _, k := range rc.cmd.Keys() {
+			m[k] = true
+		}
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (p pipedCmdPipeline) Run(c Conn) error {
+	if err := c.Encode(p); err != nil {
+		return err
+	}
+	for _, req := range p {
+		req.resCh <- c.Decode(req.cmd)
+	}
+	return nil
+}
+
+// MarshalRESP implements the resp.Marshaler interface.
+//
+// See the comment on pipeline.MarshalRESP for more information on why this is needed.
+func (p pipedCmdPipeline) MarshalRESP(w io.Writer) error {
+	for _, req := range p {
+		if err := req.cmd.MarshalRESP(w); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

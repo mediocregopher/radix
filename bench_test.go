@@ -16,7 +16,11 @@ func newRedigo() redigo.Conn {
 }
 
 func BenchmarkSerialGetSet(b *B) {
-	radix := dial()
+	radix, err := NewPool("tcp", "127.0.0.1:6379", 1)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer radix.Close()
 	b.Run("radix", func(b *B) {
 		for i := 0; i < b.N; i++ {
 			if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
@@ -25,6 +29,20 @@ func BenchmarkSerialGetSet(b *B) {
 			var out string
 			if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
 				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("radix_(pipelined)", func(b *B) {
+		for i := 0; i < b.N; i++ {
+			if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+				b.Fatal(err)
+			}
+			var out string
+			if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
+				b.Fatal(err)
+			} else if out != "bar" {
+				b.Fatal("got wrong value")
 			}
 		}
 	})
@@ -58,6 +76,7 @@ func BenchmarkParallelGetSet(b *B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	defer radix.Close()
 	b.Run("radix", func(b *B) {
 		do(b, func() {
 			err := radix.Do(WithConn("foo", func(conn Conn) error {
@@ -78,18 +97,13 @@ func BenchmarkParallelGetSet(b *B) {
 		})
 	})
 
-	radixConn, err := Dial("tcp", "127.0.0.1:6379")
-	if err != nil {
-		b.Fatal(err)
-	}
-	radixPC := NewPipelineClient(radixConn)
-	b.Run("radix (pipelined)", func(b *B) {
+	b.Run("radix_(pipelined)", func(b *B) {
 		do(b, func() {
-			if err := radixPC.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+			if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
 				b.Fatal(err)
 			}
 			var out string
-			if err := radixPC.Do(Cmd(&out, "GET", "foo")); err != nil {
+			if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
 				b.Fatal(err)
 			} else if out != "bar" {
 				b.Fatal("got wrong value")
@@ -100,6 +114,7 @@ func BenchmarkParallelGetSet(b *B) {
 	red := &redigo.Pool{MaxIdle: parallel, Dial: func() (redigo.Conn, error) {
 		return newRedigo(), nil
 	}}
+	defer red.Close()
 	b.Run("redigo", func(b *B) {
 		do(b, func() {
 			conn := red.Get()
