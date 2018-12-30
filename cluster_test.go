@@ -48,11 +48,13 @@ func newTestCluster() (*Cluster, *clusterStub) {
 // sanity check that Cluster is a client
 func TestClusterClient(t *T) {
 	c, _ := newTestCluster()
+	defer c.Close()
 	assert.Implements(t, new(Client), c)
 }
 
 func TestClusterSync(t *T) {
 	c, scl := newTestCluster()
+	defer c.Close()
 	assertClusterState := func() {
 		require.Nil(t, c.Sync())
 		c.l.RLock()
@@ -90,6 +92,7 @@ func TestClusterSync(t *T) {
 
 func TestClusterGet(t *T) {
 	c, _ := newTestCluster()
+	defer c.Close()
 	for s := uint16(0); s < numSlots; s++ {
 		require.Nil(t, c.Do(Cmd(nil, "GET", clusterSlotKeys[s])))
 	}
@@ -97,6 +100,7 @@ func TestClusterGet(t *T) {
 
 func TestClusterDo(t *T) {
 	c, scl := newTestCluster()
+	defer c.Close()
 	stub0 := scl.stubForSlot(0)
 	stub16k := scl.stubForSlot(16000)
 
@@ -136,6 +140,7 @@ func TestClusterDo(t *T) {
 
 func BenchmarkClusterDo(b *B) {
 	c, _ := newTestCluster()
+	defer c.Close()
 
 	k, v := clusterSlotKeys[0], randStr()
 	require.Nil(b, c.Do(Cmd(nil, "SET", k, v)))
@@ -149,6 +154,7 @@ func BenchmarkClusterDo(b *B) {
 
 func TestClusterEval(t *T) {
 	c, scl := newTestCluster()
+	defer c.Close()
 	key := clusterSlotKeys[0]
 	dst := scl.stubForSlot(10000)
 	scl.migrateInit(dst.addr, 0)
