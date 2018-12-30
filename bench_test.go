@@ -16,7 +16,7 @@ func newRedigo() redigo.Conn {
 }
 
 func BenchmarkSerialGetSet(b *B) {
-	radix, err := NewPool("tcp", "127.0.0.1:6379", 1)
+	radix, err := Dial("tcp", "127.0.0.1:6379")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -29,20 +29,6 @@ func BenchmarkSerialGetSet(b *B) {
 			var out string
 			if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
 				b.Fatal(err)
-			}
-		}
-	})
-
-	b.Run("radix_(pipelined)", func(b *B) {
-		for i := 0; i < b.N; i++ {
-			if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
-				b.Fatal(err)
-			}
-			var out string
-			if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
-				b.Fatal(err)
-			} else if out != "bar" {
-				b.Fatal("got wrong value")
 			}
 		}
 	})
