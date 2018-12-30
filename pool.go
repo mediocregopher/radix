@@ -261,7 +261,7 @@ type Pool struct {
 //	PoolRefillInterval(1 * time.Second)
 //	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
 //	PoolPingInterval(10 * time.Second / (size+1))
-//  PoolPipelineConcurrency(0)
+//	PoolPipelineConcurrency(0)
 //	PoolPipelineLimit(0)
 //	PoolPipelineWindow(150 * time.Microsecond)
 //
