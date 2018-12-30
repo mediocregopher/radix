@@ -830,7 +830,7 @@ func BenchmarkStreamReader(b *B) {
 			NoBlock: true,
 		})
 
-		for _, _, ok := r.Next(); ok; _, _, ok = r.Next() {
+		for _, entries, ok := r.Next(); ok && len(entries) > 0; _, entries, ok = r.Next() {
 			benchErr = r.Err()
 		}
 	}
