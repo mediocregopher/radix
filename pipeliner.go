@@ -19,7 +19,6 @@ type pipeliner struct {
 	reqWG sync.WaitGroup
 
 	l       sync.RWMutex
-	closeCh chan struct{}
 	closed  bool
 }
 
@@ -36,8 +35,6 @@ func newPipeliner(doFunc func(Action) error, concurrency, limit int, window time
 		flushSema: make(chan struct{}, concurrency),
 
 		reqCh: make(chan pipedCmd, 32), // https://xkcd.com/221/
-
-		closeCh: make(chan struct{}),
 	}
 
 	p.reqWG.Add(1)
@@ -95,7 +92,7 @@ func (p *pipeliner) close() error {
 		return nil
 	}
 
-	close(p.closeCh)
+	close(p.reqCh)
 	p.reqWG.Wait()
 
 	for i := 0; i < cap(p.flushSema); i++ {
@@ -118,7 +115,12 @@ func (p *pipeliner) reqLoop() {
 
 	for {
 		select {
-		case req := <-p.reqCh:
+		case req, ok := <-p.reqCh:
+			if !ok {
+				p.flush(pipe)
+				return
+			}
+
 			pipe = append(pipe, req)
 
 			if p.limit > 0 && len(pipe) == p.limit {
@@ -133,9 +135,6 @@ func (p *pipeliner) reqLoop() {
 		case <-t.C:
 			p.flush(pipe)
 			pipe = pipe[:0]
-		case <-p.closeCh:
-			p.flush(pipe)
-			return
 		}
 	}
 }
