@@ -8,7 +8,7 @@ import (
 )
 
 type pipeliner struct {
-	doFunc func(Action) error
+	c Client
 
 	limit  int
 	window time.Duration
@@ -22,13 +22,16 @@ type pipeliner struct {
 	closed  bool
 }
 
-func newPipeliner(doFunc func(Action) error, concurrency, limit int, window time.Duration) *pipeliner {
+var _ Client = (*pipeliner)(nil)
+
+func newPipeliner(c Client, concurrency, limit int, window time.Duration) *pipeliner {
 	if concurrency < 1 {
 		concurrency = 1
 	}
 
 	p := &pipeliner{
-		doFunc: doFunc,
+		c: c,
+
 		limit:  limit,
 		window: window,
 
@@ -50,7 +53,10 @@ func newPipeliner(doFunc func(Action) error, concurrency, limit int, window time
 	return p
 }
 
-func (p *pipeliner) canHandle(a Action) bool {
+// CanDo checks if the given Action can be executed / passed to p.Do.
+//
+// If CanDo returns false, the Action must not be given to Do.
+func (p *pipeliner) CanDo(a Action) bool {
 	switch v := a.(type) {
 	case *cmdAction:
 		// blocking commands can not be multiplexed so we must skip them
@@ -58,6 +64,10 @@ func (p *pipeliner) canHandle(a Action) bool {
 	case pipeline:
 		// do not merge user defined pipelines with our own pipelines so that
 		// users can better control pipelining
+		return false
+	case pipedCmdPipeline:
+		// prevent accidental cycles / loops by disallowing pipelining of
+		// pipes created by a pipeliner.
 		return false
 	case CmdAction:
 		// there is currently no way to get the command for CmdAction implementations
@@ -68,8 +78,11 @@ func (p *pipeliner) canHandle(a Action) bool {
 	}
 }
 
-func (p *pipeliner) do(cmd CmdAction) error {
-	req := getPipedCmd(cmd) // get this outside the lock to avoid
+// Do executes the given Action as part of the pipeline.
+//
+// If a is not a CmdAction, Do panics.
+func (p *pipeliner) Do(a Action) error {
+	req := getPipedCmd(a.(CmdAction)) // get this outside the lock to avoid
 
 	p.l.RLock()
 	if p.closed {
@@ -84,7 +97,11 @@ func (p *pipeliner) do(cmd CmdAction) error {
 	return err
 }
 
-func (p *pipeliner) close() error {
+// Close closes the pipeliner and makes sure that all background goroutines
+// are stopped before returning.
+//
+// Close does *not* close the underyling Client.
+func (p *pipeliner) Close() error {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -99,6 +116,7 @@ func (p *pipeliner) close() error {
 		<-p.flushSema
 	}
 
+	p.c = nil
 	return nil
 }
 
@@ -155,7 +173,7 @@ func (p *pipeliner) flush(pipe []pipedCmd) {
 			p.flushSema <- struct{}{}
 		}()
 
-		if err := p.doFunc(pipeCopy); err != nil {
+		if err := p.c.Do(pipeCopy); err != nil {
 			for _, req := range pipeCopy {
 				req.resCh <- err
 			}

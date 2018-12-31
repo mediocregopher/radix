@@ -332,7 +332,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		}
 
 		p.pipeliner = newPipeliner(
-			p.do,
+			p,
 			p.opts.pipelineConcurrency,
 			p.opts.pipelineLimit,
 			p.opts.pipelineWindow,
@@ -516,14 +516,10 @@ func (p *Pool) put(ioc *ioErrConn) {
 // Due to a limitation in the implementation, custom CmdAction implementations
 // are currently not automatically pipelined.
 func (p *Pool) Do(a Action) error {
-	if p.pipeliner != nil && p.pipeliner.canHandle(a) {
-		return p.pipeliner.do(a.(CmdAction))
+	if p.pipeliner != nil && p.pipeliner.CanDo(a) {
+		return p.pipeliner.Do(a)
 	}
 
-	return p.do(a)
-}
-
-func (p *Pool) do(a Action) error {
 	c, err := p.get()
 	if err != nil {
 		return err
@@ -564,7 +560,7 @@ emptyLoop:
 	}
 	p.l.Unlock()
 
-	if err := p.pipeliner.close(); err != nil {
+	if err := p.pipeliner.Close(); err != nil {
 		return err
 	}
 
