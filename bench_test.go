@@ -58,7 +58,7 @@ func BenchmarkParallelGetSet(b *B) {
 		})
 	}
 
-	radix, err := NewPool("tcp", "127.0.0.1:6379", parallel)
+	radix, err := NewPool("tcp", "127.0.0.1:6379", parallel, PoolPipelineConcurrency(parallel))
 	if err != nil {
 		b.Fatal(err)
 	}
