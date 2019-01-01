@@ -560,8 +560,10 @@ emptyLoop:
 	}
 	p.l.Unlock()
 
-	if err := p.pipeliner.Close(); err != nil {
-		return err
+	if p.pipeliner != nil {
+		if err := p.pipeliner.Close(); err != nil {
+			return err
+		}
 	}
 
 	// by now the pool's go-routines should have bailed, wait to make sure they

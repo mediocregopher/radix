@@ -18,8 +18,8 @@ type pipeliner struct {
 	reqCh chan pipedCmd
 	reqWG sync.WaitGroup
 
-	l       sync.RWMutex
-	closed  bool
+	l      sync.RWMutex
+	closed bool
 }
 
 var _ Client = (*pipeliner)(nil)
