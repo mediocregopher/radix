@@ -328,6 +328,11 @@ func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client)
 			newClients[addr] = client
 		} else {
 			toClose = append(toClose, client)
+		}
+
+		// separately, if the newClients doesn't have address it means the state
+		// has changed
+		if _, ok := newClients[addr]; !ok {
 			stateChanged = true
 		}
 	}
