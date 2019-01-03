@@ -223,9 +223,6 @@ type connWrap struct {
 // NewConn takes an existing net.Conn and wraps it to support the Conn interface
 // of this package. The Read and Write methods on the original net.Conn should
 // not be used after calling this method.
-//
-// In both the Encode and Decode methods of the returned Conn, if a net.Error is
-// encountered the Conn will have Close called on it automatically.
 func NewConn(conn net.Conn) Conn {
 	return &connWrap{
 		Conn: conn,
@@ -238,26 +235,14 @@ func (cw *connWrap) Do(a Action) error {
 }
 
 func (cw *connWrap) Encode(m resp.Marshaler) error {
-	err := m.MarshalRESP(cw.brw)
-	defer func() {
-		if _, ok := err.(net.Error); ok {
-			cw.Close()
-		}
-	}()
-
-	if err != nil {
+	if err := m.MarshalRESP(cw.brw); err != nil {
 		return err
 	}
-	err = cw.brw.Flush()
-	return err
+	return cw.brw.Flush()
 }
 
 func (cw *connWrap) Decode(u resp.Unmarshaler) error {
-	err := u.UnmarshalRESP(cw.brw.Reader)
-	if _, ok := err.(net.Error); ok {
-		cw.Close()
-	}
-	return err
+	return u.UnmarshalRESP(cw.brw.Reader)
 }
 
 func (cw *connWrap) NetConn() net.Conn {
