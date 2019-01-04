@@ -30,6 +30,7 @@ var blockingCmds = map[string]bool{
 	"XREADGROUP": true,
 
 	"SAVE": true,
+	"WATCH": true,
 }
 
 // TODO do something with errors which happen asynchronously
