@@ -115,6 +115,7 @@ func BenchmarkParallelGetSet(b *B) {
 				b.Fatal(err)
 			}
 			defer radix.Close()
+			<-radix.initDone
 
 			do(b, func() {
 				err := radix.Do(WithConn("foo", func(conn Conn) error {
@@ -141,6 +142,7 @@ func BenchmarkParallelGetSet(b *B) {
 				b.Fatal(err)
 			}
 			defer radix.Close()
+			<-radix.initDone
 
 			do(b, func() {
 				if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
@@ -161,6 +163,7 @@ func BenchmarkParallelGetSet(b *B) {
 				b.Fatal(err)
 			}
 			defer radix.Close()
+			<-radix.initDone
 
 			do(b, func() {
 				if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
@@ -181,6 +184,7 @@ func BenchmarkParallelGetSet(b *B) {
 			return newRedigo(), nil
 		}}
 		defer red.Close()
+		fillRedigoPool(red)
 
 		do(b, func() {
 			conn := red.Get()
@@ -216,4 +220,14 @@ func BenchmarkParallelGetSet(b *B) {
 			}
 		})
 	})
+}
+
+func fillRedigoPool(pool *redigo.Pool) {
+	var conns []redigo.Conn
+	for pool.MaxActive > pool.ActiveCount() {
+		conns = append(conns, pool.Get())
+	}
+	for _, conn := range conns {
+		_ = conn.Close()
+	}
 }
