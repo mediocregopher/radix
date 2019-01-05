@@ -20,7 +20,7 @@ func assertMsgRead(t *T, msgCh <-chan PubSubMessage) PubSubMessage {
 	case m := <-msgCh:
 		return m
 	case <-time.After(5 * time.Second):
-		t.Fatal("timedout reading")
+		panic("timedout reading")
 	}
 	panic("shouldn't get here")
 }
@@ -245,8 +245,7 @@ func TestPubSubMixedSubscribe(t *T) {
 // Ensure that PubSubConn properly handles the case where the Conn it's reading
 // from returns a timeout error
 func TestPubSubTimeout(t *T) {
-	rawC := newIOErrConn(dial(DialReadTimeout(1 * time.Second)))
-	c, pubC := PubSub(rawC), dial()
+	c, pubC := PubSub(dial(DialReadTimeout(1*time.Second))), dial()
 	c.(*pubSubConn).testEventCh = make(chan string, 1)
 
 	ch, msgCh := randStr(), make(chan PubSubMessage, 1)
@@ -260,7 +259,6 @@ func TestPubSubTimeout(t *T) {
 
 	assert.Equal(t, "timeout", <-c.(*pubSubConn).testEventCh)
 	msg := assertMsgRead(t, msgCh)
-	assert.Nil(t, rawC.lastIOErr)
 	assert.Equal(t, msgStr, string(msg.Message))
 }
 

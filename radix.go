@@ -223,9 +223,6 @@ type connWrap struct {
 // NewConn takes an existing net.Conn and wraps it to support the Conn interface
 // of this package. The Read and Write methods on the original net.Conn should
 // not be used after calling this method.
-//
-// In both the Encode and Decode methods of the returned Conn, if a net.Error is
-// encountered the Conn will have Close called on it automatically.
 func NewConn(conn net.Conn) Conn {
 	return &connWrap{
 		Conn: conn,
@@ -238,26 +235,14 @@ func (cw *connWrap) Do(a Action) error {
 }
 
 func (cw *connWrap) Encode(m resp.Marshaler) error {
-	err := m.MarshalRESP(cw.brw)
-	defer func() {
-		if _, ok := err.(net.Error); ok {
-			cw.Close()
-		}
-	}()
-
-	if err != nil {
+	if err := m.MarshalRESP(cw.brw); err != nil {
 		return err
 	}
-	err = cw.brw.Flush()
-	return err
+	return cw.brw.Flush()
 }
 
 func (cw *connWrap) Decode(u resp.Unmarshaler) error {
-	err := u.UnmarshalRESP(cw.brw.Reader)
-	if _, ok := err.(net.Error); ok {
-		cw.Close()
-	}
-	return err
+	return u.UnmarshalRESP(cw.brw.Reader)
 }
 
 func (cw *connWrap) NetConn() net.Conn {
@@ -363,6 +348,10 @@ func (tc *timeoutConn) Write(b []byte) (int, error) {
 	return tc.Conn.Write(b)
 }
 
+var defaultDialOpts = []DialOpt{
+	DialTimeout(10 * time.Second),
+}
+
 // Dial is a ConnFunc which creates a Conn using net.Dial and NewConn. It takes
 // in a number of options which can overwrite its default behavior as well.
 //
@@ -373,8 +362,16 @@ func (tc *timeoutConn) Write(b []byte) (int, error) {
 //
 // If either DialAuthPass or DialSelectDB is used it overwrites the associated
 // value passed in by the URI.
+//
+// The default options Dial uses are:
+//
+//	DialTimeout(10 * time.Second)
+//
 func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 	var do dialOpts
+	for _, opt := range defaultDialOpts {
+		opt(&do)
+	}
 	for _, opt := range opts {
 		opt(&do)
 	}
@@ -412,6 +409,26 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 
 	if err != nil {
 		return nil, err
+	}
+
+	// If the netConn is a net.TCPConn (or some wrapper for it) and so can have
+	// keepalive enabled, do so with a sane (though slightly aggressive)
+	// default.
+	{
+		type keepaliveConn interface {
+			SetKeepAlive(bool) error
+			SetKeepAlivePeriod(time.Duration) error
+		}
+
+		if kaConn, ok := netConn.(keepaliveConn); ok {
+			if err = kaConn.SetKeepAlive(true); err != nil {
+				netConn.Close()
+				return nil, err
+			} else if err = kaConn.SetKeepAlivePeriod(10 * time.Second); err != nil {
+				netConn.Close()
+				return nil, err
+			}
+		}
 	}
 
 	conn := NewConn(&timeoutConn{

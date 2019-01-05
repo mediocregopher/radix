@@ -27,6 +27,15 @@ type sentinelStub struct {
 	stubChs map[chan<- PubSubMessage]bool
 }
 
+func newSentinelStub(primAddr string, secAddrs, sentAddrs []string) sentinelStub {
+	return sentinelStub{
+		primAddr:  primAddr,
+		secAddrs:  secAddrs,
+		sentAddrs: sentAddrs,
+		stubChs:   map[chan<- PubSubMessage]bool{},
+	}
+}
+
 func addrToM(addr string) map[string]string {
 	thisM := map[string]string{}
 	thisM["ip"], thisM["port"], _ = net.SplitHostPort(addr)
@@ -119,12 +128,11 @@ func (s *sentinelStub) switchPrimary(newPrimAddr string, newSecAddrs ...string) 
 }
 
 func TestSentinel(t *T) {
-	stub := sentinelStub{
-		primAddr:  "127.0.0.1:6379",
-		secAddrs:  []string{"127.0.0.2:6379", "127.0.0.3:6379"},
-		sentAddrs: []string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"},
-		stubChs:   map[chan<- PubSubMessage]bool{},
-	}
+	stub := newSentinelStub(
+		"127.0.0.1:6379", // primAddr
+		[]string{"127.0.0.2:6379", "127.0.0.3:6379"},                                    //secAddrs
+		[]string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"}, // sentAddrs
+	)
 
 	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
 	// don't tell anyone
@@ -188,4 +196,210 @@ func TestSentinel(t *T) {
 	)
 
 	assertPoolWorks()
+}
+
+type stubSentinelPool struct {
+	Client // to inherit, but not use
+	addr   string
+	closed bool
+}
+
+func (ssp *stubSentinelPool) Close() error {
+	ssp.closed = true
+	return nil
+}
+
+// this also tests that Clients get carried over during failover.
+func TestSentinelClientsAddrs(t *T) {
+
+	type testState struct {
+		primAddr              string
+		nilSecAddrs, secAddrs []string
+	}
+
+	secAddrsM := func(ts testState) map[string]bool {
+		m := map[string]bool{}
+		for _, addr := range ts.nilSecAddrs {
+			m[addr] = true
+		}
+		for _, addr := range ts.secAddrs {
+			m[addr] = true
+		}
+		return m
+	}
+
+	secAddrs := func(ts testState) []string {
+		m := secAddrsM(ts)
+		l := make([]string, 0, len(m))
+		for addr := range m {
+			l = append(l, addr)
+		}
+		return l
+	}
+
+	assertAddrs := func(ts testState, sc *Sentinel) {
+		gotPrimAddr, gotSecAddrs := sc.Addrs()
+		assert.Equal(t, ts.primAddr, gotPrimAddr)
+
+		expSecAddrs := secAddrsM(ts)
+		assert.Len(t, gotSecAddrs, len(expSecAddrs))
+		for addr := range expSecAddrs {
+			assert.Contains(t, gotSecAddrs, addr)
+		}
+	}
+
+	type testCase struct {
+		start, end testState
+		closed     []string
+	}
+
+	poolFn := func(network, addr string) (Client, error) {
+		return &stubSentinelPool{addr: addr}, nil
+	}
+
+	cases := []testCase{
+		{
+			start:  testState{primAddr: "A:0"},
+			end:    testState{primAddr: "B:0"},
+			closed: []string{"A:0"},
+		},
+		{
+			start: testState{primAddr: "A:0"},
+			end:   testState{primAddr: "B:0", secAddrs: []string{"A:0"}},
+		},
+		{
+			start: testState{
+				primAddr:    "A:0",
+				nilSecAddrs: []string{"B:0"},
+			},
+			end: testState{primAddr: "B:0", secAddrs: []string{"A:0"}},
+		},
+		{
+			start: testState{
+				primAddr:    "A:0",
+				nilSecAddrs: []string{"B:0", "C:0"},
+			},
+			end: testState{
+				primAddr:    "B:0",
+				nilSecAddrs: []string{"C:0"},
+			},
+			closed: []string{"A:0"},
+		},
+		{
+			start: testState{
+				primAddr:    "A:0",
+				nilSecAddrs: []string{"B:0"},
+				secAddrs:    []string{"C:0"},
+			},
+			end: testState{
+				primAddr: "B:0",
+				secAddrs: []string{"C:0"},
+			},
+			closed: []string{"A:0"},
+		},
+		{
+			start: testState{
+				primAddr:    "A:0",
+				nilSecAddrs: []string{"B:0"},
+				secAddrs:    []string{"C:0"},
+			},
+			end: testState{
+				primAddr:    "A:0",
+				nilSecAddrs: []string{"B:0"},
+			},
+			closed: []string{"C:0"},
+		},
+		{
+			start: testState{
+				primAddr:    "A:0",
+				nilSecAddrs: []string{"B:0"},
+				secAddrs:    []string{"C:0"},
+			},
+			end: testState{
+				primAddr: "A:0",
+				secAddrs: []string{"C:0"},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		stub := newSentinelStub(tc.start.primAddr, secAddrs(tc.start), []string{"127.0.0.1:26379"})
+
+		sc, err := NewSentinel(
+			"stub", stub.sentAddrs,
+			SentinelConnFunc(stub.newConn), SentinelPoolFunc(poolFn),
+		)
+		require.Nil(t, err)
+
+		// call Client on all secAddrs so Clients get created for them, double
+		// check that the clients were indeed created in clients map
+		for _, addr := range tc.start.secAddrs {
+			client, err := sc.Client(addr)
+			assert.Nil(t, err)
+			assert.NotNil(t, client)
+			assert.Equal(t, client, sc.clients[addr])
+		}
+
+		// collect all non-nil clients to check against return from Clients
+		// later
+		prevClients := map[string]Client{}
+		for addr, client := range sc.clients {
+			if client != nil {
+				prevClients[addr] = client
+			}
+		}
+
+		// collect all clients which are expected to be closed, so we can check
+		// their closed fields later
+		willClose := map[string]*stubSentinelPool{}
+		for _, addr := range tc.closed {
+			client := sc.clients[addr]
+			require.NotNil(t, client)
+			willClose[addr] = client.(*stubSentinelPool)
+		}
+
+		assertAddrs(tc.start, sc)
+
+		stub.switchPrimary(tc.end.primAddr, secAddrs(tc.end)...)
+		assert.Equal(t, "switch-master completed", <-sc.testEventCh)
+
+		assertAddrs(tc.end, sc)
+		for addr, ssp := range willClose {
+			assert.True(t, ssp.closed, "addr:%q not closed", addr)
+		}
+
+		// check returns from Client. If the addr was in prevClients the Client
+		// should stay the same from there.
+		assertClient := func(addr string) {
+			assert.Contains(t, sc.clients, addr)
+			client, err := sc.Client(addr)
+			assert.Nil(t, err)
+			if prevClient := prevClients[addr]; prevClient != nil {
+				assert.Equal(t, prevClient, client)
+			}
+		}
+		assertClient(tc.end.primAddr)
+		for _, secAddr := range tc.end.secAddrs {
+			assertClient(secAddr)
+		}
+
+		// test that, for nilSecAddrs, they are in the clients map but don't
+		// have a Client value. Then test that if Client is called with that
+		// addr a new Client is created in the clients map, and that same client
+		// is returned the next time Client is called.
+		for _, nilSecAddr := range tc.end.nilSecAddrs {
+			assert.Contains(t, sc.clients, nilSecAddr)
+			assert.Nil(t, sc.clients[nilSecAddr])
+
+			client, err := sc.Client(nilSecAddr)
+			assert.Nil(t, err)
+			assert.NotNil(t, client)
+			assert.Equal(t, client, sc.clients[nilSecAddr])
+
+			client2, err := sc.Client(nilSecAddr)
+			assert.Nil(t, err)
+			assert.Equal(t, client, client2)
+		}
+	}
+
 }

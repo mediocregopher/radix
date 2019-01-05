@@ -13,50 +13,6 @@ import (
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
 
-type timeoutOkConn struct {
-	Conn
-}
-
-// timeoutOk returns a Conn which will _not_ call Close on itself if it sees a
-// timeout error during a Decode call (though it will still return that error).
-// Close will still be called other read/write errors.
-func timeoutOk(c Conn) Conn {
-	return &timeoutOkConn{c}
-}
-
-func (toc *timeoutOkConn) Decode(u resp.Unmarshaler) error {
-	err := toc.Conn.Decode(timeoutOkUnmarshaler{u})
-	if err == nil {
-		return nil
-	}
-	if te, ok := err.(errTimeout); ok {
-		err = te.err
-	} else {
-		toc.Close()
-	}
-	return err
-}
-
-type timeoutOkUnmarshaler struct {
-	u resp.Unmarshaler
-}
-
-type errTimeout struct {
-	err error
-}
-
-func (et errTimeout) Error() string { return et.err.Error() }
-
-func (tou timeoutOkUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
-	err := tou.u.UnmarshalRESP(br)
-	if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
-		err = errTimeout{err}
-	}
-	return err
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 // PubSubMessage describes a message being published to a subscribed channel
 type PubSubMessage struct {
 	Type    string // "message" or "pmessage"
@@ -245,7 +201,7 @@ func PubSub(rc Conn) PubSubConn {
 
 func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
 	c := &pubSubConn{
-		conn:       timeoutOk(rc),
+		conn:       rc,
 		subs:       chanSet{},
 		psubs:      chanSet{},
 		cmdResCh:   make(chan error, 1),
