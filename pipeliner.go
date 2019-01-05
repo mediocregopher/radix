@@ -48,7 +48,11 @@ func newPipeliner(c Client, concurrency, limit int, window time.Duration) *pipel
 	}()
 
 	for i := 0; i < cap(p.reqsBufCh); i++ {
-		p.reqsBufCh <- nil
+		if p.limit > 0 {
+			p.reqsBufCh <- make([]CmdAction, 0, limit)
+		} else {
+			p.reqsBufCh <- nil
+		}
 	}
 
 	return p
@@ -122,15 +126,15 @@ func (p *pipeliner) Close() error {
 }
 
 func (p *pipeliner) reqLoop() {
-	var reqs []CmdAction
-	if p.limit > 0 {
-		reqs = make([]CmdAction, 0, p.limit)
-	}
-
 	t := getTimer(time.Hour)
 	defer putTimer(t)
 
 	t.Stop()
+
+	reqs := <-p.reqsBufCh
+	defer func() {
+		p.reqsBufCh <- reqs
+	}()
 
 	for {
 		select {
@@ -161,10 +165,6 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 		return reqs
 	}
 
-	// make sure we have a new buffer for commands first before
-	// we flush, so that we don't flush too much without backpressure
-	newCmds := <-p.reqsBufCh
-
 	go func() {
 		defer func() {
 			p.reqsBufCh <- reqs[:0]
@@ -181,7 +181,7 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 		}
 	}()
 
-	return newCmds
+	return <-p.reqsBufCh
 }
 
 type pipelinerCmd struct {
