@@ -203,23 +203,16 @@ func PoolPipelineConcurrency(limit int) PoolOpt {
 	}
 }
 
-// PoolPipelineLimit sets the maximum number of concurrent commands that can be
-// automatically pipelined onto a single Redis connection.
-//
-// If limit is zero then no limit will be used and pipelines will only be limited
-// by the specified time window.
-func PoolPipelineLimit(limit int) PoolOpt {
-	return func(po *poolOpts) {
-		po.pipelineLimit = limit
-	}
-}
-
 // PoolPipelineLimit sets the duration after which internal pipelines will be
-// flushed.
+// flushed and the maximum number of commands that can be pipelined before
+// flushing.
 //
 // If window is zero then automatic pipelining will be disabled.
-func PoolPipelineWindow(window time.Duration) PoolOpt {
+// If limit is zero then no limit will be used and pipelines will only be limited
+// by the specified time window.
+func PoolPipelineWindow(window time.Duration, limit int) PoolOpt {
 	return func(po *poolOpts) {
+		po.pipelineLimit = limit
 		po.pipelineWindow = window
 	}
 }
@@ -262,8 +255,7 @@ type Pool struct {
 //	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
 //	PoolPingInterval(10 * time.Second / (size+1))
 //	PoolPipelineConcurrency(size)
-//	PoolPipelineLimit(0)
-//	PoolPipelineWindow(150 * time.Microsecond)
+//	PoolPipelineWindow(150 * time.Microsecond, 0)
 //
 func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
@@ -281,8 +273,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolOnFullBuffer((size/3)+1, 1*time.Second),
 		PoolPingInterval(10 * time.Second / time.Duration(size+1)),
 		PoolPipelineConcurrency(size),
-		PoolPipelineLimit(0),
-		PoolPipelineWindow(150 * time.Microsecond),
+		PoolPipelineWindow(150 * time.Microsecond, 0),
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {
@@ -514,6 +505,7 @@ func (p *Pool) put(ioc *ioErrConn) {
 // automatic pipelining you can either set PoolPipelineWindow(0) when creating the
 // Pool or use WithConn. Pipelines created manually (via Pipeline) are also excluded
 // from this and will be executed as if using WithConn.
+//
 // Due to a limitation in the implementation, custom CmdAction implementations
 // are currently not automatically pipelined.
 func (p *Pool) Do(a Action) error {

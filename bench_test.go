@@ -110,7 +110,7 @@ func BenchmarkParallelGetSet(b *B) {
 
 	b.Run("radix", func(b *B) {
 		b.Run("no pipelining", func(b *B) {
-			radix, err := NewPool("tcp", "127.0.0.1:6379", parallel, PoolPipelineWindow(0))
+			radix, err := NewPool("tcp", "127.0.0.1:6379", parallel, PoolPipelineWindow(0, 0))
 			if err != nil {
 				b.Fatal(err)
 			}
