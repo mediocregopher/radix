@@ -309,15 +309,8 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		close(p.initDone)
 	}()
 
-	if p.opts.pingInterval > 0 && size > 0 {
-		p.atIntervalDo(p.opts.pingInterval, func() { p.Do(Cmd(nil, "PING")) })
-	}
-	if p.opts.refillInterval > 0 && size > 0 {
-		p.atIntervalDo(p.opts.refillInterval, p.doRefill)
-	}
-	if p.opts.overflowSize > 0 && p.opts.overflowDrainInterval > 0 {
-		p.atIntervalDo(p.opts.overflowDrainInterval, p.doOverflowDrain)
-	}
+	// needs to be created before starting any background goroutines to avoid
+	// races on p.pipeliner access
 	if p.opts.pipelineWindow > 0 {
 		if p.opts.pipelineConcurrency < 1 || p.opts.pipelineConcurrency > size {
 			p.opts.pipelineConcurrency = size
@@ -329,6 +322,15 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 			p.opts.pipelineLimit,
 			p.opts.pipelineWindow,
 		)
+	}
+	if p.opts.pingInterval > 0 && size > 0 {
+		p.atIntervalDo(p.opts.pingInterval, func() { p.Do(Cmd(nil, "PING")) })
+	}
+	if p.opts.refillInterval > 0 && size > 0 {
+		p.atIntervalDo(p.opts.refillInterval, p.doRefill)
+	}
+	if p.opts.overflowSize > 0 && p.opts.overflowDrainInterval > 0 {
+		p.atIntervalDo(p.opts.overflowDrainInterval, p.doOverflowDrain)
 	}
 	return p, nil
 }
