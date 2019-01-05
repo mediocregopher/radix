@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"io"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +14,7 @@ type pipeliner struct {
 
 	flushSema chan struct{}
 
-	reqCh chan pipedCmd
+	reqCh chan *pipedCmd
 	reqWG sync.WaitGroup
 
 	l      sync.RWMutex
@@ -37,7 +36,7 @@ func newPipeliner(c Client, concurrency, limit int, window time.Duration) *pipel
 
 		flushSema: make(chan struct{}, concurrency),
 
-		reqCh: make(chan pipedCmd, 32), // https://xkcd.com/221/
+		reqCh: make(chan *pipedCmd, 32), // https://xkcd.com/221/
 	}
 
 	p.reqWG.Add(1)
@@ -89,7 +88,7 @@ func (p *pipeliner) Do(a Action) error {
 		p.l.RUnlock()
 		return errClientClosed
 	}
-	p.reqCh <- *req
+	p.reqCh <- req
 	p.l.RUnlock()
 
 	err := <-req.resCh
@@ -121,9 +120,9 @@ func (p *pipeliner) Close() error {
 }
 
 func (p *pipeliner) reqLoop() {
-	var pipe []pipedCmd
+	var cmds []CmdAction
 	if p.limit > 0 {
-		pipe = make(pipedCmdPipeline, 0, p.limit)
+		cmds = make([]CmdAction, 0, p.limit)
 	}
 
 	t := getTimer(time.Hour)
@@ -135,37 +134,39 @@ func (p *pipeliner) reqLoop() {
 		select {
 		case req, ok := <-p.reqCh:
 			if !ok {
-				p.flush(pipe)
+				p.flush(cmds)
 				return
 			}
 
-			pipe = append(pipe, req)
+			cmds = append(cmds, req)
 
-			if p.limit > 0 && len(pipe) == p.limit {
+			if p.limit > 0 && len(cmds) == p.limit {
 				// if we reached the pipeline limit, execute now to avoid unnecessary waiting
 				t.Stop()
 
-				p.flush(pipe)
-				pipe = pipe[:0]
-			} else if len(pipe) == 1 {
+				p.flush(cmds)
+				cmds = cmds[:0]
+			} else if len(cmds) == 1 {
 				t.Reset(p.window)
 			}
 		case <-t.C:
-			p.flush(pipe)
-			pipe = pipe[:0]
+			p.flush(cmds)
+			cmds = cmds[:0]
 		}
 	}
 }
 
-func (p *pipeliner) flush(pipe []pipedCmd) {
-	if len(pipe) == 0 {
+func (p *pipeliner) flush(cmds []CmdAction) {
+	if len(cmds) == 0 {
 		return
 	}
 
+	pipe := pipedCmdPipeline{
+		pipeline: make(pipeline, len(cmds)),
+	}
 	// copy requests into a pipeline so that we can flush the pipeline in
 	// the background, to avoid blocking the main loop.
-	pipeCopy := make(pipedCmdPipeline, len(pipe))
-	copy(pipeCopy, pipe)
+	copy(pipe.pipeline, cmds)
 
 	<-p.flushSema
 	go func() {
@@ -173,16 +174,16 @@ func (p *pipeliner) flush(pipe []pipedCmd) {
 			p.flushSema <- struct{}{}
 		}()
 
-		if err := p.c.Do(pipeCopy); err != nil {
-			for _, req := range pipeCopy {
-				req.resCh <- err
+		if err := p.c.Do(pipe); err != nil {
+			for _, req := range pipe.pipeline {
+				req.(*pipedCmd).resCh <- err
 			}
 		}
 	}()
 }
 
 type pipedCmd struct {
-	cmd   CmdAction
+	CmdAction
 	resCh chan error
 }
 
@@ -191,56 +192,31 @@ var pipedCmdPool sync.Pool
 func getPipedCmd(cmd CmdAction) *pipedCmd {
 	req, _ := pipedCmdPool.Get().(*pipedCmd)
 	if req != nil {
-		req.cmd = cmd
+		req.CmdAction = cmd
 		return req
 	}
 	return &pipedCmd{
-		cmd: cmd,
+		CmdAction: cmd,
 		// using a buffer of 1 is faster than no buffer in most cases
 		resCh: make(chan error, 1),
 	}
 }
 
 func poolPipedCmd(req *pipedCmd) {
-	req.cmd = nil
+	req.CmdAction = nil
 	pipedCmdPool.Put(req)
 }
 
-type pipedCmdPipeline []pipedCmd
-
-func (p pipedCmdPipeline) Keys() []string {
-	m := map[string]bool{}
-	for _, rc := range p {
-		for _, k := range rc.cmd.Keys() {
-			m[k] = true
-		}
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
+type pipedCmdPipeline struct {
+	pipeline
 }
 
 func (p pipedCmdPipeline) Run(c Conn) error {
 	if err := c.Encode(p); err != nil {
 		return err
 	}
-	for _, req := range p {
-		req.resCh <- c.Decode(req.cmd)
+	for _, req := range p.pipeline {
+		req.(*pipedCmd).resCh <- c.Decode(req)
 	}
-	return nil
-}
-
-// MarshalRESP implements the resp.Marshaler interface.
-//
-// See the comment on pipeline.MarshalRESP for more information on why this is needed.
-func (p pipedCmdPipeline) MarshalRESP(w io.Writer) error {
-	for _, req := range p {
-		if err := req.cmd.MarshalRESP(w); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }

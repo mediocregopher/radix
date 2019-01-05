@@ -29,7 +29,7 @@ var blockingCmds = map[string]bool{
 	"XREAD":      true,
 	"XREADGROUP": true,
 
-	"SAVE": true,
+	"SAVE":  true,
 	"WATCH": true,
 }
 
@@ -273,7 +273,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolOnFullBuffer((size/3)+1, 1*time.Second),
 		PoolPingInterval(10 * time.Second / time.Duration(size+1)),
 		PoolPipelineConcurrency(size),
-		PoolPipelineWindow(150 * time.Microsecond, 0),
+		PoolPipelineWindow(150*time.Microsecond, 0),
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {
