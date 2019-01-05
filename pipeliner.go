@@ -12,7 +12,9 @@ type pipeliner struct {
 	limit  int
 	window time.Duration
 
-	flushSema chan struct{}
+	// reqsBufCh contains buffers for collecting commands and acts as a semaphore
+	// to limit the number of concurrent flushes.
+	reqsBufCh chan []CmdAction
 
 	reqCh chan *pipelinerCmd
 	reqWG sync.WaitGroup
@@ -34,7 +36,7 @@ func newPipeliner(c Client, concurrency, limit int, window time.Duration) *pipel
 		limit:  limit,
 		window: window,
 
-		flushSema: make(chan struct{}, concurrency),
+		reqsBufCh: make(chan []CmdAction, concurrency),
 
 		reqCh: make(chan *pipelinerCmd, 32), // https://xkcd.com/221/
 	}
@@ -45,8 +47,8 @@ func newPipeliner(c Client, concurrency, limit int, window time.Duration) *pipel
 		p.reqLoop()
 	}()
 
-	for i := 0; i < cap(p.flushSema); i++ {
-		p.flushSema <- struct{}{}
+	for i := 0; i < cap(p.reqsBufCh); i++ {
+		p.reqsBufCh <- nil
 	}
 
 	return p
@@ -111,8 +113,8 @@ func (p *pipeliner) Close() error {
 	close(p.reqCh)
 	p.reqWG.Wait()
 
-	for i := 0; i < cap(p.flushSema); i++ {
-		<-p.flushSema
+	for i := 0; i < cap(p.reqsBufCh); i++ {
+		<-p.reqsBufCh
 	}
 
 	p.c = nil
@@ -120,9 +122,9 @@ func (p *pipeliner) Close() error {
 }
 
 func (p *pipeliner) reqLoop() {
-	var cmds []CmdAction
+	var reqs []CmdAction
 	if p.limit > 0 {
-		cmds = make([]CmdAction, 0, p.limit)
+		reqs = make([]CmdAction, 0, p.limit)
 	}
 
 	t := getTimer(time.Hour)
@@ -134,52 +136,52 @@ func (p *pipeliner) reqLoop() {
 		select {
 		case req, ok := <-p.reqCh:
 			if !ok {
-				p.flush(cmds)
+				reqs = p.flush(reqs)
 				return
 			}
 
-			cmds = append(cmds, req)
+			reqs = append(reqs, req)
 
-			if p.limit > 0 && len(cmds) == p.limit {
+			if p.limit > 0 && len(reqs) == p.limit {
 				// if we reached the pipeline limit, execute now to avoid unnecessary waiting
 				t.Stop()
 
-				p.flush(cmds)
-				cmds = cmds[:0]
-			} else if len(cmds) == 1 {
+				reqs = p.flush(reqs)
+			} else if len(reqs) == 1 {
 				t.Reset(p.window)
 			}
 		case <-t.C:
-			p.flush(cmds)
-			cmds = cmds[:0]
+			reqs = p.flush(reqs)
 		}
 	}
 }
 
-func (p *pipeliner) flush(cmds []CmdAction) {
-	if len(cmds) == 0 {
-		return
+func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
+	if len(reqs) == 0 {
+		return reqs
 	}
 
-	pipe := pipelinerPipeline{
-		pipeline: make(pipeline, len(cmds)),
-	}
-	// copy requests into a pipeline so that we can flush the pipeline in
-	// the background, to avoid blocking the main loop.
-	copy(pipe.pipeline, cmds)
+	// make sure we have a new buffer for commands first before
+	// we flush, so that we don't flush too much without backpressure
+	newCmds := <-p.reqsBufCh
 
-	<-p.flushSema
 	go func() {
 		defer func() {
-			p.flushSema <- struct{}{}
+			p.reqsBufCh <- reqs[:0]
 		}()
 
+		pipe := pipelinerPipeline{
+			pipeline: pipeline(reqs),
+		}
+
 		if err := p.c.Do(pipe); err != nil {
-			for _, req := range pipe.pipeline {
+			for _, req := range reqs {
 				req.(*pipelinerCmd).resCh <- err
 			}
 		}
 	}()
+
+	return newCmds
 }
 
 type pipelinerCmd struct {
