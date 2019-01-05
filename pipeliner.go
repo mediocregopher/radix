@@ -14,7 +14,7 @@ type pipeliner struct {
 
 	flushSema chan struct{}
 
-	reqCh chan *pipedCmd
+	reqCh chan *pipelinerCmd
 	reqWG sync.WaitGroup
 
 	l      sync.RWMutex
@@ -36,7 +36,7 @@ func newPipeliner(c Client, concurrency, limit int, window time.Duration) *pipel
 
 		flushSema: make(chan struct{}, concurrency),
 
-		reqCh: make(chan *pipedCmd, 32), // https://xkcd.com/221/
+		reqCh: make(chan *pipelinerCmd, 32), // https://xkcd.com/221/
 	}
 
 	p.reqWG.Add(1)
@@ -64,7 +64,7 @@ func (p *pipeliner) CanDo(a Action) bool {
 		// do not merge user defined pipelines with our own pipelines so that
 		// users can better control pipelining
 		return false
-	case pipedCmdPipeline:
+	case pipelinerPipeline:
 		// prevent accidental cycles / loops by disallowing pipelining of
 		// pipes created by a pipeliner.
 		return false
@@ -81,7 +81,7 @@ func (p *pipeliner) CanDo(a Action) bool {
 //
 // If a is not a CmdAction, Do panics.
 func (p *pipeliner) Do(a Action) error {
-	req := getPipedCmd(a.(CmdAction)) // get this outside the lock to avoid
+	req := getPipelinerCmd(a.(CmdAction)) // get this outside the lock to avoid
 
 	p.l.RLock()
 	if p.closed {
@@ -92,7 +92,7 @@ func (p *pipeliner) Do(a Action) error {
 	p.l.RUnlock()
 
 	err := <-req.resCh
-	poolPipedCmd(req)
+	poolPipelinerCmd(req)
 	return err
 }
 
@@ -161,7 +161,7 @@ func (p *pipeliner) flush(cmds []CmdAction) {
 		return
 	}
 
-	pipe := pipedCmdPipeline{
+	pipe := pipelinerPipeline{
 		pipeline: make(pipeline, len(cmds)),
 	}
 	// copy requests into a pipeline so that we can flush the pipeline in
@@ -176,47 +176,47 @@ func (p *pipeliner) flush(cmds []CmdAction) {
 
 		if err := p.c.Do(pipe); err != nil {
 			for _, req := range pipe.pipeline {
-				req.(*pipedCmd).resCh <- err
+				req.(*pipelinerCmd).resCh <- err
 			}
 		}
 	}()
 }
 
-type pipedCmd struct {
+type pipelinerCmd struct {
 	CmdAction
 	resCh chan error
 }
 
-var pipedCmdPool sync.Pool
+var pipelinerCmdPool sync.Pool
 
-func getPipedCmd(cmd CmdAction) *pipedCmd {
-	req, _ := pipedCmdPool.Get().(*pipedCmd)
+func getPipelinerCmd(cmd CmdAction) *pipelinerCmd {
+	req, _ := pipelinerCmdPool.Get().(*pipelinerCmd)
 	if req != nil {
 		req.CmdAction = cmd
 		return req
 	}
-	return &pipedCmd{
+	return &pipelinerCmd{
 		CmdAction: cmd,
 		// using a buffer of 1 is faster than no buffer in most cases
 		resCh: make(chan error, 1),
 	}
 }
 
-func poolPipedCmd(req *pipedCmd) {
+func poolPipelinerCmd(req *pipelinerCmd) {
 	req.CmdAction = nil
-	pipedCmdPool.Put(req)
+	pipelinerCmdPool.Put(req)
 }
 
-type pipedCmdPipeline struct {
+type pipelinerPipeline struct {
 	pipeline
 }
 
-func (p pipedCmdPipeline) Run(c Conn) error {
+func (p pipelinerPipeline) Run(c Conn) error {
 	if err := c.Encode(p); err != nil {
 		return err
 	}
 	for _, req := range p.pipeline {
-		req.(*pipedCmd).resCh <- c.Decode(req)
+		req.(*pipelinerCmd).resCh <- c.Decode(req)
 	}
 	return nil
 }
