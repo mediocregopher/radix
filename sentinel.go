@@ -79,9 +79,7 @@ type Sentinel struct {
 // number of options which can overwrite its default behavior. The default
 // options NewSentinel uses are:
 //
-//	SentinelConnFunc(func(net, addr string) (Conn, error) {
-//		return Dial(net, addr, DialTimeout(5 * time.Second))
-//	})
+//	SentinelConnFunc(DefaultConnFunc)
 //	SentinelPoolFunc(DefaultClientFunc)
 //
 func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt) (*Sentinel, error) {
@@ -101,9 +99,7 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	}
 
 	defaultSentinelOpts := []SentinelOpt{
-		SentinelConnFunc(func(net, addr string) (Conn, error) {
-			return Dial(net, addr, DialTimeout(5*time.Second))
-		}),
+		SentinelConnFunc(DefaultConnFunc),
 		SentinelPoolFunc(DefaultClientFunc),
 	}
 
@@ -426,7 +422,7 @@ func (sc *Sentinel) innerSpin() error {
 	}
 	defer conn.Close()
 
-	tick := time.NewTicker(30 * time.Second)
+	tick := time.NewTicker(5 * time.Second)
 	defer tick.Stop()
 
 	var switchMaster bool

@@ -348,6 +348,10 @@ func (tc *timeoutConn) Write(b []byte) (int, error) {
 	return tc.Conn.Write(b)
 }
 
+var defaultDialOpts = []DialOpt{
+	DialTimeout(10 * time.Second),
+}
+
 // Dial is a ConnFunc which creates a Conn using net.Dial and NewConn. It takes
 // in a number of options which can overwrite its default behavior as well.
 //
@@ -358,8 +362,16 @@ func (tc *timeoutConn) Write(b []byte) (int, error) {
 //
 // If either DialAuthPass or DialSelectDB is used it overwrites the associated
 // value passed in by the URI.
+//
+// The default options Dial uses are:
+//
+//	DialTimeout(10 * time.Second)
+//
 func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 	var do dialOpts
+	for _, opt := range defaultDialOpts {
+		opt(&do)
+	}
 	for _, opt := range opts {
 		opt(&do)
 	}
@@ -412,7 +424,7 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 			if err = kaConn.SetKeepAlive(true); err != nil {
 				netConn.Close()
 				return nil, err
-			} else if err = kaConn.SetKeepAlivePeriod(5 * time.Second); err != nil {
+			} else if err = kaConn.SetKeepAlivePeriod(10 * time.Second); err != nil {
 				netConn.Close()
 				return nil, err
 			}

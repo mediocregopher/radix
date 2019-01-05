@@ -205,7 +205,7 @@ type Pool struct {
 //	PoolOnEmptyCreateAfter(1 * time.Second)
 //	PoolRefillInterval(1 * time.Second)
 //	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
-//	PoolPingInterval(10 * time.Second / (size+1))
+//	PoolPingInterval(5 * time.Second / (size+1))
 //
 func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
@@ -221,7 +221,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolOnEmptyCreateAfter(1 * time.Second),
 		PoolRefillInterval(1 * time.Second),
 		PoolOnFullBuffer((size/3)+1, 1*time.Second),
-		PoolPingInterval(10 * time.Second / time.Duration(size+1)),
+		PoolPingInterval(5 * time.Second / time.Duration(size+1)),
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {
