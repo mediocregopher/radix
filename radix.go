@@ -399,6 +399,26 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 		return nil, err
 	}
 
+	// If the netConn is a net.TCPConn (or some wrapper for it) and so can have
+	// keepalive enabled, do so with a sane (though slightly aggressive)
+	// default.
+	{
+		type keepaliveConn interface {
+			SetKeepAlive(bool) error
+			SetKeepAlivePeriod(time.Duration) error
+		}
+
+		if kaConn, ok := netConn.(keepaliveConn); ok {
+			if err = kaConn.SetKeepAlive(true); err != nil {
+				netConn.Close()
+				return nil, err
+			} else if err = kaConn.SetKeepAlivePeriod(5 * time.Second); err != nil {
+				netConn.Close()
+				return nil, err
+			}
+		}
+	}
+
 	conn := NewConn(&timeoutConn{
 		readTimeout:  do.readTimeout,
 		writeTimeout: do.writeTimeout,
