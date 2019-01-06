@@ -6,6 +6,23 @@ import (
 	"time"
 )
 
+var blockingCmds = map[string]bool{
+	"WAIT": true,
+
+	// taken from https://github.com/joomcode/redispipe#limitations
+	"BLPOP":      true,
+	"BRPOP":      true,
+	"BRPOPLPUSH": true,
+
+	"BZPOPMIN": true,
+	"BZPOPMAX": true,
+
+	"XREAD":      true,
+	"XREADGROUP": true,
+
+	"SAVE":  true,
+}
+
 type pipeliner struct {
 	c Client
 

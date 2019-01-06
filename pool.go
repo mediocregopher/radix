@@ -15,24 +15,6 @@ var ErrPoolEmpty = errors.New("connection pool is empty")
 
 var errPoolFull = errors.New("connection pool is full")
 
-var blockingCmds = map[string]bool{
-	"WAIT": true,
-
-	// taken from https://github.com/joomcode/redispipe#limitations
-	"BLPOP":      true,
-	"BRPOP":      true,
-	"BRPOPLPUSH": true,
-
-	"BZPOPMIN": true,
-	"BZPOPMAX": true,
-
-	"XREAD":      true,
-	"XREADGROUP": true,
-
-	"SAVE":  true,
-	"WATCH": true,
-}
-
 // TODO do something with errors which happen asynchronously
 
 // ioErrConn is a Conn which tracks the last net.Error which was seen either
@@ -203,7 +185,7 @@ func PoolPipelineConcurrency(limit int) PoolOpt {
 	}
 }
 
-// PoolPipelineLimit sets the duration after which internal pipelines will be
+// PoolPipelineWindow sets the duration after which internal pipelines will be
 // flushed and the maximum number of commands that can be pipelined before
 // flushing.
 //
