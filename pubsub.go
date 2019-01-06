@@ -214,7 +214,7 @@ func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
 	// application level. If the Conn is closed Ping will return an error and
 	// this will clean itself up.
 	go func() {
-		t := time.NewTicker(10 * time.Second)
+		t := time.NewTicker(5 * time.Second)
 		defer t.Stop()
 		for range t.C {
 			if err := c.Ping(); err != nil {
