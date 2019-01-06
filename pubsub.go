@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
@@ -208,6 +209,20 @@ func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
 		closeErrCh: closeErrCh,
 	}
 	go c.spin()
+
+	// Periodically call Ping so the connection has a keepalive on the
+	// application level. If the Conn is closed Ping will return an error and
+	// this will clean itself up.
+	go func() {
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			if err := c.Ping(); err != nil {
+				return
+			}
+		}
+	}()
+
 	return c
 }
 
