@@ -79,25 +79,13 @@ func newPipeliner(c Client, concurrency, limit int, window time.Duration) *pipel
 //
 // If CanDo returns false, the Action must not be given to Do.
 func (p *pipeliner) CanDo(a Action) bool {
-	switch v := a.(type) {
-	case *cmdAction:
-		// blocking commands can not be multiplexed so we must skip them
-		return !blockingCmds[strings.ToUpper(v.cmd)]
-	case pipeline:
-		// do not merge user defined pipelines with our own pipelines so that
-		// users can better control pipelining
-		return false
-	case pipelinerPipeline:
-		// prevent accidental cycles / loops by disallowing pipelining of
-		// pipes created by a pipeliner.
-		return false
-	case CmdAction:
-		// there is currently no way to get the command for CmdAction implementations
-		// from outside the radix package so we can not multiplex these commands.
-		return false
-	default:
-		return false
+	// there is currently no way to get the command for CmdAction implementations
+	// from outside the radix package so we can not multiplex those commands. User
+	// defined peipelines are not pipelined to let the user better control them.
+	if cmdA, ok := a.(*cmdAction); ok {
+		return !blockingCmds[strings.ToUpper(cmdA.cmd)]
 	}
+	return false
 }
 
 // Do executes the given Action as part of the pipeline.
