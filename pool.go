@@ -486,7 +486,7 @@ func (p *Pool) put(ioc *ioErrConn) {
 // If the given Action is a CmdAction, it will be pipelined with other concurrent
 // calls to Do, which can improve the performance and resource usage of the Redis
 // server, but will increase the latency for some of the Actions. To avoid the
-// automatic pipelining you can either set PoolPipelineWindow(0) when creating the
+// automatic pipelining you can either set PoolPipelineWindow(0, 0) when creating the
 // Pool or use WithConn. Pipelines created manually (via Pipeline) are also excluded
 // from this and will be executed as if using WithConn.
 //
