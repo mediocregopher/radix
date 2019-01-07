@@ -9,6 +9,7 @@ import (
 
 func TestClusterScanner(t *T) {
 	c, _ := newTestCluster()
+	defer c.Close()
 	exp := map[string]bool{}
 	for _, k := range clusterSlotKeys {
 		exp[k] = true

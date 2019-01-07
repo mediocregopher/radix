@@ -68,6 +68,9 @@ type poolOpts struct {
 	overflowSize          int
 	onEmptyWait           time.Duration
 	errOnEmpty            error
+	pipelineConcurrency   int
+	pipelineLimit         int
+	pipelineWindow        time.Duration
 }
 
 // PoolOpt is an optional behavior which can be applied to the NewPool function
@@ -171,6 +174,31 @@ func PoolOnFullBuffer(size int, drainInterval time.Duration) PoolOpt {
 	}
 }
 
+// PoolPipelineConcurrency sets the maximum number of pipelines that can be
+// executed concurrently.
+//
+// If limit is greater than the pool size or less than 1, the limit will be
+// set to the pool size.
+func PoolPipelineConcurrency(limit int) PoolOpt {
+	return func(po *poolOpts) {
+		po.pipelineConcurrency = limit
+	}
+}
+
+// PoolPipelineWindow sets the duration after which internal pipelines will be
+// flushed and the maximum number of commands that can be pipelined before
+// flushing.
+//
+// If window is zero then automatic pipelining will be disabled.
+// If limit is zero then no limit will be used and pipelines will only be limited
+// by the specified time window.
+func PoolPipelineWindow(window time.Duration, limit int) PoolOpt {
+	return func(po *poolOpts) {
+		po.pipelineLimit = limit
+		po.pipelineWindow = window
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Pool is a semi-dynamic pool which holds a fixed number of connections open
@@ -190,6 +218,8 @@ type Pool struct {
 	pool   chan *ioErrConn
 	closed bool
 
+	pipeliner *pipeliner
+
 	wg       sync.WaitGroup
 	closeCh  chan bool
 	initDone chan struct{} // used for tests
@@ -206,6 +236,8 @@ type Pool struct {
 //	PoolRefillInterval(1 * time.Second)
 //	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
 //	PoolPingInterval(5 * time.Second / (size+1))
+//	PoolPipelineConcurrency(size)
+//	PoolPipelineWindow(150 * time.Microsecond, 0)
 //
 func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
@@ -222,6 +254,8 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolRefillInterval(1 * time.Second),
 		PoolOnFullBuffer((size/3)+1, 1*time.Second),
 		PoolPingInterval(5 * time.Second / time.Duration(size+1)),
+		PoolPipelineConcurrency(size),
+		PoolPipelineWindow(150*time.Microsecond, 0),
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {
@@ -257,6 +291,20 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		close(p.initDone)
 	}()
 
+	// needs to be created before starting any background goroutines to avoid
+	// races on p.pipeliner access
+	if p.opts.pipelineWindow > 0 {
+		if p.opts.pipelineConcurrency < 1 || p.opts.pipelineConcurrency > size {
+			p.opts.pipelineConcurrency = size
+		}
+
+		p.pipeliner = newPipeliner(
+			p,
+			p.opts.pipelineConcurrency,
+			p.opts.pipelineLimit,
+			p.opts.pipelineWindow,
+		)
+	}
 	if p.opts.pingInterval > 0 && size > 0 {
 		p.atIntervalDo(p.opts.pingInterval, func() { p.Do(Cmd(nil, "PING")) })
 	}
@@ -433,8 +481,22 @@ func (p *Pool) put(ioc *ioErrConn) {
 
 // Do implements the Do method of the Client interface by retrieving a Conn out
 // of the pool, calling Run on the given Action with it, and returning the Conn
-// to the pool
+// to the pool.
+//
+// If the given Action is a CmdAction, it will be pipelined with other concurrent
+// calls to Do, which can improve the performance and resource usage of the Redis
+// server, but will increase the latency for some of the Actions. To avoid the
+// automatic pipelining you can either set PoolPipelineWindow(0, 0) when creating the
+// Pool or use WithConn. Pipelines created manually (via Pipeline) are also excluded
+// from this and will be executed as if using WithConn.
+//
+// Due to a limitation in the implementation, custom CmdAction implementations
+// are currently not automatically pipelined.
 func (p *Pool) Do(a Action) error {
+	if p.pipeliner != nil && p.pipeliner.CanDo(a) {
+		return p.pipeliner.Do(a)
+	}
+
 	c, err := p.get()
 	if err != nil {
 		return err
@@ -474,6 +536,12 @@ emptyLoop:
 		}
 	}
 	p.l.Unlock()
+
+	if p.pipeliner != nil {
+		if err := p.pipeliner.Close(); err != nil {
+			return err
+		}
+	}
 
 	// by now the pool's go-routines should have bailed, wait to make sure they
 	// do

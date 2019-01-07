@@ -381,9 +381,9 @@ func TestStreamReader(t *T) {
 					stream1: {Time: 0, Seq: 0},
 					stream2: {Time: 0, Seq: 0},
 				},
-				Group:   group,
+				Group:    group,
 				Consumer: consumer,
-				NoBlock: true,
+				NoBlock:  true,
 			})
 
 			addStreamGroup(t, c, stream1, group, "0-0")
