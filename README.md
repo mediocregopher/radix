@@ -58,31 +58,35 @@ Legacy GOPATH mode:
 
 ## Benchmarks
 
-As of writing redigo and radix/v3 are fairly comparable, with radix being a
-couple microseconds slower on average. This is in exchange for being
-significantly more flexible in most use-cases, but nevertheless is an area for
-future improvement.
+Thanks to a huge amount of work put in by @nussjustin, and inspiration from the
+[redispipe][redispipe] project and @funny-falcon, radix/v3 is significantly
+faster than most redis drivers, including redigo, for normal parallel workloads,
+and is pretty comparable for serial workloads.
+
 
 ```
 # go test -v -run=XXX -bench=GetSet -benchmem >/tmp/radix.stat
 # benchstat radix.stat
-name                   time/op
-SerialGetSet/radix     89.1µs ± 7%
-SerialGetSet/redigo    87.3µs ± 7%
-ParallelGetSet/radix   92.4µs ± 8%
-ParallelGetSet/redigo  90.4µs ± 3%
+name                                     time/op
+SerialGetSet/radix                         89.1µs ± 7%
+SerialGetSet/redigo                        87.3µs ± 7%
+ParallelGetSet/radix/default-8             5.47µs ± 2%  <--- The good stuff
+ParallelGetSet/redigo-8                    27.6µs ± 2%
+ParallelGetSet/redispipe-8                 4.16µs ± 3%
 
-name                   alloc/op
-SerialGetSet/radix      67.0B ± 0%
-SerialGetSet/redigo     86.0B ± 0%
-ParallelGetSet/radix    99.0B ± 0%
-ParallelGetSet/redigo    118B ± 0%
+name                                      alloc/op
+SerialGetSet/radix                          67.0B ± 0%
+SerialGetSet/redigo                         86.0B ± 0%
+ParallelGetSet/radix/default-8              73.0B ± 0%
+ParallelGetSet/redigo-8                      138B ± 4%
+ParallelGetSet/redispipe-8                   168B ± 0%
 
-name                   allocs/op
-SerialGetSet/radix       4.00 ± 0%
-SerialGetSet/redigo      5.00 ± 0%
-ParallelGetSet/radix     5.00 ± 0%
-ParallelGetSet/redigo    6.00 ± 0%
+name                                       allocs/op
+SerialGetSet/radix                           4.00 ± 0%
+SerialGetSet/redigo                          5.00 ± 0%
+ParallelGetSet/radix/default-8               4.00 ± 0%
+ParallelGetSet/redigo-8                      6.00 ± 0%
+ParallelGetSet/redispipe-8                   8.00 ± 0%
 ```
 
 ## Copyright and licensing
@@ -99,3 +103,4 @@ found in the LICENSE.txt file.
 [sentinel]: http://redis.io/topics/sentinel
 [cluster]: http://redis.io/topics/cluster-spec
 [module]: https://github.com/golang/go/wiki/Modules
+[redispipe]: https://github.com/joomcode/redispipe
