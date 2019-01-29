@@ -191,3 +191,10 @@ func TestPoolPut(t *T) {
 	}))
 	assertPoolConns(0)
 }
+
+func TestPoolClose(t *T) {
+	pool := testPool(1)
+	assert.NoError(t, pool.Do(Cmd(nil, "PING")))
+	assert.NoError(t, pool.Close())
+	assert.Error(t, errClientClosed, pool.Do(Cmd(nil, "PING")))
+}
