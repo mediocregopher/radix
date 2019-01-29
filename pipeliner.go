@@ -126,7 +126,7 @@ func (p *pipeliner) Close() error {
 		<-p.reqsBufCh
 	}
 
-	p.c = nil
+	p.c, p.closed = nil, true
 	return nil
 }
 
