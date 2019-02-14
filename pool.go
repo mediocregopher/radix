@@ -10,6 +10,12 @@ import (
 	"github.com/mediocregopher/radix/v3/resp"
 )
 
+const (
+	defaultDialTimeout = 5 * time.Second
+)
+
+var errPoolDialTimeout = errors.New("connection pool init timeout")
+
 // ErrPoolEmpty is used by Pools created using the PoolOnEmptyErrAfter option
 var ErrPoolEmpty = errors.New("connection pool is empty")
 
@@ -62,6 +68,7 @@ func (ioc *ioErrConn) Close() error {
 
 type poolOpts struct {
 	cf                    ConnFunc
+	dialTimeout           time.Duration
 	pingInterval          time.Duration
 	refillInterval        time.Duration
 	overflowDrainInterval time.Duration
@@ -83,6 +90,14 @@ type PoolOpt func(*poolOpts)
 func PoolConnFunc(cf ConnFunc) PoolOpt {
 	return func(po *poolOpts) {
 		po.cf = cf
+	}
+}
+
+// PoolDialTimeout specifies the timeout for pool initialization.
+// NewPool will fail if connections are not created after the deadline.
+func PoolDialTimeout(d time.Duration) PoolOpt {
+	return func(po *poolOpts) {
+		po.dialTimeout = d
 	}
 }
 
@@ -222,7 +237,7 @@ type Pool struct {
 
 	wg       sync.WaitGroup
 	closeCh  chan bool
-	initDone chan struct{} // used for tests
+	initDone chan struct{}
 }
 
 // NewPool creates a *Pool which will keep open at least the given number of
@@ -232,6 +247,7 @@ type Pool struct {
 // behavior. The default options NewPool uses are:
 //
 //	PoolConnFunc(DefaultConnFunc)
+//	PoolDialTimeout(5 * time.Second)
 //	PoolOnEmptyCreateAfter(1 * time.Second)
 //	PoolRefillInterval(1 * time.Second)
 //	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
@@ -250,6 +266,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 
 	defaultPoolOpts := []PoolOpt{
 		PoolConnFunc(DefaultConnFunc),
+		PoolDialTimeout(defaultDialTimeout),
 		PoolOnEmptyCreateAfter(1 * time.Second),
 		PoolRefillInterval(1 * time.Second),
 		PoolOnFullBuffer((size/3)+1, 1*time.Second),
@@ -271,7 +288,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p.pool = make(chan *ioErrConn, totalSize)
 
 	// make one Conn synchronously to ensure there's actually a redis instance
-	// present. The rest will be created asynchronously.
+	// present.
 	ioc, err := p.newConn(false) // false in case size is zero
 	if err != nil {
 		return nil, err
@@ -314,6 +331,15 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	if p.opts.overflowSize > 0 && p.opts.overflowDrainInterval > 0 {
 		p.atIntervalDo(p.opts.overflowDrainInterval, p.doOverflowDrain)
 	}
+
+	// wait all connections to establish - as tests show, you can't work with pool
+	// until p.initDone is closed!
+	select {
+	case <-time.After(p.opts.dialTimeout):
+		return nil, errPoolDialTimeout
+	case <-p.initDone:
+	}
+
 	return p, nil
 }
 
