@@ -261,7 +261,6 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	}
 
 	defaultPoolOpts := []PoolOpt{
-		PoolConnFunc(DefaultConnFunc),
 		PoolDialTimeout(defaultDialTimeout),
 		PoolOnEmptyCreateAfter(1 * time.Second),
 		PoolRefillInterval(1 * time.Second),
@@ -277,6 +276,12 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		// handle it
 		if opt != nil {
 			opt(&(p.opts))
+		}
+	}
+	if p.opts.cf == nil {
+		// DialTimeout in ConnFunc should respect PoolDialTimeout for consistency
+		p.opts.cf = func(network, addr string) (Conn, error) {
+			return Dial(network, addr, DialTimeout(p.opts.dialTimeout))
 		}
 	}
 
