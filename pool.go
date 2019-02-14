@@ -10,10 +10,6 @@ import (
 	"github.com/mediocregopher/radix/v3/resp"
 )
 
-const (
-	defaultDialTimeout = 5 * time.Second
-)
-
 var errPoolDialTimeout = errors.New("connection pool init timeout")
 
 // ErrPoolEmpty is used by Pools created using the PoolOnEmptyErrAfter option
@@ -247,7 +243,7 @@ type Pool struct {
 // behavior. The default options NewPool uses are:
 //
 //	PoolConnFunc(DefaultConnFunc)
-//	PoolDialTimeout(5 * time.Second)
+//	PoolDialTimeout(10 * time.Second)
 //	PoolOnEmptyCreateAfter(1 * time.Second)
 //	PoolRefillInterval(1 * time.Second)
 //	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)

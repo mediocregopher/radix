@@ -143,6 +143,10 @@ import (
 
 var errClientClosed = errors.New("client is closed")
 
+const (
+	defaultDialTimeout = 10 * time.Second
+)
+
 // Client describes an entity which can carry out Actions, e.g. a connection
 // pool for a single redis instance or the cluster client.
 //
@@ -349,7 +353,7 @@ func (tc *timeoutConn) Write(b []byte) (int, error) {
 }
 
 var defaultDialOpts = []DialOpt{
-	DialTimeout(10 * time.Second),
+	DialTimeout(defaultDialTimeout),
 }
 
 // Dial is a ConnFunc which creates a Conn using net.Dial and NewConn. It takes
