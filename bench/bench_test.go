@@ -1,15 +1,16 @@
-package radix
+package bench
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	. "testing"
 	"time"
 
+	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joomcode/redispipe/redis"
 	"github.com/joomcode/redispipe/redisconn"
-
-	redigo "github.com/gomodule/redigo/redis"
+	"github.com/mediocregopher/radix/v3"
 )
 
 func newRedigo() redigo.Conn {
@@ -22,18 +23,18 @@ func newRedigo() redigo.Conn {
 
 func BenchmarkSerialGetSet(b *B) {
 	b.Run("radix", func(b *B) {
-		radix, err := Dial("tcp", "127.0.0.1:6379")
+		rad, err := radix.Dial("tcp", "127.0.0.1:6379")
 		if err != nil {
 			b.Fatal(err)
 		}
-		defer radix.Close()
+		defer rad.Close()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+			if err := rad.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
 				b.Fatal(err)
 			}
 			var out string
-			if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
+			if err := rad.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -110,20 +111,22 @@ func BenchmarkParallelGetSet(b *B) {
 
 	b.Run("radix", func(b *B) {
 		b.Run("no pipelining", func(b *B) {
-			radix, err := NewPool("tcp", "127.0.0.1:6379", parallel, PoolPipelineWindow(0, 0))
+			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", parallel, radix.PoolPipelineWindow(0, 0))
 			if err != nil {
 				b.Fatal(err)
 			}
-			defer radix.Close()
-			<-radix.initDone
+			defer pool.Close()
+			if err := waitFull(pool, parallel); err != nil {
+				b.Fatal(err)
+			}
 
 			do(b, func() {
-				err := radix.Do(WithConn("foo", func(conn Conn) error {
-					if err := conn.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+				err := pool.Do(radix.WithConn("foo", func(conn radix.Conn) error {
+					if err := conn.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
 						return err
 					}
 					var out string
-					if err := conn.Do(Cmd(&out, "GET", "foo")); err != nil {
+					if err := conn.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
 						return err
 					} else if out != "bar" {
 						b.Fatal("got wrong value")
@@ -137,19 +140,21 @@ func BenchmarkParallelGetSet(b *B) {
 		})
 
 		b.Run("one pipeline", func(b *B) {
-			radix, err := NewPool("tcp", "127.0.0.1:6379", parallel, PoolPipelineConcurrency(1))
+			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", parallel, radix.PoolPipelineConcurrency(1))
 			if err != nil {
 				b.Fatal(err)
 			}
-			defer radix.Close()
-			<-radix.initDone
+			defer pool.Close()
+			if err := waitFull(pool, parallel); err != nil {
+				b.Fatal(err)
+			}
 
 			do(b, func() {
-				if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+				if err := pool.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
 					b.Fatal(err)
 				}
 				var out string
-				if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
+				if err := pool.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
 					b.Fatal(err)
 				} else if out != "bar" {
 					b.Fatal("got wrong value")
@@ -158,19 +163,21 @@ func BenchmarkParallelGetSet(b *B) {
 		})
 
 		b.Run("default", func(b *B) {
-			radix, err := NewPool("tcp", "127.0.0.1:6379", parallel, PoolPipelineConcurrency(parallel))
+			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", parallel, radix.PoolPipelineConcurrency(parallel))
 			if err != nil {
 				b.Fatal(err)
 			}
-			defer radix.Close()
-			<-radix.initDone
+			defer pool.Close()
+			if err := waitFull(pool, parallel); err != nil {
+				b.Fatal(err)
+			}
 
 			do(b, func() {
-				if err := radix.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+				if err := pool.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
 					b.Fatal(err)
 				}
 				var out string
-				if err := radix.Do(Cmd(&out, "GET", "foo")); err != nil {
+				if err := pool.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
 					b.Fatal(err)
 				} else if out != "bar" {
 					b.Fatal("got wrong value")
@@ -229,5 +236,20 @@ func fillRedigoPool(pool *redigo.Pool) {
 	}
 	for _, conn := range conns {
 		_ = conn.Close()
+	}
+}
+
+// waitFull blocks until pool.NumAvailConns reaches maxCons
+func waitFull(pool *radix.Pool, maxCons int) error {
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case <-time.After(50 * time.Millisecond):
+			if pool.NumAvailConns() == maxCons {
+				return nil
+			}
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for pool to fill: reached %d, expected %d", pool.NumAvailConns(), maxCons)
+		}
 	}
 }
