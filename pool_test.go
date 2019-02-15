@@ -14,6 +14,7 @@ func testPool(size int, opts ...PoolOpt) *Pool {
 	if err != nil {
 		panic(err)
 	}
+	<-pool.initDone
 	return pool
 }
 
