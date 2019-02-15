@@ -65,7 +65,8 @@ and is pretty comparable for serial workloads.
 
 
 ```
-# go test -v -run=XXX -bench=GetSet -benchmem >/tmp/radix.stat
+# cd bench
+# go test -v -run=XXX -bench=GetSet -benchmem . >/tmp/radix.stat
 # benchstat radix.stat
 name                                     time/op
 SerialGetSet/radix                         89.1µs ± 7%
