@@ -16,6 +16,8 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
   possible. This gives a throughput increase of nearly 5x for a normal parallel
   workload.
 
+* Move benchmarks to a submodule in order to clean up `go.mod` a bit.
+
 [stream]: https://redis.io/topics/streams-intro
 
 # v3.1.0
