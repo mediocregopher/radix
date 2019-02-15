@@ -1,5 +1,9 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.2.1
+
+* Move benchmarks to a submodule in order to clean up `go.mod` a bit.
+
 # v3.2.0
 
 * Add `StreamReader` type to make working with redis' new [Stream][stream]
@@ -15,8 +19,6 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 * Implicitly pipeline commands in the default Pool implementation whenever
   possible. This gives a throughput increase of nearly 5x for a normal parallel
   workload.
-
-* Move benchmarks to a submodule in order to clean up `go.mod` a bit.
 
 [stream]: https://redis.io/topics/streams-intro
 
