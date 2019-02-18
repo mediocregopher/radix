@@ -240,7 +240,7 @@ func BenchmarkParallelGetSet(b *B) {
 
 func fillRedigoPool(pool *redigo.Pool) {
 	var conns []redigo.Conn
-	for pool.MaxActive > pool.ActiveCount() {
+	for pool.MaxIdle > pool.ActiveCount() {
 		conns = append(conns, pool.Get())
 	}
 	for _, conn := range conns {
