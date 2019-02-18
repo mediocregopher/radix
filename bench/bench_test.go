@@ -97,7 +97,16 @@ func BenchmarkSerialGetSet(b *B) {
 }
 
 func BenchmarkParallelGetSet(b *B) {
-	parallel := runtime.GOMAXPROCS(0) * 8
+	// parallel defines a multiplicand used for determining the number of goroutines
+	// for running benchmarks. this value will be multiplied by GOMAXPROCS inside RunParallel.
+	// since these benchmarks are mostly I/O bound and applications tend to have more
+	// active goroutines accessing Redis than cores, especially with higher core numbers,
+	// we set this to GOMAXPROCS so that we get GOMAXPROCS^2 connections.
+	parallel := runtime.GOMAXPROCS(0)
+
+	// multiply parallel with GOMAXPROCS to get the actual number of goroutines and thus
+	// connections needed for the benchmarks.
+	poolSize := parallel * runtime.GOMAXPROCS(0)
 
 	do := func(b *B, fn func()) {
 		b.ResetTimer()
@@ -111,12 +120,12 @@ func BenchmarkParallelGetSet(b *B) {
 
 	b.Run("radix", func(b *B) {
 		b.Run("no pipelining", func(b *B) {
-			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", parallel, radix.PoolPipelineWindow(0, 0))
+			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", poolSize, radix.PoolPipelineWindow(0, 0))
 			if err != nil {
 				b.Fatal(err)
 			}
 			defer pool.Close()
-			if err := waitFull(pool, parallel); err != nil {
+			if err := waitFull(pool, poolSize); err != nil {
 				b.Fatal(err)
 			}
 
@@ -140,12 +149,12 @@ func BenchmarkParallelGetSet(b *B) {
 		})
 
 		b.Run("one pipeline", func(b *B) {
-			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", parallel, radix.PoolPipelineConcurrency(1))
+			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", poolSize, radix.PoolPipelineConcurrency(1))
 			if err != nil {
 				b.Fatal(err)
 			}
 			defer pool.Close()
-			if err := waitFull(pool, parallel); err != nil {
+			if err := waitFull(pool, poolSize); err != nil {
 				b.Fatal(err)
 			}
 
@@ -163,12 +172,12 @@ func BenchmarkParallelGetSet(b *B) {
 		})
 
 		b.Run("default", func(b *B) {
-			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", parallel, radix.PoolPipelineConcurrency(parallel))
+			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", poolSize, radix.PoolPipelineConcurrency(poolSize))
 			if err != nil {
 				b.Fatal(err)
 			}
 			defer pool.Close()
-			if err := waitFull(pool, parallel); err != nil {
+			if err := waitFull(pool, poolSize); err != nil {
 				b.Fatal(err)
 			}
 
@@ -187,7 +196,7 @@ func BenchmarkParallelGetSet(b *B) {
 	})
 
 	b.Run("redigo", func(b *B) {
-		red := &redigo.Pool{MaxIdle: parallel, Dial: func() (redigo.Conn, error) {
+		red := &redigo.Pool{MaxIdle: poolSize, Dial: func() (redigo.Conn, error) {
 			return newRedigo(), nil
 		}}
 		defer red.Close()
