@@ -143,12 +143,18 @@ type BulkStringBytes struct {
 // MarshalRESP implements the Marshaler method
 func (b BulkStringBytes) MarshalRESP(w io.Writer) error {
 	if b.B == nil && !b.MarshalNotNil {
-		return bytesutil.MultiWrite(w, nilBulkString)
+		_, err := w.Write(nilBulkString)
+		return err
 	}
 	scratch := bytesutil.GetBytes()
-	defer bytesutil.PutBytes(scratch)
+	*scratch = append(*scratch, bulkStrPrefix...)
 	*scratch = strconv.AppendInt(*scratch, int64(len(b.B)), 10)
-	return bytesutil.MultiWrite(w, bulkStrPrefix, *scratch, delim, b.B, delim)
+	*scratch = append(*scratch, delim...)
+	*scratch = append(*scratch, b.B...)
+	*scratch = append(*scratch, delim...)
+	_, err := w.Write(*scratch)
+	bytesutil.PutBytes(scratch)
+	return err
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -189,11 +195,14 @@ type BulkString struct {
 // MarshalRESP implements the Marshaler method
 func (b BulkString) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
-	defer bytesutil.PutBytes(scratch)
+	*scratch = append(*scratch, bulkStrPrefix...)
 	*scratch = strconv.AppendInt(*scratch, int64(len(b.S)), 10)
-	ll := len(*scratch)
+	*scratch = append(*scratch, delim...)
 	*scratch = append(*scratch, b.S...)
-	return bytesutil.MultiWrite(w, bulkStrPrefix, (*scratch)[:ll], delim, (*scratch)[ll:], delim)
+	*scratch = append(*scratch, delim...)
+	_, err := w.Write(*scratch)
+	bytesutil.PutBytes(scratch)
+	return err
 }
 
 // UnmarshalRESP implements the Unmarshaler method. This treats a Nil bulk
@@ -265,9 +274,12 @@ type ArrayHeader struct {
 // MarshalRESP implements the Marshaler method
 func (ah ArrayHeader) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
-	defer bytesutil.PutBytes(scratch)
+	*scratch = append(*scratch, arrayPrefix...)
 	*scratch = strconv.AppendInt(*scratch, int64(ah.N), 10)
-	return bytesutil.MultiWrite(w, arrayPrefix, *scratch, delim)
+	*scratch = append(*scratch, delim...)
+	_, err := w.Write(*scratch)
+	bytesutil.PutBytes(scratch)
+	return err
 }
 
 // UnmarshalRESP implements the Unmarshaler method
