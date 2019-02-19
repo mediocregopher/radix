@@ -175,8 +175,14 @@ func ReadNDiscard(r io.Reader, n int) error {
 
 	if n == 0 {
 		return nil
-	} else if d, ok := r.(discarder); ok {
-		_, err := d.Discard(n)
+	}
+
+	switch v := r.(type) {
+	case discarder:
+		_, err := v.Discard(n)
+		return err
+	case io.Seeker:
+		_, err := v.Seek(int64(n), io.SeekCurrent)
 		return err
 	}
 
