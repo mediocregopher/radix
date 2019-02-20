@@ -1,5 +1,10 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# master (untagged)
+
+* Give Pool an ErrCh so that errors which happen internally may be reported to
+  the user, if they care.
+
 # v3.2.1
 
 * Move benchmarks to a submodule in order to clean up `go.mod` a bit.

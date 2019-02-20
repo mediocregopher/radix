@@ -15,8 +15,6 @@ var ErrPoolEmpty = errors.New("connection pool is empty")
 
 var errPoolFull = errors.New("connection pool is full")
 
-// TODO do something with errors which happen asynchronously
-
 // ioErrConn is a Conn which tracks the last net.Error which was seen either
 // during an Encode call or a Decode call
 type ioErrConn struct {
@@ -223,6 +221,11 @@ type Pool struct {
 	wg       sync.WaitGroup
 	closeCh  chan bool
 	initDone chan struct{} // used for tests
+
+	// Any errors encountered internally will be written to this channel. If
+	// nothing is reading the channel the errors will be dropped. The channel
+	// will be closed when Close is called.
+	ErrCh chan error
 }
 
 // NewPool creates a *Pool which will keep open at least the given number of
@@ -246,6 +249,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		size:     size,
 		closeCh:  make(chan bool),
 		initDone: make(chan struct{}),
+		ErrCh:    make(chan error, 1),
 	}
 
 	defaultPoolOpts := []PoolOpt{
@@ -285,8 +289,13 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 			ioc, err := p.newConn(true)
 			if err == nil {
 				p.put(ioc)
+			} else {
+				p.err(err)
+				// if there was an error connecting to the instance than it
+				// might need a little breathing room, redis can sometimes get
+				// sad if too many connections are created simultaneously.
+				time.Sleep(100 * time.Millisecond)
 			}
-			// TODO do something with that error?
 		}
 		close(p.initDone)
 	}()
@@ -315,6 +324,13 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		p.atIntervalDo(p.opts.overflowDrainInterval, p.doOverflowDrain)
 	}
 	return p, nil
+}
+
+func (p *Pool) err(err error) {
+	select {
+	case p.ErrCh <- err:
+	default:
+	}
 }
 
 // this must always be called with p.l unlocked
@@ -372,9 +388,10 @@ func (p *Pool) doRefill() {
 	p.l.RUnlock()
 
 	ioc, err := p.newConn(true)
-	// TODO do something with this error? not if it's errPoolFull
 	if err == nil {
 		p.put(ioc)
+	} else if err != errPoolFull {
+		p.err(err)
 	}
 }
 
@@ -546,5 +563,6 @@ emptyLoop:
 	// by now the pool's go-routines should have bailed, wait to make sure they
 	// do
 	p.wg.Wait()
+	close(p.ErrCh)
 	return nil
 }
