@@ -206,19 +206,6 @@ func ReadNDiscard(r io.Reader, n int) error {
 	}
 }
 
-// MultiWrite writes multiple byte slices into one writer.
-//
-// This is equivalent to calling w.Write for each byte slice in bb, but may be optimized to reduce calls
-// for some types of io.Writer.
-func MultiWrite(w io.Writer, bb ...[]byte) error {
-	for _, b := range bb {
-		if _, err := w.Write(b); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ReadInt reads the next n bytes from r as a signed 64 bit integer.
 func ReadInt(r io.Reader, n int) (int64, error) {
 	scratch := GetBytes()

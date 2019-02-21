@@ -50,7 +50,13 @@ type SimpleString struct {
 
 // MarshalRESP implements the Marshaler method
 func (ss SimpleString) MarshalRESP(w io.Writer) error {
-	return bytesutil.MultiWrite(w, simpleStrPrefix, []byte(ss.S), delim)
+	scratch := bytesutil.GetBytes()
+	*scratch = append(*scratch, simpleStrPrefix...)
+	*scratch = append(*scratch, ss.S...)
+	*scratch = append(*scratch, delim...)
+	_, err := w.Write(*scratch)
+	bytesutil.PutBytes(scratch)
+	return err
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -83,13 +89,15 @@ func (e Error) Error() string {
 
 // MarshalRESP implements the Marshaler method
 func (e Error) MarshalRESP(w io.Writer) error {
-	if e.E == nil {
-		return bytesutil.MultiWrite(w, errPrefix, delim)
-	}
 	scratch := bytesutil.GetBytes()
-	defer bytesutil.PutBytes(scratch)
-	*scratch = append(*scratch, e.E.Error()...)
-	return bytesutil.MultiWrite(w, errPrefix, *scratch, delim)
+	*scratch = append(*scratch, errPrefix...)
+	if e.E != nil {
+		*scratch = append(*scratch, e.E.Error()...)
+	}
+	*scratch = append(*scratch, delim...)
+	_, err := w.Write(*scratch)
+	bytesutil.PutBytes(scratch)
+	return err
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -112,9 +120,12 @@ type Int struct {
 // MarshalRESP implements the Marshaler method
 func (i Int) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
-	defer bytesutil.PutBytes(scratch)
+	*scratch = append(*scratch, intPrefix...)
 	*scratch = strconv.AppendInt(*scratch, int64(i.I), 10)
-	return bytesutil.MultiWrite(w, intPrefix, *scratch, delim)
+	*scratch = append(*scratch, delim...)
+	_, err := w.Write(*scratch)
+	bytesutil.PutBytes(scratch)
+	return err
 }
 
 // UnmarshalRESP implements the Unmarshaler method
@@ -245,19 +256,27 @@ type BulkReader struct {
 // MarshalRESP implements the Marshaler method
 func (b BulkReader) MarshalRESP(w io.Writer) error {
 	if b.LR == nil {
-		return bytesutil.MultiWrite(w, nilBulkString)
-	}
-	scratch := bytesutil.GetBytes()
-	defer bytesutil.PutBytes(scratch)
-	l := b.LR.Len()
-	*scratch = strconv.AppendInt(*scratch, l, 10)
-	if err := bytesutil.MultiWrite(w, bulkStrPrefix, *scratch, delim); err != nil {
+		_, err := w.Write(nilBulkString)
 		return err
 	}
+
+	l := b.LR.Len()
+	scratch := bytesutil.GetBytes()
+	*scratch = append(*scratch, bulkStrPrefix...)
+	*scratch = strconv.AppendInt(*scratch, l, 10)
+	*scratch = append(*scratch, delim...)
+	_, err := w.Write(*scratch)
+	bytesutil.PutBytes(scratch)
+	if err != nil {
+		return err
+	}
+
 	if _, err := io.CopyN(w, b.LR, l); err != nil {
 		return err
+	} else if _, err := w.Write(delim); err != nil {
+		return err
 	}
-	return bytesutil.MultiWrite(w, delim)
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -536,7 +555,8 @@ func (a Any) MarshalRESP(w io.Writer) error {
 	switch vv.Kind() {
 	case reflect.Slice, reflect.Array:
 		if vv.IsNil() && !a.MarshalNoArrayHeaders {
-			return bytesutil.MultiWrite(w, nilArray)
+			_, err := w.Write(nilArray)
+			return err
 		}
 		l := vv.Len()
 		arrHeader(l)
@@ -546,7 +566,8 @@ func (a Any) MarshalRESP(w io.Writer) error {
 
 	case reflect.Map:
 		if vv.IsNil() && !a.MarshalNoArrayHeaders {
-			return bytesutil.MultiWrite(w, nilArray)
+			_, err := w.Write(nilArray)
+			return err
 		}
 		kkv := vv.MapKeys()
 		arrHeader(len(kkv) * 2)
@@ -691,9 +712,10 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		return err
 	case simpleStrPrefix[0], intPrefix[0]:
 		reader := byteReaderPool.Get().(*bytes.Reader)
-		defer byteReaderPool.Put(reader)
 		reader.Reset(b)
-		return a.unmarshalSingle(reader, reader.Len())
+		err := a.unmarshalSingle(reader, reader.Len())
+		byteReaderPool.Put(reader)
+		return err
 	default:
 		return fmt.Errorf("unknown type prefix %q", b[0])
 	}
@@ -1050,9 +1072,10 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 // all cases.
 func (rm RawMessage) UnmarshalInto(u resp.Unmarshaler) error {
 	r := byteReaderPool.Get().(*bytes.Reader)
-	defer byteReaderPool.Put(r)
 	r.Reset(rm)
-	return u.UnmarshalRESP(bufio.NewReader(r))
+	err := u.UnmarshalRESP(bufio.NewReader(r))
+	byteReaderPool.Put(r)
+	return err
 }
 
 // IsNil returns true if the contents of RawMessage are one of the nil values.
