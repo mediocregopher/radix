@@ -114,6 +114,7 @@ func BenchmarkSerialGetSetLargeArgs(b *B) {
 			b.Fatal(err)
 		}
 		defer rad.Close()
+		// avoid overhead of converting from radix.Conn to radix.Client on each loop iteration
 		client := radix.Client(rad)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
