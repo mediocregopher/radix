@@ -207,8 +207,9 @@ func BenchmarkParallelGetSet(b *B) {
 					}
 				}
 
-		// avoid overhead of boxing the pool on each loop iteration
-		client := radix.Client(rad)
+				// avoid overhead of boxing the pool on each loop iteration
+				client := radix.Client(pool)
+				b.ResetTimer()
 				do(b, func() error {
 					return radixGetSet(client, "foo", "bar")
 				})
