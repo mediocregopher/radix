@@ -33,12 +33,12 @@ func newRedisPipe(writePause time.Duration) redispipe.Sync {
 	return redispipe.Sync{S: pipe}
 }
 
-func radixGetSet(conn radix.Conn, key, val string) error {
-	if err := conn.Do(radix.Cmd(nil, "SET", key, val)); err != nil {
+func radixGetSet(client radix.Client, key, val string) error {
+	if err := client.Do(radix.Cmd(nil, "SET", key, val)); err != nil {
 		return err
 	}
 	var out string
-	if err := conn.Do(radix.Cmd(&out, "GET", key)); err != nil {
+	if err := client.Do(radix.Cmd(&out, "GET", key)); err != nil {
 		return err
 	} else if out != val {
 		return errors.New("got wrong value")
@@ -53,9 +53,10 @@ func BenchmarkSerialGetSet(b *B) {
 			b.Fatal(err)
 		}
 		defer rad.Close()
+		client := radix.Client(rad)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := radixGetSet(rad, "foo", "bar"); err != nil {
+			if err := radixGetSet(client, "foo", "bar"); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -112,9 +113,10 @@ func BenchmarkSerialGetSetLargeArgs(b *B) {
 			b.Fatal(err)
 		}
 		defer rad.Close()
+		client := radix.Client(rad)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := radixGetSet(rad, key, val); err != nil {
+			if err := radixGetSet(client, key, val); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -203,17 +205,9 @@ func BenchmarkParallelGetSet(b *B) {
 					}
 				}
 
+				client := radix.Client(pool)
 				do(b, func() error {
-					if err := pool.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
-						return err
-					}
-					var out string
-					if err := pool.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
-						return err
-					} else if out != "bar" {
-						return errors.New("got wrong value")
-					}
-					return nil
+					return radixGetSet(client, "foo", "bar")
 				})
 			}
 		}
