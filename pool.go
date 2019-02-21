@@ -259,6 +259,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolOnFullBuffer((size/3)+1, 1*time.Second),
 		PoolPingInterval(5 * time.Second / time.Duration(size+1)),
 		PoolPipelineConcurrency(size),
+		// NOTE if 150us is changed the benchmarks need to be updated too
 		PoolPipelineWindow(150*time.Microsecond, 0),
 	}
 

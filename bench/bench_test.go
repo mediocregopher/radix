@@ -2,15 +2,15 @@ package bench
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"runtime"
 	"strings"
 	. "testing"
 	"time"
 
 	redigo "github.com/gomodule/redigo/redis"
-	"github.com/joomcode/redispipe/redis"
-	"github.com/joomcode/redispipe/redisconn"
+	redispipe "github.com/joomcode/redispipe/redis"
+	redispipeconn "github.com/joomcode/redispipe/redisconn"
 	"github.com/mediocregopher/radix/v3"
 )
 
@@ -22,6 +22,30 @@ func newRedigo() redigo.Conn {
 	return c
 }
 
+func newRedisPipe(writePause time.Duration) redispipe.Sync {
+	pipe, err := redispipeconn.Connect(context.Background(), "127.0.0.1:6379", redispipeconn.Opts{
+		Logger:     redispipeconn.NoopLogger{},
+		WritePause: writePause,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return redispipe.Sync{S: pipe}
+}
+
+func radixGetSet(client radix.Client, key, val string) error {
+	if err := client.Do(radix.Cmd(nil, "SET", key, val)); err != nil {
+		return err
+	}
+	var out string
+	if err := client.Do(radix.Cmd(&out, "GET", key)); err != nil {
+		return err
+	} else if out != val {
+		return errors.New("got wrong value")
+	}
+	return nil
+}
+
 func BenchmarkSerialGetSet(b *B) {
 	b.Run("radix", func(b *B) {
 		rad, err := radix.Dial("tcp", "127.0.0.1:6379")
@@ -29,13 +53,11 @@ func BenchmarkSerialGetSet(b *B) {
 			b.Fatal(err)
 		}
 		defer rad.Close()
+		// avoid overhead of converting from radix.Conn to radix.Client on each loop iteration
+		client := radix.Client(rad)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := rad.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
-				b.Fatal(err)
-			}
-			var out string
-			if err := rad.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
+			if err := radixGetSet(client, "foo", "bar"); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -55,42 +77,27 @@ func BenchmarkSerialGetSet(b *B) {
 	})
 
 	b.Run("redispipe", func(b *B) {
-		pipe, err := redisconn.Connect(context.Background(), "127.0.0.1:6379", redisconn.Opts{
-			Logger:     redisconn.NoopLogger{},
-			WritePause: 150 * time.Microsecond,
-		})
-		defer pipe.Close()
-		if err != nil {
-			b.Fatal(err)
-		}
-		sync := redis.Sync{pipe}
+		sync := newRedisPipe(150 * time.Microsecond)
+		defer sync.S.Close()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if res := sync.Do("SET", "foo", "bar"); redis.AsError(res) != nil {
+			if res := sync.Do("SET", "foo", "bar"); redispipe.AsError(res) != nil {
 				b.Fatal(res)
-			}
-			if res := sync.Do("GET", "foo"); redis.AsError(res) != nil {
+			} else if res := sync.Do("GET", "foo"); redispipe.AsError(res) != nil {
 				b.Fatal(res)
 			}
 		}
 	})
 
 	b.Run("redispipe_pause0", func(b *B) {
-		pipe, err := redisconn.Connect(context.Background(), "127.0.0.1:6379", redisconn.Opts{
-			Logger:     redisconn.NoopLogger{},
-			WritePause: -1,
-		})
-		defer pipe.Close()
-		if err != nil {
-			b.Fatal(err)
-		}
-		sync := redis.Sync{pipe}
+		sync := newRedisPipe(-1)
+		defer sync.S.Close()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if res := sync.Do("SET", "foo", "bar"); redis.AsError(res) != nil {
+			if res := sync.Do("SET", "foo", "bar"); redispipe.AsError(res) != nil {
 				b.Fatal(res)
 			}
-			if res := sync.Do("GET", "foo"); redis.AsError(res) != nil {
+			if res := sync.Do("GET", "foo"); redispipe.AsError(res) != nil {
 				b.Fatal(res)
 			}
 		}
@@ -107,13 +114,11 @@ func BenchmarkSerialGetSetLargeArgs(b *B) {
 			b.Fatal(err)
 		}
 		defer rad.Close()
+		// avoid overhead of converting from radix.Conn to radix.Client on each loop iteration
+		client := radix.Client(rad)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := rad.Do(radix.Cmd(nil, "SET", key, val)); err != nil {
-				b.Fatal(err)
-			}
-			var out string
-			if err := rad.Do(radix.Cmd(&out, "GET", key)); err != nil {
+			if err := radixGetSet(client, key, val); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -133,42 +138,28 @@ func BenchmarkSerialGetSetLargeArgs(b *B) {
 	})
 
 	b.Run("redispipe", func(b *B) {
-		pipe, err := redisconn.Connect(context.Background(), "127.0.0.1:6379", redisconn.Opts{
-			Logger:     redisconn.NoopLogger{},
-			WritePause: 150 * time.Microsecond,
-		})
-		defer pipe.Close()
-		if err != nil {
-			b.Fatal(err)
-		}
-		sync := redis.Sync{pipe}
+		sync := newRedisPipe(150 * time.Microsecond)
+		defer sync.S.Close()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if res := sync.Do("SET", key, val); redis.AsError(res) != nil {
+			if res := sync.Do("SET", key, val); redispipe.AsError(res) != nil {
 				b.Fatal(res)
 			}
-			if res := sync.Do("GET", key); redis.AsError(res) != nil {
+			if res := sync.Do("GET", key); redispipe.AsError(res) != nil {
 				b.Fatal(res)
 			}
 		}
 	})
 
 	b.Run("redispipe_pause0", func(b *B) {
-		pipe, err := redisconn.Connect(context.Background(), "127.0.0.1:6379", redisconn.Opts{
-			Logger:     redisconn.NoopLogger{},
-			WritePause: -1,
-		})
-		defer pipe.Close()
-		if err != nil {
-			b.Fatal(err)
-		}
-		sync := redis.Sync{pipe}
+		sync := newRedisPipe(-1)
+		defer sync.S.Close()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if res := sync.Do("SET", key, val); redis.AsError(res) != nil {
+			if res := sync.Do("SET", key, val); redispipe.AsError(res) != nil {
 				b.Fatal(res)
 			}
-			if res := sync.Do("GET", key); redis.AsError(res) != nil {
+			if res := sync.Do("GET", key); redispipe.AsError(res) != nil {
 				b.Fatal(res)
 			}
 		}
@@ -187,91 +178,47 @@ func BenchmarkParallelGetSet(b *B) {
 	// connections needed for the benchmarks.
 	poolSize := parallel * runtime.GOMAXPROCS(0)
 
-	do := func(b *B, fn func()) {
+	do := func(b *B, fn func() error) {
 		b.ResetTimer()
 		b.SetParallelism(parallel)
 		b.RunParallel(func(pb *PB) {
 			for pb.Next() {
-				fn()
+				if err := fn(); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
 
 	b.Run("radix", func(b *B) {
-		b.Run("no pipelining", func(b *B) {
-			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", poolSize, radix.PoolPipelineWindow(0, 0))
-			if err != nil {
-				b.Fatal(err)
-			}
-			defer pool.Close()
-			if err := waitFull(pool, poolSize); err != nil {
-				b.Fatal(err)
-			}
-
-			do(b, func() {
-				err := pool.Do(radix.WithConn("foo", func(conn radix.Conn) error {
-					if err := conn.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
-						return err
-					}
-					var out string
-					if err := conn.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
-						return err
-					} else if out != "bar" {
-						b.Fatal("got wrong value")
-					}
-					return nil
-				}))
+		mkRadixBench := func(opts ...radix.PoolOpt) func(b *B) {
+			return func(b *B) {
+				pool, err := radix.NewPool("tcp", "127.0.0.1:6379", poolSize, opts...)
 				if err != nil {
 					b.Fatal(err)
 				}
-			})
-		})
+				defer pool.Close()
 
-		b.Run("one pipeline", func(b *B) {
-			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", poolSize, radix.PoolPipelineConcurrency(1))
-			if err != nil {
-				b.Fatal(err)
-			}
-			defer pool.Close()
-			if err := waitFull(pool, poolSize); err != nil {
-				b.Fatal(err)
-			}
+				// wait for the pool to fill up
+				for {
+					time.Sleep(50 * time.Millisecond)
+					if pool.NumAvailConns() >= poolSize {
+						break
+					}
+				}
 
-			do(b, func() {
-				if err := pool.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
-					b.Fatal(err)
-				}
-				var out string
-				if err := pool.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
-					b.Fatal(err)
-				} else if out != "bar" {
-					b.Fatal("got wrong value")
-				}
-			})
-		})
-
-		b.Run("default", func(b *B) {
-			pool, err := radix.NewPool("tcp", "127.0.0.1:6379", poolSize, radix.PoolPipelineConcurrency(poolSize))
-			if err != nil {
-				b.Fatal(err)
+				// avoid overhead of boxing the pool on each loop iteration
+				client := radix.Client(pool)
+				b.ResetTimer()
+				do(b, func() error {
+					return radixGetSet(client, "foo", "bar")
+				})
 			}
-			defer pool.Close()
-			if err := waitFull(pool, poolSize); err != nil {
-				b.Fatal(err)
-			}
+		}
 
-			do(b, func() {
-				if err := pool.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
-					b.Fatal(err)
-				}
-				var out string
-				if err := pool.Do(radix.Cmd(&out, "GET", "foo")); err != nil {
-					b.Fatal(err)
-				} else if out != "bar" {
-					b.Fatal("got wrong value")
-				}
-			})
-		})
+		b.Run("no pipeline", mkRadixBench(radix.PoolPipelineWindow(0, 0)))
+		b.Run("one pipeline", mkRadixBench(radix.PoolPipelineConcurrency(1)))
+		b.Run("default", mkRadixBench())
 	})
 
 	b.Run("redigo", func(b *B) {
@@ -279,65 +226,44 @@ func BenchmarkParallelGetSet(b *B) {
 			return newRedigo(), nil
 		}}
 		defer red.Close()
-		fillRedigoPool(red)
 
-		do(b, func() {
+		{ // make sure the pool is full
+			var conns []redigo.Conn
+			for red.MaxIdle > red.ActiveCount() {
+				conns = append(conns, red.Get())
+			}
+			for _, conn := range conns {
+				_ = conn.Close()
+			}
+		}
+
+		do(b, func() error {
 			conn := red.Get()
-			defer conn.Close()
 			if _, err := conn.Do("SET", "foo", "bar"); err != nil {
-				b.Fatal(err)
+				conn.Close()
+				return err
 			}
 			if out, err := redigo.String(conn.Do("GET", "foo")); err != nil {
-				b.Fatal(err)
+				conn.Close()
+				return err
 			} else if out != "bar" {
-				b.Fatal("got wrong value")
+				conn.Close()
+				return errors.New("got wrong value")
 			}
+			return conn.Close()
 		})
 	})
 
 	b.Run("redispipe", func(b *B) {
-		pipe, err := redisconn.Connect(context.Background(), "127.0.0.1:6379", redisconn.Opts{
-			Logger:     redisconn.NoopLogger{},
-			WritePause: 150 * time.Microsecond,
-		})
-		if err != nil {
-			b.Fatal(err)
-		}
-		defer pipe.Close()
-		sync := redis.Sync{pipe}
-
-		do(b, func() {
-			if res := sync.Do("SET", "foo", "bar"); redis.AsError(res) != nil {
-				b.Fatal(res)
+		sync := newRedisPipe(150 * time.Microsecond)
+		defer sync.S.Close()
+		do(b, func() error {
+			if res := sync.Do("SET", "foo", "bar"); redispipe.AsError(res) != nil {
+				return redispipe.AsError(res)
+			} else if res := sync.Do("GET", "foo"); redispipe.AsError(res) != nil {
+				return redispipe.AsError(res)
 			}
-			if res := sync.Do("GET", "foo"); redis.AsError(res) != nil {
-				b.Fatal(err)
-			}
+			return nil
 		})
 	})
-}
-
-func fillRedigoPool(pool *redigo.Pool) {
-	var conns []redigo.Conn
-	for pool.MaxIdle > pool.ActiveCount() {
-		conns = append(conns, pool.Get())
-	}
-	for _, conn := range conns {
-		_ = conn.Close()
-	}
-}
-
-// waitFull blocks until pool.NumAvailConns reaches maxCons
-func waitFull(pool *radix.Pool, maxCons int) error {
-	timeout := time.After(10 * time.Second)
-	for {
-		select {
-		case <-time.After(50 * time.Millisecond):
-			if pool.NumAvailConns() == maxCons {
-				return nil
-			}
-		case <-timeout:
-			return fmt.Errorf("timeout waiting for pool to fill: reached %d, expected %d", pool.NumAvailConns(), maxCons)
-		}
-	}
 }
