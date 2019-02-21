@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	. "testing"
 	"time"
 
@@ -90,6 +91,84 @@ func BenchmarkSerialGetSet(b *B) {
 				b.Fatal(res)
 			}
 			if res := sync.Do("GET", "foo"); redis.AsError(res) != nil {
+				b.Fatal(res)
+			}
+		}
+	})
+}
+
+func BenchmarkSerialGetSetLargeArgs(b *B) {
+	key := strings.Repeat("foo", 24)
+	val := strings.Repeat("bar", 4096)
+
+	b.Run("radix", func(b *B) {
+		rad, err := radix.Dial("tcp", "127.0.0.1:6379")
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer rad.Close()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := rad.Do(radix.Cmd(nil, "SET", key, val)); err != nil {
+				b.Fatal(err)
+			}
+			var out string
+			if err := rad.Do(radix.Cmd(&out, "GET", key)); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("redigo", func(b *B) {
+		red := newRedigo()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := red.Do("SET", key, val); err != nil {
+				b.Fatal(err)
+			}
+			if _, err := redigo.String(red.Do("GET", key)); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("redispipe", func(b *B) {
+		pipe, err := redisconn.Connect(context.Background(), "127.0.0.1:6379", redisconn.Opts{
+			Logger:     redisconn.NoopLogger{},
+			WritePause: 150 * time.Microsecond,
+		})
+		defer pipe.Close()
+		if err != nil {
+			b.Fatal(err)
+		}
+		sync := redis.Sync{pipe}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if res := sync.Do("SET", key, val); redis.AsError(res) != nil {
+				b.Fatal(res)
+			}
+			if res := sync.Do("GET", key); redis.AsError(res) != nil {
+				b.Fatal(res)
+			}
+		}
+	})
+
+	b.Run("redispipe_pause0", func(b *B) {
+		pipe, err := redisconn.Connect(context.Background(), "127.0.0.1:6379", redisconn.Opts{
+			Logger:     redisconn.NoopLogger{},
+			WritePause: -1,
+		})
+		defer pipe.Close()
+		if err != nil {
+			b.Fatal(err)
+		}
+		sync := redis.Sync{pipe}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if res := sync.Do("SET", key, val); redis.AsError(res) != nil {
+				b.Fatal(res)
+			}
+			if res := sync.Do("GET", key); redis.AsError(res) != nil {
 				b.Fatal(res)
 			}
 		}
