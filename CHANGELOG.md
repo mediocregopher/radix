@@ -1,6 +1,6 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
-# v3.2.3
+# v3.2.2
 
 * Give Pool an ErrCh so that errors which happen internally may be reported to
   the user, if they care.
