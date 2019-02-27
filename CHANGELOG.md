@@ -1,9 +1,13 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
-# master (untagged)
+# v3.2.3
 
 * Give Pool an ErrCh so that errors which happen internally may be reported to
   the user, if they care.
+
+* Fix `PubSubConn`'s deadlock problems during Unsubscribe commands.
+
+* Small speed optimizations in network protocol code.
 
 # v3.2.1
 

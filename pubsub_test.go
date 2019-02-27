@@ -262,6 +262,56 @@ func TestPubSubTimeout(t *T) {
 	assert.Equal(t, msgStr, string(msg.Message))
 }
 
+// This attempts to catch weird race conditions which might occur due to
+// subscribing/unsubscribing quickly on an active channel.
+func TestPubSubChaotic(t *T) {
+	c, pubC := PubSub(dial()), dial()
+	ch, msgStr := randStr(), randStr()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	go func() {
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+				publish(t, pubC, ch, msgStr)
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	}()
+
+	msgCh := make(chan PubSubMessage, 100)
+	require.Nil(t, c.Subscribe(msgCh, ch))
+
+	stopAfter := time.After(10 * time.Second)
+	toggleTimer := time.Tick(250 * time.Millisecond)
+	subbed := true
+	for {
+		waitFor := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-stopAfter:
+			return
+		case <-waitFor.C:
+			if subbed {
+				t.Fatal("waited too long to receive message")
+			}
+		case msg := <-msgCh:
+			waitFor.Stop()
+			assert.Equal(t, msgStr, string(msg.Message))
+		case <-toggleTimer:
+			waitFor.Stop()
+			if subbed {
+				require.Nil(t, c.Unsubscribe(msgCh, ch))
+			} else {
+				require.Nil(t, c.Subscribe(msgCh, ch))
+			}
+			subbed = !subbed
+		}
+	}
+}
+
 func ExamplePubSub() {
 	// Create a normal redis connection
 	conn, err := Dial("tcp", "127.0.0.1:6379")

@@ -149,6 +149,10 @@ type PubSubConn interface {
 
 	// Unsubscribe unsubscribes the msgCh from the given set of channels, if it
 	// was subscribed at all.
+	//
+	// NOTE even if msgCh is not subscribed to any other redis channels, it
+	// should still be considered "active", and therefore still be having
+	// messages read from it, until Unsubscribe has returned
 	Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error
 
 	// PSubscribe is like Subscribe, but it subscribes msgCh to a set of
@@ -157,6 +161,10 @@ type PubSubConn interface {
 
 	// PUnsubscribe is like Unsubscribe, but it unsubscribes msgCh from a set of
 	// patterns and not individual channels.
+	//
+	// NOTE even if msgCh is not subscribed to any other redis channels, it
+	// should still be considered "active", and therefore still be having
+	// messages read from it, until PUnsubscribe has returned
 	PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string) error
 
 	// Ping performs a simple Ping command on the PubSubConn, returning an error
@@ -166,6 +174,9 @@ type PubSubConn interface {
 	// Close closes the PubSubConn so it can't be used anymore. All subscribed
 	// channels will stop receiving PubSubMessages from this Conn (but will not
 	// themselves be closed).
+	//
+	// NOTE all msgChs should be considered "active", and therefore still be
+	// having messages read from them, until Close has returned.
 	Close() error
 }
 
@@ -236,10 +247,11 @@ func (c *pubSubConn) publish(m PubSubMessage) {
 	c.csL.RLock()
 	defer c.csL.RUnlock()
 
-	subs := c.subs[m.Channel]
-
+	var subs map[chan<- PubSubMessage]bool
 	if m.Type == "pmessage" {
 		subs = c.psubs[m.Pattern]
+	} else {
+		subs = c.subs[m.Channel]
 	}
 
 	for ch := range subs {
@@ -268,10 +280,8 @@ func (c *pubSubConn) spin() {
 	}
 }
 
+// NOTE cmdL _must_ be held to use do
 func (c *pubSubConn) do(exp int, cmd string, args ...string) error {
-	c.cmdL.Lock()
-	defer c.cmdL.Unlock()
-
 	rcmd := Cmd(nil, cmd, args...)
 	if err := c.conn.Encode(rcmd); err != nil {
 		return err
@@ -316,31 +326,40 @@ func (c *pubSubConn) Close() error {
 }
 
 func (c *pubSubConn) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
-	c.csL.Lock()
-	defer c.csL.Unlock()
+	c.cmdL.Lock()
+	defer c.cmdL.Unlock()
+
+	c.csL.RLock()
 	missing := c.subs.missing(channels)
+	c.csL.RUnlock()
+
 	if len(missing) > 0 {
 		if err := c.do(len(missing), "SUBSCRIBE", missing...); err != nil {
 			return err
 		}
 	}
 
+	c.csL.Lock()
 	for _, channel := range channels {
 		c.subs.add(channel, msgCh)
 	}
+	c.csL.Unlock()
+
 	return nil
 }
 
 func (c *pubSubConn) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
-	c.csL.Lock()
-	defer c.csL.Unlock()
+	c.cmdL.Lock()
+	defer c.cmdL.Unlock()
 
+	c.csL.Lock()
 	emptyChannels := make([]string, 0, len(channels))
 	for _, channel := range channels {
 		if empty := c.subs.del(channel, msgCh); empty {
 			emptyChannels = append(emptyChannels, channel)
 		}
 	}
+	c.csL.Unlock()
 
 	if len(emptyChannels) == 0 {
 		return nil
@@ -350,31 +369,40 @@ func (c *pubSubConn) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string)
 }
 
 func (c *pubSubConn) PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) error {
-	c.csL.Lock()
-	defer c.csL.Unlock()
+	c.cmdL.Lock()
+	defer c.cmdL.Unlock()
+
+	c.csL.RLock()
 	missing := c.psubs.missing(patterns)
+	c.csL.RUnlock()
+
 	if len(missing) > 0 {
 		if err := c.do(len(missing), "PSUBSCRIBE", missing...); err != nil {
 			return err
 		}
 	}
 
+	c.csL.Lock()
 	for _, pattern := range patterns {
 		c.psubs.add(pattern, msgCh)
 	}
+	c.csL.Unlock()
+
 	return nil
 }
 
 func (c *pubSubConn) PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string) error {
-	c.csL.Lock()
-	defer c.csL.Unlock()
+	c.cmdL.Lock()
+	defer c.cmdL.Unlock()
 
+	c.csL.Lock()
 	emptyPatterns := make([]string, 0, len(patterns))
 	for _, pattern := range patterns {
 		if empty := c.psubs.del(pattern, msgCh); empty {
 			emptyPatterns = append(emptyPatterns, pattern)
 		}
 	}
+	c.csL.Unlock()
 
 	if len(emptyPatterns) == 0 {
 		return nil
@@ -384,5 +412,8 @@ func (c *pubSubConn) PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string
 }
 
 func (c *pubSubConn) Ping() error {
+	c.cmdL.Lock()
+	defer c.cmdL.Unlock()
+
 	return c.do(1, "PING")
 }
