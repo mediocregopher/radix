@@ -39,19 +39,21 @@ Legacy GOPATH mode:
 
 ## Features
 
-* Standard print-like API which supports all current and future redis commands
+* Standard print-like API which supports all current and future redis commands.
 
 * Support for using an io.Reader as a command argument and writing responses to
-  an io.Writer.
+  an io.Writer, as well as marshaling/unmarshaling command arguments from
+  structs.
 
-* Connection pooling
+* Connection pooling, which takes advantage of implicit pipelining to reduce
+  system calls.
 
-* Helpers for [EVAL][eval], [SCAN][scan], and [pipelining][pipelining]
+* Helpers for [EVAL][eval], [SCAN][scan], and manual [pipelining][pipelining].
 
 * Support for [pubsub][pubsub], as well as persistent pubsub wherein if a
   connection is lost a new one transparently replaces it.
 
-* Full support for [sentinel][sentinel] and [cluster][cluster]
+* Full support for [sentinel][sentinel] and [cluster][cluster].
 
 * Nearly all important types are interfaces, allowing for custom implementations
   of nearly anything.
@@ -63,31 +65,45 @@ Thanks to a huge amount of work put in by @nussjustin, and inspiration from the
 faster than most redis drivers, including redigo, for normal parallel workloads,
 and is pretty comparable for serial workloads.
 
+Benchmarks can be run from the bench folder. The following results were obtained
+by running the benchmarks with `-cpu` set to 32 and 64, on a 32 core machine,
+with the redis server on a separate machine. See [this thread](bench_thread)
+for more details.
+
+Some of radix's results are not included below because they use a non-default
+configuration.
+
+[bench_thread]: https://github.com/mediocregopher/radix/issues/67#issuecomment-465060960
+
 
 ```
+# go get rsc.io/benchstat
 # cd bench
-# go test -v -run=XXX -bench=GetSet -benchmem . >/tmp/radix.stat
+# go test -v -run=XXX -bench=ParallelGetSet -cpu 32 -cpu 64 -benchmem . >/tmp/radix.stat
 # benchstat radix.stat
-name                                     time/op
-SerialGetSet/radix                         89.1µs ± 7%
-SerialGetSet/redigo                        87.3µs ± 7%
-ParallelGetSet/radix/default-8             5.47µs ± 2%  <--- The good stuff
-ParallelGetSet/redigo-8                    27.6µs ± 2%
-ParallelGetSet/redispipe-8                 4.16µs ± 3%
+name                                   time/op
+ParallelGetSet/radix/default-32        2.15µs ± 0% <--- The good stuff
+ParallelGetSet/radix/default-64        2.05µs ± 0% <--- The better stuff
+ParallelGetSet/redigo-32               27.9µs ± 0%
+ParallelGetSet/redigo-64               28.5µs ± 0%
+ParallelGetSet/redispipe-32            2.02µs ± 0%
+ParallelGetSet/redispipe-64            1.71µs ± 0%
 
-name                                      alloc/op
-SerialGetSet/radix                          67.0B ± 0%
-SerialGetSet/redigo                         86.0B ± 0%
-ParallelGetSet/radix/default-8              73.0B ± 0%
-ParallelGetSet/redigo-8                      138B ± 4%
-ParallelGetSet/redispipe-8                   168B ± 0%
+name                                   alloc/op
+ParallelGetSet/radix/default-32         72.0B ± 0%
+ParallelGetSet/radix/default-64         84.0B ± 0%
+ParallelGetSet/redigo-32                 119B ± 0%
+ParallelGetSet/redigo-64                 120B ± 0%
+ParallelGetSet/redispipe-32              168B ± 0%
+ParallelGetSet/redispipe-64              172B ± 0%
 
-name                                       allocs/op
-SerialGetSet/radix                           4.00 ± 0%
-SerialGetSet/redigo                          5.00 ± 0%
-ParallelGetSet/radix/default-8               4.00 ± 0%
-ParallelGetSet/redigo-8                      6.00 ± 0%
-ParallelGetSet/redispipe-8                   8.00 ± 0%
+name                                   allocs/op
+ParallelGetSet/radix/default-32          4.00 ± 0%
+ParallelGetSet/radix/default-64          4.00 ± 0%
+ParallelGetSet/redigo-32                 6.00 ± 0%
+ParallelGetSet/redigo-64                 6.00 ± 0%
+ParallelGetSet/redispipe-32              8.00 ± 0%
+ParallelGetSet/redispipe-64              8.00 ± 0%
 ```
 
 ## Copyright and licensing
