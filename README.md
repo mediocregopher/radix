@@ -67,7 +67,7 @@ and is pretty comparable for serial workloads.
 
 Benchmarks can be run from the bench folder. The following results were obtained
 by running the benchmarks with `-cpu` set to 32 and 64, on a 32 core machine,
-with the redis server on a separate machine. See [this thread](bench_thread)
+with the redis server on a separate machine. See [this thread][bench_thread]
 for more details.
 
 Some of radix's results are not included below because they use a non-default
