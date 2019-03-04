@@ -382,11 +382,11 @@ var byteSliceT = reflect.TypeOf([]byte{})
 // NumElems returns the number of non-array elements which would be marshalled
 // based on I. For example:
 //
-// Any{I: "foo"}.NumElems() == 1
-// Any{I: []string{}}.NumElems() == 0
-// Any{I: []string{"foo"}}.NumElems() == 2
-// Any{I: []string{"foo", "bar"}}.NumElems() == 2
-// Any{I: [][]string{{"foo"}, {"bar", "baz"}, {}}}.NumElems() == 3
+//	Any{I: "foo"}.NumElems() == 1
+//	Any{I: []string{}}.NumElems() == 0
+//	Any{I: []string{"foo"}}.NumElems() == 1
+//	Any{I: []string{"foo", "bar"}}.NumElems() == 2
+//	Any{I: [][]string{{"foo"}, {"bar", "baz"}, {}}}.NumElems() == 3
 //
 func (a Any) NumElems() int {
 	return numElems(reflect.ValueOf(a.I))
