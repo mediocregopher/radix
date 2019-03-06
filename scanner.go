@@ -67,7 +67,6 @@ type scanner struct {
 	ScanOpts
 	res    scanResult
 	resIdx int
-	cur    string
 	err    error
 }
 
