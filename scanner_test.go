@@ -64,6 +64,36 @@ func TestScannerSet(t *T) {
 	require.Nil(t, sc.Close())
 }
 
+func BenchmarkScanner(b *B) {
+	c := dial()
+
+	const total = 10 * 1000
+
+	// Make a random dataset
+	prefix := randStr()
+	fullMap := map[string]bool{}
+	for i := 0; i < total; i++ {
+		key := prefix + ":" + strconv.Itoa(i)
+		fullMap[key] = true
+		require.Nil(b, c.Do(Cmd(nil, "SET", key, "1")))
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		// make sure we get all results when scanning with an existing prefix
+		sc := NewScanner(c, ScanOpts{Command: "SCAN", Pattern: prefix + ":*"})
+		var key string
+		var got int
+		for sc.Next(&key) {
+			got++
+		}
+		if got != total {
+			require.Failf(b, "mismatched between inserted and scanned keys", "expected %d keys, got %d", total, got)
+		}
+	}
+}
+
 func ExampleNewScanner_scan() {
 	client, err := DefaultClientFunc("tcp", "126.0.0.1:6379")
 	if err != nil {
