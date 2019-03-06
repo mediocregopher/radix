@@ -71,10 +71,8 @@ func BenchmarkScanner(b *B) {
 
 	// Make a random dataset
 	prefix := randStr()
-	fullMap := map[string]bool{}
 	for i := 0; i < total; i++ {
 		key := prefix + ":" + strconv.Itoa(i)
-		fullMap[key] = true
 		require.Nil(b, c.Do(Cmd(nil, "SET", key, "1")))
 	}
 
