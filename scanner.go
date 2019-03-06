@@ -63,6 +63,7 @@ type scanner struct {
 	Client
 	ScanOpts
 	res []string
+	resIdx int
 	cur string
 	err error
 }
@@ -86,12 +87,12 @@ func (s *scanner) Next(res *string) bool {
 			return false
 		}
 
-		if len(s.res) > 0 {
-			*res, s.res = s.res[0], s.res[1:]
-			if *res == "" {
-				continue
+		for s.resIdx < len(s.res) {
+			*res = s.res[s.resIdx]
+			s.resIdx++
+			if *res != "" {
+				return true
 			}
-			return true
 		}
 
 		if s.cur == "0" && s.res != nil {
@@ -109,6 +110,7 @@ func (s *scanner) Next(res *string) bool {
 		}
 		s.cur = string(parts[0].([]byte))
 		s.res = s.res[:0]
+		s.resIdx = 0
 		for _, res := range parts[1].([]interface{}) {
 			s.res = append(s.res, string(res.([]byte)))
 		}
