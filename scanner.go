@@ -38,7 +38,7 @@ type ScanOpts struct {
 
 func (o ScanOpts) cmd(rcv interface{}, cursor string) CmdAction {
 	cmdStr := strings.ToUpper(o.Command)
-	var args []string
+	args := make([]string, 0, 4)
 	if cmdStr != "SCAN" {
 		args = append(args, o.Key)
 	}
