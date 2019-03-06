@@ -1,7 +1,9 @@
 package radix
 
 import (
+	"bufio"
 	"errors"
+	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"strconv"
 	"strings"
 )
@@ -62,7 +64,7 @@ var ScanAllKeys = ScanOpts{
 type scanner struct {
 	Client
 	ScanOpts
-	res []string
+	res scanResult
 	resIdx int
 	cur string
 	err error
@@ -77,7 +79,9 @@ func NewScanner(c Client, o ScanOpts) Scanner {
 	return &scanner{
 		Client:   c,
 		ScanOpts: o,
-		cur:      "0",
+		res: scanResult{
+			cur: "0",
+		},
 	}
 }
 
@@ -87,36 +91,47 @@ func (s *scanner) Next(res *string) bool {
 			return false
 		}
 
-		for s.resIdx < len(s.res) {
-			*res = s.res[s.resIdx]
+		for s.resIdx < len(s.res.keys) {
+			*res = s.res.keys[s.resIdx]
 			s.resIdx++
 			if *res != "" {
 				return true
 			}
 		}
 
-		if s.cur == "0" && s.res != nil {
+		if s.res.cur == "0" && s.res.keys != nil {
 			return false
 		}
 
-		var parts []interface{}
-		if s.err = s.Client.Do(s.cmd(&parts, s.cur)); s.err != nil {
-			return false
-		} else if len(parts) < 2 {
-			s.err = errors.New("not enough parts returned")
-			return false
-		} else if s.res == nil {
-			s.res = make([]string, 0, len(parts[1].([]interface{})))
-		}
-		s.cur = string(parts[0].([]byte))
-		s.res = s.res[:0]
+		s.err = s.Client.Do(s.cmd(&s.res, s.res.cur))
 		s.resIdx = 0
-		for _, res := range parts[1].([]interface{}) {
-			s.res = append(s.res, string(res.([]byte)))
-		}
 	}
 }
 
 func (s *scanner) Close() error {
 	return s.err
+}
+
+type scanResult struct {
+	cur  string
+	keys []string
+}
+
+func (s *scanResult) UnmarshalRESP(br *bufio.Reader) error {
+	var ah resp2.ArrayHeader
+	if err := ah.UnmarshalRESP(br); err != nil {
+		return err
+	} else if ah.N != 2 {
+		return errors.New("not enough parts returned")
+	}
+
+	var c resp2.BulkString
+	if err := c.UnmarshalRESP(br); err != nil {
+		return err
+	}
+
+	s.cur = c.S
+	s.keys = s.keys[:0]
+
+	return (resp2.Any{I: &s.keys}).UnmarshalRESP(br)
 }
