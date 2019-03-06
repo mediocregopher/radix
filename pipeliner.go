@@ -20,7 +20,7 @@ var blockingCmds = map[string]bool{
 	"XREAD":      true,
 	"XREADGROUP": true,
 
-	"SAVE":  true,
+	"SAVE": true,
 }
 
 type pipeliner struct {

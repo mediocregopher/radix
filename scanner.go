@@ -3,9 +3,10 @@ package radix
 import (
 	"bufio"
 	"errors"
-	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"strconv"
 	"strings"
+
+	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
 
 // Scanner is used to iterate through the results of a SCAN call (or HSCAN,
@@ -64,10 +65,10 @@ var ScanAllKeys = ScanOpts{
 type scanner struct {
 	Client
 	ScanOpts
-	res scanResult
+	res    scanResult
 	resIdx int
-	cur string
-	err error
+	cur    string
+	err    error
 }
 
 // NewScanner creates a new Scanner instance which will iterate over the redis

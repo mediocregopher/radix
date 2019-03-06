@@ -129,7 +129,7 @@ func (s *sentinelStub) switchPrimary(newPrimAddr string, newSecAddrs ...string) 
 
 func TestSentinel(t *T) {
 	stub := newSentinelStub(
-		"127.0.0.1:6379", // primAddr
+		"127.0.0.1:6379",                                                                // primAddr
 		[]string{"127.0.0.2:6379", "127.0.0.3:6379"},                                    //secAddrs
 		[]string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"}, // sentAddrs
 	)
