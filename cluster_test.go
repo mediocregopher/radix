@@ -12,7 +12,8 @@ import (
 // second on my laptop, so whatevs.
 var clusterSlotKeys = func() [numSlots]string {
 	var a [numSlots]string
-	for {
+	var found int
+	for found < len(a) {
 		// we get a set of random characters and try increasingly larger subsets
 		// of that set until one is in a slot which hasn't been set yet. This is
 		// optimal because it minimizes the number of reads from random needed
@@ -22,22 +23,12 @@ var clusterSlotKeys = func() [numSlots]string {
 			ksmall := k[:i]
 			if a[ClusterSlot(ksmall)] == "" {
 				a[ClusterSlot(ksmall)] = string(ksmall)
+				found++
 				break
 			}
-		}
-
-		var notFull bool
-		for _, k := range a {
-			if k == "" {
-				notFull = true
-				break
-			}
-		}
-
-		if !notFull {
-			return a
 		}
 	}
+	return a
 }()
 
 func newTestCluster() (*Cluster, *clusterStub) {
