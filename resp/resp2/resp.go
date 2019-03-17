@@ -392,10 +392,26 @@ func (a Any) NumElems() int {
 	return numElems(reflect.ValueOf(a.I))
 }
 
+var (
+	lenReaderT               = reflect.TypeOf(new(resp.LenReader)).Elem()
+	encodingTextMarshalerT   = reflect.TypeOf(new(encoding.TextMarshaler)).Elem()
+	encodingBinaryMarshalerT = reflect.TypeOf(new(encoding.BinaryMarshaler)).Elem()
+)
+
 func numElems(vv reflect.Value) int {
-	vv = reflect.Indirect(vv)
+	tt := vv.Type()
+	switch {
+	case tt.Implements(lenReaderT):
+		return 1
+	case tt.Implements(encodingTextMarshalerT):
+		return 1
+	case tt.Implements(encodingBinaryMarshalerT):
+		return 1
+	}
 
 	switch vv.Kind() {
+	case reflect.Ptr:
+		return numElems(reflect.Indirect(vv))
 	case reflect.Slice, reflect.Array:
 		// TODO does []rune need extra support here?
 		if vv.Type() == byteSliceT {
