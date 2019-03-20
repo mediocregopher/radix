@@ -197,24 +197,6 @@ type Conn interface {
 	NetConn() net.Conn
 }
 
-// a wrapper around net.Conn which prevents Read, Write, and Close from being
-// called
-type connLimited struct {
-	net.Conn
-}
-
-func (cl connLimited) Read(b []byte) (int, error) {
-	return 0, errors.New("Read not allowed to be called on net.Conn returned from radix")
-}
-
-func (cl connLimited) Write(b []byte) (int, error) {
-	return 0, errors.New("Write not allowed to be called on net.Conn returned from radix")
-}
-
-func (cl connLimited) Close() error {
-	return errors.New("Close not allowed to be called on net.Conn returned from radix")
-}
-
 type connWrap struct {
 	net.Conn
 	brw *bufio.ReadWriter
@@ -246,7 +228,7 @@ func (cw *connWrap) Decode(u resp.Unmarshaler) error {
 }
 
 func (cw *connWrap) NetConn() net.Conn {
-	return connLimited{cw.Conn}
+	return cw.Conn
 }
 
 // ConnFunc is a function which returns an initialized, ready-to-be-used Conn.
