@@ -19,8 +19,9 @@
 // Commands
 //
 // Any redis command can be performed by passing a Cmd into a Client's Do
-// method. The return from the Cmd can be captured into any appopriate go
-// primitive type, or a slice or map if the command returns an array.
+// method. Each Cmd should only be used once. The return from the Cmd can be
+// captured into any appopriate go primitive type, or a slice or map if the
+// command returns an array.
 //
 //	err := client.Do(radix.Cmd(nil, "SET", "foo", "someval"))
 //
@@ -55,7 +56,7 @@
 //		Baz string `redis:"-"`   // Will not be populated
 //	}
 //
-// Embedded struct will inline that struct's fields into the parent's:
+// Embedded structs will inline that struct's fields into the parent's:
 //
 //	type MyOtherType struct {
 //		// adds fields "Foo" and "BAR" (from above example) to MyOtherType

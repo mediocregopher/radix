@@ -148,8 +148,9 @@ func getCmdAction() *cmdAction {
 	return new(cmdAction)
 }
 
-// Cmd is used to perform a redis command and retrieve a result. See the package
-// docs on how results are unmarshaled into the receiver.
+// Cmd is used to perform a redis command and retrieve a result. It should not
+// passed into Do more than once. See the package docs on how results are
+// unmarshaled into the receiver.
 //
 //	if err := client.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
 //		panic(err)
@@ -161,9 +162,9 @@ func getCmdAction() *cmdAction {
 //	}
 //	fmt.Println(fooVal) // "bar"
 //
-// If the receiver value of Cmd is a primitive or slice/map a pointer must be
-// passed in. It may also be an io.Writer, an encoding.Text/BinaryUnmarshaler,
-// or a resp.Unmarshaler.
+// If the receiver value of Cmd is a primitive, a slice/map, or a struct then a
+// pointer must be passed in. It may also be an io.Writer, an
+// encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler.
 func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 	c := getCmdAction()
 	*c = cmdAction{
@@ -175,10 +176,11 @@ func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 }
 
 // FlatCmd is like Cmd, but the arguments can be of almost any type, and FlatCmd
-// will automatically flatten them into a single array of strings.
+// will automatically flatten them into a single array of strings. Like Cmd, a
+// FlatCmd should not be passed into Do more than once.
 //
-// FlatCmd does _not_ work for commands whose first parameter isn't a key. Use
-// Cmd for those.
+// FlatCmd does _not_ work for commands whose first parameter isn't a key, or
+// (generally) for MSET. Use Cmd for those.
 //
 //	client.Do(radix.FlatCmd(nil, "SET", "foo", 1))
 //	// performs "SET" "foo" "1"
