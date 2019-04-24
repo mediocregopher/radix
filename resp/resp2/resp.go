@@ -663,10 +663,15 @@ func saneDefault(prefix byte) interface{} {
 // which has a simple string or bulk string (the vast majority of them) is going
 // to go through one of these.
 var (
-	// RawMessage.UnmarshalInto also uses this
+	// RawMessage.UnmarshalInto also uses these
 	byteReaderPool = sync.Pool{
 		New: func() interface{} {
 			return bytes.NewReader(nil)
+		},
+	}
+	bufioReaderPool = sync.Pool{
+		New: func() interface{} {
+			return bufio.NewReader(nil)
 		},
 	}
 )
@@ -1089,7 +1094,10 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 func (rm RawMessage) UnmarshalInto(u resp.Unmarshaler) error {
 	r := byteReaderPool.Get().(*bytes.Reader)
 	r.Reset(rm)
-	err := u.UnmarshalRESP(bufio.NewReader(r))
+	br := bufioReaderPool.Get().(*bufio.Reader)
+	br.Reset(r)
+	err := u.UnmarshalRESP(br)
+	bufioReaderPool.Put(br)
 	byteReaderPool.Put(r)
 	return err
 }
