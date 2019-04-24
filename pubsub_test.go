@@ -314,6 +314,9 @@ func TestPubSubChaotic(t *T) {
 
 func BenchmarkPubSub(b *B) {
 	c, pubC := PubSub(dial()), dial()
+	defer c.Close()
+	defer pubC.Close()
+
 	msg := string(randStr())
 	msgCh := make(chan PubSubMessage, 1)
 	require.Nil(b, c.Subscribe(msgCh, "benchmark"))
