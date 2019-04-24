@@ -2,7 +2,6 @@ package radix
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -49,35 +48,53 @@ func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the Unmarshaler interface
 func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
-	bb := make([][]byte, 0, 4)
-	if err := (resp2.Any{I: &bb}).UnmarshalRESP(br); err != nil {
+	var ah resp2.ArrayHeader
+	if err := ah.UnmarshalRESP(br); err != nil {
+		return err
+	} else if ah.N < 3 {
+		return errors.New("message has too few elements")
+	}
+
+	var msgType resp2.BulkStringBytes
+	if err := msgType.UnmarshalRESP(br); err != nil {
 		return err
 	}
 
-	if len(bb) < 3 {
-		return errors.New("message has too few elements")
+	switch string(msgType.B) {
+	case "message":
+		m.Type = "message"
+		if ah.N > 3 {
+			return errors.New("message has too many elements")
+		}
+	case "pmessage":
+		m.Type = "pmessage"
+		if ah.N > 4 {
+			return errors.New("message has too many elements")
+		} else if ah.N < 4 {
+			return errors.New("message has too few elements")
+		}
+
+		var pattern resp2.BulkString
+		if err := pattern.UnmarshalRESP(br); err != nil {
+			return err
+		}
+		m.Pattern = pattern.S
+	default:
+		return fmt.Errorf("not message or pmessage: %q", string(msgType.B))
 	}
 
-	m.Type = string(bytes.ToLower(bb[0]))
-	isPat := m.Type == "pmessage"
-	if isPat && len(bb) < 4 {
-		return errors.New("message has too few elements")
-	} else if !isPat && m.Type != "message" {
-		return fmt.Errorf("not message or pmessage: %q", m.Type)
+	var channel resp2.BulkString
+	if err := channel.UnmarshalRESP(br); err != nil {
+		return err
 	}
+	m.Channel = channel.S
 
-	pop := func() []byte {
-		b := bb[0]
-		bb = bb[1:]
-		return b
+	var msg resp2.BulkStringBytes
+	if err := msg.UnmarshalRESP(br); err != nil {
+		return err
 	}
+	m.Message = msg.B
 
-	pop() // discard (p)message
-	if isPat {
-		m.Pattern = string(pop())
-	}
-	m.Channel = string(pop())
-	m.Message = pop()
 	return nil
 }
 

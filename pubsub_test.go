@@ -312,6 +312,25 @@ func TestPubSubChaotic(t *T) {
 	}
 }
 
+func BenchmarkPubSub(b *B) {
+	c, pubC := PubSub(dial()), dial()
+	defer c.Close()
+	defer pubC.Close()
+
+	msg := string(randStr())
+	msgCh := make(chan PubSubMessage, 1)
+	require.Nil(b, c.Subscribe(msgCh, "benchmark"))
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		if err := pubC.Do(Cmd(nil, "PUBLISH", "benchmark", msg)); err != nil {
+			b.Fatal(err)
+		}
+		<-msgCh
+	}
+}
+
 func ExamplePubSub() {
 	// Create a normal redis connection
 	conn, err := Dial("tcp", "127.0.0.1:6379")
