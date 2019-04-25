@@ -2,8 +2,8 @@ package radix
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -46,12 +46,35 @@ func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 	return err
 }
 
+var errNotPubSubMessage = errors.New("message is not a PubSubMessage")
+
 // UnmarshalRESP implements the Unmarshaler interface
 func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
+	// This method will fully consume the message on the wire, regardless of if
+	// it is a PubSubMessage or not. If it is not then errNotPubSubMessage is
+	// returned.
+
+	// When in subscribe mode redis only allows (P)(UN)SUBSCRIBE commands, which
+	// all return arrays, and PING, which returns an array when in subscribe
+	// mode. HOWEVER, when all channels have been unsubscribed from then the
+	// connection will be taken _out_ of subscribe mode. This is theoretically
+	// fine, since the driver will still only allow the 5 commands, except PING
+	// will return a simple string when in the non-subscribed state. So this
+	// needs to check for that.
+	if prefix, err := br.Peek(1); err != nil {
+		return err
+	} else if bytes.Equal(prefix, resp2.SimpleStringPrefix) {
+		// if it's a simple string, discard it (it's probably PONG) and error
+		if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+			return err
+		}
+		return errNotPubSubMessage
+	}
+
 	var ah resp2.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	} else if ah.N < 3 {
+	} else if ah.N < 2 {
 		return errors.New("message has too few elements")
 	}
 
@@ -63,15 +86,13 @@ func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 	switch string(msgType.B) {
 	case "message":
 		m.Type = "message"
-		if ah.N > 3 {
-			return errors.New("message has too many elements")
+		if ah.N != 3 {
+			return errors.New("message has wrong number of elements")
 		}
 	case "pmessage":
 		m.Type = "pmessage"
-		if ah.N > 4 {
-			return errors.New("message has too many elements")
-		} else if ah.N < 4 {
-			return errors.New("message has too few elements")
+		if ah.N != 4 {
+			return errors.New("message has wrong number of elements")
 		}
 
 		var pattern resp2.BulkString
@@ -80,7 +101,13 @@ func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 		}
 		m.Pattern = pattern.S
 	default:
-		return fmt.Errorf("not message or pmessage: %q", string(msgType.B))
+		// if it's not a PubSubMessage then discard the rest of the array
+		for i := 1; i < ah.N; i++ {
+			if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+				return err
+			}
+		}
+		return errNotPubSubMessage
 	}
 
 	var channel resp2.BulkString
@@ -278,22 +305,19 @@ func (c *pubSubConn) publish(m PubSubMessage) {
 
 func (c *pubSubConn) spin() {
 	for {
-		var rm resp2.RawMessage
-		err := c.conn.Decode(&rm)
+		var m PubSubMessage
+		err := c.conn.Decode(&m)
 		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 			c.testEvent("timeout")
+			continue
+		} else if err == errNotPubSubMessage {
+			c.cmdResCh <- nil
 			continue
 		} else if err != nil {
 			c.closeInner(err)
 			return
 		}
-
-		var m PubSubMessage
-		if err := rm.UnmarshalInto(&m); err == nil {
-			c.publish(m)
-		} else {
-			c.cmdResCh <- nil
-		}
+		c.publish(m)
 	}
 }
 

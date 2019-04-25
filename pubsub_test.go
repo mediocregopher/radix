@@ -22,7 +22,6 @@ func assertMsgRead(t *T, msgCh <-chan PubSubMessage) PubSubMessage {
 	case <-time.After(5 * time.Second):
 		panic("timedout reading")
 	}
-	panic("shouldn't get here")
 }
 
 func assertMsgNoRead(t *T, msgCh <-chan PubSubMessage) {
