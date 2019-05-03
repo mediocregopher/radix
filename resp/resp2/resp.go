@@ -905,14 +905,15 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		}
 
 		structFields := getStructFields(v.Type())
+		var field BulkStringBytes
+
 		for i := 0; i < size; i += 2 {
-			var bs BulkString
-			if err := bs.UnmarshalRESP(br); err != nil {
+			if err := field.UnmarshalRESP(br); err != nil {
 				return err
 			}
 
 			var vv reflect.Value
-			structField, ok := structFields[bs.S]
+			structField, ok := structFields[string(field.B)] // no allocation, since Go 1.3
 			if ok {
 				vv = getStructField(v, structField.indices)
 			}
