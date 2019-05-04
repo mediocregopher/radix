@@ -38,3 +38,28 @@ func BenchmarkIntUnmarshalRESP(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkAnyUnmarshalRESP(b *testing.B) {
+	b.Run("Struct", func(b *testing.B) {
+		b.ReportAllocs()
+
+		const input = "*8\r\n" +
+			"$3\r\nFoo\r\n" + ":1\r\n" +
+			"$3\r\nBAZ\r\n" + "$1\r\n3\r\n" +
+			"$3\r\nBoz\r\n" + ":5\r\n" +
+			"$3\r\nBiz\r\n" + "$2\r\n10\r\n"
+
+		var sr strings.Reader
+		br := bufio.NewReader(&sr)
+
+		for i := 0; i < b.N; i++ {
+			sr.Reset(input)
+			br.Reset(&sr)
+
+			var s testStructA
+			if err := (Any{I: &s}).UnmarshalRESP(br); err != nil {
+				b.Fatalf("failed to unmarshal %q: %s", input, err)
+			}
+		}
+	})
+}
