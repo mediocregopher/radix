@@ -885,12 +885,12 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		}
 
 		var kvs reflect.Value
-		if canShareReflectValue(v.Type().Key()) {
+		if size > 0 && canShareReflectValue(v.Type().Key()) {
 			kvs = reflect.New(v.Type().Key())
 		}
 
 		var vvs reflect.Value
-		if canShareReflectValue(v.Type().Elem()) {
+		if size > 0 && canShareReflectValue(v.Type().Elem()) {
 			vvs = reflect.New(v.Type().Elem())
 		}
 
