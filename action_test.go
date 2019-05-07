@@ -97,6 +97,20 @@ func TestFlatCmdAction(t *T) {
 	assert.Equal(t, m, got)
 }
 
+func TestFlatCmdActionNil(t *T) {
+	c := dial()
+	defer c.Close()
+
+	key := randStr()
+	hashKey := randStr()
+
+	require.Nil(t, c.Do(FlatCmd(nil, "HMSET", key, hashKey, nil)))
+
+	var nilVal MaybeNil
+	require.Nil(t, c.Do(Cmd(&nilVal, "HGET", key, hashKey)))
+	require.False(t, nilVal.Nil)
+}
+
 func TestEvalAction(t *T) {
 	getSet := NewEvalScript(1, `
 		local prev = redis.call("GET", KEYS[1])
