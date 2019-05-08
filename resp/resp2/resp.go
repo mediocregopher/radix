@@ -408,6 +408,10 @@ var (
 )
 
 func numElems(vv reflect.Value) int {
+	if !vv.IsValid() {
+		return 1
+	}
+
 	tt := vv.Type()
 	switch {
 	case tt.Implements(lenReaderT):
