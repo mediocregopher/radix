@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"reflect"
+	"strings"
 	. "testing"
 
 	"github.com/mediocregopher/radix/v3/resp"
@@ -310,6 +311,28 @@ func (cu *binCPUnmarshaler) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
+type lowerCaseUnmarshaler string
+
+func (lcu *lowerCaseUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
+	var bs BulkString
+	if err := bs.UnmarshalRESP(br); err != nil {
+		return err
+	}
+	*lcu = lowerCaseUnmarshaler(strings.ToLower(bs.S))
+	return nil
+}
+
+type upperCaseUnmarshaler string
+
+func (ucu *upperCaseUnmarshaler) UnmarshalRESP(br *bufio.Reader) error {
+	var bs BulkString
+	if err := bs.UnmarshalRESP(br); err != nil {
+		return err
+	}
+	*ucu = upperCaseUnmarshaler(strings.ToUpper(bs.S))
+	return nil
+}
+
 type writer []byte
 
 func (w *writer) Write(b []byte) (int, error) {
@@ -419,6 +442,26 @@ func TestAnyUnmarshal(t *T) {
 			},
 			{in: "*2\r\n:1\r\n:2\r\n", out: map[string]string{"1": "2"}},
 			{in: "*2\r\n*2\r\n+foo\r\n+bar\r\n*1\r\n+baz\r\n", out: nil},
+			{
+				in: "*6\r\n" +
+					"$3\r\none\r\n" + "*2\r\n$1\r\n!\r\n$1\r\n1\r\n" +
+					"$3\r\ntwo\r\n" + "*2\r\n$2\r\n!!\r\n$1\r\n2\r\n" +
+					"$5\r\nthree\r\n" + "*2\r\n$3\r\n!!!\r\n$1\r\n3\r\n",
+				out: map[string]map[string]int{
+					"one":   {"!": 1},
+					"two":   {"!!": 2},
+					"three": {"!!!": 3},
+				},
+			},
+			{
+				in: "*4\r\n" +
+					"$5\r\nhElLo\r\n" + "$5\r\nWoRlD\r\n" +
+					"$3\r\nFoO\r\n" + "$3\r\nbAr\r\n",
+				out: map[upperCaseUnmarshaler]lowerCaseUnmarshaler{
+					"HELLO": "world",
+					"FOO": "bar",
+				},
+			},
 
 			// Arrays (structs)
 			{

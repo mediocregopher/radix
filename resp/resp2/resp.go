@@ -888,13 +888,29 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 			v.Set(reflect.MakeMapWithSize(v.Type(), size/2))
 		}
 
+		var kvs reflect.Value
+		if size > 0 && canShareReflectValue(v.Type().Key()) {
+			kvs = reflect.New(v.Type().Key())
+		}
+
+		var vvs reflect.Value
+		if size > 0 && canShareReflectValue(v.Type().Elem()) {
+			vvs = reflect.New(v.Type().Elem())
+		}
+
 		for i := 0; i < size; i += 2 {
-			kv := reflect.New(v.Type().Key())
+			kv := kvs
+			if !kv.IsValid() {
+				kv = reflect.New(v.Type().Key())
+			}
 			if err := (Any{I: kv.Interface()}).UnmarshalRESP(br); err != nil {
 				return err
 			}
 
-			vv := reflect.New(v.Type().Elem())
+			vv := vvs
+			if !vv.IsValid() {
+				vv = reflect.New(v.Type().Elem())
+			}
 			if err := (Any{I: vv.Interface()}).UnmarshalRESP(br); err != nil {
 				return err
 			}
@@ -939,6 +955,31 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 
 	default:
 		return fmt.Errorf("cannot decode redis array into %v", v.Type())
+	}
+}
+
+func canShareReflectValue(ty reflect.Type) bool {
+	switch ty.Kind() {
+	case reflect.Bool,
+		reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64,
+		reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64,
+		reflect.Uintptr,
+		reflect.Float32,
+		reflect.Float64,
+		reflect.Complex64,
+		reflect.Complex128,
+		reflect.String:
+		return true
+	default:
+		return false
 	}
 }
 
