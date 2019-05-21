@@ -69,6 +69,7 @@ type poolOpts struct {
 	pipelineConcurrency   int
 	pipelineLimit         int
 	pipelineWindow        time.Duration
+	metricCh              chan PoolMetric
 }
 
 // PoolOpt is an optional behavior which can be applied to the NewPool function
@@ -197,6 +198,12 @@ func PoolPipelineWindow(window time.Duration, limit int) PoolOpt {
 	}
 }
 
+func PoolMetricChannel(metricCh chan PoolMetric) PoolOpt {
+	return func(po *poolOpts) {
+		po.metricCh = metricCh
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Pool is a semi-dynamic pool which holds a fixed number of connections open
@@ -226,6 +233,14 @@ type Pool struct {
 	// nothing is reading the channel the errors will be dropped. The channel
 	// will be closed when Close is called.
 	ErrCh chan error
+
+	metricCh chan PoolMetric
+}
+
+type PoolMetric struct {
+	Addr        string
+	ConnCreated uint32
+	ConnErr     uint32
 }
 
 // NewPool creates a *Pool which will keep open at least the given number of
@@ -271,6 +286,9 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 			opt(&(p.opts))
 		}
 	}
+
+	// channel for handling metrics
+	p.metricCh = p.opts.metricCh
 
 	totalSize := size + p.opts.overflowSize
 	p.pool = make(chan *ioErrConn, totalSize)
@@ -327,6 +345,12 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	return p, nil
 }
 
+func (p *Pool) addMetric(m PoolMetric) {
+	if p.metricCh != nil {
+		p.metricCh <- m
+	}
+}
+
 func (p *Pool) err(err error) {
 	select {
 	case p.ErrCh <- err:
@@ -338,6 +362,7 @@ func (p *Pool) err(err error) {
 func (p *Pool) newConn(errIfFull bool) (*ioErrConn, error) {
 	c, err := p.opts.cf(p.network, p.addr)
 	if err != nil {
+		p.addMetric(PoolMetric{Addr: p.addr, ConnErr: 1})
 		return nil, err
 	}
 	ioc := newIOErrConn(c)
@@ -355,6 +380,7 @@ func (p *Pool) newConn(errIfFull bool) (*ioErrConn, error) {
 		return nil, errPoolFull
 	}
 	p.totalConns++
+	p.addMetric(PoolMetric{Addr: p.addr, ConnCreated: 1})
 
 	return ioc, nil
 }

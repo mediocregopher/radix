@@ -3,6 +3,7 @@ package radix
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +57,7 @@ type ClusterCanRetryAction interface {
 type clusterOpts struct {
 	pf        ClientFunc
 	syncEvery time.Duration
+	metricCh  chan ClusterMetric
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -76,6 +78,12 @@ func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
 func ClusterSyncEvery(d time.Duration) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.syncEvery = d
+	}
+}
+
+func ClusterMetricChannel(metricCh chan ClusterMetric) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.metricCh = metricCh
 	}
 }
 
@@ -100,6 +108,13 @@ type Cluster struct {
 	// nothing is reading the channel the errors will be dropped. The channel
 	// will be closed when the Close is called.
 	ErrCh chan error
+
+	metricCh chan ClusterMetric
+}
+
+type ClusterMetric struct {
+	TopoChanged  uint32
+	MovedRespond uint32
 }
 
 // NewCluster initializes and returns a Cluster instance. It will try every
@@ -134,6 +149,9 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		}
 	}
 
+	// channel for handling metrics
+	c.metricCh = c.co.metricCh
+
 	// make a pool to base the cluster on
 	for _, addr := range clusterAddrs {
 		p, err := c.co.pf("tcp", addr)
@@ -154,6 +172,12 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c.syncEvery(c.co.syncEvery)
 
 	return c, nil
+}
+
+func (c *Cluster) addMetric(m ClusterMetric) {
+	if c.metricCh != nil {
+		c.metricCh <- m
+	}
 }
 
 func (c *Cluster) err(err error) {
@@ -296,6 +320,11 @@ func (c *Cluster) sync(p Client) error {
 		}
 	}
 
+	// Detect cluster changing
+	if reflect.DeepEqual(c.topo.Map(), tt.Map()) {
+		c.addMetric(ClusterMetric{TopoChanged: 1})
+	}
+
 	// this is a big bit of code to totally lockdown the cluster for, but at the
 	// same time Close _shouldn't_ block significantly
 	c.l.Lock()
@@ -430,6 +459,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	// Also, even if the Action isn't a ClusterCanRetryAction we want a MOVED to
 	// prompt a Sync
 	if moved {
+		c.addMetric(ClusterMetric{MovedRespond: 1})
 		if serr := c.Sync(); serr != nil {
 			return serr
 		}
