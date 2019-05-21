@@ -58,6 +58,12 @@ func (ioc *ioErrConn) Close() error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type PoolTrace struct {
+	ConnectDone func(addr string, err error)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 type poolOpts struct {
 	cf                    ConnFunc
 	pingInterval          time.Duration
@@ -69,6 +75,7 @@ type poolOpts struct {
 	pipelineConcurrency   int
 	pipelineLimit         int
 	pipelineWindow        time.Duration
+	pt PoolTrace
 }
 
 // PoolOpt is an optional behavior which can be applied to the NewPool function
@@ -194,6 +201,12 @@ func PoolPipelineWindow(window time.Duration, limit int) PoolOpt {
 	return func(po *poolOpts) {
 		po.pipelineLimit = limit
 		po.pipelineWindow = window
+	}
+}
+
+func PoolWithTrace(pt PoolTrace) PoolOpt {
+	return func(po *poolOpts) {
+		po.pt = pt
 	}
 }
 
@@ -337,6 +350,11 @@ func (p *Pool) err(err error) {
 // this must always be called with p.l unlocked
 func (p *Pool) newConn(errIfFull bool) (*ioErrConn, error) {
 	c, err := p.opts.cf(p.network, p.addr)
+	defer func() {
+		if p.opts.pt.ConnectDone != nil {
+			p.opts.pt.ConnectDone(p.addr, err)
+		}
+	}()
 	if err != nil {
 		return nil, err
 	}

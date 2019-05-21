@@ -3,6 +3,7 @@ package radix
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -53,9 +54,17 @@ type ClusterCanRetryAction interface {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type ClusterTrace struct {
+	TopoChange func()
+	MovedRespond func()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 type clusterOpts struct {
 	pf        ClientFunc
 	syncEvery time.Duration
+	ct ClusterTrace
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -76,6 +85,12 @@ func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
 func ClusterSyncEvery(d time.Duration) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.syncEvery = d
+	}
+}
+
+func ClusterWithTrace(ct ClusterTrace) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.ct = ct
 	}
 }
 
@@ -296,6 +311,10 @@ func (c *Cluster) sync(p Client) error {
 		}
 	}
 
+	if reflect.DeepEqual(c.topo.Map(), tt.Map()) {
+		go c.co.ct.TopoChange()
+	}
+
 	// this is a big bit of code to totally lockdown the cluster for, but at the
 	// same time Close _shouldn't_ block significantly
 	c.l.Lock()
@@ -430,6 +449,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	// Also, even if the Action isn't a ClusterCanRetryAction we want a MOVED to
 	// prompt a Sync
 	if moved {
+		go c.co.ct.MovedRespond()
 		if serr := c.Sync(); serr != nil {
 			return serr
 		}
