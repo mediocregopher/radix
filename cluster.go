@@ -312,7 +312,9 @@ func (c *Cluster) sync(p Client) error {
 	}
 
 	if reflect.DeepEqual(c.topo.Map(), tt.Map()) {
-		go c.co.ct.TopoChange()
+		if c.co.ct.TopoChange != nil {
+			go c.co.ct.TopoChange()
+		}
 	}
 
 	// this is a big bit of code to totally lockdown the cluster for, but at the
@@ -449,7 +451,9 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	// Also, even if the Action isn't a ClusterCanRetryAction we want a MOVED to
 	// prompt a Sync
 	if moved {
-		go c.co.ct.MovedRespond()
+		if c.co.ct.MovedRespond != nil {
+			go c.co.ct.MovedRespond()
+		}
 		if serr := c.Sync(); serr != nil {
 			return serr
 		}
