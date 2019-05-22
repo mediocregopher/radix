@@ -3,12 +3,14 @@ package radix
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
+	"github.com/mediocregopher/radix/v3/trace"
 )
 
 // dedupe is used to deduplicate a function invocation, so if multiple
@@ -56,6 +58,7 @@ type ClusterCanRetryAction interface {
 type clusterOpts struct {
 	pf        ClientFunc
 	syncEvery time.Duration
+	ct        trace.ClusterTrace
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -76,6 +79,14 @@ func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
 func ClusterSyncEvery(d time.Duration) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.syncEvery = d
+	}
+}
+
+// ClusterWithTrace tells the Cluster to trace itself with the given ClusterTrace
+// Note that ClusterTrace will block every point that you set to trace.
+func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.ct = ct
 	}
 }
 
@@ -123,6 +134,7 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	defaultClusterOpts := []ClusterOpt{
 		ClusterPoolFunc(DefaultClientFunc),
 		ClusterSyncEvery(5 * time.Second),
+		ClusterWithTrace(trace.ClusterTrace{}),
 	}
 
 	for _, opt := range append(defaultClusterOpts, opts...) {
@@ -281,6 +293,34 @@ func (c *Cluster) Sync() error {
 	return err
 }
 
+func isTopoContains(topo ClusterTopo, node ClusterNode) bool {
+	for _, t := range topo.Map() {
+		if reflect.DeepEqual(t, node) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
+	if c.co.ct.TopoChanged != nil {
+		var Added []trace.ClusterNodeInfo
+		var Removed []trace.ClusterNodeInfo
+		for _, t := range newTopo.Map() {
+			if !isTopoContains(prevTopo, t) {
+				Added = append(Added, trace.ClusterNodeInfo{Addr: t.Addr, Slots: t.Slots, IsPrimary: t.SecondaryOfAddr == ""})
+			}
+		}
+		for _, t := range prevTopo.Map() {
+			if !isTopoContains(newTopo, t) {
+				Removed = append(Removed, trace.ClusterNodeInfo{Addr: t.Addr, Slots: t.Slots, IsPrimary: t.SecondaryOfAddr == ""})
+			}
+		}
+
+		c.co.ct.TopoChanged(trace.ClusterTopoChanged{Added: Added, Removed: Removed})
+	}
+}
+
 // while this method is normally deduplicated by the Sync method's use of
 // dedupe it is perfectly thread-safe on its own and can be used whenever.
 func (c *Cluster) sync(p Client) error {
@@ -295,6 +335,8 @@ func (c *Cluster) sync(p Client) error {
 			return fmt.Errorf("error connecting to %s: %s", t.Addr, err)
 		}
 	}
+
+	c.traceTopoChanged(c.topo, tt)
 
 	// this is a big bit of code to totally lockdown the cluster for, but at the
 	// same time Close _shouldn't_ block significantly
@@ -406,13 +448,18 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	thisA := a
 	if ask {
 		thisA = WithConn(key, func(conn Conn) error {
-			return askConn{conn}.Do(a)
+			err = askConn{conn}.Do(a)
+			c.co.ct.GotResponse(trace.ClusterGotResponse{Addr: addr, Key: key, RetryCount: attempts, Err: err})
+			return err
 		})
 	}
 
 	if err = p.Do(thisA); err == nil {
+		c.co.ct.GotResponse(trace.ClusterGotResponse{Addr: addr, Key: key, RetryCount: attempts, Err: nil})
 		return nil
 	}
+
+	c.co.ct.GotResponse(trace.ClusterGotResponse{Addr: addr, Key: key, RetryCount: attempts, Err: err})
 
 	// if the error was a MOVED or ASK we can potentially retry
 	msg := err.Error()
