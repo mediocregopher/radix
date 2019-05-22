@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/mediocregopher/radix/v3/trace"
 )
 
 func testPool(size int, opts ...PoolOpt) *Pool {
@@ -54,6 +56,22 @@ func TestPool(t *T) {
 	//t.Run("onEmptyErr", func(t *T) { do(PoolOnEmptyErrAfter(0)) })
 	t.Run("onEmptyErrAfter", func(t *T) { do(PoolOnEmptyErrAfter(1 * time.Second)) })
 
+	t.Run("withTrace", func(t *T) {
+		var ConnectDoneCount int
+		var ConnClosedCount int
+		pt := trace.PoolTrace{
+			ConnectDone: func(done trace.PoolConnectDone) {
+				ConnectDoneCount++
+			},
+			ConnClosed: func(closed trace.PoolConnClosed) {
+				ConnClosedCount++
+			},
+		}
+		do(PoolWithTrace(pt))
+		if ConnectDoneCount != ConnClosedCount {
+			t.Fail()
+		}
+	})
 }
 
 // Test all the different OnEmpty behaviors
