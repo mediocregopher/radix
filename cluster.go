@@ -434,6 +434,12 @@ func (c *Cluster) Do(a Action) error {
 	return c.doInner(a, addr, key, false, doAttempts)
 }
 
+func (c *Cluster) traceGotResponse(addr, key string, attempts int, err error) {
+	if c.co.ct.GotResponse != nil {
+		c.co.ct.GotResponse(trace.ClusterGotResponse{Addr: addr, Key: key, RetryCount: attempts, Err: err})
+	}
+}
+
 func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) error {
 	p, err := c.pool(addr)
 	if err != nil {
@@ -449,17 +455,17 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	if ask {
 		thisA = WithConn(key, func(conn Conn) error {
 			err = askConn{conn}.Do(a)
-			c.co.ct.GotResponse(trace.ClusterGotResponse{Addr: addr, Key: key, RetryCount: attempts, Err: err})
+			c.traceGotResponse(addr, key, attempts, err)
 			return err
 		})
 	}
 
 	if err = p.Do(thisA); err == nil {
-		c.co.ct.GotResponse(trace.ClusterGotResponse{Addr: addr, Key: key, RetryCount: attempts, Err: nil})
+		c.traceGotResponse(addr, key, attempts, nil)
 		return nil
 	}
 
-	c.co.ct.GotResponse(trace.ClusterGotResponse{Addr: addr, Key: key, RetryCount: attempts, Err: err})
+	c.traceGotResponse(addr, key, attempts, err)
 
 	// if the error was a MOVED or ASK we can potentially retry
 	msg := err.Error()
