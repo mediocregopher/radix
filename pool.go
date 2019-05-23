@@ -271,7 +271,6 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolPipelineConcurrency(size),
 		// NOTE if 150us is changed the benchmarks need to be updated too
 		PoolPipelineWindow(150*time.Microsecond, 0),
-		PoolWithTrace(trace.PoolTrace{}),
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {

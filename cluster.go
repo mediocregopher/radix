@@ -134,7 +134,6 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	defaultClusterOpts := []ClusterOpt{
 		ClusterPoolFunc(DefaultClientFunc),
 		ClusterSyncEvery(5 * time.Second),
-		ClusterWithTrace(trace.ClusterTrace{}),
 	}
 
 	for _, opt := range append(defaultClusterOpts, opts...) {
