@@ -513,9 +513,7 @@ func (p *Pool) get() (*ioErrConn, error) {
 	// at this point everything is unlocked and the conn needs to be created.
 	// newConn will handle checking if the pool has been closed since the inner
 	// was called.
-	ioc, err = p.newConn(false, "BUFFER")
-
-	return ioc, err
+	return p.newConn(false, "BUFFER")
 }
 
 func (p *Pool) put(ioc *ioErrConn) {
