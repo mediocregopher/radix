@@ -1,5 +1,21 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# Untagged
+
+* Change `DefaultClientFunc`'s pool size from 20 to 4, on account of pipelining
+  being enabled by default. (Issue #107)
+
+* Reuse `reflect.Value` instances when unmarshaling into certain map types. (PR
+  #96).
+
+* Fix a panic in `FlatCmd`. (PR #97)
+
+* Reuse field name `string` when unmarshaling into a struct. (PR #95)
+
+* Reduce PubSub allocations significantly. (PR #92 + Issue #91)
+
+* Reduce allocations in `Conn`. (PR #84)
+
 # v3.2.3
 
 * Optimize Scanner implementation.
