@@ -293,31 +293,38 @@ func (c *Cluster) Sync() error {
 	return err
 }
 
-func isTopoContains(topo ClusterTopo, node ClusterNode) bool {
-	for _, t := range topo.Map() {
-		if reflect.DeepEqual(t, node) {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 	if c.co.ct.TopoChanged != nil {
-		var Added []trace.ClusterNodeInfo
-		var Removed []trace.ClusterNodeInfo
-		for _, t := range newTopo.Map() {
-			if !isTopoContains(prevTopo, t) {
-				Added = append(Added, trace.ClusterNodeInfo{Addr: t.Addr, Slots: t.Slots, IsPrimary: t.SecondaryOfAddr == ""})
-			}
-		}
-		for _, t := range prevTopo.Map() {
-			if !isTopoContains(newTopo, t) {
-				Removed = append(Removed, trace.ClusterNodeInfo{Addr: t.Addr, Slots: t.Slots, IsPrimary: t.SecondaryOfAddr == ""})
+		var addedNodes []trace.ClusterNodeInfo
+		var removedNodes []trace.ClusterNodeInfo
+
+		prevTopoMap := prevTopo.Map()
+
+		for addr, newNode := range newTopo.Map() {
+			if prevNode, ok := prevTopoMap[addr]; ok {
+				if !reflect.DeepEqual(newNode, prevNode) {
+					// Previous Node changed its information
+					removedNodes = append(removedNodes, trace.ClusterNodeInfo{
+						Addr:      prevNode.Addr,
+						Slots:     prevNode.Slots,
+						IsPrimary: prevNode.SecondaryOfAddr == "",
+					})
+					addedNodes = append(addedNodes, trace.ClusterNodeInfo{
+						Addr:      newNode.Addr,
+						Slots:     newNode.Slots,
+						IsPrimary: newNode.SecondaryOfAddr == "",
+					})
+				}
+			} else {
+				addedNodes = append(addedNodes, trace.ClusterNodeInfo{
+					Addr:      newNode.Addr,
+					Slots:     newNode.Slots,
+					IsPrimary: newNode.SecondaryOfAddr == "",
+				})
 			}
 		}
 
-		c.co.ct.TopoChanged(trace.ClusterTopoChanged{Added: Added, Removed: Removed})
+		c.co.ct.TopoChanged(trace.ClusterTopoChanged{Added: addedNodes, Removed: removedNodes})
 	}
 }
 
