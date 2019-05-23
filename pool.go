@@ -26,12 +26,10 @@ type ioErrConn struct {
 	// level error, e.g. a timeout, disconnect, etc... Close is automatically
 	// called on the client when it encounters a critical network error
 	lastIOErr error
-
-	ConnectTime time.Duration
 }
 
-func newIOErrConn(c Conn, connectTime time.Duration) *ioErrConn {
-	return &ioErrConn{Conn: c, ConnectTime: connectTime}
+func newIOErrConn(c Conn) *ioErrConn {
+	return &ioErrConn{Conn: c}
 }
 
 func (ioc *ioErrConn) Encode(m resp.Marshaler) error {
@@ -290,8 +288,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 
 	// make one Conn synchronously to ensure there's actually a redis instance
 	// present. The rest will be created asynchronously.
-	ioc, err := p.newConn(false) // false in case size is zero
-	p.traceConnectDone(ioc, "INITIALIZE", err)
+	ioc, err := p.newConn(false, "INITIALIZE") // false in case size is zero
 	if err != nil {
 		return nil, err
 	}
@@ -301,8 +298,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	go func() {
 		defer p.wg.Done()
 		for i := 0; i < size-1; i++ {
-			ioc, err := p.newConn(true)
-			p.traceConnectDone(ioc, "INITIALIZE", err)
+			ioc, err := p.newConn(true, "INITIALIZE")
 			if err == nil {
 				p.put(ioc)
 			} else {
@@ -349,15 +345,8 @@ func (p *Pool) err(err error) {
 	}
 }
 
-func (p *Pool) traceConnectDone(conn *ioErrConn, reason string, err error) {
+func (p *Pool) traceConnectDone(connectTime time.Duration, reason string, err error) {
 	if p.opts.pt.ConnectDone != nil {
-		var connectTime time.Duration
-		if conn != nil {
-			connectTime = conn.ConnectTime
-		} else {
-			connectTime = 0
-		}
-
 		p.opts.pt.ConnectDone(trace.PoolConnectDone{
 			PoolInfo:     trace.PoolInfo{Addr: p.addr},
 			PoolConnInfo: trace.PoolConnInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
@@ -379,14 +368,15 @@ func (p *Pool) traceConnClosed(reason string) {
 }
 
 // this must always be called with p.l unlocked
-func (p *Pool) newConn(errIfFull bool) (*ioErrConn, error) {
+func (p *Pool) newConn(errIfFull bool, reason string) (*ioErrConn, error) {
 	start := time.Now()
 	c, err := p.opts.cf(p.network, p.addr)
 	elapsed := time.Since(start)
+	p.traceConnectDone(elapsed, reason, err)
 	if err != nil {
 		return nil, err
 	}
-	ioc := newIOErrConn(c, elapsed)
+	ioc := newIOErrConn(c)
 
 	// We don't want to wrap the entire function in a lock because dialing might
 	// take a while, but we also don't want to be making any new connections if
@@ -436,8 +426,7 @@ func (p *Pool) doRefill() {
 	}
 	p.l.RUnlock()
 
-	ioc, err := p.newConn(true)
-	p.traceConnectDone(ioc, "REFILL", err)
+	ioc, err := p.newConn(true, "REFILL")
 
 	if err == nil {
 		p.put(ioc)
@@ -525,8 +514,7 @@ func (p *Pool) get() (*ioErrConn, error) {
 	// at this point everything is unlocked and the conn needs to be created.
 	// newConn will handle checking if the pool has been closed since the inner
 	// was called.
-	ioc, err = p.newConn(false)
-	p.traceConnectDone(ioc, "BUFFER", err)
+	ioc, err = p.newConn(false, "BUFFER")
 
 	return ioc, err
 }
