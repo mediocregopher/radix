@@ -461,18 +461,15 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	thisA := a
 	if ask {
 		thisA = WithConn(key, func(conn Conn) error {
-			err = askConn{conn}.Do(a)
-			c.traceGotResponse(addr, key, attempts, err)
-			return err
+			return askConn{conn}.Do(a)
 		})
 	}
 
-	if err = p.Do(thisA); err == nil {
-		c.traceGotResponse(addr, key, attempts, nil)
+	err = p.Do(thisA)
+	c.traceGotResponse(addr, key, attempts, err)
+	if err == nil {
 		return nil
 	}
-
-	c.traceGotResponse(addr, key, attempts, err)
 
 	// if the error was a MOVED or ASK we can potentially retry
 	msg := err.Error()
