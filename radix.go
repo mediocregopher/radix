@@ -165,7 +165,7 @@ type ClientFunc func(network, addr string) (Client, error)
 // DefaultClientFunc is a ClientFunc which will return a Client for a redis
 // instance using sane defaults.
 var DefaultClientFunc = func(network, addr string) (Client, error) {
-	return NewPool(network, addr, 20)
+	return NewPool(network, addr, 4)
 }
 
 // Conn is a Client wrapping a single network connection which synchronously
