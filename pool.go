@@ -287,7 +287,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 
 	// make one Conn synchronously to ensure there's actually a redis instance
 	// present. The rest will be created asynchronously.
-	ioc, err := p.newConn(false, "INITIALIZE") // false in case size is zero
+	ioc, err := p.newConn(false, trace.PoolConnectReasonInitialize) // false in case size is zero
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	go func() {
 		defer p.wg.Done()
 		for i := 0; i < size-1; i++ {
-			ioc, err := p.newConn(true, "INITIALIZE")
+			ioc, err := p.newConn(true, trace.PoolConnectReasonInitialize)
 			if err == nil {
 				p.put(ioc)
 			} else {
@@ -344,7 +344,7 @@ func (p *Pool) err(err error) {
 	}
 }
 
-func (p *Pool) traceConnectDone(connectTime time.Duration, reason string, err error) {
+func (p *Pool) traceConnectDone(connectTime time.Duration, reason trace.PoolConnectReason, err error) {
 	if p.opts.pt.ConnectDone != nil {
 		p.opts.pt.ConnectDone(trace.PoolConnectDone{
 			PoolInfo:     trace.PoolInfo{Addr: p.addr},
@@ -356,7 +356,7 @@ func (p *Pool) traceConnectDone(connectTime time.Duration, reason string, err er
 	}
 }
 
-func (p *Pool) traceConnClosed(reason string) {
+func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
 	if p.opts.pt.ConnClosed != nil {
 		p.opts.pt.ConnClosed(trace.PoolConnClosed{
 			PoolInfo:     trace.PoolInfo{Addr: p.addr},
@@ -367,7 +367,7 @@ func (p *Pool) traceConnClosed(reason string) {
 }
 
 // this must always be called with p.l unlocked
-func (p *Pool) newConn(errIfFull bool, reason string) (*ioErrConn, error) {
+func (p *Pool) newConn(errIfFull bool, reason trace.PoolConnectReason) (*ioErrConn, error) {
 	start := time.Now()
 	c, err := p.opts.cf(p.network, p.addr)
 	elapsed := time.Since(start)
@@ -384,11 +384,11 @@ func (p *Pool) newConn(errIfFull bool, reason string) (*ioErrConn, error) {
 	defer p.l.Unlock()
 	if p.closed {
 		ioc.Close()
-		p.traceConnClosed(errClientClosed.Error())
+		p.traceConnClosed(trace.PoolConnClosedReasonPoolClosed)
 		return nil, errClientClosed
 	} else if errIfFull && p.totalConns >= p.size {
 		ioc.Close()
-		p.traceConnClosed(errPoolFull.Error())
+		p.traceConnClosed(trace.PoolConnClosedReasonPoolIsFull)
 		return nil, errPoolFull
 	}
 	p.totalConns++
@@ -425,7 +425,7 @@ func (p *Pool) doRefill() {
 	}
 	p.l.RUnlock()
 
-	ioc, err := p.newConn(true, "REFILL")
+	ioc, err := p.newConn(true, trace.PoolConnectReasonRefill)
 
 	if err == nil {
 		p.put(ioc)
@@ -458,7 +458,7 @@ func (p *Pool) doOverflowDrain() {
 	}
 
 	ioc.Close()
-	p.traceConnClosed("BUFFER DRAINED")
+	p.traceConnClosed(trace.PoolConnClosedReasonBufferDrain)
 	p.l.Lock()
 	p.totalConns--
 	p.l.Unlock()
@@ -513,7 +513,7 @@ func (p *Pool) get() (*ioErrConn, error) {
 	// at this point everything is unlocked and the conn needs to be created.
 	// newConn will handle checking if the pool has been closed since the inner
 	// was called.
-	return p.newConn(false, "BUFFER")
+	return p.newConn(false, trace.PoolConnectReasonBuffer)
 }
 
 func (p *Pool) put(ioc *ioErrConn) {
@@ -531,7 +531,7 @@ func (p *Pool) put(ioc *ioErrConn) {
 	// the pool might close here, but that's fine, because all that's happening
 	// at this point is that the connection is being closed
 	ioc.Close()
-	p.traceConnClosed("POOL CLOSED")
+	p.traceConnClosed(trace.PoolConnClosedReasonPoolClosed)
 	p.l.Lock()
 	p.totalConns--
 	p.l.Unlock()
@@ -587,7 +587,7 @@ emptyLoop:
 		select {
 		case ioc := <-p.pool:
 			ioc.Close()
-			p.traceConnClosed("CLOSE CALLED")
+			p.traceConnClosed(trace.PoolConnClosedReasonPoolClosing)
 			p.totalConns--
 		default:
 			close(p.pool)

@@ -55,7 +55,7 @@ type PoolConnInfo struct {
 type PoolConnectDone struct {
 	PoolInfo
 	PoolConnInfo
-	Reason      string
+	Reason      PoolConnectReason
 	ConnectTime time.Duration
 	Err         error
 }
@@ -63,7 +63,23 @@ type PoolConnectDone struct {
 type PoolConnClosed struct {
 	PoolInfo
 	PoolConnInfo
-	Reason string
+	Reason PoolConnClosedReason
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+type PoolConnectReason string
+type PoolConnClosedReason string
+
+const (
+	PoolConnectReasonInitialize PoolConnectReason = "initialize"
+	PoolConnectReasonRefill     PoolConnectReason = "refill"
+	PoolConnectReasonBuffer     PoolConnectReason = "buffer"
+)
+
+const (
+	PoolConnClosedReasonPoolClosing PoolConnClosedReason = "pool is closing"
+	PoolConnClosedReasonPoolClosed  PoolConnClosedReason = "pool closed"
+	PoolConnClosedReasonBufferDrain PoolConnClosedReason = "buffer drained"
+	PoolConnClosedReasonPoolIsFull  PoolConnClosedReason = "pool is full"
+)
