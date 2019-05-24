@@ -22,6 +22,7 @@ type ClusterNodeInfo struct {
 type ClusterTopoChanged struct {
 	Added   []ClusterNodeInfo
 	Removed []ClusterNodeInfo
+	Changed []ClusterNodeInfo
 }
 
 type ClusterRedirected struct {

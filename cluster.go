@@ -296,25 +296,25 @@ func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 	if c.co.ct.TopoChanged != nil {
 		var addedNodes []trace.ClusterNodeInfo
 		var removedNodes []trace.ClusterNodeInfo
+		var changedNodes []trace.ClusterNodeInfo
 
 		prevTopoMap := prevTopo.Map()
+		newTopoMap := newTopo.Map()
 
-		for addr, newNode := range newTopo.Map() {
+		for addr, newNode := range newTopoMap {
 			if prevNode, ok := prevTopoMap[addr]; ok {
-				if !reflect.DeepEqual(newNode, prevNode) {
-					// Previous Node changed its information
-					removedNodes = append(removedNodes, trace.ClusterNodeInfo{
-						Addr:      prevNode.Addr,
-						Slots:     prevNode.Slots,
-						IsPrimary: prevNode.SecondaryOfAddr == "",
-					})
-					addedNodes = append(addedNodes, trace.ClusterNodeInfo{
+				// Check whether two nodes which have the same address changed its value or not
+				if !reflect.DeepEqual(prevNode, newNode) {
+					changedNodes = append(changedNodes, trace.ClusterNodeInfo{
 						Addr:      newNode.Addr,
 						Slots:     newNode.Slots,
 						IsPrimary: newNode.SecondaryOfAddr == "",
 					})
 				}
+				// No need to handle this address for finding removed nodes
+				delete(prevTopoMap, addr)
 			} else {
+				// The node's address not found from prevTopo is newly added node
 				addedNodes = append(addedNodes, trace.ClusterNodeInfo{
 					Addr:      newNode.Addr,
 					Slots:     newNode.Slots,
@@ -323,7 +323,25 @@ func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 			}
 		}
 
-		c.co.ct.TopoChanged(trace.ClusterTopoChanged{Added: addedNodes, Removed: removedNodes})
+		// Find removed nodes, prevTopoMap has reduced
+		for addr, prevNode := range prevTopoMap {
+			if _, ok := newTopoMap[addr]; !ok {
+				removedNodes = append(removedNodes, trace.ClusterNodeInfo{
+					Addr:      prevNode.Addr,
+					Slots:     prevNode.Slots,
+					IsPrimary: prevNode.SecondaryOfAddr == "",
+				})
+			}
+		}
+
+		// Callback when any changes detected
+		if len(addedNodes) != 0 || len(removedNodes) != 0 || len(changedNodes) != 0 {
+			c.co.ct.TopoChanged(trace.ClusterTopoChanged{
+				Added:   addedNodes,
+				Removed: removedNodes,
+				Changed: changedNodes,
+			})
+		}
 	}
 }
 
