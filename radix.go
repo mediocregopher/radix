@@ -132,6 +132,7 @@ package radix
 
 import (
 	"bufio"
+	"crypto/tls"
 	"errors"
 	"net"
 	"net/url"
@@ -250,6 +251,8 @@ type dialOpts struct {
 	connectTimeout, readTimeout, writeTimeout time.Duration
 	authPass                                  string
 	selectDB                                  string
+	useTLSConfig                              bool
+	tlsConfig                                 *tls.Config
 }
 
 // DialOpt is an optional behavior which can be applied to the Dial function to
@@ -309,6 +312,16 @@ func DialAuthPass(pass string) DialOpt {
 func DialSelectDB(db int) DialOpt {
 	return func(do *dialOpts) {
 		do.selectDB = strconv.Itoa(db)
+	}
+}
+
+// DialUseTLS will cause Dial to perform a TLS handshake using the provided
+// config. If config is nil the config is interpreted as equivalent to the zero
+// configuration. See https://golang.org/pkg/crypto/tls/#Config
+func DialUseTLS(config *tls.Config) DialOpt {
+	return func(do *dialOpts) {
+		do.tlsConfig = config
+		do.useTLSConfig = true
 	}
 }
 
@@ -384,10 +397,14 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 
 	var netConn net.Conn
 	var err error
+	dialer := net.Dialer{}
 	if do.connectTimeout > 0 {
-		netConn, err = net.DialTimeout(network, addr, do.connectTimeout)
+		dialer.Timeout = do.connectTimeout
+	}
+	if do.useTLSConfig {
+		netConn, err = tls.DialWithDialer(&dialer, network, addr, do.tlsConfig)
 	} else {
-		netConn, err = net.Dial(network, addr)
+		netConn, err = dialer.Dial(network, addr)
 	}
 
 	if err != nil {
