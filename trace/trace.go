@@ -9,8 +9,8 @@ import (
 type ClusterTrace struct {
 	// TopoChanged is called when the cluster's topology changed.
 	TopoChanged func(ClusterTopoChanged)
-	// GotResponse is called after the radix.Do executed.
-	GotResponse func(ClusterGotResponse)
+	// Redirected is called when radix.Do responded 'MOVED' or 'ASKED'.
+	Redirected func(ClusterRedirected)
 }
 
 type ClusterNodeInfo struct {
@@ -24,11 +24,11 @@ type ClusterTopoChanged struct {
 	Removed []ClusterNodeInfo
 }
 
-type ClusterGotResponse struct {
-	Addr       string
-	Key        string
-	RetryCount int
-	Err        error
+type ClusterRedirected struct {
+	Addr                string
+	Key                 string
+	Moved, Ask          bool
+	RemainRedirectCount int
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -440,9 +440,9 @@ func (c *Cluster) Do(a Action) error {
 	return c.doInner(a, addr, key, false, doAttempts)
 }
 
-func (c *Cluster) traceGotResponse(addr, key string, attempts int, err error) {
-	if c.co.ct.GotResponse != nil {
-		c.co.ct.GotResponse(trace.ClusterGotResponse{Addr: addr, Key: key, RetryCount: attempts, Err: err})
+func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts int) {
+	if c.co.ct.Redirected != nil {
+		c.co.ct.Redirected(trace.ClusterRedirected{Addr: addr, Key: key, Moved: moved, Ask: ask, RemainRedirectCount: attempts})
 	}
 }
 
@@ -465,7 +465,6 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	}
 
 	err = p.Do(thisA)
-	c.traceGotResponse(addr, key, attempts, err)
 	if err == nil {
 		return nil
 	}
@@ -477,6 +476,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	if !moved && !ask {
 		return err
 	}
+	c.traceRedirected(addr, key, moved, ask, attempts)
 
 	// if we get an ASK there's no need to do a sync quite yet, we can continue
 	// normally. But MOVED always prompts a sync. In the section after this one
