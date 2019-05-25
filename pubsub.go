@@ -21,8 +21,7 @@ type PubSubMessage struct {
 	Message []byte
 }
 
-// MarshalRESP implements the Marshaler interface. It will assume the
-// PubSubMessage is a PMESSAGE if Pattern is non-empty.
+// MarshalRESP implements the Marshaler interface.
 func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
