@@ -460,7 +460,7 @@ func (c *Cluster) Do(a Action) error {
 
 func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts int) {
 	if c.co.ct.Redirected != nil {
-		c.co.ct.Redirected(trace.ClusterRedirected{Addr: addr, Key: key, Moved: moved, Ask: ask, RemainRedirectCount: attempts})
+		c.co.ct.Redirected(trace.ClusterRedirected{Addr: addr, Key: key, Moved: moved, Ask: ask, RedirectCount: doAttempts - attempts})
 	}
 }
 
