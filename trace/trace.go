@@ -1,3 +1,4 @@
+// Disclaimer: Note that Package trace is not stable yet and is subject to change.
 package trace
 
 import (
