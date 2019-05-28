@@ -42,27 +42,28 @@ type PoolTrace struct {
 	ConnClosed func(PoolConnClosed)
 }
 
-type PoolInfo struct {
-	Addr string
+type PoolHostInfo struct {
+	Network string
+	Addr    string
 }
 
-type PoolConnInfo struct {
+type PoolInfo struct {
 	PoolSize   int
 	BufferSize int
 	AvailCount int
 }
 
 type PoolConnectDone struct {
+	PoolHostInfo
 	PoolInfo
-	PoolConnInfo
 	Reason      PoolConnectReason
 	ConnectTime time.Duration
 	Err         error
 }
 
 type PoolConnClosed struct {
+	PoolHostInfo
 	PoolInfo
-	PoolConnInfo
 	Reason PoolConnClosedReason
 }
 

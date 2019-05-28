@@ -347,8 +347,8 @@ func (p *Pool) err(err error) {
 func (p *Pool) traceConnectDone(connectTime time.Duration, reason trace.PoolConnectReason, err error) {
 	if p.opts.pt.ConnectDone != nil {
 		p.opts.pt.ConnectDone(trace.PoolConnectDone{
-			PoolInfo:     trace.PoolInfo{Addr: p.addr},
-			PoolConnInfo: trace.PoolConnInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
+			PoolHostInfo: trace.PoolHostInfo{Network: p.network, Addr: p.addr},
+			PoolInfo:     trace.PoolInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
 			Reason:       reason,
 			ConnectTime:  connectTime,
 			Err:          err,
@@ -359,8 +359,8 @@ func (p *Pool) traceConnectDone(connectTime time.Duration, reason trace.PoolConn
 func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
 	if p.opts.pt.ConnClosed != nil {
 		p.opts.pt.ConnClosed(trace.PoolConnClosed{
-			PoolInfo:     trace.PoolInfo{Addr: p.addr},
-			PoolConnInfo: trace.PoolConnInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
+			PoolHostInfo: trace.PoolHostInfo{Network: p.network, Addr: p.addr},
+			PoolInfo:     trace.PoolInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
 			Reason:       reason,
 		})
 	}
