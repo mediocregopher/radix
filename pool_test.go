@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/mediocregopher/radix/v3/trace"
 )
 
 func testPool(size int, opts ...PoolOpt) *Pool {
@@ -54,6 +56,22 @@ func TestPool(t *T) {
 	//t.Run("onEmptyErr", func(t *T) { do(PoolOnEmptyErrAfter(0)) })
 	t.Run("onEmptyErrAfter", func(t *T) { do(PoolOnEmptyErrAfter(1 * time.Second)) })
 
+	t.Run("withTrace", func(t *T) {
+		var connectDoneCount int
+		var connClosedCount int
+		pt := trace.PoolTrace{
+			ConnectDone: func(done trace.PoolConnectDone) {
+				connectDoneCount++
+			},
+			ConnClosed: func(closed trace.PoolConnClosed) {
+				connClosedCount++
+			},
+		}
+		do(PoolWithTrace(pt))
+		if connectDoneCount != connClosedCount {
+			t.Fail()
+		}
+	})
 }
 
 // Test all the different OnEmpty behaviors
@@ -101,7 +119,7 @@ func TestPoolOnFull(t *T) {
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
 
-		spc, err := pool.newConn(false)
+		spc, err := pool.newConn(false, "TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 1, len(pool.pool))
@@ -113,13 +131,13 @@ func TestPoolOnFull(t *T) {
 		assert.Equal(t, 1, len(pool.pool))
 
 		// putting a conn should overflow
-		spc, err := pool.newConn(false)
+		spc, err := pool.newConn(false, "TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))
 
 		// another shouldn't, overflow is full
-		spc, err = pool.newConn(false)
+		spc, err = pool.newConn(false, "TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))
@@ -132,7 +150,7 @@ func TestPoolOnFull(t *T) {
 		assert.Equal(t, 1, len(pool.pool))
 
 		// if both are full then drain should remove the overflow one
-		spc, err = pool.newConn(false)
+		spc, err = pool.newConn(false, "TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix/v3/resp"
+	"github.com/mediocregopher/radix/v3/trace"
 )
 
 // ErrPoolEmpty is used by Pools created using the PoolOnEmptyErrAfter option
@@ -69,6 +70,7 @@ type poolOpts struct {
 	pipelineConcurrency   int
 	pipelineLimit         int
 	pipelineWindow        time.Duration
+	pt                    trace.PoolTrace
 }
 
 // PoolOpt is an optional behavior which can be applied to the NewPool function
@@ -197,6 +199,14 @@ func PoolPipelineWindow(window time.Duration, limit int) PoolOpt {
 	}
 }
 
+// PoolWithTrace tells the Pool to trace itself with the given PoolTrace
+// Note that PoolTrace will block every point that you set to trace.
+func PoolWithTrace(pt trace.PoolTrace) PoolOpt {
+	return func(po *poolOpts) {
+		po.pt = pt
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Pool is a semi-dynamic pool which holds a fixed number of connections open
@@ -277,7 +287,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 
 	// make one Conn synchronously to ensure there's actually a redis instance
 	// present. The rest will be created asynchronously.
-	ioc, err := p.newConn(false) // false in case size is zero
+	ioc, err := p.newConn(false, trace.PoolConnectReasonInitialize) // false in case size is zero
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +297,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	go func() {
 		defer p.wg.Done()
 		for i := 0; i < size-1; i++ {
-			ioc, err := p.newConn(true)
+			ioc, err := p.newConn(true, trace.PoolConnectReasonInitialize)
 			if err == nil {
 				p.put(ioc)
 			} else {
@@ -334,9 +344,34 @@ func (p *Pool) err(err error) {
 	}
 }
 
+func (p *Pool) traceConnectDone(connectTime time.Duration, reason trace.PoolConnectReason, err error) {
+	if p.opts.pt.ConnectDone != nil {
+		p.opts.pt.ConnectDone(trace.PoolConnectDone{
+			PoolHostInfo: trace.PoolHostInfo{Network: p.network, Addr: p.addr},
+			PoolInfo:     trace.PoolInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
+			Reason:       reason,
+			ConnectTime:  connectTime,
+			Err:          err,
+		})
+	}
+}
+
+func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
+	if p.opts.pt.ConnClosed != nil {
+		p.opts.pt.ConnClosed(trace.PoolConnClosed{
+			PoolHostInfo: trace.PoolHostInfo{Network: p.network, Addr: p.addr},
+			PoolInfo:     trace.PoolInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
+			Reason:       reason,
+		})
+	}
+}
+
 // this must always be called with p.l unlocked
-func (p *Pool) newConn(errIfFull bool) (*ioErrConn, error) {
+func (p *Pool) newConn(errIfFull bool, reason trace.PoolConnectReason) (*ioErrConn, error) {
+	start := time.Now()
 	c, err := p.opts.cf(p.network, p.addr)
+	elapsed := time.Since(start)
+	p.traceConnectDone(elapsed, reason, err)
 	if err != nil {
 		return nil, err
 	}
@@ -349,9 +384,11 @@ func (p *Pool) newConn(errIfFull bool) (*ioErrConn, error) {
 	defer p.l.Unlock()
 	if p.closed {
 		ioc.Close()
+		p.traceConnClosed(trace.PoolConnClosedReasonPoolClosed)
 		return nil, errClientClosed
 	} else if errIfFull && p.totalConns >= p.size {
 		ioc.Close()
+		p.traceConnClosed(trace.PoolConnClosedReasonPoolIsFull)
 		return nil, errPoolFull
 	}
 	p.totalConns++
@@ -388,7 +425,8 @@ func (p *Pool) doRefill() {
 	}
 	p.l.RUnlock()
 
-	ioc, err := p.newConn(true)
+	ioc, err := p.newConn(true, trace.PoolConnectReasonRefill)
+
 	if err == nil {
 		p.put(ioc)
 	} else if err != errPoolFull {
@@ -420,6 +458,7 @@ func (p *Pool) doOverflowDrain() {
 	}
 
 	ioc.Close()
+	p.traceConnClosed(trace.PoolConnClosedReasonBufferDrain)
 	p.l.Lock()
 	p.totalConns--
 	p.l.Unlock()
@@ -474,7 +513,7 @@ func (p *Pool) get() (*ioErrConn, error) {
 	// at this point everything is unlocked and the conn needs to be created.
 	// newConn will handle checking if the pool has been closed since the inner
 	// was called.
-	return p.newConn(false)
+	return p.newConn(false, trace.PoolConnectReasonBuffer)
 }
 
 func (p *Pool) put(ioc *ioErrConn) {
@@ -492,6 +531,7 @@ func (p *Pool) put(ioc *ioErrConn) {
 	// the pool might close here, but that's fine, because all that's happening
 	// at this point is that the connection is being closed
 	ioc.Close()
+	p.traceConnClosed(trace.PoolConnClosedReasonPoolClosed)
 	p.l.Lock()
 	p.totalConns--
 	p.l.Unlock()
@@ -547,6 +587,7 @@ emptyLoop:
 		select {
 		case ioc := <-p.pool:
 			ioc.Close()
+			p.traceConnClosed(trace.PoolConnClosedReasonPoolClosing)
 			p.totalConns--
 		default:
 			close(p.pool)

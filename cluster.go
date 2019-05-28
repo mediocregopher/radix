@@ -3,12 +3,14 @@ package radix
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
+	"github.com/mediocregopher/radix/v3/trace"
 )
 
 // dedupe is used to deduplicate a function invocation, so if multiple
@@ -56,6 +58,7 @@ type ClusterCanRetryAction interface {
 type clusterOpts struct {
 	pf        ClientFunc
 	syncEvery time.Duration
+	ct        trace.ClusterTrace
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -76,6 +79,14 @@ func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
 func ClusterSyncEvery(d time.Duration) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.syncEvery = d
+	}
+}
+
+// ClusterWithTrace tells the Cluster to trace itself with the given ClusterTrace
+// Note that ClusterTrace will block every point that you set to trace.
+func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.ct = ct
 	}
 }
 
@@ -281,6 +292,59 @@ func (c *Cluster) Sync() error {
 	return err
 }
 
+func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
+	if c.co.ct.TopoChanged != nil {
+		var addedNodes []trace.ClusterNodeInfo
+		var removedNodes []trace.ClusterNodeInfo
+		var changedNodes []trace.ClusterNodeInfo
+
+		prevTopoMap := prevTopo.Map()
+		newTopoMap := newTopo.Map()
+
+		for addr, newNode := range newTopoMap {
+			if prevNode, ok := prevTopoMap[addr]; ok {
+				// Check whether two nodes which have the same address changed its value or not
+				if !reflect.DeepEqual(prevNode, newNode) {
+					changedNodes = append(changedNodes, trace.ClusterNodeInfo{
+						Addr:      newNode.Addr,
+						Slots:     newNode.Slots,
+						IsPrimary: newNode.SecondaryOfAddr == "",
+					})
+				}
+				// No need to handle this address for finding removed nodes
+				delete(prevTopoMap, addr)
+			} else {
+				// The node's address not found from prevTopo is newly added node
+				addedNodes = append(addedNodes, trace.ClusterNodeInfo{
+					Addr:      newNode.Addr,
+					Slots:     newNode.Slots,
+					IsPrimary: newNode.SecondaryOfAddr == "",
+				})
+			}
+		}
+
+		// Find removed nodes, prevTopoMap has reduced
+		for addr, prevNode := range prevTopoMap {
+			if _, ok := newTopoMap[addr]; !ok {
+				removedNodes = append(removedNodes, trace.ClusterNodeInfo{
+					Addr:      prevNode.Addr,
+					Slots:     prevNode.Slots,
+					IsPrimary: prevNode.SecondaryOfAddr == "",
+				})
+			}
+		}
+
+		// Callback when any changes detected
+		if len(addedNodes) != 0 || len(removedNodes) != 0 || len(changedNodes) != 0 {
+			c.co.ct.TopoChanged(trace.ClusterTopoChanged{
+				Added:   addedNodes,
+				Removed: removedNodes,
+				Changed: changedNodes,
+			})
+		}
+	}
+}
+
 // while this method is normally deduplicated by the Sync method's use of
 // dedupe it is perfectly thread-safe on its own and can be used whenever.
 func (c *Cluster) sync(p Client) error {
@@ -295,6 +359,8 @@ func (c *Cluster) sync(p Client) error {
 			return fmt.Errorf("error connecting to %s: %s", t.Addr, err)
 		}
 	}
+
+	c.traceTopoChanged(c.topo, tt)
 
 	// this is a big bit of code to totally lockdown the cluster for, but at the
 	// same time Close _shouldn't_ block significantly
@@ -392,6 +458,12 @@ func (c *Cluster) Do(a Action) error {
 	return c.doInner(a, addr, key, false, doAttempts)
 }
 
+func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts int) {
+	if c.co.ct.Redirected != nil {
+		c.co.ct.Redirected(trace.ClusterRedirected{Addr: addr, Key: key, Moved: moved, Ask: ask, RedirectCount: doAttempts - attempts})
+	}
+}
+
 func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) error {
 	p, err := c.pool(addr)
 	if err != nil {
@@ -410,7 +482,8 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 		})
 	}
 
-	if err = p.Do(thisA); err == nil {
+	err = p.Do(thisA)
+	if err == nil {
 		return nil
 	}
 
@@ -421,6 +494,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	if !moved && !ask {
 		return err
 	}
+	c.traceRedirected(addr, key, moved, ask, attempts)
 
 	// if we get an ASK there's no need to do a sync quite yet, we can continue
 	// normally. But MOVED always prompts a sync. In the section after this one
