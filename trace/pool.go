@@ -14,6 +14,9 @@ type PoolTrace struct {
 
 	// ConnClosed is called before closing the connection.
 	ConnClosed func(PoolConnClosed)
+
+	// DoCompleted is called after executing command.
+	DoCompleted func(PoolDoCompleted)
 }
 
 // PoolCommon contains information which is passed into all Pool-related
@@ -93,4 +96,14 @@ type PoolConnClosed struct {
 
 	// The reason the connection was closed.
 	Reason PoolConnClosedReason
+}
+
+type PoolDoCompleted struct {
+	PoolCommon
+
+	// How long it took to send command.
+	ElapsedTime time.Duration
+
+	// This is the error returned from redis.
+	Err error
 }
