@@ -59,6 +59,7 @@ func TestPool(t *T) {
 	t.Run("withTrace", func(t *T) {
 		var connCreatedCount int
 		var connClosedCount int
+		var doCompletedCount int
 		pt := trace.PoolTrace{
 			ConnCreated: func(done trace.PoolConnCreated) {
 				connCreatedCount++
@@ -66,9 +67,15 @@ func TestPool(t *T) {
 			ConnClosed: func(closed trace.PoolConnClosed) {
 				connClosedCount++
 			},
+			DoCompleted: func(completed trace.PoolDoCompleted) {
+				doCompletedCount++
+			},
 		}
 		do(PoolWithTrace(pt))
 		if connCreatedCount != connClosedCount {
+			t.Fail()
+		}
+		if doCompletedCount == 0 {
 			t.Fail()
 		}
 	})

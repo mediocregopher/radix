@@ -558,7 +558,11 @@ func (p *Pool) put(ioc *ioErrConn) {
 // are currently not automatically pipelined.
 func (p *Pool) Do(a Action) error {
 	if p.pipeliner != nil && p.pipeliner.CanDo(a) {
-		return p.pipeliner.Do(a)
+		startTime := time.Now()
+		err := p.pipeliner.Do(a)
+		p.traceDoCompleted(time.Since(startTime), err)
+
+		return err
 	}
 
 	c, err := p.get()
@@ -567,7 +571,21 @@ func (p *Pool) Do(a Action) error {
 	}
 	defer p.put(c)
 
-	return c.Do(a)
+	startTime := time.Now()
+	err = c.Do(a)
+	p.traceDoCompleted(time.Since(startTime), err)
+
+	return err
+}
+
+func (p *Pool) traceDoCompleted(elapsedTime time.Duration, err error) {
+	if p.opts.pt.DoCompleted != nil {
+		p.opts.pt.DoCompleted(trace.PoolDoCompleted{
+			PoolCommon:  p.traceCommon(),
+			ElapsedTime: elapsedTime,
+			Err:         err,
+		})
+	}
 }
 
 // NumAvailConns returns the number of connections currently available in the
