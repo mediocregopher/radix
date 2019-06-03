@@ -106,17 +106,15 @@ D2lWusoe2/nEqfDVVWGWlyJ7yOmqaVm/iNUN9B2N2g==
 			case b1 := <-lChan:
 				if b1 == nil {
 					return
-				} else {
-					_, err = rConn.Write(b1)
-					require.NoError(t, err)
 				}
+				_, err = rConn.Write(b1)
+				require.NoError(t, err)
 			case b2 := <-rChan:
 				if b2 == nil {
 					return
-				} else {
-					_, err = lConn.Write(b2)
-					require.NoError(t, err)
 				}
+				_, err = lConn.Write(b2)
+				require.NoError(t, err)
 			}
 		}
 
