@@ -2,6 +2,11 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 # Untagged
 
+* Add `trace` package with tracing callbacks for `Pool` and `Cluster`.
+  (`Sentinel` coming soon!) (PR #100)
+
+* Add `DialUseTLS` option. (PR #104)
+
 * Change `DefaultClientFunc`'s pool size from 20 to 4, on account of pipelining
   being enabled by default. (Issue #107)
 
