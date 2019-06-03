@@ -57,18 +57,18 @@ func TestPool(t *T) {
 	t.Run("onEmptyErrAfter", func(t *T) { do(PoolOnEmptyErrAfter(1 * time.Second)) })
 
 	t.Run("withTrace", func(t *T) {
-		var connectDoneCount int
+		var connCreatedCount int
 		var connClosedCount int
 		pt := trace.PoolTrace{
-			ConnectDone: func(done trace.PoolConnectDone) {
-				connectDoneCount++
+			ConnCreated: func(done trace.PoolConnCreated) {
+				connCreatedCount++
 			},
 			ConnClosed: func(closed trace.PoolConnClosed) {
 				connClosedCount++
 			},
 		}
 		do(PoolWithTrace(pt))
-		if connectDoneCount != connClosedCount {
+		if connCreatedCount != connClosedCount {
 			t.Fail()
 		}
 	})

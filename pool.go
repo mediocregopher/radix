@@ -287,7 +287,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 
 	// make one Conn synchronously to ensure there's actually a redis instance
 	// present. The rest will be created asynchronously.
-	ioc, err := p.newConn(false, trace.PoolConnectReasonInitialize) // false in case size is zero
+	ioc, err := p.newConn(false, trace.PoolConnCreatedReasonInitialization) // false in case size is zero
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	go func() {
 		defer p.wg.Done()
 		for i := 0; i < size-1; i++ {
-			ioc, err := p.newConn(true, trace.PoolConnectReasonInitialize)
+			ioc, err := p.newConn(true, trace.PoolConnCreatedReasonInitialization)
 			if err == nil {
 				p.put(ioc)
 			} else {
@@ -344,14 +344,21 @@ func (p *Pool) err(err error) {
 	}
 }
 
-func (p *Pool) traceConnectDone(connectTime time.Duration, reason trace.PoolConnectReason, err error) {
-	if p.opts.pt.ConnectDone != nil {
-		p.opts.pt.ConnectDone(trace.PoolConnectDone{
-			PoolHostInfo: trace.PoolHostInfo{Network: p.network, Addr: p.addr},
-			PoolInfo:     trace.PoolInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
-			Reason:       reason,
-			ConnectTime:  connectTime,
-			Err:          err,
+func (p *Pool) traceCommon() trace.PoolCommon {
+	return trace.PoolCommon{
+		Network: p.network, Addr: p.addr,
+		PoolSize: p.size, BufferSize: p.opts.overflowSize,
+		AvailCount: len(p.pool),
+	}
+}
+
+func (p *Pool) traceConnCreated(connectTime time.Duration, reason trace.PoolConnCreatedReason, err error) {
+	if p.opts.pt.ConnCreated != nil {
+		p.opts.pt.ConnCreated(trace.PoolConnCreated{
+			PoolCommon:  p.traceCommon(),
+			Reason:      reason,
+			ConnectTime: connectTime,
+			Err:         err,
 		})
 	}
 }
@@ -359,19 +366,18 @@ func (p *Pool) traceConnectDone(connectTime time.Duration, reason trace.PoolConn
 func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
 	if p.opts.pt.ConnClosed != nil {
 		p.opts.pt.ConnClosed(trace.PoolConnClosed{
-			PoolHostInfo: trace.PoolHostInfo{Network: p.network, Addr: p.addr},
-			PoolInfo:     trace.PoolInfo{PoolSize: p.size, BufferSize: p.opts.overflowSize, AvailCount: len(p.pool)},
-			Reason:       reason,
+			PoolCommon: p.traceCommon(),
+			Reason:     reason,
 		})
 	}
 }
 
 // this must always be called with p.l unlocked
-func (p *Pool) newConn(errIfFull bool, reason trace.PoolConnectReason) (*ioErrConn, error) {
+func (p *Pool) newConn(errIfFull bool, reason trace.PoolConnCreatedReason) (*ioErrConn, error) {
 	start := time.Now()
 	c, err := p.opts.cf(p.network, p.addr)
 	elapsed := time.Since(start)
-	p.traceConnectDone(elapsed, reason, err)
+	p.traceConnCreated(elapsed, reason, err)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +394,7 @@ func (p *Pool) newConn(errIfFull bool, reason trace.PoolConnectReason) (*ioErrCo
 		return nil, errClientClosed
 	} else if errIfFull && p.totalConns >= p.size {
 		ioc.Close()
-		p.traceConnClosed(trace.PoolConnClosedReasonPoolIsFull)
+		p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
 		return nil, errPoolFull
 	}
 	p.totalConns++
@@ -425,7 +431,7 @@ func (p *Pool) doRefill() {
 	}
 	p.l.RUnlock()
 
-	ioc, err := p.newConn(true, trace.PoolConnectReasonRefill)
+	ioc, err := p.newConn(true, trace.PoolConnCreatedReasonRefill)
 
 	if err == nil {
 		p.put(ioc)
@@ -513,7 +519,7 @@ func (p *Pool) get() (*ioErrConn, error) {
 	// at this point everything is unlocked and the conn needs to be created.
 	// newConn will handle checking if the pool has been closed since the inner
 	// was called.
-	return p.newConn(false, trace.PoolConnectReasonBuffer)
+	return p.newConn(false, trace.PoolConnCreatedReasonPoolEmpty)
 }
 
 func (p *Pool) put(ioc *ioErrConn) {
@@ -587,7 +593,7 @@ emptyLoop:
 		select {
 		case ioc := <-p.pool:
 			ioc.Close()
-			p.traceConnClosed(trace.PoolConnClosedReasonPoolClosing)
+			p.traceConnClosed(trace.PoolConnClosedReasonPoolClosed)
 			p.totalConns--
 		default:
 			close(p.pool)
