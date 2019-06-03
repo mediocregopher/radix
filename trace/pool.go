@@ -15,7 +15,9 @@ type PoolTrace struct {
 	// ConnClosed is called before closing the connection.
 	ConnClosed func(PoolConnClosed)
 
-	// DoCompleted is called after executing command.
+	// DoCompleted is called after command execution. Must consider race condition
+	// for manipulating variables in DoCompleted callback since DoComplete
+	// function can be called in many go-routines.
 	DoCompleted func(PoolDoCompleted)
 }
 
