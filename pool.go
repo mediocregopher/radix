@@ -557,8 +557,8 @@ func (p *Pool) put(ioc *ioErrConn) {
 // Due to a limitation in the implementation, custom CmdAction implementations
 // are currently not automatically pipelined.
 func (p *Pool) Do(a Action) error {
+	startTime := time.Now()
 	if p.pipeliner != nil && p.pipeliner.CanDo(a) {
-		startTime := time.Now()
 		err := p.pipeliner.Do(a)
 		p.traceDoCompleted(time.Since(startTime), err)
 
@@ -569,10 +569,9 @@ func (p *Pool) Do(a Action) error {
 	if err != nil {
 		return err
 	}
-	defer p.put(c)
 
-	startTime := time.Now()
 	err = c.Do(a)
+	p.put(c)
 	p.traceDoCompleted(time.Since(startTime), err)
 
 	return err
