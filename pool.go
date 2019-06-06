@@ -557,17 +557,34 @@ func (p *Pool) put(ioc *ioErrConn) {
 // Due to a limitation in the implementation, custom CmdAction implementations
 // are currently not automatically pipelined.
 func (p *Pool) Do(a Action) error {
+	startTime := time.Now()
 	if p.pipeliner != nil && p.pipeliner.CanDo(a) {
-		return p.pipeliner.Do(a)
+		err := p.pipeliner.Do(a)
+		p.traceDoCompleted(time.Since(startTime), err)
+
+		return err
 	}
 
 	c, err := p.get()
 	if err != nil {
 		return err
 	}
-	defer p.put(c)
 
-	return c.Do(a)
+	err = c.Do(a)
+	p.put(c)
+	p.traceDoCompleted(time.Since(startTime), err)
+
+	return err
+}
+
+func (p *Pool) traceDoCompleted(elapsedTime time.Duration, err error) {
+	if p.opts.pt.DoCompleted != nil {
+		p.opts.pt.DoCompleted(trace.PoolDoCompleted{
+			PoolCommon:  p.traceCommon(),
+			ElapsedTime: elapsedTime,
+			Err:         err,
+		})
+	}
 }
 
 // NumAvailConns returns the number of connections currently available in the

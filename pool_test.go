@@ -3,6 +3,7 @@ package radix
 import (
 	"io"
 	"sync"
+	"sync/atomic"
 	. "testing"
 	"time"
 
@@ -59,6 +60,7 @@ func TestPool(t *T) {
 	t.Run("withTrace", func(t *T) {
 		var connCreatedCount int
 		var connClosedCount int
+		var doCompletedCount uint32
 		pt := trace.PoolTrace{
 			ConnCreated: func(done trace.PoolConnCreated) {
 				connCreatedCount++
@@ -66,9 +68,15 @@ func TestPool(t *T) {
 			ConnClosed: func(closed trace.PoolConnClosed) {
 				connClosedCount++
 			},
+			DoCompleted: func(completed trace.PoolDoCompleted) {
+				atomic.AddUint32(&doCompletedCount, 1)
+			},
 		}
 		do(PoolWithTrace(pt))
 		if connCreatedCount != connClosedCount {
+			t.Fail()
+		}
+		if doCompletedCount == 0 {
 			t.Fail()
 		}
 	})
