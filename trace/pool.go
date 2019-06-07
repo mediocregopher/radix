@@ -19,6 +19,9 @@ type PoolTrace struct {
 	// for manipulating variables in DoCompleted callback since DoComplete
 	// function can be called in many go-routines.
 	DoCompleted func(PoolDoCompleted)
+
+	// InitCompleted is called after pool fills its connections
+	InitCompleted func(PoolInitCompleted)
 }
 
 // PoolCommon contains information which is passed into all Pool-related
@@ -31,10 +34,6 @@ type PoolCommon struct {
 	// PoolSize and BufferSize indicate the Pool size and buffer size that the
 	// Pool was initialized with.
 	PoolSize, BufferSize int
-
-	// AvailCount indicates the total number of connections the Pool is holding
-	// on to which are available for usage at the moment the trace occurs.
-	AvailCount int
 }
 
 // PoolConnCreatedReason enumerates all the different reasons a connection might
@@ -96,16 +95,39 @@ const (
 type PoolConnClosed struct {
 	PoolCommon
 
+	// AvailCount indicates the total number of connections the Pool is holding
+	// on to which are available for usage at the moment the trace occurs.
+	AvailCount int
+
 	// The reason the connection was closed.
 	Reason PoolConnClosedReason
 }
 
+// PoolDoCompleted is passed into the PoolTrace.DoCompleted callback whenever Pool finished to run
+// Do function.
 type PoolDoCompleted struct {
 	PoolCommon
+
+	// AvailCount indicates the total number of connections the Pool is holding
+	// on to which are available for usage at the moment the trace occurs.
+	AvailCount int
 
 	// How long it took to send command.
 	ElapsedTime time.Duration
 
 	// This is the error returned from redis.
 	Err error
+}
+
+// PoolInitCompleted is passed into the PoolTrace.InitCompleted callback whenever Pool initialized.
+// This must be called once.
+type PoolInitCompleted struct {
+	PoolCommon
+
+	// AvailCount indicates the total number of connections the Pool is holding
+	// on to which are available for usage at the moment the trace occurs.
+	AvailCount int
+
+	// How long it took to fill all connections.
+	ElapsedTime time.Duration
 }
