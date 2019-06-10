@@ -295,6 +295,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 
 	p.wg.Add(1)
 	go func() {
+		startTime := time.Now()
 		defer p.wg.Done()
 		for i := 0; i < size-1; i++ {
 			ioc, err := p.newConn(true, trace.PoolConnCreatedReasonInitialization)
@@ -309,6 +310,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 			}
 		}
 		close(p.initDone)
+		p.traceInitCompleted(time.Since(startTime))
 	}()
 
 	// needs to be created before starting any background goroutines to avoid
@@ -337,6 +339,16 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	return p, nil
 }
 
+func (p *Pool) traceInitCompleted(elapsedTime time.Duration) {
+	if p.opts.pt.InitCompleted != nil {
+		p.opts.pt.InitCompleted(trace.PoolInitCompleted{
+			PoolCommon:  p.traceCommon(),
+			AvailCount:  len(p.pool),
+			ElapsedTime: elapsedTime,
+		})
+	}
+}
+
 func (p *Pool) err(err error) {
 	select {
 	case p.ErrCh <- err:
@@ -348,7 +360,6 @@ func (p *Pool) traceCommon() trace.PoolCommon {
 	return trace.PoolCommon{
 		Network: p.network, Addr: p.addr,
 		PoolSize: p.size, BufferSize: p.opts.overflowSize,
-		AvailCount: len(p.pool),
 	}
 }
 
@@ -367,6 +378,7 @@ func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
 	if p.opts.pt.ConnClosed != nil {
 		p.opts.pt.ConnClosed(trace.PoolConnClosed{
 			PoolCommon: p.traceCommon(),
+			AvailCount: len(p.pool),
 			Reason:     reason,
 		})
 	}
@@ -581,6 +593,7 @@ func (p *Pool) traceDoCompleted(elapsedTime time.Duration, err error) {
 	if p.opts.pt.DoCompleted != nil {
 		p.opts.pt.DoCompleted(trace.PoolDoCompleted{
 			PoolCommon:  p.traceCommon(),
+			AvailCount:  len(p.pool),
 			ElapsedTime: elapsedTime,
 			Err:         err,
 		})
