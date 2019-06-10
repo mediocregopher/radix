@@ -8,6 +8,8 @@ import (
 	. "testing"
 	"time"
 
+	errors "golang.org/x/xerrors"
+
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +29,7 @@ func testStub() Conn {
 		case "ECHO":
 			return args[1]
 		default:
-			return fmt.Errorf("testStub doesn't support command %q", args[0])
+			return errors.Errorf("testStub doesn't support command %q", args[0])
 		}
 	})
 }
@@ -113,7 +115,7 @@ func ExampleStub() {
 			m[args[1]] = args[2]
 			return nil
 		default:
-			return fmt.Errorf("this stub doesn't support command %q", args[0])
+			return errors.Errorf("this stub doesn't support command %q", args[0])
 		}
 	})
 

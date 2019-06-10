@@ -7,6 +7,8 @@ import (
 	"sync"
 	. "testing"
 
+	errors "golang.org/x/xerrors"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -68,7 +70,7 @@ func (s *sentinelStub) newConn(network, addr string) (Conn, error) {
 		}
 	}
 	if !found {
-		return nil, fmt.Errorf("%q not in sentinel cluster", addr)
+		return nil, errors.Errorf("%q not in sentinel cluster", addr)
 	}
 
 	conn, stubCh := PubSubStub(network, addr, func(args []string) interface{} {
@@ -76,7 +78,7 @@ func (s *sentinelStub) newConn(network, addr string) (Conn, error) {
 		defer s.Unlock()
 
 		if args[0] != "SENTINEL" {
-			return fmt.Errorf("command %q not supported by stub", args[0])
+			return errors.Errorf("command %q not supported by stub", args[0])
 		}
 
 		switch args[1] {
@@ -100,7 +102,7 @@ func (s *sentinelStub) newConn(network, addr string) (Conn, error) {
 			}
 			return ret
 		default:
-			return fmt.Errorf("subcommand %q not supported by stub", args[1])
+			return errors.Errorf("subcommand %q not supported by stub", args[1])
 		}
 	})
 	s.stubChs[stubCh] = true

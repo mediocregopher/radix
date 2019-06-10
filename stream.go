@@ -3,12 +3,13 @@ package radix
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"math"
 	"strconv"
 	"time"
+
+	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"github.com/mediocregopher/radix/v3/resp"

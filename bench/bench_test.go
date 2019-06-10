@@ -2,11 +2,12 @@ package bench
 
 import (
 	"context"
-	"errors"
 	"runtime"
 	"strings"
 	. "testing"
 	"time"
+
+	errors "golang.org/x/xerrors"
 
 	redigo "github.com/gomodule/redigo/redis"
 	redispipe "github.com/joomcode/redispipe/redis"

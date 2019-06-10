@@ -133,12 +133,13 @@ package radix
 import (
 	"bufio"
 	"crypto/tls"
-	"errors"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 )
