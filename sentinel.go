@@ -205,6 +205,20 @@ func (sc *Sentinel) Addrs() (string, []string) {
 	return sc.primAddr, secAddrs
 }
 
+// SentinelAddrs returns the currently known network address of sentinels
+func (sc *Sentinel) SentinelAddrs() []string {
+	sc.l.RLock()
+	defer sc.l.RUnlock()
+
+	sentAddrs := make([]string)
+	for addr, v := range sc.sentinelAddrs {
+		if v {
+			sentAddrs = append(sentAddrs, addr)
+		}
+	}
+	return sentAddrs
+}
+
 // Client returns a Client for the given address, which could be either the
 // primary or one of the secondaries (see Addrs method for retrieving known
 // addresses).
@@ -378,7 +392,8 @@ func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 
 	addrs := map[string]bool{conn.NetConn().RemoteAddr().String(): true}
 	for _, m := range mm {
-		addrs[net.JoinHostPort(m["ip"], m["port"])] = true
+		_, ok := m["s-down-time"]
+		addrs[net.JoinHostPort(m["ip"], m["port"])] = ok
 	}
 
 	sc.l.Lock()
