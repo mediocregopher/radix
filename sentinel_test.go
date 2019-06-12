@@ -154,6 +154,12 @@ func TestSentinel(t *T) {
 			assert.Contains(t, gotSecAddrs, secAddrs[i])
 		}
 
+		gotSentAddrs := scc.SentinelAddrs()
+		assert.Len(t, gotSentAddrs, len(sentAddrs))
+		for i := range sentAddrs {
+			assert.Contains(t, gotSentAddrs, sentAddrs[i])
+		}
+
 		scc.l.RLock()
 		assert.Len(t, scc.sentinelAddrs, len(sentAddrs))
 		for i := range sentAddrs {
