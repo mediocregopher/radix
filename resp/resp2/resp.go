@@ -24,6 +24,10 @@ import (
 
 var delim = []byte{'\r', '\n'}
 
+// prefix enumerates the possible RESP types by enumerating the different
+// prefixes a RESP message might start with.
+type prefix []byte
+
 // Enumeration of each of RESP's message types, each denoted by the prefix which
 // is prepended to messages of that type.
 //
@@ -38,6 +42,25 @@ var (
 	ArrayPrefix        = []byte{'*'}
 )
 
+// String formats a prefix into a human-readable name for the type it denotes.
+func (p prefix) String() string {
+	pStr := string(p)
+	switch pStr {
+	case string(SimpleStringPrefix):
+		return "simple-string"
+	case string(ErrorPrefix):
+		return "error"
+	case string(IntPrefix):
+		return "integer"
+	case string(BulkStringPrefix):
+		return "bulk-string"
+	case string(ArrayPrefix):
+		return "array"
+	default:
+		return pStr
+	}
+}
+
 var (
 	nilBulkString = []byte("$-1\r\n")
 	nilArray      = []byte("*-1\r\n")
@@ -49,6 +72,17 @@ var bools = [][]byte{
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+func assertBufferedPrefix(br *bufio.Reader, pref prefix) error {
+	b, err := br.Peek(len(pref))
+	if err != nil {
+		return err
+	} else if !bytes.Equal(b, []byte(pref)) {
+		return fmt.Errorf("expected prefix %q, got %q", pref.String(), prefix(b).String())
+	}
+	_, err = br.Discard(len(pref))
+	return err
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -70,7 +104,7 @@ func (ss SimpleString) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the Unmarshaler method
 func (ss *SimpleString) UnmarshalRESP(br *bufio.Reader) error {
-	if err := bytesutil.BufferedPrefix(br, SimpleStringPrefix); err != nil {
+	if err := assertBufferedPrefix(br, SimpleStringPrefix); err != nil {
 		return err
 	}
 	b, err := bytesutil.BufferedBytesDelim(br)
@@ -111,7 +145,7 @@ func (e Error) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the Unmarshaler method
 func (e *Error) UnmarshalRESP(br *bufio.Reader) error {
-	if err := bytesutil.BufferedPrefix(br, ErrorPrefix); err != nil {
+	if err := assertBufferedPrefix(br, ErrorPrefix); err != nil {
 		return err
 	}
 	b, err := bytesutil.BufferedBytesDelim(br)
@@ -139,7 +173,7 @@ func (i Int) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the Unmarshaler method
 func (i *Int) UnmarshalRESP(br *bufio.Reader) error {
-	if err := bytesutil.BufferedPrefix(br, IntPrefix); err != nil {
+	if err := assertBufferedPrefix(br, IntPrefix); err != nil {
 		return err
 	}
 	n, err := bytesutil.BufferedIntDelim(br)
@@ -179,7 +213,7 @@ func (b BulkStringBytes) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the Unmarshaler method
 func (b *BulkStringBytes) UnmarshalRESP(br *bufio.Reader) error {
-	if err := bytesutil.BufferedPrefix(br, BulkStringPrefix); err != nil {
+	if err := assertBufferedPrefix(br, BulkStringPrefix); err != nil {
 		return err
 	}
 	n, err := bytesutil.BufferedIntDelim(br)
@@ -228,7 +262,7 @@ func (b BulkString) MarshalRESP(w io.Writer) error {
 // UnmarshalRESP implements the Unmarshaler method. This treats a Nil bulk
 // string message as empty string.
 func (b *BulkString) UnmarshalRESP(br *bufio.Reader) error {
-	if err := bytesutil.BufferedPrefix(br, BulkStringPrefix); err != nil {
+	if err := assertBufferedPrefix(br, BulkStringPrefix); err != nil {
 		return err
 	}
 	n, err := bytesutil.BufferedIntDelim(br)
@@ -312,7 +346,7 @@ func (ah ArrayHeader) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the Unmarshaler method
 func (ah *ArrayHeader) UnmarshalRESP(br *bufio.Reader) error {
-	if err := bytesutil.BufferedPrefix(br, ArrayPrefix); err != nil {
+	if err := assertBufferedPrefix(br, ArrayPrefix); err != nil {
 		return err
 	}
 	n, err := bytesutil.BufferedIntDelim(br)

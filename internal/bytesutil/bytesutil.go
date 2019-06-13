@@ -4,7 +4,6 @@ package bytesutil
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -121,19 +120,6 @@ func Expand(b []byte, n int) []byte {
 		return nb
 	}
 	return b[:n]
-}
-
-// BufferedPrefix checks that the next bytes in the given *bufio.Reader are equal to prefix and discards them if
-// they are equal.
-func BufferedPrefix(br *bufio.Reader, prefix []byte) error {
-	b, err := br.Peek(len(prefix))
-	if err != nil {
-		return err
-	} else if !bytes.Equal(b, prefix) {
-		return fmt.Errorf("expected prefix %q, got %q", prefix, b)
-	}
-	_, err = br.Discard(len(prefix))
-	return err
 }
 
 // BufferedBytesDelim reads a line from br and checks that the line ends with \r\n, returning the line without \r\n.
