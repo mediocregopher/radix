@@ -245,6 +245,13 @@ var DefaultConnFunc = func(network, addr string) (Conn, error) {
 	return Dial(network, addr)
 }
 
+func wrapDefaultConnFunc(addr string) ConnFunc {
+	_, opts := parseRedisURL(addr)
+	return func(network, addr string) (Conn, error) {
+		return Dial(network, addr, opts...)
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 type dialOpts struct {
@@ -348,6 +355,38 @@ var defaultDialOpts = []DialOpt{
 	DialTimeout(10 * time.Second),
 }
 
+func parseRedisURL(urlStr string) (string, []DialOpt) {
+	// do a quick check before we bust out url.Parse, in case that is very
+	// unperformant
+	if !strings.HasPrefix(urlStr, "redis://") {
+		return urlStr, nil
+	}
+
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return urlStr, nil
+	}
+
+	var opts []DialOpt
+	q := u.Query()
+	if p, ok := u.User.Password(); ok {
+		opts = append(opts, DialAuthPass(p))
+	} else if qpw := q.Get("password"); qpw != "" {
+		opts = append(opts, DialAuthPass(qpw))
+	}
+
+	dbStr := q.Get("db")
+	if u.Path != "" && u.Path != "/" {
+		dbStr = u.Path[1:]
+	}
+
+	if dbStr, err := strconv.Atoi(dbStr); err == nil {
+		opts = append(opts, DialSelectDB(dbStr))
+	}
+
+	return u.Host, opts
+}
+
 // Dial is a ConnFunc which creates a Conn using net.Dial and NewConn. It takes
 // in a number of options which can overwrite its default behavior as well.
 //
@@ -368,31 +407,12 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 	for _, opt := range defaultDialOpts {
 		opt(&do)
 	}
-	for _, opt := range opts {
+	addr, addrOpts := parseRedisURL(addr)
+	for _, opt := range addrOpts {
 		opt(&do)
 	}
-
-	// do a quick check before we bust out url.Parse, in case that is very
-	// unperformant
-	if strings.HasPrefix(addr, "redis://") {
-		if u, err := url.Parse(addr); err == nil {
-			addr = u.Host
-			q := u.Query()
-			if do.authPass == "" {
-				if p, ok := u.User.Password(); ok {
-					do.authPass = p
-				} else if qpw := q.Get("password"); qpw != "" {
-					do.authPass = qpw
-				}
-			}
-			if do.selectDB == "" {
-				if u.Path != "" && u.Path != "/" {
-					do.selectDB = u.Path[1:]
-				} else if qdb := q.Get("db"); qdb != "" {
-					do.selectDB = qdb
-				}
-			}
-		}
+	for _, opt := range opts {
+		opt(&do)
 	}
 
 	var netConn net.Conn

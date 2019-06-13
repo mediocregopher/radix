@@ -57,12 +57,17 @@ func TestDialAuth(t *T) {
 	// isn't set in the config
 	tests := []struct{ url, dialOptPass string }{
 		{url: "redis://user:myPass@127.0.0.1:6379"},
+		{url: "redis://:myPass@127.0.0.1:6379"},
 		{url: "redis://127.0.0.1:6379?password=myPass"},
 		{url: "127.0.0.1:6379", dialOptPass: "myPass"},
 	}
 
 	for _, test := range tests {
-		_, err := Dial("tcp", test.url, DialAuthPass(test.dialOptPass))
+		var opts []DialOpt
+		if test.dialOptPass != "" {
+			opts = append(opts, DialAuthPass(test.dialOptPass))
+		}
+		_, err := Dial("tcp", test.url, opts...)
 		if err == nil || err.Error() != "ERR Client sent AUTH, but no password is set" {
 			t.Fatalf(`error "ERR Client sent AUTH..." expected, got: %v (test:%#v)`, err, test)
 		}
