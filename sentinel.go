@@ -211,10 +211,8 @@ func (sc *Sentinel) SentinelAddrs() []string {
 	defer sc.l.RUnlock()
 
 	sentAddrs := make([]string, 0, len(sc.sentinelAddrs))
-	for addr, v := range sc.sentinelAddrs {
-		if v {
-			sentAddrs = append(sentAddrs, addr)
-		}
+	for addr := range sc.sentinelAddrs {
+		sentAddrs = append(sentAddrs, addr)
 	}
 	return sentAddrs
 }
@@ -392,8 +390,7 @@ func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 
 	addrs := map[string]bool{conn.NetConn().RemoteAddr().String(): true}
 	for _, m := range mm {
-		_, ok := m["s-down-time"]
-		addrs[net.JoinHostPort(m["ip"], m["port"])] = !ok
+		addrs[net.JoinHostPort(m["ip"], m["port"])] = true
 	}
 
 	sc.l.Lock()
