@@ -214,6 +214,18 @@ func (sc *Sentinel) Addrs() (string, []string) {
 	return sc.primAddr, secAddrs
 }
 
+// SentinelAddrs returns the addresses of all known sentinels.
+func (sc *Sentinel) SentinelAddrs() []string {
+	sc.l.RLock()
+	defer sc.l.RUnlock()
+
+	sentAddrs := make([]string, 0, len(sc.sentinelAddrs))
+	for addr := range sc.sentinelAddrs {
+		sentAddrs = append(sentAddrs, addr)
+	}
+	return sentAddrs
+}
+
 // Client returns a Client for the given address, which could be either the
 // primary or one of the secondaries (see Addrs method for retrieving known
 // addresses).
