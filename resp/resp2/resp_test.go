@@ -59,7 +59,7 @@ func TestRESPTypes(t *T) {
 		buf := new(bytes.Buffer)
 		err := et.in.MarshalRESP(buf)
 		assert.Nil(t, err)
-		assert.Equal(t, et.out, string(buf.Bytes()))
+		assert.Equal(t, et.out, buf.String())
 
 		br := bufio.NewReader(buf)
 		umr := reflect.New(reflect.TypeOf(et.in).Elem())
@@ -459,7 +459,7 @@ func TestAnyUnmarshal(t *T) {
 					"$3\r\nFoO\r\n" + "$3\r\nbAr\r\n",
 				out: map[upperCaseUnmarshaler]lowerCaseUnmarshaler{
 					"HELLO": "world",
-					"FOO": "bar",
+					"FOO":   "bar",
 				},
 			},
 

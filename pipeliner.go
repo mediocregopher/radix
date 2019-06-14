@@ -110,7 +110,7 @@ func (p *pipeliner) Do(a Action) error {
 // Close closes the pipeliner and makes sure that all background goroutines
 // are stopped before returning.
 //
-// Close does *not* close the underyling Client.
+// Close does *not* close the underlying Client.
 func (p *pipeliner) Close() error {
 	p.l.Lock()
 	defer p.l.Unlock()

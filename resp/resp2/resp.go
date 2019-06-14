@@ -164,7 +164,7 @@ type Int struct {
 func (i Int) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
 	*scratch = append(*scratch, IntPrefix...)
-	*scratch = strconv.AppendInt(*scratch, int64(i.I), 10)
+	*scratch = strconv.AppendInt(*scratch, i.I, 10)
 	*scratch = append(*scratch, delim...)
 	_, err := w.Write(*scratch)
 	bytesutil.PutBytes(scratch)
@@ -824,7 +824,7 @@ func (a Any) unmarshalSingle(body io.Reader, n int) error {
 		*ai = int32(i)
 	case *int64:
 		i, err = bytesutil.ReadInt(body, n)
-		*ai = int64(i)
+		*ai = i
 	case *uint:
 		ui, err = bytesutil.ReadUint(body, n)
 		*ai = uint(ui)
@@ -839,7 +839,7 @@ func (a Any) unmarshalSingle(body io.Reader, n int) error {
 		*ai = uint32(ui)
 	case *uint64:
 		ui, err = bytesutil.ReadUint(body, n)
-		*ai = uint64(ui)
+		*ai = ui
 	case *float32:
 		var f float64
 		f, err = bytesutil.ReadFloat(body, 32, n)
