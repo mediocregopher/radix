@@ -316,7 +316,7 @@ func BenchmarkPubSub(b *B) {
 	defer c.Close()
 	defer pubC.Close()
 
-	msg := string(randStr())
+	msg := randStr()
 	msgCh := make(chan PubSubMessage, 1)
 	require.Nil(b, c.Subscribe(msgCh, "benchmark"))
 
