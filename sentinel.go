@@ -205,7 +205,7 @@ func (sc *Sentinel) Addrs() (string, []string) {
 	return sc.primAddr, secAddrs
 }
 
-// SentinelAddrs returns the currently known network address of sentinels
+// SentinelAddrs returns the addresses of all known sentinels.
 func (sc *Sentinel) SentinelAddrs() []string {
 	sc.l.RLock()
 	defer sc.l.RUnlock()
