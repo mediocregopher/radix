@@ -1,11 +1,19 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
-# Untagged
+# v3.3.0
+
+**New**
 
 * Add `trace` package with tracing callbacks for `Pool` and `Cluster`.
-  (`Sentinel` coming soon!) (PR #100)
+  (`Sentinel` coming soon!) (PR #100, PR #108, PR #111)
+
+* Add `SentinelAddrs` method to `Sentinel` (PR #118)
 
 * Add `DialUseTLS` option. (PR #104)
+
+**Fixes and Improvements**
+
+* Fix `NewSentinel` not handling URL AUTH parameters correctly (PR #120)
 
 * Change `DefaultClientFunc`'s pool size from 20 to 4, on account of pipelining
   being enabled by default. (Issue #107)
