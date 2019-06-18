@@ -45,6 +45,8 @@ func (ioc *ioErrConn) Decode(m resp.Unmarshaler) error {
 	err := ioc.Conn.Decode(m)
 	if nerr, _ := err.(net.Error); nerr != nil {
 		ioc.lastIOErr = err
+	} else if !errors.As(err, new(resp.ErrDiscarded)) {
+		ioc.lastIOErr = err
 	}
 	return err
 }
