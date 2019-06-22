@@ -2,9 +2,10 @@ package radix
 
 import (
 	"bufio"
-	"errors"
 	"strconv"
 	"strings"
+
+	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 )

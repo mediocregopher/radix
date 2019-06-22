@@ -1,13 +1,14 @@
 package radix
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	. "testing"
+
+	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
@@ -65,13 +66,13 @@ func (s *clusterNodeStub) withKey(key string, asking bool, fn func(clusterSlotSt
 	slot, ok := s.clusterDatasetStub.slots[slotI]
 	if !ok {
 		movedStub := s.clusterStub.stubForSlot(slotI)
-		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, movedStub.addr)}
+		return resp2.Error{E: errors.Errorf("MOVED %d %s", slotI, movedStub.addr)}
 
 	} else if _, ok := slot.kv[key]; !ok && slot.migrating != "" {
-		return resp2.Error{E: fmt.Errorf("ASK %d %s", slotI, slot.migrating)}
+		return resp2.Error{E: errors.Errorf("ASK %d %s", slotI, slot.migrating)}
 
 	} else if slot.importing != "" && !asking {
-		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, slot.importing)}
+		return resp2.Error{E: errors.Errorf("MOVED %d %s", slotI, slot.importing)}
 	}
 
 	return fn(slot)
@@ -149,7 +150,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			return []interface{}{"0", []string{}}
 		}
 
-		return resp2.Error{E: fmt.Errorf("unknown command %#v", args)}
+		return resp2.Error{E: errors.Errorf("unknown command %#v", args)}
 	})
 }
 
@@ -236,7 +237,7 @@ func (scl *clusterStub) clientFunc() ClientFunc {
 				return s.newConn(), nil
 			}
 		}
-		return nil, fmt.Errorf("unknown addr: %q", addr)
+		return nil, errors.Errorf("unknown addr: %q", addr)
 	}
 }
 

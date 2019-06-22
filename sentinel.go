@@ -1,10 +1,11 @@
 package radix
 
 import (
-	"fmt"
 	"net"
 	"sync"
 	"time"
+
+	errors "golang.org/x/xerrors"
 )
 
 type sentinelOpts struct {
@@ -292,7 +293,7 @@ func (sc *Sentinel) Close() error {
 // cmd should be the command called which generated m
 func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
 	if m["ip"] == "" || m["port"] == "" {
-		return "", fmt.Errorf("malformed %s response", cmd)
+		return "", errors.Errorf("malformed %q response: %#v", cmd, m)
 	}
 	return net.JoinHostPort(m["ip"], m["port"]), nil
 }

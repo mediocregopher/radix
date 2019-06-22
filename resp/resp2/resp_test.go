@@ -3,10 +3,11 @@ package resp2
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"reflect"
 	"strings"
 	. "testing"
+
+	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/stretchr/testify/assert"
@@ -22,14 +23,16 @@ func TestRESPTypes(t *T) {
 	type encodeTest struct {
 		in  resp.Marshaler
 		out string
+
+		errStr bool
 	}
 
 	encodeTests := func() []encodeTest {
 		return []encodeTest{
 			{in: &SimpleString{S: ""}, out: "+\r\n"},
 			{in: &SimpleString{S: "foo"}, out: "+foo\r\n"},
-			{in: &Error{E: errors.New("")}, out: "-\r\n"},
-			{in: &Error{E: errors.New("foo")}, out: "-foo\r\n"},
+			{in: &Error{E: errors.New("")}, out: "-\r\n", errStr: true},
+			{in: &Error{E: errors.New("foo")}, out: "-foo\r\n", errStr: true},
 			{in: &Int{I: 5}, out: ":5\r\n"},
 			{in: &Int{I: 0}, out: ":0\r\n"},
 			{in: &Int{I: -5}, out: ":-5\r\n"},
@@ -71,7 +74,14 @@ func TestRESPTypes(t *T) {
 
 		err = um.UnmarshalRESP(br)
 		assert.Nil(t, err)
-		assert.Equal(t, et.in, umr.Interface())
+
+		var exp interface{} = et.in
+		var got interface{} = umr.Interface()
+		if et.errStr {
+			exp = exp.(error).Error()
+			got = got.(error).Error()
+		}
+		assert.Equal(t, exp, got, "exp:%#v got:%#v", exp, got)
 	}
 
 	// Same test, but do all the marshals first, then do all the unmarshals
@@ -92,7 +102,14 @@ func TestRESPTypes(t *T) {
 
 			err := um.UnmarshalRESP(br)
 			assert.Nil(t, err)
-			assert.Equal(t, et.in, umr.Interface())
+
+			var exp interface{} = et.in
+			var got interface{} = umr.Interface()
+			if et.errStr {
+				exp = exp.(error).Error()
+				got = got.(error).Error()
+			}
+			assert.Equal(t, exp, got, "exp:%#v got:%#v", exp, got)
 		}
 	}
 }

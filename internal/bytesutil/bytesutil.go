@@ -4,11 +4,12 @@ package bytesutil
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"sync"
+
+	errors "golang.org/x/xerrors"
 )
 
 // AnyIntToInt64 converts a value of any of Go's integer types (signed and unsigned) into a signed int64.
@@ -100,7 +101,7 @@ func ParseUint(b []byte) (uint64, error) {
 
 	for i, c := range b {
 		if c < '0' || c > '9' {
-			return 0, fmt.Errorf("invalid character %c at position %d in parseUint", c, i)
+			return 0, errors.Errorf("invalid character %c at position %d in parseUint", c, i)
 		}
 
 		n *= 10
@@ -128,7 +129,7 @@ func BufferedBytesDelim(br *bufio.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	} else if len(b) < 2 || b[len(b)-2] != '\r' {
-		return nil, fmt.Errorf("malformed resp %q", b)
+		return nil, errors.Errorf("malformed resp %q", b)
 	}
 	return b[:len(b)-2], err
 }
