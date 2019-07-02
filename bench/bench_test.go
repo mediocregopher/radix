@@ -9,11 +9,13 @@ import (
 
 	"errors"
 
+	goredis "github.com/go-redis/redis"
 	redigo "github.com/gomodule/redigo/redis"
 	redispipe "github.com/joomcode/redispipe/redis"
 	redispipeconn "github.com/joomcode/redispipe/redisconn"
 	radixv3 "github.com/mediocregopher/radix/v3"
 	"github.com/mediocregopher/radix/v4"
+	"github.com/mediocregopher/radix/v4/trace"
 )
 
 func newRedigo() redigo.Conn {
@@ -33,6 +35,24 @@ func newRedisPipe(writePause time.Duration) redispipe.Sync {
 		panic(err)
 	}
 	return redispipe.Sync{S: pipe}
+}
+
+func newGoredis(poolSize int) *goredis.Client {
+	c := goredis.NewClient(&goredis.Options{
+		Addr:         "127.0.0.1:6379",
+		PoolSize:     poolSize,
+		MinIdleConns: poolSize,
+	})
+
+	if poolSize > 1 {
+		for {
+			time.Sleep(50 * time.Millisecond)
+			if c.PoolStats().IdleConns >= (uint32)(poolSize) {
+				break
+			}
+		}
+	}
+	return c
 }
 
 func radixV3GetSet(client radixv3.Client, key, val string) error {
@@ -136,6 +156,20 @@ func BenchmarkSerialGetSet(b *B) {
 			}
 		}
 	})
+
+	b.Run("go-redis", func(b *B) {
+		c := newGoredis(1)
+		defer c.Close()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := c.Set("foo", "bar", 0).Err(); err != nil {
+				b.Fatal(err)
+			}
+			if err := c.Get("foo").Err(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func BenchmarkSerialGetSetLargeArgs(b *B) {
@@ -215,6 +249,20 @@ func BenchmarkSerialGetSetLargeArgs(b *B) {
 			}
 		}
 	})
+
+	b.Run("go-redis", func(b *B) {
+		c := newGoredis(1)
+		defer c.Close()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := c.Set(key, val, 0).Err(); err != nil {
+				b.Fatal(err)
+			}
+			if err := c.Get(key).Err(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func BenchmarkParallelGetSet(b *B) {
@@ -243,19 +291,20 @@ func BenchmarkParallelGetSet(b *B) {
 
 	b.Run("radixv4", func(b *B) {
 		ctx := context.Background()
-		pool, err := radix.NewPool(ctx, "tcp", "127.0.0.1:6379", poolSize)
+		initDoneCh := make(chan struct{})
+		pool, err := radix.PoolConfig{
+			Size: poolSize,
+			Trace: trace.PoolTrace{
+				InitCompleted: func(trace.PoolInitCompleted) { close(initDoneCh) },
+			},
+		}.New(ctx, "tcp", "127.0.0.1:6379")
 		if err != nil {
 			b.Fatal(err)
 		}
 		defer pool.Close()
 
 		// wait for the pool to fill up
-		for {
-			time.Sleep(50 * time.Millisecond)
-			if pool.NumAvailConns() >= poolSize {
-				break
-			}
-		}
+		<-initDoneCh
 
 		// avoid overhead of boxing the pool on each loop iteration
 		client := radix.Client(pool)
@@ -337,6 +386,19 @@ func BenchmarkParallelGetSet(b *B) {
 				return redispipe.AsError(res)
 			} else if res := sync.Do("GET", "foo"); redispipe.AsError(res) != nil {
 				return redispipe.AsError(res)
+			}
+			return nil
+		})
+	})
+
+	b.Run("go-redis", func(b *B) {
+		c := newGoredis(poolSize)
+		defer c.Close()
+		do(b, func() error {
+			if err := c.Set("foo", "bar", 0).Err(); err != nil {
+				return err
+			} else if err := c.Get("foo").Err(); err != nil {
+				return err
 			}
 			return nil
 		})
