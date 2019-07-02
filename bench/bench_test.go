@@ -9,6 +9,7 @@ import (
 
 	errors "golang.org/x/xerrors"
 
+	goredis "github.com/go-redis/redis"
 	redigo "github.com/gomodule/redigo/redis"
 	redispipe "github.com/joomcode/redispipe/redis"
 	redispipeconn "github.com/joomcode/redispipe/redisconn"
@@ -32,6 +33,24 @@ func newRedisPipe(writePause time.Duration) redispipe.Sync {
 		panic(err)
 	}
 	return redispipe.Sync{S: pipe}
+}
+
+func newGoredis(poolSize int) *goredis.Client {
+	c := goredis.NewClient(&goredis.Options{
+		Addr:         "127.0.0.1:6379",
+		PoolSize:     poolSize,
+		MinIdleConns: poolSize,
+	})
+
+	if poolSize > 1 {
+		for {
+			time.Sleep(50 * time.Millisecond)
+			if c.PoolStats().IdleConns >= (uint32)(poolSize) {
+				break
+			}
+		}
+	}
+	return c
 }
 
 func radixGetSet(client radix.Client, key, val string) error {
@@ -103,6 +122,20 @@ func BenchmarkSerialGetSet(b *B) {
 			}
 		}
 	})
+
+	b.Run("go-redis", func(b *B) {
+		c := newGoredis(1)
+		defer c.Close()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := c.Set("foo", "bar", 0).Err(); err != nil {
+				b.Fatal(err)
+			}
+			if err := c.Get("foo").Err(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func BenchmarkSerialGetSetLargeArgs(b *B) {
@@ -162,6 +195,20 @@ func BenchmarkSerialGetSetLargeArgs(b *B) {
 			}
 			if res := sync.Do("GET", key); redispipe.AsError(res) != nil {
 				b.Fatal(res)
+			}
+		}
+	})
+
+	b.Run("go-redis", func(b *B) {
+		c := newGoredis(1)
+		defer c.Close()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := c.Set(key, val, 0).Err(); err != nil {
+				b.Fatal(err)
+			}
+			if err := c.Get(key).Err(); err != nil {
+				b.Fatal(err)
 			}
 		}
 	})
@@ -263,6 +310,19 @@ func BenchmarkParallelGetSet(b *B) {
 				return redispipe.AsError(res)
 			} else if res := sync.Do("GET", "foo"); redispipe.AsError(res) != nil {
 				return redispipe.AsError(res)
+			}
+			return nil
+		})
+	})
+
+	b.Run("go-redis", func(b *B) {
+		c := newGoredis(poolSize)
+		defer c.Close()
+		do(b, func() error {
+			if err := c.Set("foo", "bar", 0).Err(); err != nil {
+				return err
+			} else if err := c.Get("foo").Err(); err != nil {
+				return err
 			}
 			return nil
 		})
