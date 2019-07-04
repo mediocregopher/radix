@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/mediocregopher/radix/v3/resp"
 	errors "golang.org/x/xerrors"
 )
 
@@ -154,7 +155,7 @@ func ReadNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
 	return b, err
 }
 
-// ReadNDicard discards exactly n bytes from r.
+// ReadNDiscard discards exactly n bytes from r.
 func ReadNDiscard(r io.Reader, n int) error {
 	type discarder interface {
 		Discard(int) (int, error)
@@ -202,7 +203,11 @@ func ReadInt(r io.Reader, n int) (int64, error) {
 	if *scratch, err = ReadNAppend(r, *scratch, n); err != nil {
 		return 0, err
 	}
-	return ParseInt(*scratch)
+	i, err := ParseInt(*scratch)
+	if err != nil {
+		return 0, resp.ErrDiscarded{Err: err}
+	}
+	return i, nil
 }
 
 // ReadUint reads the next n bytes from r as an unsigned 64 bit integer.
@@ -214,7 +219,11 @@ func ReadUint(r io.Reader, n int) (uint64, error) {
 	if *scratch, err = ReadNAppend(r, *scratch, n); err != nil {
 		return 0, err
 	}
-	return ParseUint(*scratch)
+	ui, err := ParseUint(*scratch)
+	if err != nil {
+		return 0, resp.ErrDiscarded{Err: err}
+	}
+	return ui, nil
 }
 
 // ReadFloat reads the next n bytes from r as a 64 bit floating point number with the given precision.
@@ -226,5 +235,9 @@ func ReadFloat(r io.Reader, precision, n int) (float64, error) {
 	if *scratch, err = ReadNAppend(r, *scratch, n); err != nil {
 		return 0, err
 	}
-	return strconv.ParseFloat(string(*scratch), precision)
+	f, err := strconv.ParseFloat(string(*scratch), precision)
+	if err != nil {
+		return 0, resp.ErrDiscarded{Err: err}
+	}
+	return f, nil
 }

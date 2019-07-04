@@ -14,6 +14,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPeekAndAssertPrefix(t *T) {
+	type test struct {
+		in, prefix []byte
+		exp        error
+	}
+
+	tests := []test{
+		{[]byte(":5\r\n"), IntPrefix, nil},
+		{[]byte(":5\r\n"), SimpleStringPrefix, resp.ErrDiscarded{
+			Err: errUnexpectedPrefix{
+				Prefix: IntPrefix, ExpectedPrefix: SimpleStringPrefix,
+			},
+		}},
+		{[]byte("-foo\r\n"), ErrorPrefix, nil},
+		{[]byte("-foo\r\n"), IntPrefix, resp.ErrDiscarded{Err: Error{
+			E: errors.New("foo"),
+		}}},
+	}
+
+	for i, test := range tests {
+		br := bufio.NewReader(bytes.NewReader(test.in))
+		err := peekAndAssertPrefix(br, test.prefix)
+
+		debugArgs := []interface{}{"%d) %q (got err:%s)", i, test.in, err}
+		assert.IsType(t, test.exp, err, debugArgs...)
+		if expDiscarded, ok := test.exp.(resp.ErrDiscarded); ok {
+			discarded, _ := err.(resp.ErrDiscarded)
+			assert.IsType(t, expDiscarded.Err, discarded.Err, debugArgs...)
+		}
+		if test.exp != nil {
+			assert.Equal(t, test.exp.Error(), err.Error(), debugArgs...)
+		}
+	}
+}
+
 func TestRESPTypes(t *T) {
 	newLR := func(s string) resp.LenReader {
 		buf := bytes.NewBufferString(s)
@@ -620,5 +655,53 @@ func TestRawMessage(t *T) {
 			require.Nil(t, rm.UnmarshalRESP(br))
 			assert.Equal(t, rmt.b, string(rm))
 		}
+	}
+}
+
+func TestAnyConsumedOnErr(t *T) {
+	type foo struct {
+		Foo int
+		Bar int
+	}
+
+	type test struct {
+		in   resp.Marshaler
+		into interface{}
+	}
+
+	type unknownType string
+
+	tests := []test{
+		{Any{I: errors.New("foo")}, new(unknownType)},
+		{BulkString{S: "bulkStr"}, new(unknownType)},
+		{SimpleString{S: "bulkStr"}, new(unknownType)},
+		{Int{I: 1}, new(unknownType)},
+		{Any{I: []string{"one", "2", "three"}}, new([]int)},
+		{Any{I: []string{"1", "2", "three", "four"}}, new([]int)},
+		{Any{I: []string{"1", "2", "3", "four"}}, new([]int)},
+		{Any{I: []string{"1", "2", "three", "four", "five"}}, new(map[int]int)},
+		{Any{I: []string{"1", "2", "three", "four", "five", "six"}}, new(map[int]int)},
+		{Any{I: []string{"1", "2", "3", "four", "five", "six"}}, new(map[int]int)},
+		{Any{I: []interface{}{1, 2, "Bar", "two"}}, new(foo)},
+		{Any{I: []string{"Foo", "1", "Bar", "two"}}, new(foo)},
+		{Any{I: [][]string{{"one", "two"}, {"three", "four"}}}, new([][]int)},
+		{Any{I: [][]string{{"1", "two"}, {"three", "four"}}}, new([][]int)},
+		{Any{I: [][]string{{"1", "2"}, {"three", "four"}}}, new([][]int)},
+		{Any{I: [][]string{{"1", "2"}, {"3", "four"}}}, new([][]int)},
+	}
+
+	for i, test := range tests {
+		buf := new(bytes.Buffer)
+		require.Nil(t, test.in.MarshalRESP(buf))
+		require.Nil(t, SimpleString{S: "DISCARDED"}.MarshalRESP(buf))
+		br := bufio.NewReader(buf)
+
+		err := Any{I: test.into}.UnmarshalRESP(br)
+		debugArgs := []interface{}{"%d) %#v err:%#v (%s)", i, test, err, err}
+		assert.Error(t, err, debugArgs...)
+
+		var ss SimpleString
+		assert.NoError(t, ss.UnmarshalRESP(br), debugArgs...)
+		assert.Equal(t, "DISCARDED", ss.S, debugArgs...)
 	}
 }

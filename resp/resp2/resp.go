@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding"
+	"fmt"
 	"io"
 	"reflect"
 	"strconv"
@@ -72,14 +73,55 @@ var bools = [][]byte{
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func assertBufferedPrefix(br *bufio.Reader, pref prefix) error {
-	b, err := br.Peek(len(pref))
+type errUnexpectedPrefix struct {
+	Prefix         []byte
+	ExpectedPrefix []byte
+}
+
+func (e errUnexpectedPrefix) Error() string {
+	return fmt.Sprintf(
+		"expected prefix %q, got %q",
+		prefix(e.ExpectedPrefix).String(),
+		prefix(e.Prefix).String(),
+	)
+}
+
+// peekAndAssertPrefix will peek at the next incoming redis message and assert
+// that it is of the type identified by the given RESP prefix (see the resp2
+// package for possible prefices).
+//
+// If the message is a RESP error (and that wasn't the intended prefix) then it
+// will be unmarshaled into a resp2.Error and returned. If the message is of any
+// other type (that isn't the intended prefix) it will be discarded and
+// errUnexpectedPrefix will be returned.
+func peekAndAssertPrefix(br *bufio.Reader, expectedPrefix []byte) error {
+	b, err := br.Peek(len(expectedPrefix))
 	if err != nil {
 		return err
-	} else if !bytes.Equal(b, []byte(pref)) {
-		return errors.Errorf("expected prefix %q, got %q", pref.String(), prefix(b).String())
+	} else if bytes.Equal(b, expectedPrefix) {
+		return nil
+	} else if bytes.Equal(b, ErrorPrefix) {
+		var respErr Error
+		if err := respErr.UnmarshalRESP(br); err != nil {
+			return err
+		}
+		return resp.ErrDiscarded{Err: respErr}
+	} else if err := (Any{}).UnmarshalRESP(br); err != nil {
+		return err
 	}
-	_, err = br.Discard(len(pref))
+	return resp.ErrDiscarded{Err: errUnexpectedPrefix{
+		Prefix:         b,
+		ExpectedPrefix: expectedPrefix,
+	}}
+}
+
+// like peekAndAssertPrefix, but will consume the prefix if it is the correct
+// one as well.
+func assertBufferedPrefix(br *bufio.Reader, pref []byte) error {
+	if err := peekAndAssertPrefix(br, pref); err != nil {
+		return err
+	}
+	_, err := br.Discard(len(pref))
 	return err
 }
 
@@ -377,6 +419,31 @@ func (a Array) MarshalRESP(w io.Writer) error {
 		}
 	}
 	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func discardArray(br *bufio.Reader, l int) error {
+	for i := 0; i < l; i++ {
+		if err := (Any{}).UnmarshalRESP(br); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func discardArrayAfterErr(br *bufio.Reader, left int, err error) error {
+	// if the last error which occurred didn't discard the message it was on, we
+	// can't do anything
+	if !errors.As(err, new(resp.ErrDiscarded)) {
+		return err
+	} else if err := discardArray(br, left); err != nil {
+		return err
+	}
+
+	// The original error was already wrapped in an ErrDiscarded, so just return
+	// it as it was given
+	return err
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -772,10 +839,20 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		} else if l == -1 {
 			return a.unmarshalNil()
 		}
-		if err := a.unmarshalSingle(br, int(l)); err != nil {
-			return err
+
+		// This is a bit of a clusterfuck. Basically:
+		// - If unmarshal returns a non-Discarded error, return that asap.
+		// - If discarding the last 2 bytes (in order to discard the full
+		//   message) fails, return that asap
+		// - Otherwise return the original error, if there was any
+		if err = a.unmarshalSingle(br, int(l)); err != nil {
+			if !errors.As(err, new(resp.ErrDiscarded)) {
+				return err
+			}
 		}
-		_, err = br.Discard(2)
+		if _, discardErr := br.Discard(2); discardErr != nil {
+			return discardErr
+		}
 		return err
 	case SimpleStringPrefix[0], IntPrefix[0]:
 		reader := byteReaderPool.Get().(*bytes.Reader)
@@ -862,7 +939,9 @@ func (a Any) unmarshalSingle(body io.Reader, n int) error {
 		err = ai.UnmarshalBinary(*scratch)
 		bytesutil.PutBytes(scratch)
 	default:
-		return errors.Errorf("can't unmarshal into %T", a.I)
+		if err = bytesutil.ReadNDiscard(body, n); err == nil {
+			err = resp.ErrDiscarded{Err: errors.Errorf("can't unmarshal into %T", a.I)}
+		}
 	}
 
 	return err
@@ -883,13 +962,14 @@ func (a Any) unmarshalNil() error {
 
 func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 	if a.I == nil {
-		return a.discardArray(br, l)
+		return discardArray(br, int(l))
 	}
 
 	size := int(l)
 	v := reflect.ValueOf(a.I)
 	if v.Kind() != reflect.Ptr {
-		return errors.Errorf("can't unmarshal into %T", a.I)
+		err := resp.ErrDiscarded{Err: errors.Errorf("can't unmarshal into %T", a.I)}
+		return discardArrayAfterErr(br, int(l), err)
 	}
 	v = reflect.Indirect(v)
 
@@ -909,14 +989,15 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		for i := 0; i < size; i++ {
 			ai := Any{I: v.Index(i).Addr().Interface()}
 			if err := ai.UnmarshalRESP(br); err != nil {
-				return err
+				return discardArrayAfterErr(br, int(l)-i-1, err)
 			}
 		}
 		return nil
 
 	case reflect.Map:
 		if size%2 != 0 {
-			return errors.New("cannot decode redis array with odd number of elements into map")
+			err := resp.ErrDiscarded{Err: errors.New("cannot decode redis array with odd number of elements into map")}
+			return discardArrayAfterErr(br, int(l), err)
 		} else if v.IsNil() {
 			v.Set(reflect.MakeMapWithSize(v.Type(), size/2))
 		}
@@ -937,7 +1018,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 				kv = reflect.New(v.Type().Key())
 			}
 			if err := (Any{I: kv.Interface()}).UnmarshalRESP(br); err != nil {
-				return err
+				return discardArrayAfterErr(br, int(l)-i-1, err)
 			}
 
 			vv := vvs
@@ -945,7 +1026,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 				vv = reflect.New(v.Type().Elem())
 			}
 			if err := (Any{I: vv.Interface()}).UnmarshalRESP(br); err != nil {
-				return err
+				return discardArrayAfterErr(br, int(l)-i-2, err)
 			}
 
 			v.SetMapIndex(kv.Elem(), vv.Elem())
@@ -954,7 +1035,8 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 
 	case reflect.Struct:
 		if size%2 != 0 {
-			return errors.New("cannot decode redis array with odd number of elements into struct")
+			err := resp.ErrDiscarded{Err: errors.New("cannot decode redis array with odd number of elements into struct")}
+			return discardArrayAfterErr(br, int(l), err)
 		}
 
 		structFields := getStructFields(v.Type())
@@ -962,7 +1044,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 
 		for i := 0; i < size; i += 2 {
 			if err := field.UnmarshalRESP(br); err != nil {
-				return err
+				return discardArrayAfterErr(br, int(l)-i-1, err)
 			}
 
 			var vv reflect.Value
@@ -974,20 +1056,21 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 			if !ok || !vv.IsValid() {
 				// discard the value
 				if err := (Any{}).UnmarshalRESP(br); err != nil {
-					return err
+					return discardArrayAfterErr(br, int(l)-i-2, err)
 				}
 				continue
 			}
 
 			if err := (Any{I: vv.Interface()}).UnmarshalRESP(br); err != nil {
-				return err
+				return discardArrayAfterErr(br, int(l)-i-2, err)
 			}
 		}
 
 		return nil
 
 	default:
-		return errors.Errorf("cannot decode redis array into %v", v.Type())
+		err := resp.ErrDiscarded{Err: errors.Errorf("cannot decode redis array into %v", v.Type())}
+		return discardArrayAfterErr(br, int(l), err)
 	}
 }
 
@@ -1102,15 +1185,6 @@ func getStructField(v reflect.Value, ii []int) reflect.Value {
 	iv = reflect.Indirect(iv)
 
 	return getStructField(iv, ii)
-}
-
-func (a Any) discardArray(br *bufio.Reader, l int64) error {
-	for i := 0; i < int(l); i++ {
-		if err := (Any{}).UnmarshalRESP(br); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
