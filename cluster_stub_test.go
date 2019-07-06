@@ -374,6 +374,10 @@ func TestClusterStub(t *T) {
 	var val string
 	require.Nil(t, srcConn.Do(Cmd(&val, "GET", key)))
 	assert.Equal(t, "foo", val)
+	var vals []string
+	require.Nil(t, srcConn.Do(Cmd(&vals, "MGET", key)))
+	assert.Len(t, vals, 1)
+	assert.Equal(t, "foo", vals[0])
 
 	// getting on the new dst should give MOVED
 	err = dstConn.Do(Cmd(nil, "GET", key))
@@ -392,6 +396,20 @@ func TestClusterStub(t *T) {
 	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
 
+	// while migrating a slot
+	// ... trying to get multiple keys on the dst should give a MOVED ..
+	err = dstConn.Do(Cmd(nil, "MGET", key, "{" + key + "}.foo"))
+	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
+	// ... but doing it with ASKING on dst should return a TRYAGAIN ...
+	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
+	err = dstConn.Do(Cmd(nil, "MGET", key, "{" + key + "}.foo"))
+	assert.EqualError(t, err, "TRYAGAIN Multiple keys request during rehashing of slot")
+	// ... unless we only try to get one key
+	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
+	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", "{" + key + "}.foo")))
+	assert.Len(t, vals, 1)
+	assert.Equal(t, "", vals[0])
+
 	// finish the migration, then src should always MOVED, dst should always
 	// work
 	scl.migrateAllKeys(0)
@@ -400,4 +418,8 @@ func TestClusterStub(t *T) {
 	assert.Equal(t, "MOVED 0 "+dst.addr, err.Error())
 	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
+	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", key, "{" + key + "}.foo")))
+	assert.Len(t, vals, 2)
+	assert.Equal(t, vals[0], "foo")
+	assert.Equal(t, vals[1], "")
 }
