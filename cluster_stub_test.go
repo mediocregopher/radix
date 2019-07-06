@@ -86,12 +86,13 @@ func (s *clusterNodeStub) withKeyLocked(key string, asking bool, fn func(cluster
 	slotI := ClusterSlot([]byte(key))
 	slot, ok := s.clusterDatasetStub.slots[slotI]
 	if !ok {
-		movedStub := s.clusterStub.stubForSlot(slotI)
+		movedStub := s.clusterStub.stubForSlotIfSet(slotI)
+		if movedStub == nil {
+			return resp2.Error{E: errors.New("CLUSTERDOWN Hash slot not served")}
+		}
 		return resp2.Error{E: errors.Errorf("MOVED %d %s", slotI, movedStub.addr)}
-
 	} else if _, ok := slot.kv[key]; !ok && slot.migrating != "" {
 		return resp2.Error{E: errors.Errorf("ASK %d %s", slotI, slot.migrating)}
-
 	} else if slot.importing != "" && !asking {
 		return resp2.Error{E: errors.Errorf("MOVED %d %s", slotI, slot.importing)}
 	}
@@ -252,12 +253,19 @@ func newStubCluster(tt ClusterTopo) *clusterStub {
 }
 
 func (scl *clusterStub) stubForSlot(slot uint16) *clusterNodeStub {
+	if stub := scl.stubForSlotIfSet(slot); stub != nil {
+		return stub
+	}
+	panic(fmt.Sprintf("couldn't find stub for slot %d", slot))
+}
+
+func (scl *clusterStub) stubForSlotIfSet(slot uint16) *clusterNodeStub {
 	for _, s := range scl.stubs {
 		if slot, ok := s.clusterDatasetStub.slots[slot]; ok && s.secondaryOfAddr == "" && slot.importing == "" {
 			return s
 		}
 	}
-	panic(fmt.Sprintf("couldn't find stub for slot %d", slot))
+	return nil
 }
 
 func (scl *clusterStub) topo() ClusterTopo {
