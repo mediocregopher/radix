@@ -280,8 +280,9 @@ func (scl *clusterStub) addrs() []string {
 	return res
 }
 
-func (scl *clusterStub) newCluster() *Cluster {
-	c, err := NewCluster(scl.addrs(), ClusterPoolFunc(scl.clientFunc()))
+func (scl *clusterStub) newCluster(opts ...ClusterOpt) *Cluster {
+	opts = append([]ClusterOpt{ClusterPoolFunc(scl.clientFunc())}, opts...)
+	c, err := NewCluster(scl.addrs(), opts...)
 	if err != nil {
 		panic(err)
 	}
