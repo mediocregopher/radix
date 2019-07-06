@@ -156,6 +156,37 @@ func TestClusterDo(t *T) {
 	}
 }
 
+func TestClusterDoWhenDown(t *T) {
+	var stub *clusterNodeStub
+	var attemptsBeforeHealed int
+	var downTraces int
+
+	c, scl := newTestCluster(ClusterWithTrace(trace.ClusterTrace{
+		Down:  func(d trace.ClusterDown) {
+			downTraces++
+			if attemptsBeforeHealed--; attemptsBeforeHealed == 0 {
+				stub.addSlot(0)
+			}
+		},
+	}))
+	defer c.Close()
+
+	stub = scl.stubForSlot(0)
+	stub.removeSlot(0)
+
+	k := clusterSlotKeys[0]
+
+	err := c.Do(Cmd(nil, "GET", k))
+	assert.EqualError(t, err, "cluster action redirected too many times")
+	assert.Equal(t, doAttempts, downTraces)
+
+	attemptsBeforeHealed = doAttempts - 2
+	downTraces = 0
+	err = c.Do(Cmd(nil, "GET", k))
+	assert.Nil(t, err)
+	assert.Equal(t, doAttempts - 2, downTraces)
+}
+
 func BenchmarkClusterDo(b *B) {
 	c, _ := newTestCluster()
 	defer c.Close()
