@@ -455,6 +455,19 @@ func (c *Cluster) Do(a Action) error {
 	return c.doInner(a, addr, key, false, doAttempts)
 }
 
+func (c *Cluster) traceClusterDown() {
+	if c.co.ct.Down != nil {
+		topo := c.Topo()
+
+		nodeInfo := make([]trace.ClusterNodeInfo, len(topo))
+		for i, node := range topo {
+			nodeInfo[i] = nodeInfoFromNode(node)
+		}
+
+		c.co.ct.Down(trace.ClusterDown{LastNodeInfo: nodeInfo})
+	}
+}
+
 func (c *Cluster) traceRedirected(addr, key string, moved, ask, tryAgain bool, attempts int) {
 	if c.co.ct.Redirected != nil {
 		c.co.ct.Redirected(trace.ClusterRedirected{
@@ -493,13 +506,24 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 
 	// if the error was a MOVED or ASK we can potentially retry
 	msg := err.Error()
+	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
 	moved := strings.HasPrefix(msg, "MOVED ")
 	ask = strings.HasPrefix(msg, "ASK ")
 	tryAgain := strings.HasPrefix(msg, "TRYAGAIN ")
-	if !moved && !ask && !tryAgain {
+	if !clusterDown && !moved && !ask && !tryAgain {
 		return err
 	}
-	c.traceRedirected(addr, key, moved, ask, tryAgain, attempts)
+	if clusterDown {
+		// we could check for either "CLUSTERDOWN The cluster is down" or
+		// "CLUSTERDOWN Hash slot not served", but the second just means that
+		// the cluster state has not yet been fully propagated to all nodes and
+		// eventually all nodes will return "CLUSTERDOWN The cluster is down"
+		// until the cluster heals, so there is no real value in distinguishing
+		// between these two.
+		c.traceClusterDown()
+	} else {
+		c.traceRedirected(addr, key, moved, ask, tryAgain, attempts)
+	}
 
 	// if we get an ASK there's no need to do a sync quite yet, we can continue
 	// normally. But MOVED always prompts a sync. In the section after this one
@@ -518,7 +542,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 		return err
 	}
 
-	if !tryAgain {
+	if ask || moved {
 		msgParts := strings.Split(msg, " ")
 		if len(msgParts) < 3 {
 			return errors.Errorf("malformed MOVED/ASK error %q", msg)
