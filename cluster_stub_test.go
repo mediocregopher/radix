@@ -61,7 +61,10 @@ type clusterNodeStub struct {
 func (s *clusterNodeStub) withKey(key string, asking bool, fn func(clusterSlotStub) interface{}) interface{} {
 	s.clusterDatasetStub.Lock()
 	defer s.clusterDatasetStub.Unlock()
+	return s.withKeyLocked(key, asking, fn)
+}
 
+func (s *clusterNodeStub) withKeyLocked(key string, asking bool, fn func(clusterSlotStub) interface{}) interface{} {
 	slotI := ClusterSlot([]byte(key))
 	slot, ok := s.clusterDatasetStub.slots[slotI]
 	if !ok {
@@ -76,6 +79,25 @@ func (s *clusterNodeStub) withKey(key string, asking bool, fn func(clusterSlotSt
 	}
 
 	return fn(slot)
+}
+
+func (s *clusterNodeStub) withKeys(keys []string, asking bool, fn func(clusterSlotStub) interface{}) interface{} {
+	if err := assertKeysSlot(keys); err != nil {
+		return err
+	}
+
+	s.clusterDatasetStub.Lock()
+	defer s.clusterDatasetStub.Unlock()
+
+	if len(keys) > 1 && asking {
+		slotI := ClusterSlot([]byte(keys[0]))
+		slot := s.clusterDatasetStub.slots[slotI]
+		if slot.importing != ""  {
+			return resp2.Error{E: errors.New("TRYAGAIN Multiple keys request during rehashing of slot")}
+		}
+	}
+
+	return s.withKeyLocked(keys[0], asking, fn)
 }
 
 func (s *clusterNodeStub) newConn() Conn {
@@ -100,6 +122,15 @@ func (s *clusterNodeStub) newConn() Conn {
 					return nil
 				}
 				return s
+			})
+		case "MGET":
+			ks := args[1:]
+			return s.withKeys(ks, asking, func(slot clusterSlotStub) interface{} {
+				ss := make([]string, len(ks))
+				for i, k := range ks {
+					ss[i] = slot.kv[k]
+				}
+				return ss
 			})
 		case "SET":
 			k := args[1]
