@@ -40,8 +40,8 @@ type ClusterTopoChanged struct {
 }
 
 type ClusterRedirected struct {
-	Addr                 string
-	Key                  string
-	Moved, Ask, TryAgain bool
-	RedirectCount        int
+	Addr          string
+	Key           string
+	Moved, Ask    bool
+	RedirectCount int
 }

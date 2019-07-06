@@ -142,15 +142,6 @@ func TestClusterDo(t *T) {
 			Ask: true,
 		}, lastRedirect)
 
-		err := c.Do(Cmd(nil, "MGET", k, "{" + k + "}.foo"))
-		assert.EqualError(t, err, "cluster action redirected too many times")
-		assert.Equal(t, trace.ClusterRedirected{
-			Addr: stub16k.addr,
-			Key: k,
-			TryAgain: true,
-			RedirectCount: doAttempts - 1,
-		}, lastRedirect)
-
 		scl.migrateAllKeys(0)
 		scl.migrateDone(0)
 	}

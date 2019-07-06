@@ -468,14 +468,13 @@ func (c *Cluster) traceClusterDown() {
 	}
 }
 
-func (c *Cluster) traceRedirected(addr, key string, moved, ask, tryAgain bool, attempts int) {
+func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts int) {
 	if c.co.ct.Redirected != nil {
 		c.co.ct.Redirected(trace.ClusterRedirected{
-			Addr: addr,
-			Key: key,
-			Moved: moved,
-			Ask: ask,
-			TryAgain: tryAgain,
+			Addr:          addr,
+			Key:           key,
+			Moved:         moved,
+			Ask:           ask,
 			RedirectCount: doAttempts - attempts,
 		})
 	}
@@ -509,8 +508,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
 	moved := strings.HasPrefix(msg, "MOVED ")
 	ask = strings.HasPrefix(msg, "ASK ")
-	tryAgain := strings.HasPrefix(msg, "TRYAGAIN ")
-	if !clusterDown && !moved && !ask && !tryAgain {
+	if !clusterDown && !moved && !ask {
 		return err
 	}
 	if clusterDown {
@@ -522,7 +520,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 		// between these two.
 		c.traceClusterDown()
 	} else {
-		c.traceRedirected(addr, key, moved, ask, tryAgain, attempts)
+		c.traceRedirected(addr, key, moved, ask, attempts)
 	}
 
 	// if we get an ASK there's no need to do a sync quite yet, we can continue
