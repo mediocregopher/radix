@@ -413,16 +413,16 @@ func TestClusterStub(t *T) {
 
 	// getting on the new dst should give MOVED
 	err = dstConn.Do(Cmd(nil, "GET", key))
-	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
+	assert.EqualError(t, err, "MOVED 0 "+src.addr)
 
 	// actually migrate that key ...
 	scl.migrateKey(key)
 	// ... then doing the GET on the src should give an ASK error ...
 	err = srcConn.Do(Cmd(nil, "GET", key))
-	assert.Equal(t, "ASK 0 "+dst.addr, err.Error())
+	assert.EqualError(t, err, "ASK 0 "+dst.addr)
 	// ... doing the GET on the dst _without_ asking should give MOVED again ...
 	err = dstConn.Do(Cmd(nil, "GET", key))
-	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
+	assert.EqualError(t, err, "MOVED 0 "+src.addr)
 	// ... but doing it with ASKING on dst should work
 	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
 	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
@@ -431,7 +431,7 @@ func TestClusterStub(t *T) {
 	// while migrating a slot
 	// ... trying to get multiple keys on the dst should give a MOVED ..
 	err = dstConn.Do(Cmd(nil, "MGET", key, "{" + key + "}.foo"))
-	assert.Equal(t, "MOVED 0 "+src.addr, err.Error())
+	assert.EqualError(t, err, "MOVED 0 "+src.addr)
 	// ... but doing it with ASKING on dst should return a TRYAGAIN ...
 	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
 	err = dstConn.Do(Cmd(nil, "MGET", key, "{" + key + "}.foo"))
@@ -447,7 +447,7 @@ func TestClusterStub(t *T) {
 	scl.migrateAllKeys(0)
 	scl.migrateDone(0)
 	err = srcConn.Do(Cmd(nil, "GET", key))
-	assert.Equal(t, "MOVED 0 "+dst.addr, err.Error())
+	assert.EqualError(t, err, "MOVED 0 "+dst.addr)
 	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
 	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", key, "{" + key + "}.foo")))
