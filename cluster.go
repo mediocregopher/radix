@@ -293,6 +293,14 @@ func (c *Cluster) Sync() error {
 	return err
 }
 
+func nodeInfoFromNode(node ClusterNode) trace.ClusterNodeInfo {
+	return trace.ClusterNodeInfo{
+		Addr:      node.Addr,
+		Slots:     node.Slots,
+		IsPrimary: node.SecondaryOfAddr == "",
+	}
+}
+
 func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 	if c.co.ct.TopoChanged != nil {
 		var addedNodes []trace.ClusterNodeInfo
@@ -306,32 +314,20 @@ func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 			if prevNode, ok := prevTopoMap[addr]; ok {
 				// Check whether two nodes which have the same address changed its value or not
 				if !reflect.DeepEqual(prevNode, newNode) {
-					changedNodes = append(changedNodes, trace.ClusterNodeInfo{
-						Addr:      newNode.Addr,
-						Slots:     newNode.Slots,
-						IsPrimary: newNode.SecondaryOfAddr == "",
-					})
+					changedNodes = append(changedNodes, nodeInfoFromNode(newNode))
 				}
 				// No need to handle this address for finding removed nodes
 				delete(prevTopoMap, addr)
 			} else {
 				// The node's address not found from prevTopo is newly added node
-				addedNodes = append(addedNodes, trace.ClusterNodeInfo{
-					Addr:      newNode.Addr,
-					Slots:     newNode.Slots,
-					IsPrimary: newNode.SecondaryOfAddr == "",
-				})
+				addedNodes = append(addedNodes, nodeInfoFromNode(newNode))
 			}
 		}
 
 		// Find removed nodes, prevTopoMap has reduced
 		for addr, prevNode := range prevTopoMap {
 			if _, ok := newTopoMap[addr]; !ok {
-				removedNodes = append(removedNodes, trace.ClusterNodeInfo{
-					Addr:      prevNode.Addr,
-					Slots:     prevNode.Slots,
-					IsPrimary: prevNode.SecondaryOfAddr == "",
-				})
+				removedNodes = append(removedNodes, nodeInfoFromNode(prevNode))
 			}
 		}
 
