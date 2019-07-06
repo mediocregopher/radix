@@ -58,6 +58,24 @@ type clusterNodeStub struct {
 	*clusterStub
 }
 
+func (s *clusterNodeStub) addSlot(slot uint16) {
+	_, hasSlot := s.clusterDatasetStub.slots[slot]
+	if hasSlot {
+		panic(fmt.Sprintf("stub already owns slot %d", slot))
+	}
+	s.clusterStub.stubs[s.addr] = s
+	s.clusterDatasetStub.slots[0] = clusterSlotStub{kv: map[string]string{}}
+}
+
+func (s *clusterNodeStub) removeSlot(slot uint16) {
+	_, hasSlot := s.clusterDatasetStub.slots[slot]
+	if !hasSlot {
+		panic(fmt.Sprintf("stub does not own slot %d", slot))
+	}
+	delete(s.clusterStub.stubs, s.addr)
+	delete(s.clusterDatasetStub.slots, 0)
+}
+
 func (s *clusterNodeStub) withKey(key string, asking bool, fn func(clusterSlotStub) interface{}) interface{} {
 	s.clusterDatasetStub.Lock()
 	defer s.clusterDatasetStub.Unlock()
@@ -455,3 +473,21 @@ func TestClusterStub(t *T) {
 	assert.Equal(t, vals[0], "foo")
 	assert.Equal(t, vals[1], "")
 }
+
+func TestClusterStubSlotNotBound(t *T) {
+	scl := newStubCluster(testTopo)
+
+	stub0 := scl.stubForSlot(0)
+	stub0.removeSlot(0)
+
+	key := clusterSlotKeys[0]
+
+	err := stub0.newConn().Do(Cmd(nil, "GET", key))
+	assert.EqualError(t, err, "CLUSTERDOWN Hash slot not served")
+
+	stub0.addSlot(0)
+
+	err = stub0.newConn().Do(Cmd(nil, "GET", key))
+	assert.Nil(t, err)
+}
+
