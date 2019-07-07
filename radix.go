@@ -142,6 +142,29 @@
 //
 // Use the golang.org/x/xerrors package if you're using an older version of go.
 //
+// Implicit pipelining
+//
+// Implicit pipelining is an optimization that reduces the overhead of
+// I/O and the CPU usage for marshalling and unmarshalling on both the
+// client and server when executing many concurrent commands on a Client.
+//
+// Commands that can be safely pipelined (currently all commands except those
+// that may block) will be delayed by a small amount of time and be send to
+// redis in a single batch, similar to manually using a Pipeline. All other
+// commands will be executed without delay as if implicit pipelining was
+// disabled.
+//
+// Currently only pools returned by NewPool implement implicit pipelining.
+// This includes the pools used by default in NewCluster and NewSentinel,
+// thus both Cluster and Sentinel can profit from implicit pipelining.
+//
+// See the documentation on Pool for more information about the current
+// implementation of implicit pipelining and for how to configure or disable
+// the feature.
+//
+// For a performance comparisons between Clients with and without impliciz
+// pipelining see the benchmark results in the README.md.
+//
 package radix
 
 import (

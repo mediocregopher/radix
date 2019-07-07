@@ -192,7 +192,7 @@ func PoolPipelineConcurrency(limit int) PoolOpt {
 // flushed and the maximum number of commands that can be pipelined before
 // flushing.
 //
-// If window is zero then automatic pipelining will be disabled.
+// If window is zero then implicit pipelining will be disabled.
 // If limit is zero then no limit will be used and pipelines will only be limited
 // by the specified time window.
 func PoolPipelineWindow(window time.Duration, limit int) PoolOpt {
@@ -267,6 +267,14 @@ type Pool struct {
 //	PoolPingInterval(5 * time.Second / (size+1))
 //	PoolPipelineConcurrency(size)
 //	PoolPipelineWindow(150 * time.Microsecond, 0)
+//
+// The recommended size of the pool depends on the number of concurrent
+// goroutines that will use the pool and whether implicit pipelining is
+// enabled or not.
+//
+// As a general rule, when implicit pipelining is enabled (the default)
+// the size of the pool can be kept low without problems to reduce resource
+// and file descriptor usage.
 //
 func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
@@ -578,7 +586,7 @@ func (p *Pool) put(ioc *ioErrConn) {
 // If the given Action is a CmdAction, it will be pipelined with other concurrent
 // calls to Do, which can improve the performance and resource usage of the Redis
 // server, but will increase the latency for some of the Actions. To avoid the
-// automatic pipelining you can either set PoolPipelineWindow(0, 0) when creating the
+// implicit pipelining you can either set PoolPipelineWindow(0, 0) when creating the
 // Pool or use WithConn. Pipelines created manually (via Pipeline) are also excluded
 // from this and will be executed as if using WithConn.
 //
