@@ -118,7 +118,7 @@ func (s *clusterNodeStub) withKeys(keys []string, asking bool, fn func(clusterSl
 	if len(keys) > 1 && asking {
 		slotI := ClusterSlot([]byte(keys[0]))
 		slot := s.clusterDatasetStub.slots[slotI]
-		if slot.importing != ""  {
+		if slot.importing != "" {
 			return resp2.Error{E: errors.New("TRYAGAIN Multiple keys request during rehashing of slot")}
 		}
 	}
@@ -463,15 +463,15 @@ func TestClusterStub(t *T) {
 
 	// while migrating a slot
 	// ... trying to get multiple keys on the dst should give a MOVED ..
-	err = dstConn.Do(Cmd(nil, "MGET", key, "{" + key + "}.foo"))
+	err = dstConn.Do(Cmd(nil, "MGET", key, "{"+key+"}.foo"))
 	assert.EqualError(t, err, "MOVED 0 "+src.addr)
 	// ... but doing it with ASKING on dst should return a TRYAGAIN ...
 	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
-	err = dstConn.Do(Cmd(nil, "MGET", key, "{" + key + "}.foo"))
+	err = dstConn.Do(Cmd(nil, "MGET", key, "{"+key+"}.foo"))
 	assert.EqualError(t, err, "TRYAGAIN Multiple keys request during rehashing of slot")
 	// ... unless we only try to get one key
 	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
-	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", "{" + key + "}.foo")))
+	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", "{"+key+"}.foo")))
 	assert.Len(t, vals, 1)
 	assert.Equal(t, "", vals[0])
 
@@ -483,7 +483,7 @@ func TestClusterStub(t *T) {
 	assert.EqualError(t, err, "MOVED 0 "+dst.addr)
 	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
-	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", key, "{" + key + "}.foo")))
+	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", key, "{"+key+"}.foo")))
 	assert.Len(t, vals, 2)
 	assert.Equal(t, vals[0], "foo")
 	assert.Equal(t, vals[1], "")
@@ -505,4 +505,3 @@ func TestClusterStubSlotNotBound(t *T) {
 	err = stub0.newConn().Do(Cmd(nil, "GET", key))
 	assert.Nil(t, err)
 }
-

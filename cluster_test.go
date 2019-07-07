@@ -95,7 +95,7 @@ func TestClusterGet(t *T) {
 func TestClusterDo(t *T) {
 	var lastRedirect trace.ClusterRedirected
 	c, scl := newTestCluster(ClusterWithTrace(trace.ClusterTrace{
-		Redirected:  func(r trace.ClusterRedirected) { lastRedirect = r },
+		Redirected: func(r trace.ClusterRedirected) { lastRedirect = r },
 	}))
 	defer c.Close()
 	stub0 := scl.stubForSlot(0)
@@ -122,9 +122,9 @@ func TestClusterDo(t *T) {
 		require.Nil(t, c.doInner(cmd, stub16k.addr, k, false, 2))
 		assert.Equal(t, v, vgot)
 		assert.Equal(t, trace.ClusterRedirected{
-			Addr: stub16k.addr,
-			Key: k,
-			Moved: true,
+			Addr:          stub16k.addr,
+			Key:           k,
+			Moved:         true,
 			RedirectCount: 3,
 		}, lastRedirect)
 	}
@@ -139,8 +139,8 @@ func TestClusterDo(t *T) {
 		assert.Equal(t, v, vgot)
 		assert.Equal(t, trace.ClusterRedirected{
 			Addr: stub0.addr,
-			Key: k,
-			Ask: true,
+			Key:  k,
+			Ask:  true,
 		}, lastRedirect)
 
 		scl.migrateAllKeys(0)
@@ -154,13 +154,13 @@ func TestClusterDoWhenDown(t *T) {
 	var isDown bool
 
 	c, scl := newTestCluster(
-		ClusterWaitWhenDown(50 * time.Millisecond),
+		ClusterWaitWhenDown(50*time.Millisecond),
 		ClusterWithTrace(trace.ClusterTrace{
 			StateChange: func(d trace.ClusterStateChange) {
 				isDown = d.IsDown
 
 				if d.IsDown {
-					time.AfterFunc(75 * time.Millisecond, func() {
+					time.AfterFunc(75*time.Millisecond, func() {
 						stub.addSlot(0)
 					})
 				}
