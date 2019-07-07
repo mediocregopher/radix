@@ -416,9 +416,9 @@ type pipeline []CmdAction
 // Run will not be called on any of the passed in CmdActions.
 //
 // NOTE that, while a Pipeline performs all commands on a single Conn, it
-// shouldn't be used for MULTI/EXEC transactions, because if there's an error it
-// won't discard the incomplete transaction. Use WithConn or EvalScript for
-// transactional functionality instead.
+// shouldn't be used by itself for MULTI/EXEC transactions, because if there's
+// an error it won't discard the incomplete transaction. Use WithConn or
+// EvalScript for transactional functionality instead.
 func Pipeline(cmds ...CmdAction) Action {
 	return pipeline(cmds)
 }

@@ -82,8 +82,9 @@ func ClusterSyncEvery(d time.Duration) ClusterOpt {
 	}
 }
 
-// ClusterWithTrace tells the Cluster to trace itself with the given ClusterTrace
-// Note that ClusterTrace will block every point that you set to trace.
+// ClusterWithTrace tells the Cluster to trace itself with the given
+// ClusterTrace. Note that ClusterTrace will block every point that you set to
+// trace.
 func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.ct = ct
@@ -109,7 +110,7 @@ type Cluster struct {
 
 	// Any errors encountered internally will be written to this channel. If
 	// nothing is reading the channel the errors will be dropped. The channel
-	// will be closed when the Close is called.
+	// will be closed when the Close method is called.
 	ErrCh chan error
 }
 
