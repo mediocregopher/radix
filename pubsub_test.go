@@ -353,8 +353,9 @@ func ExamplePubSub() {
 	}
 }
 
-// Example of how to use PersistentPubSub with a Cluster instance.
-func ExamplePersistentPubSubCluster() {
+func ExamplePersistentPubSub_cluster() {
+	// Example of how to use PersistentPubSub with a Cluster instance.
+
 	// Initialize the cluster in any way you see fit
 	cluster, err := NewCluster([]string{"127.0.0.1:6379"})
 	if err != nil {
