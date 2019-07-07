@@ -59,6 +59,8 @@ type clusterNodeStub struct {
 }
 
 func (s *clusterNodeStub) addSlot(slot uint16) {
+	s.clusterDatasetStub.Lock()
+	defer s.clusterDatasetStub.Unlock()
 	_, hasSlot := s.clusterDatasetStub.slots[slot]
 	if hasSlot {
 		panic(fmt.Sprintf("stub already owns slot %d", slot))
@@ -68,6 +70,8 @@ func (s *clusterNodeStub) addSlot(slot uint16) {
 }
 
 func (s *clusterNodeStub) removeSlot(slot uint16) {
+	s.clusterDatasetStub.Lock()
+	defer s.clusterDatasetStub.Unlock()
 	_, hasSlot := s.clusterDatasetStub.slots[slot]
 	if !hasSlot {
 		panic(fmt.Sprintf("stub does not own slot %d", slot))
