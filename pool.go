@@ -212,9 +212,22 @@ func PoolWithTrace(pt trace.PoolTrace) PoolOpt {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Pool is a semi-dynamic pool which holds a fixed number of connections open
-// and which implements the Client interface. It takes in a number of options
-// which can effect its specific behavior, see the NewPool method.
+// Pool is a dynamic connection pool which implements the Client interface. It
+// takes in a number of options which can effect its specific behavior; see the
+// NewPool method.
+//
+// Pool is dynamic in that it can create more connections on-the-fly to handle
+// increased load. The maximum number of extra connections (if any) can be
+// configured, along with how long they are kept after load has returned to
+// normal.
+//
+// Pool also takes advantage of implicit pipelining. If multiple commands are
+// being performed simultaneously, then Pool will write them all to a single
+// connection using a single system call, and read all their responses together
+// using another single system call. Implicit pipelining significantly improves
+// performance during high-concurrency usage, at the expense of slightly worse
+// performance during low-concurrency usage. It can be disabled using
+// PoolPipelineWindow(0, 0).
 type Pool struct {
 	opts          poolOpts
 	network, addr string
