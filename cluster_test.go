@@ -2,6 +2,7 @@ package radix
 
 import (
 	. "testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -149,17 +150,17 @@ func TestClusterDo(t *T) {
 
 func TestClusterDoWhenDown(t *T) {
 	var stub *clusterNodeStub
-	var attemptsBeforeHealed int
-	var downTraces int
 
-	c, scl := newTestCluster(ClusterWithTrace(trace.ClusterTrace{
-		Down:  func(d trace.ClusterDown) {
-			downTraces++
-			if attemptsBeforeHealed--; attemptsBeforeHealed == 0 {
-				stub.addSlot(0)
-			}
-		},
-	}))
+	c, scl := newTestCluster(
+		ClusterWaitWhenDown(50 * time.Millisecond),
+		ClusterWithTrace(trace.ClusterTrace{
+			StateChange:  func(d trace.ClusterStateChange) {
+				time.AfterFunc(75 * time.Millisecond, func() {
+					stub.addSlot(0)
+				})
+			},
+		}),
+	)
 	defer c.Close()
 
 	stub = scl.stubForSlot(0)
@@ -168,14 +169,10 @@ func TestClusterDoWhenDown(t *T) {
 	k := clusterSlotKeys[0]
 
 	err := c.Do(Cmd(nil, "GET", k))
-	assert.EqualError(t, err, "cluster action redirected too many times")
-	assert.Equal(t, doAttempts, downTraces)
+	assert.EqualError(t, err, "CLUSTERDOWN Hash slot not served")
 
-	attemptsBeforeHealed = doAttempts - 2
-	downTraces = 0
 	err = c.Do(Cmd(nil, "GET", k))
 	assert.Nil(t, err)
-	assert.Equal(t, doAttempts - 2, downTraces)
 }
 
 func BenchmarkClusterDo(b *B) {

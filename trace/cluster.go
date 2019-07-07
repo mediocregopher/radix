@@ -13,18 +13,16 @@ package trace
 ////////////////////////////////////////////////////////////////////////////////
 
 type ClusterTrace struct {
-	// Down is called when a node returns a CLUSTERDOWN error.
-	Down func(ClusterDown)
+	// StateChange is called when the cluster becomes down or becomes available again.
+	StateChange func(ClusterStateChange)
 	// TopoChanged is called when the cluster's topology changed.
 	TopoChanged func(ClusterTopoChanged)
 	// Redirected is called when radix.Do responded 'MOVED' or 'ASKED'.
 	Redirected func(ClusterRedirected)
 }
 
-type ClusterDown struct {
-	// LastNodeInfo contains the last view of the cluster that radix could get
-	// before it went down.
-	LastNodeInfo []ClusterNodeInfo
+type ClusterStateChange struct {
+	IsDown bool
 }
 
 type ClusterNodeInfo struct {

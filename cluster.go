@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	errors "golang.org/x/xerrors"
@@ -53,12 +54,13 @@ type ClusterCanRetryAction interface {
 	ClusterCanRetry() bool
 }
 
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 
 type clusterOpts struct {
-	pf        ClientFunc
-	syncEvery time.Duration
-	ct        trace.ClusterTrace
+	pf              ClientFunc
+	clusterDownWait time.Duration
+	syncEvery       time.Duration
+	ct              trace.ClusterTrace
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -82,6 +84,16 @@ func ClusterSyncEvery(d time.Duration) ClusterOpt {
 	}
 }
 
+// ClusterWaitWhenDown tells the Cluster to wait for the duration d before executing
+// commands when the cluster is down. If d is <= 0 the Cluster will not wait with
+// executing commands when the cluster is down.
+// Note that even if d is > 0, calls to Sync will not wait.
+func ClusterWaitWhenDown(d time.Duration) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.clusterDownWait = d
+	}
+}
+
 // ClusterWithTrace tells the Cluster to trace itself with the given
 // ClusterTrace. Note that ClusterTrace will block every point that you set to
 // trace.
@@ -99,6 +111,8 @@ type Cluster struct {
 
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
+
+	down uint64
 
 	l              sync.RWMutex
 	pools          map[string]Client
@@ -121,8 +135,9 @@ type Cluster struct {
 // NewCluster takes in a number of options which can overwrite its default
 // behavior. The default options NewCluster uses are:
 //
-//	ClusterPoolFunc(DefaultClientFunc)
-//	ClusterSyncEvery(5 * time.Second)
+//     ClusterPoolFunc(DefaultClientFunc)
+//     ClusterSyncEvery(5 * time.Second)
+//     ClusterWaitWhenDown(100 * time.Millisecond)
 //
 func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c := &Cluster{
@@ -135,6 +150,7 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	defaultClusterOpts := []ClusterOpt{
 		ClusterPoolFunc(DefaultClientFunc),
 		ClusterSyncEvery(5 * time.Second),
+		ClusterWaitWhenDown(100 * time.Millisecond),
 	}
 
 	for _, opt := range append(defaultClusterOpts, opts...) {
@@ -455,17 +471,23 @@ func (c *Cluster) Do(a Action) error {
 	return c.doInner(a, addr, key, false, doAttempts)
 }
 
-func (c *Cluster) traceClusterDown() {
-	if c.co.ct.Down != nil {
-		topo := c.Topo()
+func (c *Cluster) isClusterDown() bool {
+	return atomic.LoadUint64(&c.down) == 1
+}
 
-		nodeInfo := make([]trace.ClusterNodeInfo, len(topo))
-		for i, node := range topo {
-			nodeInfo[i] = nodeInfoFromNode(node)
-		}
-
-		c.co.ct.Down(trace.ClusterDown{LastNodeInfo: nodeInfo})
+func (c *Cluster) setClusterDown(down bool) bool {
+	var changed bool
+	if down {
+		changed = atomic.CompareAndSwapUint64(&c.down, 0, 1)
+	} else {
+		changed = atomic.CompareAndSwapUint64(&c.down, 1, 0)
 	}
+
+	if changed && c.co.ct.StateChange != nil {
+		c.co.ct.StateChange(trace.ClusterStateChange{IsDown: down})
+	}
+
+	return changed
 }
 
 func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts int) {
@@ -481,6 +503,10 @@ func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts in
 }
 
 func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) error {
+	if c.co.clusterDownWait > 0 && c.isClusterDown() {
+		time.Sleep(c.co.clusterDownWait)
+	}
+
 	p, err := c.pool(addr)
 	if err != nil {
 		return err
@@ -500,28 +526,25 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 
 	err = p.Do(thisA)
 	if err == nil {
+		c.setClusterDown(false)
 		return nil
 	}
 
-	// if the error was a MOVED or ASK we can potentially retry
 	msg := err.Error()
+
 	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
+	clusterDownChanged := c.setClusterDown(clusterDown)
+	if clusterDown && c.co.clusterDownWait > 0 && clusterDownChanged {
+		return c.doInner(a, addr, key, ask, 1)
+	}
+
+	// if the error was a MOVED or ASK we can potentially retry
 	moved := strings.HasPrefix(msg, "MOVED ")
 	ask = strings.HasPrefix(msg, "ASK ")
-	if !clusterDown && !moved && !ask {
+	if !moved && !ask {
 		return err
 	}
-	if clusterDown {
-		// we could check for either "CLUSTERDOWN The cluster is down" or
-		// "CLUSTERDOWN Hash slot not served", but the second just means that
-		// the cluster state has not yet been fully propagated to all nodes and
-		// eventually all nodes will return "CLUSTERDOWN The cluster is down"
-		// until the cluster heals, so there is no real value in distinguishing
-		// between these two.
-		c.traceClusterDown()
-	} else {
-		c.traceRedirected(addr, key, moved, ask, attempts)
-	}
+	c.traceRedirected(addr, key, moved, ask, attempts)
 
 	// if we get an ASK there's no need to do a sync quite yet, we can continue
 	// normally. But MOVED always prompts a sync. In the section after this one
