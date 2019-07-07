@@ -2,6 +2,7 @@ package radix
 
 import (
 	"log"
+	"math/rand"
 	"strconv"
 	"sync"
 	. "testing"
@@ -347,6 +348,31 @@ func ExamplePubSub() {
 		panic(err)
 	}
 
+	for msg := range msgCh {
+		log.Printf("publish to channel %q received: %q", msg.Channel, msg.Message)
+	}
+}
+
+// Example of how to use PersistentPubSub with a Cluster instance.
+func ExamplePersistentPubSubCluster() {
+	// Initialize the cluster in any way you see fit
+	cluster, err := NewCluster([]string{"127.0.0.1:6379"})
+	if err != nil {
+		panic(err)
+	}
+
+	// Have PersistentPubSub pick a random cluster node everytime it wants to
+	// make a new connection. If the node fails PersistentPubSub will
+	// automatically pick a new node to connect to.
+	ps := PersistentPubSub("", "", func(string, string) (Conn, error) {
+		topo := cluster.Topo()
+		node := topo[rand.Intn(len(topo))]
+		return Dial("tcp", node.Addr)
+	})
+
+	// Use the PubSubConn as normal.
+	msgCh := make(chan PubSubMessage)
+	ps.Subscribe(msgCh, "myChannel")
 	for msg := range msgCh {
 		log.Printf("publish to channel %q received: %q", msg.Channel, msg.Message)
 	}
