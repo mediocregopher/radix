@@ -150,22 +150,12 @@ func getCmdAction() *cmdAction {
 }
 
 // Cmd is used to perform a redis command and retrieve a result. It should not
-// passed into Do more than once. See the package docs on how results are
-// unmarshaled into the receiver.
-//
-//	if err := client.Do(radix.Cmd(nil, "SET", "foo", "bar")); err != nil {
-//		panic(err)
-//	}
-//
-//	var fooVal string
-//	if err := client.Do(radix.Cmd(&fooVal, "GET", "foo")); err != nil {
-//		panic(err)
-//	}
-//	fmt.Println(fooVal) // "bar"
+// be passed into Do more than once.
 //
 // If the receiver value of Cmd is a primitive, a slice/map, or a struct then a
 // pointer must be passed in. It may also be an io.Writer, an
-// encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler.
+// encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler. See the package docs
+// for more on how results are unmarshaled into the receiver.
 func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 	c := getCmdAction()
 	*c = cmdAction{
@@ -183,22 +173,9 @@ func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 // FlatCmd does _not_ work for commands whose first parameter isn't a key, or
 // (generally) for MSET. Use Cmd for those.
 //
-//	client.Do(radix.FlatCmd(nil, "SET", "foo", 1))
-//	// performs "SET" "foo" "1"
-//
-//	client.Do(radix.FlatCmd(nil, "SADD", "fooSet", []string{"1", "2", "3"}))
-//	// performs "SADD" "fooSet" "1" "2" "3"
-//
-//	m := map[string]int{"a":1, "b":2, "c":3}
-//	client.Do(radix.FlatCmd(nil, "HMSET", "fooHash", m))
-//	// performs "HMSET" "foohash" "a" "1" "b" "2" "c" "3"
-//
-//	// FlatCmd also supports using a resp.LenReader (an io.Reader with a Len()
-//	// method) as an argument. *bytes.Buffer is an example of a LenReader,
-//	// and the resp package has a NewLenReader function which can wrap an
-//	// existing io.Reader. For example, if writing an http.Request body:
-//	bl := resp.NewLenReader(req.Body, req.ContentLength)
-//	client.Do(radix.FlatCmd(nil, "SET", "fooReq", bl))
+// FlatCmd supports using a resp.LenReader (an io.Reader with a Len() method) as
+// an argument. *bytes.Buffer is an example of a LenReader, and the resp package
+// has a NewLenReader function which can wrap an existing io.Reader.
 //
 // FlatCmd also supports encoding.Text/BinaryMarshalers. It does _not_ currently
 // support resp.Marshaler.

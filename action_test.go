@@ -82,6 +82,24 @@ func TestCmdActionStreams(t *T) {
 	require.NoError(t, c.Do(xCmd))
 }
 
+func ExampleCmd() {
+	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	if err != nil {
+		panic(err)
+	}
+
+	if err := client.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+		panic(err)
+	}
+
+	var fooVal string
+	if err := client.Do(Cmd(&fooVal, "GET", "foo")); err != nil {
+		panic(err)
+	}
+	fmt.Println(fooVal)
+	// Output: bar
+}
+
 func TestFlatCmdAction(t *T) {
 	c := dial()
 	key := randStr()
@@ -109,6 +127,32 @@ func TestFlatCmdActionNil(t *T) {
 	var nilVal MaybeNil
 	require.Nil(t, c.Do(Cmd(&nilVal, "HGET", key, hashKey)))
 	require.False(t, nilVal.Nil)
+}
+
+func ExampleFlatCmd() {
+	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	if err != nil {
+		panic(err)
+	}
+
+	// performs "SET" "foo" "1"
+	err = client.Do(FlatCmd(nil, "SET", "foo", 1))
+	if err != nil {
+		panic(err)
+	}
+
+	// performs "SADD" "fooSet" "1" "2" "3"
+	err = client.Do(FlatCmd(nil, "SADD", "fooSet", []string{"1", "2", "3"}))
+	if err != nil {
+		panic(err)
+	}
+
+	// performs "HMSET" "foohash" "a" "1" "b" "2" "c" "3"
+	m := map[string]int{"a": 1, "b": 2, "c": 3}
+	err = client.Do(FlatCmd(nil, "HMSET", "fooHash", m))
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestEvalAction(t *T) {
