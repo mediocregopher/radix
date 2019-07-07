@@ -154,10 +154,12 @@ func TestClusterDoWhenDown(t *T) {
 	c, scl := newTestCluster(
 		ClusterWaitWhenDown(50 * time.Millisecond),
 		ClusterWithTrace(trace.ClusterTrace{
-			StateChange:  func(d trace.ClusterStateChange) {
-				time.AfterFunc(75 * time.Millisecond, func() {
-					stub.addSlot(0)
-				})
+			StateChange: func(d trace.ClusterStateChange) {
+				if d.IsDown {
+					time.AfterFunc(75 * time.Millisecond, func() {
+						stub.addSlot(0)
+					})
+				}
 			},
 		}),
 	)
