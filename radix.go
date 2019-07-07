@@ -20,8 +20,8 @@
 //
 // Any redis command can be performed by passing a Cmd into a Client's Do
 // method. Each Cmd should only be used once. The return from the Cmd can be
-// captured into any appopriate go primitive type, or a slice or map if the
-// command returns an array.
+// captured into any appopriate go primitive type, or a slice, map, or struct,
+// if the command returns an array.
 //
 //	err := client.Do(radix.Cmd(nil, "SET", "foo", "someval"))
 //
@@ -46,9 +46,9 @@
 //
 // Struct Scanning
 //
-// Cmd and FlatCmd can also unmarshal results into a struct. The results must be
-// a key/value array, such as that returned by HGETALL. Exported field names
-// will be used as keys, unless the fields have the "redis" tag:
+// Cmd and FlatCmd can unmarshal results into a struct. The results must be a
+// key/value array, such as that returned by HGETALL. Exported field names will
+// be used as keys, unless the fields have the "redis" tag:
 //
 //	type MyType struct {
 //		Foo string               // Will be populated with the value for key "Foo"
@@ -127,6 +127,20 @@
 // implementations. There is no dependency within radix that demands any
 // interface be implemented by a particular underlying type, so feel free to
 // create your own Pools or Conns or Actions or whatever makes your life easier.
+//
+// Errors
+//
+// Errors returned from redis can be explicitly checked for using the the
+// resp2.Error type. Note that the errors.As function, introduced in go 1.13,
+// should be used.
+//
+//	var redisErr resp2.Error
+//	err := client.Do(radix.Cmd(nil, "AUTH", "wrong password"))
+//	if errors.As(err, &redisErr) {
+//		log.Printf("redis error returned: %s", redisErr.E)
+//	}
+//
+// Use the golang.org/x/xerrors package if you're using an older version of go.
 //
 package radix
 
