@@ -190,7 +190,9 @@ var DefaultClientFunc = func(network, addr string) (Client, error) {
 // A Conn can be used directly as a Client, but in general you probably want to
 // use a *Pool instead
 type Conn interface {
-	// The Do method of a Conn is _not_ expected to be thread-safe.
+	// The Do method of a Conn is _not_ expected to be thread-safe with the
+	// other methods of Conn, and merely calls the Action's Run method with
+	// itself as the argument.
 	Client
 
 	// Encode and Decode may be called at the same time by two different

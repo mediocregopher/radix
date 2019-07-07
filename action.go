@@ -15,26 +15,27 @@ import (
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
 
-// Action can perform one or more tasks using a Conn
+// Action performs a task using a Conn.
 type Action interface {
 	// Keys returns the keys which will be acted on. Empty slice or nil may be
-	// returned if no keys are being acted on.
-	// The returned slice must not be modified.
+	// returned if no keys are being acted on. The returned slice must not be
+	// modified.
 	Keys() []string
 
-	// Run actually performs the Action using the given Conn
+	// Run actually performs the Action using the given Conn.
 	Run(c Conn) error
 }
 
-// CmdAction is a specific type of Action for which a command is marshaled and
-// sent to the server and the command's response is read and unmarshaled into a
-// receiver within the CmdAction.
+// CmdAction is a sub-class of Action which can be used in two different ways.
+// The first is as a normal Action, where Run is called with a Conn and returns
+// once the Action has been completed.
 //
-// A CmdAction can be used like an Action, but it can also be used by marshaling
-// the command and unmarshaling the response manually.
+// The second way is as a Pipeline-able command, where one or more commands are
+// written in one step (via the MarshalRESP method) and their results are read
+// later (via the UnmarshalRESP method).
 //
-// A CmdAction should not be used again once UnmarshalRESP returns successfully
-// from it.
+// When used directly with Do then MarshalRESP/UnmarshalRESP are not called, and
+// when used in a Pipeline the Run method is not called.
 type CmdAction interface {
 	Action
 	resp.Marshaler
@@ -435,6 +436,8 @@ type pipeline []CmdAction
 // a single write, then reads their responses in a single read. This reduces
 // network delay into a single round-trip.
 //
+// Run will not be called on any of the passed in CmdActions.
+//
 // NOTE that, while a Pipeline performs all commands on a single Conn, it
 // shouldn't be used for MULTI/EXEC transactions, because if there's an error it
 // won't discard the incomplete transaction. Use WithConn or EvalScript for
@@ -469,15 +472,18 @@ func (p pipeline) Run(c Conn) error {
 	return nil
 }
 
-// MarshalRESP implements the resp.Marshaler interface, so that the pipeline can pass itself to the Conn.Encode method
-// instead of calling Conn.Encode for each CmdAction in the pipeline.
+// MarshalRESP implements the resp.Marshaler interface, so that the pipeline can
+// pass itself to the Conn.Encode method instead of calling Conn.Encode for each
+// CmdAction in the pipeline.
 //
-// This helps with Conn implementations that flush their underlying buffers after each call to Encode, like the default
-// default Conn implementation (connWrap) does, making better use of internal buffering and automatic flushing as well
-// as reducing the number of syscalls that both the client and Redis need to do.
+// This helps with Conn implementations that flush their underlying buffers
+// after each call to Encode, like the default default Conn implementation
+// (connWrap) does, making better use of internal buffering and automatic
+// flushing as well as reducing the number of syscalls that both the client and
+// Redis need to do.
 //
-// Without this, using the default Conn implementation, big pipelines can easily spend much of their time just in
-// flushing (in one case measured, up to 40%).
+// Without this, using the default Conn implementation, big pipelines can easily
+// spend much of their time just in flushing (in one case measured, up to 40%).
 func (p pipeline) MarshalRESP(w io.Writer) error {
 	for _, cmd := range p {
 		if err := cmd.MarshalRESP(w); err != nil {
