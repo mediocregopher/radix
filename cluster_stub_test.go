@@ -108,6 +108,9 @@ func (s *clusterNodeStub) withKeys(keys []string, asking bool, fn func(clusterSl
 	s.clusterDatasetStub.Lock()
 	defer s.clusterDatasetStub.Unlock()
 
+	// this doesn't correctly handle the case were all the given keys are the same,
+	// in which case a real redis cluster node will handle the command like a single
+	// key command.
 	if len(keys) > 1 && asking {
 		slotI := ClusterSlot([]byte(keys[0]))
 		slot := s.clusterDatasetStub.slots[slotI]
