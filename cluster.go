@@ -563,13 +563,11 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 		return err
 	}
 
-	if ask || moved {
-		msgParts := strings.Split(msg, " ")
-		if len(msgParts) < 3 {
-			return errors.Errorf("malformed MOVED/ASK error %q", msg)
-		}
-		addr = msgParts[2]
+	msgParts := strings.Split(msg, " ")
+	if len(msgParts) < 3 {
+		return errors.Errorf("malformed MOVED/ASK error %q", msg)
 	}
+	addr = msgParts[2]
 
 	if attempts--; attempts <= 0 {
 		return errors.New("cluster action redirected too many times")
