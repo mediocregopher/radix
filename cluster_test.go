@@ -151,10 +151,14 @@ func TestClusterDo(t *T) {
 func TestClusterDoWhenDown(t *T) {
 	var stub *clusterNodeStub
 
+	var isDown bool
+
 	c, scl := newTestCluster(
 		ClusterWaitWhenDown(50 * time.Millisecond),
 		ClusterWithTrace(trace.ClusterTrace{
 			StateChange: func(d trace.ClusterStateChange) {
+				isDown = d.IsDown
+
 				if d.IsDown {
 					time.AfterFunc(75 * time.Millisecond, func() {
 						stub.addSlot(0)
@@ -172,9 +176,11 @@ func TestClusterDoWhenDown(t *T) {
 
 	err := c.Do(Cmd(nil, "GET", k))
 	assert.EqualError(t, err, "CLUSTERDOWN Hash slot not served")
+	assert.True(t, isDown)
 
 	err = c.Do(Cmd(nil, "GET", k))
 	assert.Nil(t, err)
+	assert.False(t, isDown)
 }
 
 func BenchmarkClusterDo(b *B) {
