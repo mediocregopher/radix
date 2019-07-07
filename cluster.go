@@ -112,7 +112,7 @@ type Cluster struct {
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
 
-	down uint64
+	down uint64 // atomic, must not be accessed directly
 
 	l              sync.RWMutex
 	pools          map[string]Client
