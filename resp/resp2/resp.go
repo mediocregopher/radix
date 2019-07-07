@@ -939,9 +939,14 @@ func (a Any) unmarshalSingle(body io.Reader, n int) error {
 		err = ai.UnmarshalBinary(*scratch)
 		bytesutil.PutBytes(scratch)
 	default:
-		if err = bytesutil.ReadNDiscard(body, n); err == nil {
-			err = resp.ErrDiscarded{Err: errors.Errorf("can't unmarshal into %T", a.I)}
+		scratch := bytesutil.GetBytes()
+		if *scratch, err = bytesutil.ReadNAppend(body, *scratch, n); err != nil {
+			break
 		}
+		err = resp.ErrDiscarded{
+			Err: errors.Errorf("can't unmarshal into %T, message body was: %q", a.I, *scratch),
+		}
+		bytesutil.PutBytes(scratch)
 	}
 
 	return err
@@ -968,7 +973,9 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 	size := int(l)
 	v := reflect.ValueOf(a.I)
 	if v.Kind() != reflect.Ptr {
-		err := resp.ErrDiscarded{Err: errors.Errorf("can't unmarshal into %T", a.I)}
+		err := resp.ErrDiscarded{
+			Err: errors.Errorf("can't unmarshal array into %T", a.I),
+		}
 		return discardArrayAfterErr(br, int(l), err)
 	}
 	v = reflect.Indirect(v)
