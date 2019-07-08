@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -181,7 +182,10 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 
 		if err := p.c.Do(pipe); err != nil {
 			for _, req := range reqs {
-				req.(*pipelinerCmd).resCh <- err
+				select {
+				case req.(*pipelinerCmd).resCh <- err:
+				default:
+				}
 			}
 		}
 	}()
@@ -223,7 +227,11 @@ func (p pipelinerPipeline) Run(c Conn) error {
 		return err
 	}
 	for _, req := range p.pipeline {
-		req.(*pipelinerCmd).resCh <- c.Decode(req)
+		err := c.Decode(req)
+		if _, ok := err.(net.Error); ok {
+			return err
+		}
+		req.(*pipelinerCmd).resCh <- err
 	}
 	return nil
 }
