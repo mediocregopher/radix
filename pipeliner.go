@@ -1,14 +1,9 @@
 package radix
 
 import (
-	"net"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/xerrors"
-
-	"github.com/mediocregopher/radix/v3/resp"
 )
 
 var blockingCmds = map[string]bool{
@@ -230,14 +225,12 @@ func (p pipelinerPipeline) Run(c Conn) error {
 	if err := c.Encode(p); err != nil {
 		return err
 	}
+	errConn := ioErrConn{Conn: c}
 	for _, req := range p.pipeline {
-		err := c.Decode(req)
-		if _, ok := err.(net.Error); ok {
-			return err
-		} else if err != nil && !xerrors.As(err, new(resp.ErrDiscarded)) {
-			return err
+		req.(*pipelinerCmd).resCh <- errConn.Decode(req)
+		if errConn.lastIOErr != nil {
+			return errConn.lastIOErr
 		}
-		req.(*pipelinerCmd).resCh <- err
 	}
 	return nil
 }
