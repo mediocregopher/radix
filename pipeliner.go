@@ -5,6 +5,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/xerrors"
+
+	"github.com/mediocregopher/radix/v3/resp"
 )
 
 var blockingCmds = map[string]bool{
@@ -229,6 +233,8 @@ func (p pipelinerPipeline) Run(c Conn) error {
 	for _, req := range p.pipeline {
 		err := c.Decode(req)
 		if _, ok := err.(net.Error); ok {
+			return err
+		} else if err != nil && !xerrors.As(err, new(resp.ErrDiscarded)) {
 			return err
 		}
 		req.(*pipelinerCmd).resCh <- err

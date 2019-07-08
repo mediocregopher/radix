@@ -9,10 +9,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPipelinerTimeout(t *T) {
+func TestPipeliner(t *T) {
 	dialOpts := []DialOpt{DialReadTimeout(time.Second)}
 
-	runTest := func(t *T, p *pipeliner) {
+	testNonRecoverableError := func(t *T, p *pipeliner) {
+		key := randStr()
+
+		setCmd := getPipelinerCmd(Cmd(nil, "SET", key, key))
+
+		var firstGetResult string
+		firstGetCmd := getPipelinerCmd(Cmd(&firstGetResult, "GET", key))
+
+		invalidCmd := getPipelinerCmd(Cmd(nil, "RADIXISAWESOME"))
+
+		var secondGetResult string
+		secondGetCmd := getPipelinerCmd(Cmd(&secondGetResult, "GET", key))
+
+		p.flush([]CmdAction{setCmd, firstGetCmd, invalidCmd, secondGetCmd})
+
+		require.Nil(t, <-setCmd.resCh)
+
+		require.Nil(t, <-firstGetCmd.resCh)
+		require.Equal(t, key, firstGetResult)
+
+		invalidCmdErr := <-invalidCmd.resCh
+		require.NotNil(t, invalidCmdErr)
+
+		require.Equal(t, invalidCmdErr, <-secondGetCmd.resCh)
+		require.Empty(t, secondGetResult)
+	}
+
+	testTimeout := func(t *T, p *pipeliner) {
 		key := randStr()
 
 		delCmd := getPipelinerCmd(Cmd(nil, "DEL", key))
@@ -21,24 +48,22 @@ func TestPipelinerTimeout(t *T) {
 		require.Nil(t, <-delCmd.resCh)
 		require.Nil(t, <-pushCmd.resCh)
 
-		// we use blocking commands for these tests to simulate a slow response that will lead to a timeout
-
-		var firstPopResult []string
-		firstPopCmd := getPipelinerCmd(Cmd(&firstPopResult, "BLPOP", key, "1"))
+		var firstPopResult string
+		firstPopCmd := getPipelinerCmd(Cmd(&firstPopResult, "LPOP", key))
 
 		var pauseResult string
 		pauseCmd := getPipelinerCmd(Cmd(&pauseResult, "CLIENT", "PAUSE", "1100"))
 
-		var secondPopResult []string
-		secondPopCmd := getPipelinerCmd(Cmd(&secondPopResult, "BLPOP", key, "1"))
+		var secondPopResult string
+		secondPopCmd := getPipelinerCmd(Cmd(&secondPopResult, "LPOP", key))
 
-		var thirdPopResult []string
-		thirdPopCmd := getPipelinerCmd(Cmd(&thirdPopResult, "BLPOP", key, "1"))
+		var thirdPopResult string
+		thirdPopCmd := getPipelinerCmd(Cmd(&thirdPopResult, "LPOP", key))
 
 		p.flush([]CmdAction{firstPopCmd, pauseCmd, secondPopCmd, thirdPopCmd})
 
 		require.Nil(t, <-firstPopCmd.resCh)
-		require.Equal(t, []string{key, "1"}, firstPopResult)
+		require.Equal(t, "1", firstPopResult)
 
 		require.Nil(t, <-pauseCmd.resCh)
 		require.Equal(t, "OK", pauseResult)
@@ -47,13 +72,13 @@ func TestPipelinerTimeout(t *T) {
 		require.IsType(t, (*net.OpError)(nil), secondPopErr)
 		require.True(t, secondPopErr.(net.Error).Temporary())
 		require.True(t, secondPopErr.(net.Error).Timeout())
-		assert.Nil(t, secondPopResult)
+		assert.Empty(t, secondPopResult)
 
 		thirdPopErr := <-thirdPopCmd.resCh
 		require.IsType(t, (*net.OpError)(nil), thirdPopErr)
 		require.True(t, thirdPopErr.(net.Error).Temporary())
 		require.True(t, thirdPopErr.(net.Error).Timeout())
-		assert.Nil(t, thirdPopResult)
+		assert.Empty(t, thirdPopResult)
 	}
 
 	t.Run("Conn", func(t *T) {
@@ -63,7 +88,13 @@ func TestPipelinerTimeout(t *T) {
 		p := newPipeliner(conn, 0, 0, 0)
 		defer p.Close()
 
-		runTest(t, p)
+		t.Run("NonRecoverableError", func(t *T) {
+			testNonRecoverableError(t, p)
+		})
+
+		t.Run("Timeout", func(t *T) {
+			testTimeout(t, p)
+		})
 	})
 
 	// Pool has potentially different semantics because it uses ioErrConn,
@@ -78,6 +109,12 @@ func TestPipelinerTimeout(t *T) {
 		)
 		defer pool.Close()
 
-		runTest(t, pool.pipeliner)
+		t.Run("NonRecoverableError", func(t *T) {
+			testNonRecoverableError(t, pool.pipeliner)
+		})
+
+		t.Run("Timeout", func(t *T) {
+			testTimeout(t, pool.pipeliner)
+		})
 	})
 }
