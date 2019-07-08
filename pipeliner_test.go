@@ -82,17 +82,23 @@ func TestPipeliner(t *T) {
 	}
 
 	t.Run("Conn", func(t *T) {
-		conn := dial(dialOpts...)
-		defer conn.Close()
-
-		p := newPipeliner(conn, 0, 0, 0)
-		defer p.Close()
-
 		t.Run("NonRecoverableError", func(t *T) {
+			conn := dial(dialOpts...)
+			defer conn.Close()
+
+			p := newPipeliner(conn, 0, 0, 0)
+			defer p.Close()
+
 			testNonRecoverableError(t, p)
 		})
 
 		t.Run("Timeout", func(t *T) {
+			conn := dial(dialOpts...)
+			defer conn.Close()
+
+			p := newPipeliner(conn, 0, 0, 0)
+			defer p.Close()
+
 			testTimeout(t, p)
 		})
 	})
@@ -100,20 +106,24 @@ func TestPipeliner(t *T) {
 	// Pool has potentially different semantics because it uses ioErrConn,
 	// so we test it separately.
 	t.Run("Pool", func(t *T) {
-		pool := testPool(1,
+		poolOpts := []PoolOpt{
 			PoolConnFunc(func(string, string) (Conn, error) {
 				return dial(dialOpts...), nil
 			}),
 			PoolPipelineConcurrency(1),
 			PoolPipelineWindow(time.Hour, 0),
-		)
-		defer pool.Close()
-
+		}
 		t.Run("NonRecoverableError", func(t *T) {
+			pool := testPool(1, poolOpts...)
+			defer pool.Close()
+
 			testNonRecoverableError(t, pool.pipeliner)
 		})
 
 		t.Run("Timeout", func(t *T) {
+			pool := testPool(1, poolOpts...)
+			defer pool.Close()
+
 			testTimeout(t, pool.pipeliner)
 		})
 	})
