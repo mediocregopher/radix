@@ -103,8 +103,8 @@ func TestPipeliner(t *T) {
 		})
 	})
 
-	// Pool has potentially different semantics because it uses ioErrConn,
-	// so we test it separately.
+	// Pool may have potentially different semantics because it uses ioErrConn
+	// directly, so we test it separately.
 	t.Run("Pool", func(t *T) {
 		poolOpts := []PoolOpt{
 			PoolConnFunc(func(string, string) (Conn, error) {
