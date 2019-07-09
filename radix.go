@@ -144,25 +144,20 @@
 //
 // Implicit pipelining
 //
-// Implicit pipelining is an optimization that reduces the overhead of
-// I/O and the CPU usage for marshalling and unmarshalling on both the
-// client and server when executing many concurrent commands on a Client.
+// Implicit pipelining is an optimization implemented and enabled in the default
+// Pool implementation (and therefore also used by Cluster and Sentinel) which
+// involves delaying concurrent Cmds and FlatCmds a small amount of time and
+// sending them to redis in a single batch, similar to manually using a Pipeline.
+// By doing this radix significantly reduces the I/O and CPU overhead for
+// concurrent requests.
 //
-// Commands that can be safely pipelined (currently all commands except those
-// that may block) will be delayed by a small amount of time and be send to
-// redis in a single batch, similar to manually using a Pipeline. All other
-// commands will be executed without delay as if implicit pipelining was
-// disabled.
-//
-// Currently only pools returned by NewPool implement implicit pipelining.
-// This includes the pools used by default in NewCluster and NewSentinel,
-// thus both Cluster and Sentinel can profit from implicit pipelining.
+// Note that only commands which do not block are eligible for implicit pipelining.
 //
 // See the documentation on Pool for more information about the current
 // implementation of implicit pipelining and for how to configure or disable
 // the feature.
 //
-// For a performance comparisons between Clients with and without impliciz
+// For a performance comparisons between Clients with and without implicit
 // pipelining see the benchmark results in the README.md.
 //
 package radix
