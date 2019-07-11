@@ -42,4 +42,8 @@ type ClusterRedirected struct {
 	Key           string
 	Moved, Ask    bool
 	RedirectCount int
+
+	// If true, then the MOVED/ASK error which was received will not be honored,
+	// and the call to Do will be returning the MOVED/ASK error.
+	Final bool
 }
