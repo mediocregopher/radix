@@ -181,7 +181,10 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 
 		if err := p.c.Do(pipe); err != nil {
 			for _, req := range reqs {
-				req.(*pipelinerCmd).resCh <- err
+				select {
+				case req.(*pipelinerCmd).resCh <- err:
+				default:
+				}
 			}
 		}
 	}()
@@ -222,8 +225,12 @@ func (p pipelinerPipeline) Run(c Conn) error {
 	if err := c.Encode(p); err != nil {
 		return err
 	}
+	errConn := ioErrConn{Conn: c}
 	for _, req := range p.pipeline {
-		req.(*pipelinerCmd).resCh <- c.Decode(req)
+		req.(*pipelinerCmd).resCh <- errConn.Decode(req)
+		if errConn.lastIOErr != nil {
+			return errConn.lastIOErr
+		}
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -8,7 +9,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/mediocregopher/radix/v3/trace"
 )
 
@@ -230,4 +233,17 @@ func TestPoolClose(t *T) {
 	assert.NoError(t, pool.Do(Cmd(nil, "PING")))
 	assert.NoError(t, pool.Close())
 	assert.Error(t, errClientClosed, pool.Do(Cmd(nil, "PING")))
+}
+
+func TestIoErrConn(t *T) {
+	t.Run("NotReusableAfterError", func(t *T) {
+		dummyError := errors.New("i am error")
+
+		ioc := newIOErrConn(Stub("tcp", "127.0.0.1:6379", nil))
+		ioc.lastIOErr = dummyError
+
+		require.Equal(t, dummyError, ioc.Encode(&resp2.Any{}))
+		require.Equal(t, dummyError, ioc.Decode(&resp2.Any{}))
+		require.Nil(t, ioc.Close())
+	})
 }

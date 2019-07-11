@@ -34,6 +34,9 @@ func newIOErrConn(c Conn) *ioErrConn {
 }
 
 func (ioc *ioErrConn) Encode(m resp.Marshaler) error {
+	if ioc.lastIOErr != nil {
+		return ioc.lastIOErr
+	}
 	err := ioc.Conn.Encode(m)
 	if nerr, _ := err.(net.Error); nerr != nil {
 		ioc.lastIOErr = err
@@ -42,10 +45,13 @@ func (ioc *ioErrConn) Encode(m resp.Marshaler) error {
 }
 
 func (ioc *ioErrConn) Decode(m resp.Unmarshaler) error {
+	if ioc.lastIOErr != nil {
+		return ioc.lastIOErr
+	}
 	err := ioc.Conn.Decode(m)
 	if nerr, _ := err.(net.Error); nerr != nil {
 		ioc.lastIOErr = err
-	} else if !errors.As(err, new(resp.ErrDiscarded)) {
+	} else if err != nil && !errors.As(err, new(resp.ErrDiscarded)) {
 		ioc.lastIOErr = err
 	}
 	return err
