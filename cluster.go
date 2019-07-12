@@ -84,10 +84,13 @@ func ClusterSyncEvery(d time.Duration) ClusterOpt {
 	}
 }
 
-// ClusterWaitWhenDown tells the Cluster to wait for the duration d before executing
-// commands when the cluster is down. If d is <= 0 the Cluster will not wait with
-// executing commands when the cluster is down.
-// Note that even if d is > 0, calls to Sync will not wait.
+// ClusterWaitWhenDown tells the Cluster to delay all commands by the given
+// duration while the cluster is seen to be in the CLUSTERDOWN state. This
+// allows fewer actions to be affected by brief outages, e.g. during a failover.
+//
+// If the given duration is 0 then Cluster will not delay actions during the
+// CLUSTERDOWN state. Note that calls to Sync will not be delayed regardless
+// of this option.
 func ClusterWaitWhenDown(d time.Duration) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.clusterDownWait = d
