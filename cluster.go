@@ -533,6 +533,9 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 		return nil
 	}
 
+	if !errors.As(err, new(resp2.Error)) {
+		return err
+	}
 	msg := err.Error()
 
 	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
