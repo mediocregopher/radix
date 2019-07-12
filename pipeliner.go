@@ -225,6 +225,11 @@ func (p pipelinerPipeline) Run(c Conn) error {
 	errConn := ioErrConn{Conn: c}
 	for _, req := range p.pipeline {
 		err := errConn.Decode(req)
+		// the order here is important: if we tried to send the error to
+		// before returning we could end up sending the error twice, which
+		// could lead to data races when the *pipelinerCmd gets reused.
+		// to avoid this we must return without sending a value, in case
+		// we got a non-recoverable error.
 		if errConn.lastIOErr != nil {
 			return errConn.lastIOErr
 		}
