@@ -115,8 +115,7 @@ type Cluster struct {
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
 
-	lastClusterdownMu sync.Mutex
-	lastClusterdown   atomic.Value // time.Time, atomic, writes must hold the lastClusterdownMu
+	lastClusterdown int64 // unix timestamp in milliseconds, atomic
 
 	l              sync.RWMutex
 	pools          map[string]Client
@@ -475,45 +474,39 @@ func (c *Cluster) Do(a Action) error {
 	return c.doInner(a, addr, key, false, doAttempts)
 }
 
-func (c *Cluster) getClusterDownSince() time.Time {
-	t, _ := c.lastClusterdown.Load().(time.Time)
-	return t
+func (c *Cluster) getClusterDownSince() int64 {
+	return atomic.LoadInt64(&c.lastClusterdown)
 }
 
 func (c *Cluster) setClusterDown(down bool) (changed bool) {
-	// avoid taking the lock when the down state was already cleared
-	prevVal, _ := c.lastClusterdown.Load().(time.Time)
-	if !down && prevVal.IsZero() {
+	prevVal := atomic.LoadInt64(&c.lastClusterdown)
+	// avoid CAS in the common case were the cluster is up
+	if !down && prevVal == 0 {
 		return false
 	}
 
-	var newVal time.Time
+	var newVal int64
 	if down {
-		// check for a small difference in time to reduce contention
-		if newVal = time.Now(); newVal.Sub(prevVal) < time.Millisecond {
+		newVal = time.Now().UnixNano() / 1000 / 1000
+		// check for at least a millisecond difference, to avoid unnecessary stores
+		if newVal-prevVal <= 0 {
 			return false
 		}
 	}
 
-	c.lastClusterdownMu.Lock()
-	defer c.lastClusterdownMu.Unlock()
-
-	// get the value again since it could have changed between the load
-	// and acquiring the lock
-	//
-	// this also avoids a race where we a goroutine that would update
-	// the down state with a newer time could get the lock after a
-	// logically later goroutine that already reset the time (because
-	// the cluster healed itself), and would than mark the cluster as
-	// down again, although it already came back up.
-	prevValLocked, _ := c.lastClusterdown.Load().(time.Time)
-	if !prevValLocked.Equal(prevVal) {
-		return false
+	for !atomic.CompareAndSwapInt64(&c.lastClusterdown, prevVal, newVal) {
+		updatedVal := atomic.LoadInt64(&c.lastClusterdown)
+		// if another goroutine changed the state before we could, we can just return
+		// and avoid more CAS operations since the important thing (the state change)
+		// already happened and the difference in newVal and updatedVal will be small
+		// (when the cluster is down)
+		if prevVal == 0 || updatedVal == 0 || newVal == updatedVal {
+			return false
+		}
+		prevVal = updatedVal
 	}
 
-	c.lastClusterdown.Store(newVal)
-
-	changed = prevValLocked.IsZero() != newVal.IsZero()
+	changed = (prevVal == 0 && newVal != 0) || (prevVal != 0 && newVal == 0)
 
 	if changed && c.co.ct.StateChange != nil {
 		// we assume that this returns quick. we could also do this
@@ -539,11 +532,11 @@ func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts in
 }
 
 func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) error {
-	if c.co.clusterDownWait > 0 {
-		downSince := c.getClusterDownSince()
-		// only wait when we the cluster is down and not much time elapsed
-		// between now and the last error
-		if !downSince.IsZero() && time.Since(downSince) < c.co.clusterDownWait {
+	if downSince := c.getClusterDownSince(); downSince > 0 && c.co.clusterDownWait > 0 {
+		// only wait when the last command was not too long, because
+		// otherwise the chance it high that the cluster already healed
+		elapsed := (time.Now().UnixNano() / 1000 / 1000) - downSince
+		if elapsed < int64(c.co.clusterDownWait/time.Millisecond) {
 			time.Sleep(c.co.clusterDownWait)
 		}
 	}
