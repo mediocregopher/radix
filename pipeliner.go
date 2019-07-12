@@ -227,10 +227,11 @@ func (p pipelinerPipeline) Run(c Conn) error {
 	}
 	errConn := ioErrConn{Conn: c}
 	for _, req := range p.pipeline {
-		req.(*pipelinerCmd).resCh <- errConn.Decode(req)
+		err := errConn.Decode(req)
 		if errConn.lastIOErr != nil {
 			return errConn.lastIOErr
 		}
+		req.(*pipelinerCmd).resCh <- err
 	}
 	return nil
 }
