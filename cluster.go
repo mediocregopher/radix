@@ -84,14 +84,14 @@ func ClusterSyncEvery(d time.Duration) ClusterOpt {
 	}
 }
 
-// ClusterWaitWhenDown tells the Cluster to delay all commands by the given
+// ClusterOnDownDelayActionsBy tells the Cluster to delay all commands by the given
 // duration while the cluster is seen to be in the CLUSTERDOWN state. This
 // allows fewer actions to be affected by brief outages, e.g. during a failover.
 //
 // If the given duration is 0 then Cluster will not delay actions during the
 // CLUSTERDOWN state. Note that calls to Sync will not be delayed regardless
 // of this option.
-func ClusterWaitWhenDown(d time.Duration) ClusterOpt {
+func ClusterOnDownDelayActionsBy(d time.Duration) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.clusterDownWait = d
 	}
@@ -140,7 +140,7 @@ type Cluster struct {
 //
 //     ClusterPoolFunc(DefaultClientFunc)
 //     ClusterSyncEvery(5 * time.Second)
-//     ClusterWaitWhenDown(100 * time.Millisecond)
+//     ClusterOnDownDelayActionsBy(100 * time.Millisecond)
 //
 func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c := &Cluster{
@@ -153,7 +153,7 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	defaultClusterOpts := []ClusterOpt{
 		ClusterPoolFunc(DefaultClientFunc),
 		ClusterSyncEvery(5 * time.Second),
-		ClusterWaitWhenDown(100 * time.Millisecond),
+		ClusterOnDownDelayActionsBy(100 * time.Millisecond),
 	}
 
 	for _, opt := range append(defaultClusterOpts, opts...) {
