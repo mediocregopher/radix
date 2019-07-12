@@ -39,7 +39,7 @@ func (d *dedupe) do(fn func()) {
 	})
 }
 
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 
 // ClusterCanRetryAction is an Action which is aware of Cluster's retry behavior
 // in the event of a slot migration. If an Action receives an error from a
@@ -115,7 +115,8 @@ type Cluster struct {
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
 
-	down uint64 // atomic, must not be accessed directly
+	lastClusterdownMu sync.Mutex
+	lastClusterdown   atomic.Value // time.Time, atomic, writes must hold the lastClusterdownMu
 
 	l              sync.RWMutex
 	pools          map[string]Client
@@ -474,19 +475,51 @@ func (c *Cluster) Do(a Action) error {
 	return c.doInner(a, addr, key, false, doAttempts)
 }
 
-func (c *Cluster) isClusterDown() bool {
-	return atomic.LoadUint64(&c.down) == 1
+func (c *Cluster) getClusterDownSince() time.Time {
+	t, _ := c.lastClusterdown.Load().(time.Time)
+	return t
 }
 
-func (c *Cluster) setClusterDown(down bool) bool {
-	var changed bool
-	if down {
-		changed = atomic.CompareAndSwapUint64(&c.down, 0, 1)
-	} else {
-		changed = atomic.CompareAndSwapUint64(&c.down, 1, 0)
+func (c *Cluster) setClusterDown(down bool) (changed bool) {
+	// avoid taking the lock when the down state was already cleared
+	prevVal, _ := c.lastClusterdown.Load().(time.Time)
+	if !down && prevVal.IsZero() {
+		return false
 	}
 
+	var newVal time.Time
+	if down {
+		// check for a small difference in time to reduce contention
+		if newVal = time.Now(); newVal.Sub(prevVal) < time.Millisecond {
+			return false
+		}
+	}
+
+	c.lastClusterdownMu.Lock()
+	defer c.lastClusterdownMu.Unlock()
+
+	// get the value again since it could have changed between the load
+	// and acquiring the lock
+	//
+	// this also avoids a race where we a goroutine that would update
+	// the down state with a newer time could get the lock after a
+	// logically later goroutine that already reset the time (because
+	// the cluster healed itself), and would than mark the cluster as
+	// down again, although it already came back up.
+	prevValLocked, _ := c.lastClusterdown.Load().(time.Time)
+	if !prevValLocked.Equal(prevVal) {
+		return false
+	}
+
+	c.lastClusterdown.Store(newVal)
+
+	changed = prevValLocked.IsZero() != newVal.IsZero()
+
 	if changed && c.co.ct.StateChange != nil {
+		// we assume that this returns quick. we could also do this
+		// without holding the lock but than this could race with
+		// another state change and we could trace the changes in
+		// the wrong order.
 		c.co.ct.StateChange(trace.ClusterStateChange{IsDown: down})
 	}
 
@@ -506,8 +539,13 @@ func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts in
 }
 
 func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) error {
-	if c.co.clusterDownWait > 0 && c.isClusterDown() {
-		time.Sleep(c.co.clusterDownWait)
+	if c.co.clusterDownWait > 0 {
+		downSince := c.getClusterDownSince()
+		// only wait when we the cluster is down and not much time elapsed
+		// between now and the last error
+		if !downSince.IsZero() && time.Since(downSince) < c.co.clusterDownWait {
+			time.Sleep(c.co.clusterDownWait)
+		}
 	}
 
 	p, err := c.pool(addr)
