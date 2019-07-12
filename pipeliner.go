@@ -181,7 +181,10 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 
 		if err := p.c.Do(pipe); err != nil {
 			for _, req := range reqs {
-				req.(*pipelinerCmd).resCh <- err
+				select {
+				case req.(*pipelinerCmd).resCh <- err:
+				default:
+				}
 			}
 		}
 	}()
