@@ -480,75 +480,56 @@ func (c *Cluster) getClusterDownSince() int64 {
 
 func (c *Cluster) setClusterDown(down bool) (changed bool) {
 	// There is a race when calling this method concurrently when the cluster
-	// gets heals after being down.
+	// healed after being down.
 	//
 	// If we have 2 goroutines, one that sends a command before the cluster
 	// heals and once that sends a command after the cluster healed, both
 	// goroutines will call this method, but with different values
 	// (down == true and down == false).
 	//
-	// Since there is ordering between the two goroutines, it can happen that
-	// the call to setClusterDown in the second goroutine runs before the call
-	// in the first goroutine. In that case the state would be changed from
-	// down to up by the second goroutine, as it should, only for the first
-	// goroutine to set it back to down a few microseconds later.
+	// Since there is bi ordering between the two goroutines, it can happen
+	// that the call to setClusterDown in the second goroutine runs before
+	// the call in the first goroutine. In that case the state would be
+	// changed from down to up by the second goroutine, as it should, only
+	// for the first goroutine to set it back to down a few microseconds later.
 	//
-	// If this happens other commands will be needlessly delayed and until
+	// If this happens other commands will be needlessly delayed until
 	// another goroutine sets the state to up again and we will trace two
 	// unnecessary state transitions.
 	//
 	// We can not reliably avoid this race without more complex tracking of
 	// previous states, which would be rather complex and possibly expensive.
 
-	// We could simplify this to a swap, but since swapping is quite slow
-	// (on amd64 an atomic load can be as fast as a non-atomic load, while
-	// a swap can easily be 10x slower) we try to avoid it by loading the
-	// value first and check to see if we even need to change the value.
+	// Swapping values is expensive (on amd64, an uncontended swap can be 10x
+	// slower than a load) and can easily become quite contended when we have
+	// many goroutines trying to update the value concurrently, which would
+	// slow it down even more.
+	//
+	// We avoid the overhead of swapping when not necessary by loading the
+	// value first and checking if the value is already what we want it to be.
+	//
+	// Since atomic loads are fast (on amd64 an atomic load can be as fast as
+	// a non-atomic load, and is perfectly scalable as long as there are no
+	// writes to the same cache line), we can safely do this without adding
+	// unnecessary extra latency.
 	prevVal := atomic.LoadInt64(&c.lastClusterdown)
-
-	// Since we already loaded the current value we can do a quick check and
-	// avoid the CAS completely if another goroutine already set the value
-	// we wanted to set.
-	if !down && prevVal == 0 {
-		return false
-	}
 
 	var newVal int64
 	if down {
 		newVal = time.Now().UnixNano() / 1000 / 1000
-		// Check for at least a millisecond difference, to avoid unnecessary stores
-		if newVal-prevVal <= 0 {
+		// Since the exact value is only used for delaying commands small
+		// differences don't matter much and we can avoid many updates by
+		// ignoring small differences (<5ms).
+		if prevVal != 0 && newVal-prevVal < 5 {
+			return false
+		}
+	} else {
+		if prevVal == 0 {
 			return false
 		}
 	}
 
-	for !atomic.CompareAndSwapInt64(&c.lastClusterdown, prevVal, newVal) {
-		updatedVal := atomic.LoadInt64(&c.lastClusterdown)
-		// If we get here that means one of the following things have happened:
-		//
-		// 1. The cluster went from up (prevVal == 0) to down (updatedVal != 0)
-		// 2. The cluster went from down (prevVal != 0) to up (updatedVal == 0)
-		// 3. The timestamp was updated to a newer time (prevVal != 0 && updatedVal != 0)
-		//
-		// In case 1 and 2 we can just return here, since the state was already changed
-		// and (potentially) tracked and our updated would at best (in case 1) only
-		// change the timestamp by a tiny bit.
-		//
-		// What we do in case 3 depends on the value of down. if down is true
-		// we can just return since the state was already changed to down an as
-		// in case 1 we would just change the timestamp by a bit.
-		//
-		// If down is false that means that either the other goroutine got the CLUSTERDOWN
-		// just before the cluster healed and before we got a successful response or the
-		// cluster went down again before we could report it being up. In both cases we
-		// continue to set the state to up (newVal = 0), since we can't differentiate
-		// between these cases. The worst that could happen is that we set the cluster
-		// to up and another goroutine will set it to down again right after that.
-		if (prevVal == 0 && updatedVal != 0) || (prevVal != 0 && updatedVal == 0) || down {
-			return false
-		}
-		prevVal = updatedVal
-	}
+	prevVal = atomic.SwapInt64(&c.lastClusterdown, newVal)
 
 	changed = (prevVal == 0 && newVal != 0) || (prevVal != 0 && newVal == 0)
 
