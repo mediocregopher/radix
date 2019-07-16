@@ -2,9 +2,12 @@ package radix
 
 import (
 	. "testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mediocregopher/radix/v3/trace"
 )
 
 // clusterSlotKeys contains a random key for every slot. Unfortunately I haven't
@@ -31,9 +34,9 @@ var clusterSlotKeys = func() [numSlots]string {
 	return a
 }()
 
-func newTestCluster() (*Cluster, *clusterStub) {
+func newTestCluster(opts ...ClusterOpt) (*Cluster, *clusterStub) {
 	scl := newStubCluster(testTopo)
-	return scl.newCluster(), scl
+	return scl.newCluster(opts...), scl
 }
 
 // sanity check that Cluster is a client
@@ -90,7 +93,10 @@ func TestClusterGet(t *T) {
 }
 
 func TestClusterDo(t *T) {
-	c, scl := newTestCluster()
+	var lastRedirect trace.ClusterRedirected
+	c, scl := newTestCluster(ClusterWithTrace(trace.ClusterTrace{
+		Redirected: func(r trace.ClusterRedirected) { lastRedirect = r },
+	}))
 	defer c.Close()
 	stub0 := scl.stubForSlot(0)
 	stub16k := scl.stubForSlot(16000)
@@ -105,6 +111,7 @@ func TestClusterDo(t *T) {
 		var vgot string
 		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
+		assert.Equal(t, trace.ClusterRedirected{}, lastRedirect)
 	}
 
 	// use doInner to hit the wrong node originally, Do should get a MOVED error
@@ -114,6 +121,12 @@ func TestClusterDo(t *T) {
 		cmd := Cmd(&vgot, "GET", k)
 		require.Nil(t, c.doInner(cmd, stub16k.addr, k, false, 2))
 		assert.Equal(t, v, vgot)
+		assert.Equal(t, trace.ClusterRedirected{
+			Addr:          stub16k.addr,
+			Key:           k,
+			Moved:         true,
+			RedirectCount: 3,
+		}, lastRedirect)
 	}
 
 	// start a migration and migrate the key, which should trigger an ASK when
@@ -124,9 +137,50 @@ func TestClusterDo(t *T) {
 		var vgot string
 		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
+		assert.Equal(t, trace.ClusterRedirected{
+			Addr: stub0.addr,
+			Key:  k,
+			Ask:  true,
+		}, lastRedirect)
+
 		scl.migrateAllKeys(0)
 		scl.migrateDone(0)
 	}
+}
+
+func TestClusterDoWhenDown(t *T) {
+	var stub *clusterNodeStub
+
+	var isDown bool
+
+	c, scl := newTestCluster(
+		ClusterOnDownDelayActionsBy(50*time.Millisecond),
+		ClusterWithTrace(trace.ClusterTrace{
+			StateChange: func(d trace.ClusterStateChange) {
+				isDown = d.IsDown
+
+				if d.IsDown {
+					time.AfterFunc(75*time.Millisecond, func() {
+						stub.addSlot(0)
+					})
+				}
+			},
+		}),
+	)
+	defer c.Close()
+
+	stub = scl.stubForSlot(0)
+	stub.removeSlot(0)
+
+	k := clusterSlotKeys[0]
+
+	err := c.Do(Cmd(nil, "GET", k))
+	assert.EqualError(t, err, "CLUSTERDOWN Hash slot not served")
+	assert.True(t, isDown)
+
+	err = c.Do(Cmd(nil, "GET", k))
+	assert.Nil(t, err)
+	assert.False(t, isDown)
 }
 
 func BenchmarkClusterDo(b *B) {

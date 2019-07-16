@@ -13,10 +13,16 @@ package trace
 ////////////////////////////////////////////////////////////////////////////////
 
 type ClusterTrace struct {
+	// StateChange is called when the cluster becomes down or becomes available again.
+	StateChange func(ClusterStateChange)
 	// TopoChanged is called when the cluster's topology changed.
 	TopoChanged func(ClusterTopoChanged)
 	// Redirected is called when radix.Do responded 'MOVED' or 'ASKED'.
 	Redirected func(ClusterRedirected)
+}
+
+type ClusterStateChange struct {
+	IsDown bool
 }
 
 type ClusterNodeInfo struct {
