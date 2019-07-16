@@ -8,7 +8,6 @@ import (
 	. "testing"
 	"time"
 
-	"github.com/mediocregopher/mediocre-go-lib/mrand"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,7 +78,7 @@ func TestDialSelect(t *T) {
 	// unfortunately this is the best way to discover the currently selected
 	// database, and it's janky af
 	assertDB := func(c Conn) bool {
-		name := mrand.Hex(8)
+		name := randStr()
 		if err := c.Do(Cmd(nil, "CLIENT", "SETNAME", name)); err != nil {
 			t.Fatal(err)
 		}

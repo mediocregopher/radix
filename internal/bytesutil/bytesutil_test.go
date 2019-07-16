@@ -3,11 +3,12 @@ package bytesutil
 import (
 	"bufio"
 	"bytes"
-	"crypto/rand"
+	crand "crypto/rand"
 	"io"
+	"math/rand"
 	. "testing"
+	"time"
 
-	"github.com/mediocregopher/mediocre-go-lib/mrand"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,6 +32,7 @@ func (d *discarder) Discard(n int) (int, error) {
 }
 
 func TestReadNDiscard(t *T) {
+	rand.Seed(time.Now().UnixNano())
 	type testT struct {
 		n         int
 		discarder bool
@@ -38,7 +40,7 @@ func TestReadNDiscard(t *T) {
 
 	assert := func(test testT) {
 		buf := bytes.NewBuffer(make([]byte, 0, test.n))
-		if _, err := io.CopyN(buf, rand.Reader, int64(test.n)); err != nil {
+		if _, err := io.CopyN(buf, crand.Reader, int64(test.n)); err != nil {
 			t.Fatal(err)
 		}
 
@@ -66,8 +68,8 @@ func TestReadNDiscard(t *T) {
 	// randomly generate test cases
 	for i := 0; i < 1000; i++ {
 		test := testT{
-			n:         mrand.Intn(16384),
-			discarder: mrand.Intn(2) == 0,
+			n:         rand.Intn(16384),
+			discarder: rand.Intn(2) == 0,
 		}
 		assert(test)
 	}
