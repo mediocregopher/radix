@@ -119,13 +119,13 @@ func TestClusterDo(t *T) {
 	{
 		var vgot string
 		cmd := Cmd(&vgot, "GET", k)
-		require.Nil(t, c.doInner(cmd, stub16k.addr, k, false, 2))
+		require.Nil(t, c.doInner(cmd, stub16k.addr, k, false, doAttempts))
 		assert.Equal(t, v, vgot)
 		assert.Equal(t, trace.ClusterRedirected{
 			Addr:          stub16k.addr,
 			Key:           k,
 			Moved:         true,
-			RedirectCount: 3,
+			RedirectCount: 1,
 		}, lastRedirect)
 	}
 
@@ -138,13 +138,23 @@ func TestClusterDo(t *T) {
 		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
 		assert.Equal(t, trace.ClusterRedirected{
-			Addr: stub0.addr,
-			Key:  k,
-			Ask:  true,
+			Addr:          stub0.addr,
+			Key:           k,
+			Ask:           true,
+			RedirectCount: 1,
 		}, lastRedirect)
+	}
 
+	// Finish the migration, there should not be anymore redirects
+	{
 		scl.migrateAllKeys(0)
 		scl.migrateDone(0)
+		lastRedirect = trace.ClusterRedirected{}
+		var vgot string
+		require.Nil(t, c.Sync())
+		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
+		assert.Equal(t, v, vgot)
+		assert.Equal(t, trace.ClusterRedirected{}, lastRedirect)
 	}
 }
 

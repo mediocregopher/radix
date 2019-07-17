@@ -540,14 +540,15 @@ func (c *Cluster) setClusterDown(down bool) (changed bool) {
 	return changed
 }
 
-func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, attempts int) {
+func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, count int, final bool) {
 	if c.co.ct.Redirected != nil {
 		c.co.ct.Redirected(trace.ClusterRedirected{
 			Addr:          addr,
 			Key:           key,
 			Moved:         moved,
 			Ask:           ask,
-			RedirectCount: doAttempts - attempts,
+			RedirectCount: count,
+			Final:         final,
 		})
 	}
 }
@@ -602,7 +603,6 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	if !moved && !ask {
 		return err
 	}
-	c.traceRedirected(addr, key, moved, ask, attempts)
 
 	// if we get an ASK there's no need to do a sync quite yet, we can continue
 	// normally. But MOVED always prompts a sync. In the section after this one
@@ -625,8 +625,9 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	if len(msgParts) < 3 {
 		return errors.Errorf("malformed MOVED/ASK error %q", msg)
 	}
-	addr = msgParts[2]
+	ogAddr, addr := addr, msgParts[2]
 
+	c.traceRedirected(ogAddr, key, moved, ask, doAttempts-attempts+1, attempts <= 1)
 	if attempts--; attempts <= 0 {
 		return errors.New("cluster action redirected too many times")
 	}
