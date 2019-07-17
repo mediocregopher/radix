@@ -1,5 +1,23 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.3.1
+
+* Use `xerrors` internally. (PR #113)
+
+* Handle unmarshal errors better. Previously an unmarshaling error could leave
+  the connection in an inconsistent state, because the full message wouldn't get
+  completely read off the wire. After a lot of work, this has been fixed. (PR
+  #127, #139, #145)
+
+* Handle CLUSTERDOWN errors better. Upon seeing a CLUSTERDOWN, all commands will
+  be delayed by a small amount of time. The delay will be stopped as soon as the
+  first non-CLUSTERDOWN result is seen from the Cluster. The idea is that, if a
+  failover happens, commands which are incoming will be paused long enough for
+  the cluster to regain it sanity, thus minimizing the number of failed commands
+  during the failover. (PR #137)
+
+* Fix cluster redirect tracing. (PR #142)
+
 # v3.3.0
 
 **New**
