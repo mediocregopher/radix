@@ -246,4 +246,15 @@ func TestIoErrConn(t *T) {
 		require.Equal(t, dummyError, ioc.Decode(&resp2.Any{}))
 		require.Nil(t, ioc.Close())
 	})
+
+	t.Run("ReusableAfterNOSCRIPTError", func(t *T) {
+		ioc := newIOErrConn(dial())
+		defer ioc.Close()
+
+		err1 := ioc.Do(Cmd(nil, "EVALSHA", "Z", "0"))
+		require.IsType(t, resp2.ErrNoScript{}, err1)
+
+		err2 := ioc.Do(Cmd(nil, "GET", randStr()))
+		require.Nil(t, err2)
+	})
 }
