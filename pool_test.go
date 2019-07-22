@@ -236,7 +236,7 @@ func TestPoolClose(t *T) {
 }
 
 func TestIoErrConn(t *T) {
-	t.Run("NotReusableAfterError", func(t *T) {
+	t.Run("NotReusableAfterNonRESPError", func(t *T) {
 		dummyError := errors.New("i am error")
 
 		ioc := newIOErrConn(Stub("tcp", "127.0.0.1:6379", nil))
@@ -245,5 +245,16 @@ func TestIoErrConn(t *T) {
 		require.Equal(t, dummyError, ioc.Encode(&resp2.Any{}))
 		require.Equal(t, dummyError, ioc.Decode(&resp2.Any{}))
 		require.Nil(t, ioc.Close())
+	})
+
+	t.Run("ReusableAfterRESPError", func(t *T) {
+		ioc := newIOErrConn(dial())
+		defer ioc.Close()
+
+		err1 := ioc.Do(Cmd(nil, "EVAL", "Z", "0"))
+		require.IsType(t, resp2.Error{}, err1)
+
+		err2 := ioc.Do(Cmd(nil, "GET", randStr()))
+		require.Nil(t, err2)
 	})
 }
