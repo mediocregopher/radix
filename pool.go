@@ -9,6 +9,7 @@ import (
 	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
+	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/mediocregopher/radix/v3/trace"
 )
 
@@ -51,7 +52,7 @@ func (ioc *ioErrConn) Decode(m resp.Unmarshaler) error {
 	err := ioc.Conn.Decode(m)
 	if nerr, _ := err.(net.Error); nerr != nil {
 		ioc.lastIOErr = err
-	} else if err != nil && !errors.As(err, new(resp.ErrDiscarded)) {
+	} else if err != nil && !errors.As(err, new(resp2.Error)) && !errors.As(err, new(resp.ErrDiscarded)) {
 		ioc.lastIOErr = err
 	}
 	return err
