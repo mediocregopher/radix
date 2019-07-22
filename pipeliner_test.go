@@ -12,7 +12,7 @@ import (
 func TestPipeliner(t *T) {
 	dialOpts := []DialOpt{DialReadTimeout(time.Second)}
 
-	testNonRecoverableError := func(t *T, p *pipeliner) {
+	testRecoverableError := func(t *T, p *pipeliner) {
 		key := randStr()
 
 		setCmd := getPipelinerCmd(Cmd(nil, "SET", key, key))
@@ -32,11 +32,10 @@ func TestPipeliner(t *T) {
 		require.Nil(t, <-firstGetCmd.resCh)
 		require.Equal(t, key, firstGetResult)
 
-		invalidCmdErr := <-invalidCmd.resCh
-		require.NotNil(t, invalidCmdErr)
+		require.NotNil(t, <-invalidCmd.resCh)
 
-		require.Equal(t, invalidCmdErr, <-secondGetCmd.resCh)
-		require.Empty(t, secondGetResult)
+		require.Nil(t, <-secondGetCmd.resCh)
+		require.Equal(t, key, secondGetResult)
 	}
 
 	testTimeout := func(t *T, p *pipeliner) {
@@ -82,14 +81,14 @@ func TestPipeliner(t *T) {
 	}
 
 	t.Run("Conn", func(t *T) {
-		t.Run("NonRecoverableError", func(t *T) {
+		t.Run("RecoverableError", func(t *T) {
 			conn := dial(dialOpts...)
 			defer conn.Close()
 
 			p := newPipeliner(conn, 0, 0, 0)
 			defer p.Close()
 
-			testNonRecoverableError(t, p)
+			testRecoverableError(t, p)
 		})
 
 		t.Run("Timeout", func(t *T) {
@@ -113,11 +112,11 @@ func TestPipeliner(t *T) {
 			PoolPipelineConcurrency(1),
 			PoolPipelineWindow(time.Hour, 0),
 		}
-		t.Run("NonRecoverableError", func(t *T) {
+		t.Run("RecoverableError", func(t *T) {
 			pool := testPool(1, poolOpts...)
 			defer pool.Close()
 
-			testNonRecoverableError(t, pool.pipeliner)
+			testRecoverableError(t, pool.pipeliner)
 		})
 
 		t.Run("Timeout", func(t *T) {
