@@ -14,6 +14,7 @@ import (
 	"io"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 
 	errors "golang.org/x/xerrors"
@@ -823,7 +824,11 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 
 	switch prefix {
 	case ErrorPrefix[0]:
-		return Error{E: errors.New(string(b))}
+		s := string(b)
+		if strings.HasPrefix(s, "NOSCRIPT") {
+			return ErrNoScript{Err: errors.New(s)}
+		}
+		return Error{E: errors.New(s)}
 	case ArrayPrefix[0]:
 		l, err := bytesutil.ParseInt(b)
 		if err != nil {
@@ -1274,4 +1279,18 @@ func (rm RawMessage) UnmarshalInto(u resp.Unmarshaler) error {
 // IsNil returns true if the contents of RawMessage are one of the nil values.
 func (rm RawMessage) IsNil() bool {
 	return bytes.Equal(rm, nilBulkString) || bytes.Equal(rm, nilArray)
+}
+
+// ErrNoScript is returned if the error starts with "NOSCRIPT"
+type ErrNoScript struct {
+	Err error
+}
+
+func (ens ErrNoScript) Error() string {
+	return ens.Err.Error()
+}
+
+// Unwrap implements the errors.Wrapper interface.
+func (ens ErrNoScript) Unwrap() error {
+	return ens.Err
 }

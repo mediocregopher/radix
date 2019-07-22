@@ -13,6 +13,7 @@ import (
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
+	errors "golang.org/x/xerrors"
 )
 
 // Action performs a task using a Conn.
@@ -395,7 +396,7 @@ func (ec *evalAction) Run(conn Conn) error {
 	}
 
 	err := run(false)
-	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
+	if err != nil && errors.As(err, new(resp2.ErrNoScript)) {
 		err = run(true)
 	}
 	return err
