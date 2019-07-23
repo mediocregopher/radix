@@ -699,9 +699,25 @@ func TestAnyConsumedOnErr(t *T) {
 		err := Any{I: test.into}.UnmarshalRESP(br)
 		debugArgs := []interface{}{"%d) %#v err:%#v (%s)", i, test, err, err}
 		assert.Error(t, err, debugArgs...)
+		assert.True(t, errors.As(err, new(resp.ErrDiscarded)), debugArgs...)
 
 		var ss SimpleString
 		assert.NoError(t, ss.UnmarshalRESP(br), debugArgs...)
 		assert.Equal(t, "DISCARDED", ss.S, debugArgs...)
+	}
+}
+
+func TestErrorAs(t *T) {
+	{
+		err := Error{E: errors.New("foo")}
+		var errDiscarded resp.ErrDiscarded
+		assert.True(t, errors.As(err, &errDiscarded))
+		assert.Equal(t, err, errDiscarded.Err)
+	}
+	{
+		err := &Error{E: errors.New("foo")}
+		var errDiscarded resp.ErrDiscarded
+		assert.True(t, errors.As(err, &errDiscarded))
+		assert.Equal(t, *err, errDiscarded.Err)
 	}
 }

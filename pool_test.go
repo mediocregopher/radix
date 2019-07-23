@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -10,7 +9,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	errors "golang.org/x/xerrors"
 
+	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/mediocregopher/radix/v3/trace"
 )
@@ -245,5 +246,17 @@ func TestIoErrConn(t *T) {
 		require.Equal(t, dummyError, ioc.Encode(&resp2.Any{}))
 		require.Equal(t, dummyError, ioc.Decode(&resp2.Any{}))
 		require.Nil(t, ioc.Close())
+	})
+
+	t.Run("ReusableAfterRESPError", func(t *T) {
+		ioc := newIOErrConn(dial())
+		defer ioc.Close()
+
+		err1 := ioc.Do(Cmd(nil, "EVAL", "Z", "0"))
+		require.True(t, errors.As(err1, new(resp.ErrDiscarded)))
+		require.True(t, errors.As(err1, new(resp2.Error)))
+
+		err2 := ioc.Do(Cmd(nil, "GET", randStr()))
+		require.Nil(t, err2)
 	})
 }
