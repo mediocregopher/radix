@@ -194,6 +194,17 @@ func (e *Error) UnmarshalRESP(br *bufio.Reader) error {
 	return err
 }
 
+// As implements the method for the (x)errors.As function.
+func (e Error) As(target interface{}) bool {
+	switch targetT := target.(type) {
+	case *resp.ErrDiscarded:
+		targetT.Err = e
+		return true
+	default:
+		return false
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Int represents an int type in the RESP protocol
