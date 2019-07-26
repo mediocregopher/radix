@@ -1,5 +1,10 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.3.2
+
+* Have `resp2.Error` match with a `resp.ErrDiscarded` when using `errors.As`.
+  Fixes EVAL, among probably other problems. (PR #152)
+
 # v3.3.1
 
 * Use `xerrors` internally. (PR #113)
