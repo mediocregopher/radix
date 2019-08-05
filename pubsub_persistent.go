@@ -5,11 +5,38 @@ import (
 	"time"
 )
 
+type persistentPubSubOpts struct {
+	cf         ConnFunc
+	abortAfter int
+}
+
+// PersistentPubSubOpt is an optional behavior which can be applied to the PersistentPubSub function
+// to effect a PersistentPubSub's behavior
+type PersistentPubSubOpt func(*persistentPubSubOpts)
+
+// PersistentPubSubConnFunc tells the PersistentPubSub to use the given ConnFunc when creating new
+// Conns to its redis instance. The ConnFunc can be used to set timeouts,
+// perform AUTH, or even use custom Conn implementations.
+func PersistentPubSubConnFunc(cf ConnFunc) PersistentPubSubOpt {
+	return func(opts *persistentPubSubOpts) {
+		opts.cf = cf
+	}
+}
+
+// PersistentPubSubAbortAfter sets max attempts to create redis connection,
+// when attempts is over refresh function reterns error
+func PersistentPubSubAbortAfter(attempts int) PersistentPubSubOpt {
+	return func(opts *persistentPubSubOpts) {
+		opts.abortAfter = attempts
+	}
+}
+
 type persistentPubSub struct {
 	dial func() (Conn, error)
 
 	l           sync.Mutex
 	curr        PubSubConn
+	opts        persistentPubSubOpts
 	subs, psubs chanSet
 	closeCh     chan struct{}
 }
@@ -25,29 +52,46 @@ type persistentPubSub struct {
 //
 // None of the methods on the returned PubSubConn will ever return an error,
 // they will instead block until a connection can be successfully reinstated.
-func PersistentPubSub(network, addr string, connFn ConnFunc) PubSubConn {
-	if connFn == nil {
-		connFn = DefaultConnFunc
-	}
+func PersistentPubSub(network, addr string, opts ...PersistentPubSubOpt) (PubSubConn, error) {
 	p := &persistentPubSub{
-		dial:    func() (Conn, error) { return connFn(network, addr) },
 		subs:    chanSet{},
 		psubs:   chanSet{},
 		closeCh: make(chan struct{}),
 	}
-	p.refresh()
-	return p
+
+	defaultOpts := []PersistentPubSubOpt{
+		PersistentPubSubConnFunc(DefaultConnFunc),
+		// When the abortAfter option not set
+		// there are no limit for connection attempts
+		PersistentPubSubAbortAfter(0),
+	}
+
+	for _, opt := range append(defaultOpts, opts...) {
+		if opt != nil {
+			opt(&p.opts)
+		}
+	}
+
+	p.dial = func() (Conn, error) {
+		return p.opts.cf(network, addr)
+	}
+
+	if err := p.refresh(); err != nil {
+		return nil, err
+	}
+
+	return p, nil
 }
 
-func (p *persistentPubSub) refresh() {
+func (p *persistentPubSub) refresh() error {
 	if p.curr != nil {
 		p.curr.Close()
 	}
 
-	attempt := func() PubSubConn {
+	attempt := func() (PubSubConn, error) {
 		c, err := p.dial()
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		errCh := make(chan error, 1)
 		pc := newPubSub(c, errCh)
@@ -55,14 +99,14 @@ func (p *persistentPubSub) refresh() {
 		for msgCh, channels := range p.subs.inverse() {
 			if err := pc.Subscribe(msgCh, channels...); err != nil {
 				pc.Close()
-				return nil
+				return nil, err
 			}
 		}
 
 		for msgCh, patterns := range p.psubs.inverse() {
 			if err := pc.PSubscribe(msgCh, patterns...); err != nil {
 				pc.Close()
-				return nil
+				return nil, err
 			}
 		}
 
@@ -80,14 +124,28 @@ func (p *persistentPubSub) refresh() {
 			case <-p.closeCh:
 			}
 		}()
-		return pc
+
+		return pc, nil
 	}
 
+	var err error
+	var attempts int
 	for {
-		if p.curr = attempt(); p.curr != nil {
-			return
+		if p.opts.abortAfter > 0 && attempts >= p.opts.abortAfter {
+			return err
 		}
-		time.Sleep(200 * time.Millisecond)
+
+		p.curr, err = attempt()
+		if p.curr != nil {
+			return nil
+		}
+
+		attempts++
+		select {
+		case <-time.After(200 * time.Millisecond):
+		case <-p.closeCh:
+			return err
+		}
 	}
 }
 
@@ -100,10 +158,10 @@ func (p *persistentPubSub) Subscribe(msgCh chan<- PubSubMessage, channels ...str
 		p.subs.add(channel, msgCh)
 	}
 
-	if err := p.curr.Subscribe(msgCh, channels...); err != nil {
-		p.refresh()
+	if err := p.curr.Subscribe(msgCh, channels...); err == nil {
+		return nil
 	}
-	return nil
+	return p.refresh()
 }
 
 func (p *persistentPubSub) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
@@ -115,10 +173,10 @@ func (p *persistentPubSub) Unsubscribe(msgCh chan<- PubSubMessage, channels ...s
 		p.subs.del(channel, msgCh)
 	}
 
-	if err := p.curr.Unsubscribe(msgCh, channels...); err != nil {
-		p.refresh()
+	if err := p.curr.Unsubscribe(msgCh, channels...); err == nil {
+		return nil
 	}
-	return nil
+	return p.refresh()
 }
 
 func (p *persistentPubSub) PSubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
@@ -130,10 +188,10 @@ func (p *persistentPubSub) PSubscribe(msgCh chan<- PubSubMessage, channels ...st
 		p.psubs.add(channel, msgCh)
 	}
 
-	if err := p.curr.PSubscribe(msgCh, channels...); err != nil {
-		p.refresh()
+	if err := p.curr.PSubscribe(msgCh, channels...); err == nil {
+		return nil
 	}
-	return nil
+	return p.refresh()
 }
 
 func (p *persistentPubSub) PUnsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
@@ -145,10 +203,10 @@ func (p *persistentPubSub) PUnsubscribe(msgCh chan<- PubSubMessage, channels ...
 		p.psubs.del(channel, msgCh)
 	}
 
-	if err := p.curr.PUnsubscribe(msgCh, channels...); err != nil {
-		p.refresh()
+	if err := p.curr.PUnsubscribe(msgCh, channels...); err == nil {
+		return nil
 	}
-	return nil
+	return p.refresh()
 }
 
 func (p *persistentPubSub) Ping() error {
@@ -168,5 +226,8 @@ func (p *persistentPubSub) Close() error {
 	p.l.Lock()
 	defer p.l.Unlock()
 	close(p.closeCh)
+	if p.curr == nil {
+		return nil
+	}
 	return p.curr.Close()
 }

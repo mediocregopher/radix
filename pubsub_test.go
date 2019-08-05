@@ -364,12 +364,16 @@ func ExamplePersistentPubSub_cluster() {
 
 	// Have PersistentPubSub pick a random cluster node everytime it wants to
 	// make a new connection. If the node fails PersistentPubSub will
-	// automatically pick a new node to connect to.
-	ps := PersistentPubSub("", "", func(string, string) (Conn, error) {
-		topo := cluster.Topo()
-		node := topo[rand.Intn(len(topo))]
-		return Dial("tcp", node.Addr)
-	})
+	// automatically pick a new node to connect to
+	ps, err := PersistentPubSub("", "",
+		PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
+			topo := cluster.Topo()
+			node := topo[rand.Intn(len(topo))]
+			return Dial("tcp", node.Addr)
+		}))
+	if err != nil {
+		panic(err)
+	}
 
 	// Use the PubSubConn as normal.
 	msgCh := make(chan PubSubMessage)
