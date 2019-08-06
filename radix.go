@@ -142,6 +142,24 @@
 //
 // Use the golang.org/x/xerrors package if you're using an older version of go.
 //
+// Implicit pipelining
+//
+// Implicit pipelining is an optimization implemented and enabled in the default
+// Pool implementation (and therefore also used by Cluster and Sentinel) which
+// involves delaying concurrent Cmds and FlatCmds a small amount of time and
+// sending them to redis in a single batch, similar to manually using a Pipeline.
+// By doing this radix significantly reduces the I/O and CPU overhead for
+// concurrent requests.
+//
+// Note that only commands which do not block are eligible for implicit pipelining.
+//
+// See the documentation on Pool for more information about the current
+// implementation of implicit pipelining and for how to configure or disable
+// the feature.
+//
+// For a performance comparisons between Clients with and without implicit
+// pipelining see the benchmark results in the README.md.
+//
 package radix
 
 import (
