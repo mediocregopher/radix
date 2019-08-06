@@ -23,8 +23,11 @@ func PersistentPubSubConnFunc(cf ConnFunc) PersistentPubSubOpt {
 	}
 }
 
-// PersistentPubSubAbortAfter sets max attempts to create redis connection,
-// when attempts is over refresh function reterns error
+// PersistentPubSubAbortAfter tells the PersistentPubSub to give up
+// and return an error after this many attempts to establish a connection.
+// The error will be returned to whichever method happens to be being called at that moment.
+//
+// A value of 0 indiciates no limit on retry attempts.
 func PersistentPubSubAbortAfter(attempts int) PersistentPubSubOpt {
 	return func(opts *persistentPubSubOpts) {
 		opts.abortAfter = attempts
