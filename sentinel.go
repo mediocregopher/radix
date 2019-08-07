@@ -140,11 +140,11 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	}
 
 	{
-		pconn, err := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
+		pconn := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
 			return sc.dialSentinel()
 		})
-		if err != nil {
-			return nil, err
+		if pconn == nil {
+			return nil, errors.New("sential pubsub connection error")
 		}
 		sc.pconn = pconn
 

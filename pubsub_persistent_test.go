@@ -10,7 +10,7 @@ import (
 
 func TestPersistentPubSub(t *T) {
 	closeCh := make(chan chan bool)
-	p, err := PersistentPubSub("", "",func(_, _ string) (Conn, error) {
+	p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
 		c := dial()
 		go func() {
 			closeRetCh := <-closeCh
@@ -19,7 +19,6 @@ func TestPersistentPubSub(t *T) {
 		}()
 		return c, nil
 	})
-	assert.NoError(t, err)
 
 	pubCh := make(chan int)
 	go func() {
@@ -45,12 +44,11 @@ func TestPersistenPubSubAbortAfter(t *T) {
 		expectedAttempts = 5
 	)
 
-	p, err := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
+	p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
 		attempts++
 		return nil, errors.New("bad connection")
 	}, PersistentPubSubAbortAfter(expectedAttempts))
 
-	assert.Error(t, err)
 	assert.Nil(t, p)
 	assert.Equal(t, expectedAttempts, attempts)
 }

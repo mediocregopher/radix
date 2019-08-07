@@ -55,7 +55,7 @@ type persistentPubSub struct {
 //
 // None of the methods on the returned PubSubConn will ever return an error,
 // they will instead block until a connection can be successfully reinstated.
-func PersistentPubSub(network, addr string, cf ConnFunc, opts ...PersistentPubSubOpt) (PubSubConn, error) {
+func PersistentPubSub(network, addr string, cf ConnFunc, opts ...PersistentPubSubOpt) PubSubConn {
 	p := &persistentPubSub{
 		subs:    chanSet{},
 		psubs:   chanSet{},
@@ -84,10 +84,10 @@ func PersistentPubSub(network, addr string, cf ConnFunc, opts ...PersistentPubSu
 	}
 
 	if err := p.refresh(); err != nil {
-		return nil, err
+		return nil
 	}
 
-	return p, nil
+	return p
 }
 
 func (p *persistentPubSub) refresh() error {
