@@ -443,10 +443,25 @@ func (p pipeline) Run(c Conn) error {
 	}
 	for _, cmd := range p {
 		if err := c.Decode(cmd); err != nil {
-			return err
+			return decodeErr(cmd, err)
 		}
 	}
 	return nil
+}
+
+func decodeErr(cmd CmdAction, err error) error {
+	c, ok := cmd.(*cmdAction)
+	if ok {
+		return fmt.Errorf(
+			"failed to decode pipeline CmdAction '%v' with keys %v: %v",
+			c.cmd,
+			c.Keys(),
+			err)
+	}
+	return fmt.Errorf(
+		"failed to decode pipeline CmdAction '%v': %v",
+		cmd,
+		err)
 }
 
 // MarshalRESP implements the resp.Marshaler interface, so that the pipeline can
