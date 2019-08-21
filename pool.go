@@ -602,7 +602,7 @@ func (p *Pool) Do(a Action) error {
 	startTime := time.Now()
 	if p.pipeliner != nil && p.pipeliner.CanDo(a) {
 		err := p.pipeliner.Do(a)
-		p.traceDoCompleted(time.Since(startTime), err)
+		p.traceDoCompleted(a, time.Since(startTime), err)
 
 		return err
 	}
@@ -614,15 +614,16 @@ func (p *Pool) Do(a Action) error {
 
 	err = c.Do(a)
 	p.put(c)
-	p.traceDoCompleted(time.Since(startTime), err)
+	p.traceDoCompleted(a, time.Since(startTime), err)
 
 	return err
 }
 
-func (p *Pool) traceDoCompleted(elapsedTime time.Duration, err error) {
+func (p *Pool) traceDoCompleted(action Action, elapsedTime time.Duration, err error) {
 	if p.opts.pt.DoCompleted != nil {
 		p.opts.pt.DoCompleted(trace.PoolDoCompleted{
 			PoolCommon:  p.traceCommon(),
+			Action:      action,
 			AvailCount:  len(p.pool),
 			ElapsedTime: elapsedTime,
 			Err:         err,

@@ -108,14 +108,19 @@ type PoolConnClosed struct {
 type PoolDoCompleted struct {
 	PoolCommon
 
+	// Action is the Action which was passed into the Do method. The type of
+	// this field is `interface{}` in order to prevent an import loop between
+	// the radix and trace packages.
+	Action interface{}
+
 	// AvailCount indicates the total number of connections the Pool is holding
 	// on to which are available for usage at the moment the trace occurs.
 	AvailCount int
 
-	// How long it took to send command.
+	// How long it took to perform the Action.
 	ElapsedTime time.Duration
 
-	// This is the error returned from redis.
+	// This is the error returned from the Action, if any.
 	Err error
 }
 
