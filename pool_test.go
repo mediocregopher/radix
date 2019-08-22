@@ -138,7 +138,7 @@ func TestPoolOnFull(t *T) {
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
 
-		spc, err := pool.newConn(false, "TEST")
+		spc, err := pool.newConn("TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 1, len(pool.pool))
@@ -150,13 +150,13 @@ func TestPoolOnFull(t *T) {
 		assert.Equal(t, 1, len(pool.pool))
 
 		// putting a conn should overflow
-		spc, err := pool.newConn(false, "TEST")
+		spc, err := pool.newConn("TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))
 
 		// another shouldn't, overflow is full
-		spc, err = pool.newConn(false, "TEST")
+		spc, err = pool.newConn("TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))
@@ -169,7 +169,7 @@ func TestPoolOnFull(t *T) {
 		assert.Equal(t, 1, len(pool.pool))
 
 		// if both are full then drain should remove the overflow one
-		spc, err = pool.newConn(false, "TEST")
+		spc, err = pool.newConn("TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))
