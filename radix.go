@@ -173,7 +173,7 @@ import (
 
 	errors "golang.org/x/xerrors"
 
-	"github.com/mediocregopher/radix/v3/resp"
+	"github.com/tetrafolium/radix/resp"
 )
 
 var errClientClosed = errors.New("client is closed")

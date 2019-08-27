@@ -7,7 +7,7 @@ import (
 
 	errors "golang.org/x/xerrors"
 
-	"github.com/mediocregopher/radix/v3/resp/resp2"
+	"github.com/tetrafolium/radix/resp/resp2"
 )
 
 // Scanner is used to iterate through the results of a SCAN call (or HSCAN,

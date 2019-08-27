@@ -11,9 +11,9 @@ import (
 
 	errors "golang.org/x/xerrors"
 
-	"github.com/mediocregopher/radix/v3/internal/bytesutil"
-	"github.com/mediocregopher/radix/v3/resp"
-	"github.com/mediocregopher/radix/v3/resp/resp2"
+	"github.com/tetrafolium/radix/internal/bytesutil"
+	"github.com/tetrafolium/radix/resp"
+	"github.com/tetrafolium/radix/resp/resp2"
 )
 
 // StreamEntryID represents an ID used in a Redis stream with the format <time>-<seq>.

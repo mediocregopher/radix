@@ -9,9 +9,9 @@ import (
 
 	errors "golang.org/x/xerrors"
 
-	"github.com/mediocregopher/radix/v3/resp"
-	"github.com/mediocregopher/radix/v3/resp/resp2"
-	"github.com/mediocregopher/radix/v3/trace"
+	"github.com/tetrafolium/radix/resp"
+	"github.com/tetrafolium/radix/resp/resp2"
+	"github.com/tetrafolium/radix/trace"
 )
 
 // dedupe is used to deduplicate a function invocation, so if multiple

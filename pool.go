@@ -9,8 +9,8 @@ import (
 
 	errors "golang.org/x/xerrors"
 
-	"github.com/mediocregopher/radix/v3/resp"
-	"github.com/mediocregopher/radix/v3/trace"
+	"github.com/tetrafolium/radix/resp"
+	"github.com/tetrafolium/radix/trace"
 )
 
 // ErrPoolEmpty is used by Pools created using the PoolOnEmptyErrAfter option
