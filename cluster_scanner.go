@@ -14,7 +14,9 @@ type clusterScanner struct {
 }
 
 // NewScanner will return a Scanner which will scan over every node in the
-// cluster. This will panic if the ScanOpt's Command isn't "SCAN".
+// cluster. This will panic if the ScanOpt's Command isn't "SCAN". For scanning
+// operations other than "SCAN" (e.g. "HSCAN", "ZSCAN") use the normal
+// NewScanner function.
 //
 // If the cluster topology changes during a scan the Scanner may or may not
 // error out due to it, depending on the nature of the change.
