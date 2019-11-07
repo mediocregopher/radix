@@ -378,19 +378,24 @@ func (c *Cluster) sync(p Client) error {
 
 	c.traceTopoChanged(c.topo, tt)
 
-	// this is a big bit of code to totally lockdown the cluster for, but at the
-	// same time Close _shouldn't_ block significantly
-	c.l.Lock()
-	defer c.l.Unlock()
-	c.topo = tt
-	c.primTopo = tt.Primaries()
+	var toclose []Client
+	func() {
+		c.l.Lock()
+		defer c.l.Unlock()
+		c.topo = tt
+		c.primTopo = tt.Primaries()
 
-	tm := tt.Map()
-	for addr, p := range c.pools {
-		if _, ok := tm[addr]; !ok {
-			p.Close()
-			delete(c.pools, addr)
+		tm := tt.Map()
+		for addr, p := range c.pools {
+			if _, ok := tm[addr]; !ok {
+				toclose = append(toclose, p)
+				delete(c.pools, addr)
+			}
 		}
+	}()
+
+	for _, p := range toclose {
+		p.Close()
 	}
 
 	return nil
