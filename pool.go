@@ -236,6 +236,11 @@ func PoolWithTrace(pt trace.PoolTrace) PoolOpt {
 // performance during low-concurrency usage. It can be disabled using
 // PoolPipelineWindow(0, 0).
 type Pool struct {
+	// Atomic fields must be at the beginning of the struct since they must be
+	// correctly aligned or else access may cause panics on 32-bit architectures
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
+	totalConns int64 // atomic, must only be access using functions from sync/atomic
+
 	opts          poolOpts
 	network, addr string
 	size          int
@@ -245,10 +250,6 @@ type Pool struct {
 	// when closed is true (closed is also protected by l)
 	pool   chan *ioErrConn
 	closed bool
-
-	// totalConns is an atomic value and should only be accessed by the atomic
-	// package.
-	totalConns int64
 
 	pipeliner *pipeliner
 
