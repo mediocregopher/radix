@@ -110,12 +110,15 @@ func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
 // with it, including a set of pools to each of its instances. All methods on
 // Cluster are thread-safe
 type Cluster struct {
+	// Atomic fields must be at the beginning of the struct since they must be
+	// correctly aligned or else access may cause panics on 32-bit architectures
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
+	lastClusterdown int64 // unix timestamp in milliseconds, atomic
+
 	co clusterOpts
 
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
-
-	lastClusterdown int64 // unix timestamp in milliseconds, atomic
 
 	l              sync.RWMutex
 	pools          map[string]Client
