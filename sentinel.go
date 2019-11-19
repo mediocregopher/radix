@@ -3,6 +3,7 @@ package radix
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	errors "golang.org/x/xerrors"
@@ -80,6 +81,10 @@ type Sentinel struct {
 	// only used by tests to ensure certain actions have happened before
 	// continuing on during the test
 	testEventCh chan string
+
+	// only used by tests to delay updates after event on pconnCh
+	// contains time in milliseconds
+	testSleepBeforeSwitch uint32
 }
 
 // NewSentinel creates and returns a *Sentinel instance. NewSentinel takes in a
@@ -274,13 +279,13 @@ func (sc *Sentinel) Client(addr string) (Client, error) {
 
 // Close implements the method for the Client interface.
 func (sc *Sentinel) Close() error {
-	sc.l.Lock()
-	defer sc.l.Unlock()
 	closeErr := errClientClosed
 	sc.closeOnce.Do(func() {
 		close(sc.closeCh)
 		sc.closeWG.Wait()
 		closeErr = nil
+		sc.l.Lock()
+		defer sc.l.Unlock()
 		for _, client := range sc.clients {
 			if client != nil {
 				client.Close()
@@ -468,9 +473,17 @@ func (sc *Sentinel) innerSpin() error {
 			// loop
 		case <-sc.pconnCh:
 			switchMaster = true
+			if waitFor := atomic.SwapUint32(&sc.testSleepBeforeSwitch, 0); waitFor > 0 {
+				time.Sleep(time.Duration(waitFor) * time.Millisecond)
+			}
 			// loop
 		case <-sc.closeCh:
 			return nil
 		}
 	}
+}
+
+func (sc *Sentinel) forceMasterSwitch(waitFor time.Duration) {
+	atomic.StoreUint32(&sc.testSleepBeforeSwitch, uint32(waitFor.Milliseconds()))
+	sc.pconnCh <- PubSubMessage{}
 }
