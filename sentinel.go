@@ -484,6 +484,7 @@ func (sc *Sentinel) innerSpin() error {
 }
 
 func (sc *Sentinel) forceMasterSwitch(waitFor time.Duration) {
-	atomic.StoreUint32(&sc.testSleepBeforeSwitch, uint32(waitFor.Milliseconds()))
+	// can not use waitFor.Milliseconds() here since it was only introduced in Go 1.13 and we still support 1.12
+	atomic.StoreUint32(&sc.testSleepBeforeSwitch, uint32(waitFor.Nanoseconds()/1e6))
 	sc.pconnCh <- PubSubMessage{}
 }
