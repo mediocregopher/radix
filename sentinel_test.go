@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	. "testing"
+	"time"
 
 	errors "golang.org/x/xerrors"
 
@@ -204,6 +205,13 @@ func TestSentinel(t *T) {
 	)
 
 	assertPoolWorks()
+
+	// Check that closing the instance doesn't deadlock while updating the state.
+	// This is racy but should be good enough for now.
+	scc.l.Lock()
+	scc.forceMasterSwitch(100 * time.Millisecond) // delay so that Close has a chance to acquire scc.l
+	scc.l.Unlock()
+	require.NoError(t, scc.Close())
 }
 
 type stubSentinelPool struct {
