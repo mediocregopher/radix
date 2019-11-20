@@ -1,5 +1,11 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.4.2
+
+* Fix alignment for atomic values in structs (PR #171)
+
+* Fix closing of sentinel instances while updating state (PR #173)
+
 # v3.4.1
 
 * Update xerrors package (PR #165)
