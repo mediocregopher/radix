@@ -6,9 +6,10 @@ import (
 	"fmt"
 	. "testing"
 
-	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
 
 func TestCmdAction(t *T) {
@@ -224,6 +225,37 @@ func TestPipelineAction(t *T) {
 			assert.Equal(t, ss[i], out[i])
 		}
 	}
+
+	t.Run("drain on decodeErr", func(t *T) {
+		// Setup
+		k1 := randStr()
+		k2 := randStr()
+		kvs := map[string]string{
+			k1: randStr(),
+			k2: randStr(),
+		}
+
+		for k, v := range kvs {
+			require.NoError(t, c.Do(Cmd(nil, "SET", k, v)))
+		}
+
+		var intRcv int
+		var strRcv string
+
+		pipeline := Pipeline(
+			Cmd(&intRcv, "GET", k1),
+			Cmd(nil, "GET", k2),
+		)
+
+		err := c.Do(pipeline)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to decode")
+
+		err = c.Do(Cmd(&strRcv, "GET", k1))
+		require.NoError(t, err)
+
+		assert.Equal(t, kvs[k1], strRcv)
+	})
 }
 
 func ExamplePipeline() {

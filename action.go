@@ -441,12 +441,21 @@ func (p pipeline) Run(c Conn) error {
 	if err := c.Encode(p); err != nil {
 		return err
 	}
-	for _, cmd := range p {
+
+	for i, cmd := range p {
 		if err := c.Decode(cmd); err != nil {
+			p.drain(c, len(p)-i-1)
 			return decodeErr(cmd, err)
 		}
 	}
 	return nil
+}
+
+func (p pipeline) drain(c Conn, n int) {
+	rcv := resp2.Any{I: nil}
+	for i := 0; i < n; i++ {
+		_ = c.Decode(&rcv)
+	}
 }
 
 func decodeErr(cmd CmdAction, err error) error {
