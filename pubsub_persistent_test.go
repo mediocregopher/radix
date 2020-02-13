@@ -8,7 +8,7 @@ import (
 	errors "golang.org/x/xerrors"
 )
 
-func TestPersistentPubSub(t *T) {
+func closablePersistentPubSub() (PubSubConn, func()) {
 	closeCh := make(chan chan bool)
 	p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
 		c := dial()
@@ -20,15 +20,22 @@ func TestPersistentPubSub(t *T) {
 		return c, nil
 	})
 
+	return p, func() {
+		closeRetCh := make(chan bool)
+		closeCh <- closeRetCh
+		<-closeRetCh
+	}
+}
+
+func TestPersistentPubSub(t *T) {
+	p, closeFn := closablePersistentPubSub()
 	pubCh := make(chan int)
 	go func() {
 		for i := 0; i < 1000; i++ {
 			pubCh <- i
 			if i%100 == 0 {
 				time.Sleep(100 * time.Millisecond)
-				closeRetCh := make(chan bool)
-				closeCh <- closeRetCh
-				<-closeRetCh
+				closeFn()
 				assert.Nil(t, p.Ping())
 			}
 		}
@@ -61,4 +68,41 @@ func TestPersistentPubSubAbortAfter(t *T) {
 	assert.NoError(t, err)
 	assert.NoError(t, p.Ping())
 	p.Close()
+}
+
+// https://github.com/mediocregopher/radix/issues/184
+func TestPersistentPubSubClose(t *T) {
+	channel := "TestPersistentPubSubClose:" + randStr()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	go func() {
+		pubConn := dial()
+		for {
+			err := pubConn.Do(Cmd(nil, "PUBLISH", channel, randStr()))
+			assert.NoError(t, err)
+			time.Sleep(10 * time.Millisecond)
+
+			select {
+			case <-stopCh:
+				return
+			default:
+			}
+		}
+	}()
+
+	for i := 0; i < 1000; i++ {
+		p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
+			return dial(), nil
+		})
+		msgCh := make(chan PubSubMessage)
+		p.Subscribe(msgCh, channel)
+		// drain msgCh till it closes
+		go func() {
+			for range msgCh {
+			}
+		}()
+		p.Close()
+		close(msgCh)
+	}
 }

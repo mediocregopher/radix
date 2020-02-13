@@ -37,28 +37,45 @@ func PersistentPubSubAbortAfter(attempts int) PersistentPubSubOpt {
 	}
 }
 
+type pubSubCmd struct {
+	// msgCh can be set along with one of subscribe/unsubscribe/etc...
+	msgCh                                            chan<- PubSubMessage
+	subscribe, unsubscribe, psubscribe, punsubscribe []string
+
+	// ... or one of ping or close can be set
+	ping, close bool
+
+	// resCh is always set
+	resCh chan error
+}
+
 type persistentPubSub struct {
 	dial func() (Conn, error)
 	opts persistentPubSubOpts
 
-	l           sync.Mutex
-	curr        PubSubConn
 	subs, psubs chanSet
-	closeCh     chan struct{}
+
+	curr      PubSubConn
+	currErrCh chan error
+
+	cmdCh chan pubSubCmd
+
+	closeErr  error
+	closeOnce sync.Once
 }
 
-// PersistentPubSubWithOpts is like PubSub, but instead of taking in an existing Conn to
-// wrap it will create one on the fly. If the connection is ever terminated then
-// a new one will be created and will be reset to the previous connection's
-// state.
+// PersistentPubSubWithOpts is like PubSub, but instead of taking in an existing
+// Conn to wrap it will create one on the fly. If the connection is ever
+// terminated then a new one will be created and will be reset to the previous
+// connection's state.
 //
 // This is effectively a way to have a permanent PubSubConn established which
 // supports subscribing/unsubscribing but without the hassle of implementing
 // reconnect/re-subscribe logic.
 //
-// With default options, none of the methods on the returned PubSubConn will
-// ever return an error, they will instead block until a connection can be
-// successfully reinstated.
+// With default options, neither this function nor any of the methods on the
+// returned PubSubConn will ever return an error, they will instead block until
+// a connection can be successfully reinstated.
 //
 // PersistentPubSubWithOpts takes in a number of options which can overwrite its
 // default behavior. The default options PersistentPubSubWithOpts uses are:
@@ -78,14 +95,17 @@ func PersistentPubSubWithOpts(
 	}
 
 	p := &persistentPubSub{
-		dial:    func() (Conn, error) { return opts.connFn(network, addr) },
-		opts:    opts,
-		subs:    chanSet{},
-		psubs:   chanSet{},
-		closeCh: make(chan struct{}),
+		dial:  func() (Conn, error) { return opts.connFn(network, addr) },
+		opts:  opts,
+		subs:  chanSet{},
+		psubs: chanSet{},
+		cmdCh: make(chan pubSubCmd),
 	}
-	err := p.refresh()
-	return p, err
+	if err := p.refresh(); err != nil {
+		return nil, err
+	}
+	go p.spin()
+	return p, nil
 }
 
 // PersistentPubSub is deprecated in favor of PersistentPubSubWithOpts instead.
@@ -103,15 +123,19 @@ func PersistentPubSub(network, addr string, connFn ConnFunc) PubSubConn {
 	return p
 }
 
+// refresh only returns an error if the connection could not be made
 func (p *persistentPubSub) refresh() error {
 	if p.curr != nil {
 		p.curr.Close()
+		<-p.currErrCh
+		p.curr = nil
+		p.currErrCh = nil
 	}
 
-	attempt := func() (PubSubConn, error) {
+	attempt := func() (PubSubConn, chan error, error) {
 		c, err := p.dial()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		errCh := make(chan error, 1)
 		pc := newPubSub(c, errCh)
@@ -119,38 +143,23 @@ func (p *persistentPubSub) refresh() error {
 		for msgCh, channels := range p.subs.inverse() {
 			if err := pc.Subscribe(msgCh, channels...); err != nil {
 				pc.Close()
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
 		for msgCh, patterns := range p.psubs.inverse() {
 			if err := pc.PSubscribe(msgCh, patterns...); err != nil {
 				pc.Close()
-				return nil, err
+				return nil, nil, err
 			}
 		}
-
-		go func() {
-			select {
-			case <-errCh:
-				p.l.Lock()
-				// It's possible that one of the methods (e.g. Subscribe)
-				// already had the lock, saw the error, and called refresh. This
-				// check prevents a double-refresh in that case.
-				if p.curr == pc {
-					p.refresh()
-				}
-				p.l.Unlock()
-			case <-p.closeCh:
-			}
-		}()
-		return pc, nil
+		return pc, errCh, nil
 	}
 
 	var attempts int
 	for {
 		var err error
-		if p.curr, err = attempt(); err == nil {
+		if p.curr, p.currErrCh, err = attempt(); err == nil {
 			return nil
 		}
 		attempts++
@@ -161,91 +170,118 @@ func (p *persistentPubSub) refresh() error {
 	}
 }
 
-func (p *persistentPubSub) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
-	p.l.Lock()
-	defer p.l.Unlock()
-
-	// add first, so if the actual call fails then refresh will catch it
-	for _, channel := range channels {
-		p.subs.add(channel, msgCh)
-	}
-
-	if err := p.curr.Subscribe(msgCh, channels...); err != nil {
+func (p *persistentPubSub) execCmd(cmd pubSubCmd) error {
+	if p.curr == nil {
 		if err := p.refresh(); err != nil {
 			return err
 		}
 	}
+
+	// For all subscribe/unsubscribe/etc... commands the modifications to
+	// p.subs/p.psubs are made first, so that if the actual call to curr fails
+	// then refresh will still instate the new desired subscription.
+	var err error
+	switch {
+	case len(cmd.subscribe) > 0:
+		for _, channel := range cmd.subscribe {
+			p.subs.add(channel, cmd.msgCh)
+		}
+		err = p.curr.Subscribe(cmd.msgCh, cmd.subscribe...)
+
+	case len(cmd.unsubscribe) > 0:
+		for _, channel := range cmd.unsubscribe {
+			p.subs.del(channel, cmd.msgCh)
+		}
+		err = p.curr.Unsubscribe(cmd.msgCh, cmd.unsubscribe...)
+
+	case len(cmd.psubscribe) > 0:
+		for _, channel := range cmd.psubscribe {
+			p.psubs.add(channel, cmd.msgCh)
+		}
+		err = p.curr.PSubscribe(cmd.msgCh, cmd.psubscribe...)
+
+	case len(cmd.punsubscribe) > 0:
+		for _, channel := range cmd.punsubscribe {
+			p.psubs.del(channel, cmd.msgCh)
+		}
+		err = p.curr.PUnsubscribe(cmd.msgCh, cmd.punsubscribe...)
+
+	case cmd.ping:
+		err = p.curr.Ping()
+
+	case cmd.close:
+		if p.curr != nil {
+			err = p.curr.Close()
+			<-p.currErrCh
+		}
+
+	default:
+		// don't do anything I guess
+	}
+
+	if err != nil {
+		return p.refresh()
+	}
 	return nil
+}
+
+func (p *persistentPubSub) spin() {
+	for {
+		select {
+		case <-p.currErrCh:
+			// TODO if refresh fails here the user will never know the error. It
+			// would be good to make that error available somehow.
+			p.refresh()
+		case cmd := <-p.cmdCh:
+			cmd.resCh <- p.execCmd(cmd)
+			if cmd.close {
+				return
+			}
+		}
+	}
+}
+
+func (p *persistentPubSub) cmd(cmd pubSubCmd) error {
+	cmd.resCh = make(chan error, 1)
+	p.cmdCh <- cmd
+	return <-cmd.resCh
+}
+
+func (p *persistentPubSub) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
+	return p.cmd(pubSubCmd{
+		msgCh:     msgCh,
+		subscribe: channels,
+	})
 }
 
 func (p *persistentPubSub) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
-	p.l.Lock()
-	defer p.l.Unlock()
-
-	// remove first, so if the actual call fails then refresh will catch it
-	for _, channel := range channels {
-		p.subs.del(channel, msgCh)
-	}
-
-	if err := p.curr.Unsubscribe(msgCh, channels...); err != nil {
-		if err := p.refresh(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return p.cmd(pubSubCmd{
+		msgCh:       msgCh,
+		unsubscribe: channels,
+	})
 }
 
 func (p *persistentPubSub) PSubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
-	p.l.Lock()
-	defer p.l.Unlock()
-
-	// add first, so if the actual call fails then refresh will catch it
-	for _, channel := range channels {
-		p.psubs.add(channel, msgCh)
-	}
-
-	if err := p.curr.PSubscribe(msgCh, channels...); err != nil {
-		if err := p.refresh(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return p.cmd(pubSubCmd{
+		msgCh:      msgCh,
+		psubscribe: channels,
+	})
 }
 
 func (p *persistentPubSub) PUnsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
-	p.l.Lock()
-	defer p.l.Unlock()
-
-	// remove first, so if the actual call fails then refresh will catch it
-	for _, channel := range channels {
-		p.psubs.del(channel, msgCh)
-	}
-
-	if err := p.curr.PUnsubscribe(msgCh, channels...); err != nil {
-		if err := p.refresh(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return p.cmd(pubSubCmd{
+		msgCh:        msgCh,
+		punsubscribe: channels,
+	})
 }
 
 func (p *persistentPubSub) Ping() error {
-	p.l.Lock()
-	defer p.l.Unlock()
-
-	for {
-		if err := p.curr.Ping(); err == nil {
-			break
-		} else if err := p.refresh(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return p.cmd(pubSubCmd{ping: true})
 }
 
 func (p *persistentPubSub) Close() error {
-	p.l.Lock()
-	defer p.l.Unlock()
-	close(p.closeCh)
-	return p.curr.Close()
+	p.closeOnce.Do(func() {
+		p.closeErr = p.cmd(pubSubCmd{close: true})
+	})
+	return p.closeErr
 }
