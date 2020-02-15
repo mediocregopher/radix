@@ -38,11 +38,18 @@ type ScanOpts struct {
 	// return per call. This does not affect the actual results of the scan
 	// command, but it may be useful for optimizing certain datasets
 	Count int
+
+	// An optional type name to filter for values of the given type.
+	// The type names are the same as returned by the "TYPE" command.
+	// This if only available in Redis 6 or newer and only works with "SCAN".
+	// If used with an older version of Redis or with a Command other than
+	// "SCAN", scanning will fail.
+	Type string
 }
 
 func (o ScanOpts) cmd(rcv interface{}, cursor string) CmdAction {
 	cmdStr := strings.ToUpper(o.Command)
-	args := make([]string, 0, 6)
+	args := make([]string, 0, 8)
 	if cmdStr != "SCAN" {
 		args = append(args, o.Key)
 	}
@@ -53,6 +60,9 @@ func (o ScanOpts) cmd(rcv interface{}, cursor string) CmdAction {
 	}
 	if o.Count > 0 {
 		args = append(args, "COUNT", strconv.Itoa(o.Count))
+	}
+	if o.Type != "" {
+		args = append(args, "TYPE", o.Type)
 	}
 
 	return Cmd(rcv, cmdStr, args...)
