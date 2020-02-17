@@ -557,7 +557,7 @@ func (p *Pool) put(ioc *ioErrConn) bool {
 	// the pool might close here, but that's fine, because all that's happening
 	// at this point is that the connection is being closed
 	ioc.Close()
-	p.traceConnClosed(trace.PoolConnClosedReasonPoolClosed)
+	p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
 	atomic.AddInt64(&p.totalConns, -1)
 	return false
 }

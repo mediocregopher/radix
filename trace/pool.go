@@ -86,7 +86,7 @@ const (
 	PoolConnClosedReasonBufferDrain PoolConnClosedReason = "buffer drained"
 
 	// PoolConnClosedReasonPoolFull indicates a connection was closed due to
-	// the Pool already being full. See The radix.PoolOnFull options.
+	// the Pool already being full. See The radix.PoolOnFullClose options.
 	PoolConnClosedReasonPoolFull PoolConnClosedReason = "pool full"
 )
 

@@ -134,7 +134,13 @@ func TestPoolGet(t *T) {
 
 func TestPoolOnFull(t *T) {
 	t.Run("onFullClose", func(t *T) {
-		pool := testPool(1, PoolOnFullClose())
+		var reason trace.PoolConnClosedReason
+		pool := testPool(1,
+			PoolOnFullClose(),
+			PoolWithTrace(trace.PoolTrace{ConnClosed: func(c trace.PoolConnClosed) {
+				reason = c.Reason
+			}}),
+		)
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
 
@@ -142,6 +148,7 @@ func TestPoolOnFull(t *T) {
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 1, len(pool.pool))
+		assert.Equal(t, trace.PoolConnClosedReasonPoolFull, reason)
 	})
 
 	t.Run("onFullBuffer", func(t *T) {
