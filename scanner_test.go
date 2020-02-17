@@ -2,12 +2,43 @@ package radix
 
 import (
 	"log"
+	"regexp"
 	"strconv"
 	. "testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var redisVersionPat = regexp.MustCompile(`(?m)^redis_version:(\d+)\.(\d+)\.(\d+).*$`)
+
+func requireRedisVersion(tb TB, c Client, major, minor, patch int) {
+	tb.Helper()
+
+	var info string
+	require.NoError(tb, c.Do(Cmd(&info, "INFO", "server")))
+
+	m := redisVersionPat.FindStringSubmatch(info)
+	if m == nil {
+		tb.Fatal("failed to get redis server version")
+	}
+
+	gotMajor, _ := strconv.Atoi(m[1])
+	gotMinor, _ := strconv.Atoi(m[2])
+	gotPatch, _ := strconv.Atoi(m[3])
+
+	if gotMajor < major ||
+		(gotMajor == major && gotMinor < minor) ||
+		(gotMajor == major && gotMinor == minor && gotPatch < patch) {
+		tb.Skipf("not supported with current redis version %d.%d.%d, need at least %d.%d.%d",
+			gotMajor,
+			gotMinor,
+			gotPatch,
+			major,
+			minor,
+			patch)
+	}
+}
 
 func TestScanner(t *T) {
 	c := dial()
@@ -62,6 +93,37 @@ func TestScannerSet(t *T) {
 	sc = NewScanner(c, ScanOpts{Command: "SSCAN", Key: key + "DNE"})
 	assert.False(t, sc.Next(nil))
 	require.Nil(t, sc.Close())
+}
+
+func TestScannerType(t *T) {
+	c := dial()
+	requireRedisVersion(t, c, 6, 0, 0)
+
+	for i := 0; i < 100; i++ {
+		require.NoError(t, c.Do(Cmd(nil, "SET", randStr(), "string")))
+		require.NoError(t, c.Do(Cmd(nil, "LPUSH", randStr(), "list")))
+		require.NoError(t, c.Do(Cmd(nil, "HMSET", randStr(), "hash", "hash")))
+		require.NoError(t, c.Do(Cmd(nil, "SADD", randStr(), "set")))
+		require.NoError(t, c.Do(Cmd(nil, "ZADD", randStr(), "1000", "zset")))
+	}
+
+	scanType := func(type_ string) {
+		sc := NewScanner(c, ScanOpts{Command: "SCAN", Type: type_})
+
+		var key string
+		for sc.Next(&key) {
+			var got string
+			require.NoError(t, c.Do(Cmd(&got, "TYPE", key)))
+			assert.Equalf(t, type_, got, "key %s has wrong type %q, expected %q", got, type_)
+		}
+		require.NoError(t, sc.Close())
+	}
+
+	scanType("string")
+	scanType("list")
+	scanType("hash")
+	scanType("set")
+	scanType("zset")
 }
 
 func BenchmarkScanner(b *B) {
