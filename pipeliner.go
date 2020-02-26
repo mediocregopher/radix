@@ -176,17 +176,14 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 			p.reqsBufCh <- reqs[:0]
 		}()
 
-		pipe := pipelinerPipeline{
+		err := p.c.Do(pipelinerPipeline{
 			pipeline: pipeline(reqs),
-		}
+		})
 
-		if err := p.c.Do(pipe); err != nil {
-			for _, req := range reqs {
-				if req == nil {
-					continue
-				}
-				req.(*pipelinerCmd).resCh <- err
-			}
+		for _, req := range reqs {
+			cmd := req.(*pipelinerCmd)
+			cmd.setRes(err)
+			cmd.send()
 		}
 	}()
 
@@ -195,7 +192,21 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 
 type pipelinerCmd struct {
 	CmdAction
-	resCh chan error
+	res    error
+	resCh  chan error
+	resSet bool
+}
+
+func (p *pipelinerCmd) setRes(err error) {
+	if p.resSet {
+		return
+	}
+	p.res = err
+	p.resSet = true
+}
+
+func (p *pipelinerCmd) send() {
+	p.resCh <- p.res
 }
 
 var pipelinerCmdPool sync.Pool
@@ -203,7 +214,10 @@ var pipelinerCmdPool sync.Pool
 func getPipelinerCmd(cmd CmdAction) *pipelinerCmd {
 	req, _ := pipelinerCmdPool.Get().(*pipelinerCmd)
 	if req != nil {
-		req.CmdAction = cmd
+		*req = pipelinerCmd{
+			CmdAction: cmd,
+			resCh:     req.resCh,
+		}
 		return req
 	}
 	return &pipelinerCmd{
@@ -232,23 +246,11 @@ func (p pipelinerPipeline) Run(c Conn) (err error) {
 		return err
 	}
 	errConn := ioErrConn{Conn: c}
-	for i, req := range p.pipeline {
-		err := errConn.Decode(req)
-		// the order here is important: if we tried to send the error to
-		// before returning we could end up sending the error twice, which
-		// could lead to data races when the *pipelinerCmd gets reused.
-		// to avoid this we must return without sending a value, in case
-		// we got a non-recoverable error.
+	for _, req := range p.pipeline {
+		req.(*pipelinerCmd).setRes(errConn.Decode(req))
 		if errConn.lastIOErr != nil {
 			return errConn.lastIOErr
 		}
-		req.(*pipelinerCmd).resCh <- err
-		// since the *pipelinerCmd can be pooled and reused right after
-		// we send the response, even before this goroutine returns from
-		// the send operation, we must not access it again. to make sure
-		// that we don't regress anywhere we set it to nil, so that the
-		// runtime will trigger a panic if we try to access cmd again.
-		p.pipeline[i] = nil
 	}
 	return nil
 }
