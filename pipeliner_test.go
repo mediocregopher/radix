@@ -1,6 +1,8 @@
 package radix
 
 import (
+	"bufio"
+	"io"
 	"net"
 	. "testing"
 	"time"
@@ -9,8 +11,77 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type panicingCmdAction struct {
+	panicOnMarshal bool
+}
+
+func (p panicingCmdAction) Keys() []string {
+	return nil
+}
+
+func (p panicingCmdAction) Run(c Conn) error {
+	return c.Do(p)
+}
+
+func (p panicingCmdAction) MarshalRESP(io.Writer) error {
+	if p.panicOnMarshal {
+		panic("MarshalRESP called")
+	}
+	return nil
+}
+
+func (p panicingCmdAction) UnmarshalRESP(*bufio.Reader) error {
+	panic("UnmarshalRESP called")
+}
+
 func TestPipeliner(t *T) {
 	dialOpts := []DialOpt{DialReadTimeout(time.Second)}
+
+	testMarshalPanic := func(t *T, p *pipeliner) {
+		key := randStr()
+
+		setCmd := getPipelinerCmd(Cmd(nil, "SET", key, key))
+
+		var firstGetResult string
+		firstGetCmd := getPipelinerCmd(Cmd(&firstGetResult, "GET", key))
+
+		panicingCmd := getPipelinerCmd(&panicingCmdAction{panicOnMarshal: true})
+
+		var secondGetResult string
+		secondGetCmd := getPipelinerCmd(Cmd(&secondGetResult, "GET", key))
+
+		p.flush([]CmdAction{setCmd, firstGetCmd, panicingCmd, secondGetCmd})
+
+		require.NotNil(t, <-setCmd.resCh)
+		require.NotNil(t, <-firstGetCmd.resCh)
+		require.NotNil(t, <-panicingCmd.resCh)
+		require.NotNil(t, <-secondGetCmd.resCh)
+	}
+
+	testUnmarshalPanic := func(t *T, p *pipeliner) {
+		key := randStr()
+
+		setCmd := getPipelinerCmd(Cmd(nil, "SET", key, key))
+
+		var firstGetResult string
+		firstGetCmd := getPipelinerCmd(Cmd(&firstGetResult, "GET", key))
+
+		panicingCmd := getPipelinerCmd(&panicingCmdAction{})
+
+		var secondGetResult string
+		secondGetCmd := getPipelinerCmd(Cmd(&secondGetResult, "GET", key))
+
+		p.flush([]CmdAction{setCmd, firstGetCmd, panicingCmd, secondGetCmd})
+
+		require.Nil(t, <-setCmd.resCh)
+
+		require.Nil(t, <-firstGetCmd.resCh)
+		require.Equal(t, key, firstGetResult)
+
+		require.NotNil(t, <-panicingCmd.resCh)
+
+		require.NotNil(t, <-secondGetCmd.resCh)
+	}
 
 	testRecoverableError := func(t *T, p *pipeliner) {
 		key := randStr()
@@ -81,6 +152,26 @@ func TestPipeliner(t *T) {
 	}
 
 	t.Run("Conn", func(t *T) {
+		t.Run("MarshalPanic", func(t *T) {
+			conn := dial(dialOpts...)
+			defer conn.Close()
+
+			p := newPipeliner(conn, 0, 0, 0)
+			defer p.Close()
+
+			testMarshalPanic(t, p)
+		})
+
+		t.Run("UnmarshalPanic", func(t *T) {
+			conn := dial(dialOpts...)
+			defer conn.Close()
+
+			p := newPipeliner(conn, 0, 0, 0)
+			defer p.Close()
+
+			testUnmarshalPanic(t, p)
+		})
+
 		t.Run("RecoverableError", func(t *T) {
 			conn := dial(dialOpts...)
 			defer conn.Close()
@@ -112,6 +203,21 @@ func TestPipeliner(t *T) {
 			PoolPipelineConcurrency(1),
 			PoolPipelineWindow(time.Hour, 0),
 		}
+
+		t.Run("MarshalPanic", func(t *T) {
+			pool := testPool(1, poolOpts...)
+			defer pool.Close()
+
+			testMarshalPanic(t, pool.pipeliner)
+		})
+
+		t.Run("UnmarshalPanic", func(t *T) {
+			pool := testPool(1, poolOpts...)
+			defer pool.Close()
+
+			testUnmarshalPanic(t, pool.pipeliner)
+		})
+
 		t.Run("RecoverableError", func(t *T) {
 			pool := testPool(1, poolOpts...)
 			defer pool.Close()

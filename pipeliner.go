@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -221,7 +222,12 @@ type pipelinerPipeline struct {
 	pipeline
 }
 
-func (p pipelinerPipeline) Run(c Conn) error {
+func (p pipelinerPipeline) Run(c Conn) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("%s", v)
+		}
+	}()
 	if err := c.Encode(p); err != nil {
 		return err
 	}
