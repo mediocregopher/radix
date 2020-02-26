@@ -172,6 +172,10 @@ type testStructB struct {
 	Biz []byte
 }
 
+type testStructC struct {
+	Biz *string
+}
+
 type textCPMarshaler []byte
 
 func (cm textCPMarshaler) MarshalText() ([]byte, error) {
@@ -316,6 +320,10 @@ func TestAnyMarshal(t *T) {
 		{
 			in:  testStructB{Biz: []byte("10")},
 			out: "*2\r\n" + "$3\r\nBiz\r\n" + "$2\r\n10\r\n",
+		},
+		{
+			in:  testStructC{},
+			out: "*2\r\n" + "$3\r\nBiz\r\n" + "$0\r\n\r\n",
 		},
 	}
 

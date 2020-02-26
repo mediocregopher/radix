@@ -674,7 +674,13 @@ func (a Any) MarshalRESP(w io.Writer) error {
 
 	// if it's a pointer we de-reference and try the pointed to value directly
 	if vv.Kind() == reflect.Ptr {
-		return a.cp(reflect.Indirect(vv).Interface()).MarshalRESP(w)
+		var ivv reflect.Value
+		if vv.IsNil() {
+			ivv = reflect.New(vv.Type().Elem())
+		} else {
+			ivv = reflect.Indirect(vv)
+		}
+		return a.cp(ivv.Interface()).MarshalRESP(w)
 	}
 
 	// some helper functions
