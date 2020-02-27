@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/xerrors"
+
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
@@ -461,14 +463,14 @@ func (p pipeline) drain(c Conn, n int) {
 func decodeErr(cmd CmdAction, err error) error {
 	c, ok := cmd.(*cmdAction)
 	if ok {
-		return fmt.Errorf(
-			"failed to decode pipeline CmdAction '%v' with keys %v: %v",
+		return xerrors.Errorf(
+			"failed to decode pipeline CmdAction '%v' with keys %v: %w",
 			c.cmd,
 			c.Keys(),
 			err)
 	}
-	return fmt.Errorf(
-		"failed to decode pipeline CmdAction '%v': %v",
+	return xerrors.Errorf(
+		"failed to decode pipeline CmdAction '%v': %w",
 		cmd,
 		err)
 }
