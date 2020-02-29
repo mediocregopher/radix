@@ -1,10 +1,13 @@
 package radix
 
 import (
+	"bufio"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mediocregopher/radix/v3/resp"
 )
 
 var blockingCmds = map[string]bool{
@@ -176,14 +179,11 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 			p.reqsBufCh <- reqs[:0]
 		}()
 
-		err := p.c.Do(pipelinerPipeline{
-			pipeline: pipeline(reqs),
-		})
+		pp := &pipelinerPipeline{pipeline: pipeline(reqs)}
+		defer pp.flush()
 
-		for _, req := range reqs {
-			cmd := req.(*pipelinerCmd)
-			cmd.setRes(err)
-			cmd.send()
+		if err := p.c.Do(pp); err != nil {
+			pp.doErr = err
 		}
 	}()
 
@@ -192,21 +192,25 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 
 type pipelinerCmd struct {
 	CmdAction
-	res    error
-	resCh  chan error
-	resSet bool
+
+	resCh chan error
+
+	unmarshalCalled bool
+	unmarshalErr    error
 }
 
-func (p *pipelinerCmd) setRes(err error) {
-	if p.resSet {
-		return
-	}
-	p.res = err
-	p.resSet = true
+var (
+	_ resp.Unmarshaler = (*pipelinerCmd)(nil)
+)
+
+func (p *pipelinerCmd) sendRes(err error) {
+	p.resCh <- err
 }
 
-func (p *pipelinerCmd) send() {
-	p.resCh <- p.res
+func (p *pipelinerCmd) UnmarshalRESP(br *bufio.Reader) error {
+	p.unmarshalErr = p.CmdAction.UnmarshalRESP(br)
+	p.unmarshalCalled = true // important: we set this after unmarshalErr in case the call to UnmarshalRESP panics
+	return p.unmarshalErr
 }
 
 var pipelinerCmdPool sync.Pool
@@ -234,9 +238,24 @@ func poolPipelinerCmd(req *pipelinerCmd) {
 
 type pipelinerPipeline struct {
 	pipeline
+	doErr error
 }
 
-func (p pipelinerPipeline) Run(c Conn) (err error) {
+func (p *pipelinerPipeline) flush() {
+	for _, req := range p.pipeline {
+		var err error
+
+		cmd := req.(*pipelinerCmd)
+		if cmd.unmarshalCalled {
+			err = cmd.unmarshalErr
+		} else {
+			err = p.doErr
+		}
+		cmd.sendRes(err)
+	}
+}
+
+func (p *pipelinerPipeline) Run(c Conn) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
 			err = fmt.Errorf("%s", v)
@@ -247,8 +266,7 @@ func (p pipelinerPipeline) Run(c Conn) (err error) {
 	}
 	errConn := ioErrConn{Conn: c}
 	for _, req := range p.pipeline {
-		req.(*pipelinerCmd).setRes(errConn.Decode(req))
-		if errConn.lastIOErr != nil {
+		if _ = errConn.Decode(req); errConn.lastIOErr != nil {
 			return errConn.lastIOErr
 		}
 	}
