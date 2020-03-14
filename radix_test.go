@@ -54,22 +54,33 @@ func TestDialAuth(t *T) {
 	// It's difficult to test _which_ password is being sent, but it's easy
 	// enough to tell that one was sent because redis returns an error if one
 	// isn't set in the config
-	tests := []struct{ url, dialOptPass string }{
+	tests := []struct{ url, dialOptUser, dialOptPass string }{
 		{url: "redis://user:myPass@127.0.0.1:6379"},
 		{url: "redis://:myPass@127.0.0.1:6379"},
 		{url: "redis://127.0.0.1:6379?password=myPass"},
 		{url: "127.0.0.1:6379", dialOptPass: "myPass"},
+		{url: "redis://127.0.0.1:6379?username=mediocregopher"},
+		{url: "127.0.0.1:6379", dialOptUser: "mediocregopher"},
+		{url: "redis://127.0.0.1:6379?username=mediocregopher&password=myPass"},
+		{url: "127.0.0.1:6379", dialOptUser: "mediocregopher", dialOptPass: "myPass"},
+	}
+
+	errStrs := []string{
+		"ERR AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?",
+		"ERR Client sent AUTH, but no password is set",
+		"WRONGPASS invalid username-password pair",
 	}
 
 	for _, test := range tests {
 		var opts []DialOpt
-		if test.dialOptPass != "" {
+		if test.dialOptUser != "" {
+			opts = append(opts, DialAuthUser(test.dialOptUser, test.dialOptPass))
+		} else if test.dialOptPass != "" {
 			opts = append(opts, DialAuthPass(test.dialOptPass))
 		}
 		_, err := Dial("tcp", test.url, opts...)
-		if err == nil || err.Error() != "ERR Client sent AUTH, but no password is set" {
-			t.Fatalf(`error "ERR Client sent AUTH..." expected, got: %v (test:%#v)`, err, test)
-		}
+		assert.Errorf(t, err, "expected authentication error, got nil")
+		assert.Containsf(t, errStrs, err.Error(), "one of %v expected, got %v (test:%#v)", errStrs, err, test)
 	}
 }
 
