@@ -355,7 +355,7 @@ func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 			continue
 		}
 
-		stream = string(sre.stream)
+		stream = sre.stream
 
 		// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
 		if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {
@@ -369,7 +369,7 @@ func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 }
 
 type streamReaderEntry struct {
-	stream  []byte
+	stream  string
 	entries []StreamEntry
 }
 
@@ -382,12 +382,11 @@ func (s *streamReaderEntry) UnmarshalRESP(br *bufio.Reader) error {
 		return errors.New("invalid xread[group] response")
 	}
 
-	var stream resp2.BulkStringBytes
-	stream.B = s.stream[:0]
+	var stream resp2.BulkString
 	if err := stream.UnmarshalRESP(br); err != nil {
 		return err
 	}
-	s.stream = stream.B
+	s.stream = stream.S
 
 	return (resp2.Any{I: &s.entries}).UnmarshalRESP(br)
 }
