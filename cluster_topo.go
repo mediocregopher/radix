@@ -138,6 +138,16 @@ func (tt ClusterTopo) Primaries() ClusterTopo {
 	return mtt
 }
 
+func (tt ClusterTopo) secondariesByPrimary() map[string][]ClusterNode {
+	m := make(map[string][]ClusterNode, len(tt)/2)
+	for _, node := range tt {
+		if node.SecondaryOfAddr != "" {
+			m[node.SecondaryOfAddr] = append(m[node.SecondaryOfAddr], node)
+		}
+	}
+	return m
+}
+
 // we only use this type during unmarshalling, the topo Unmarshal method will
 // convert these into ClusterNodes
 type topoSlotSet struct {

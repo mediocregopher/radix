@@ -123,6 +123,7 @@ type Cluster struct {
 	l              sync.RWMutex
 	pools          map[string]Client
 	primTopo, topo ClusterTopo
+	secondaries    map[string][]ClusterNode
 
 	closeCh   chan struct{}
 	closeWG   sync.WaitGroup
@@ -387,6 +388,7 @@ func (c *Cluster) sync(p Client) error {
 		defer c.l.Unlock()
 		c.topo = tt
 		c.primTopo = tt.Primaries()
+		c.secondaries = tt.secondariesByPrimary()
 
 		tm := tt.Map()
 		for addr, p := range c.pools {
@@ -438,6 +440,15 @@ func (c *Cluster) addrForKey(key string) string {
 	return ""
 }
 
+func (c *Cluster) secondaryAddrForKey(key string) string {
+	c.l.RLock()
+	defer c.l.RUnlock()
+	for _, node := range c.secondaries[c.addrForKey(key)] {
+		return node.Addr
+	}
+	return ""
+}
+
 type askConn struct {
 	Conn
 }
@@ -477,6 +488,31 @@ func (c *Cluster) Do(a Action) error {
 	} else {
 		key = keys[0]
 		addr = c.addrForKey(key)
+	}
+
+	return c.doInner(a, addr, key, false, doAttempts)
+}
+
+// DoSecondary is like Do but executes the Action on a random secondary for the affected keys.
+//
+// For DoSecondary to work correctly, all connections must be created in read-only mode,
+// by using a custom ClusterPoolFunc that executes the READONLY command on each new
+// connection.
+//
+// If the Action can not be handled by a secondary the Action will be send to the primary instead.
+func (c *Cluster) DoSecondary(a Action) error {
+	var addr, key string
+	keys := a.Keys()
+	if len(keys) == 0 {
+		// that's ok, key will then just be ""
+	} else if err := assertKeysSlot(keys); err != nil {
+		return err
+	} else {
+		key = keys[0]
+		addr = c.secondaryAddrForKey(key)
+		if addr == "" {
+			addr = c.addrForKey(key)
+		}
 	}
 
 	return c.doInner(a, addr, key, false, doAttempts)

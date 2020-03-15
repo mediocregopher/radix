@@ -80,16 +80,16 @@ func (s *clusterNodeStub) removeSlot(slot uint16) {
 	delete(s.clusterDatasetStub.slots, 0)
 }
 
-func (s *clusterNodeStub) withKey(key string, asking bool, fn func(clusterSlotStub) interface{}) interface{} {
+func (s *clusterNodeStub) withKey(key string, asking, readonly bool, fn func(clusterSlotStub) interface{}) interface{} {
 	s.clusterDatasetStub.Lock()
 	defer s.clusterDatasetStub.Unlock()
-	return s.withKeyLocked(key, asking, fn)
+	return s.withKeyLocked(key, asking, readonly, fn)
 }
 
-func (s *clusterNodeStub) withKeyLocked(key string, asking bool, fn func(clusterSlotStub) interface{}) interface{} {
+func (s *clusterNodeStub) withKeyLocked(key string, asking, readonly bool, fn func(clusterSlotStub) interface{}) interface{} {
 	slotI := ClusterSlot([]byte(key))
 	slot, ok := s.clusterDatasetStub.slots[slotI]
-	if !ok {
+	if !ok || (!readonly && s.secondaryOfAddr != "") {
 		movedStub := s.clusterStub.stubForSlotIfSet(slotI)
 		if movedStub == nil {
 			return resp2.Error{E: errors.New("CLUSTERDOWN Hash slot not served")}
@@ -104,7 +104,7 @@ func (s *clusterNodeStub) withKeyLocked(key string, asking bool, fn func(cluster
 	return fn(slot)
 }
 
-func (s *clusterNodeStub) withKeys(keys []string, asking bool, fn func(clusterSlotStub) interface{}) interface{} {
+func (s *clusterNodeStub) withKeys(keys []string, asking, readonly bool, fn func(clusterSlotStub) interface{}) interface{} {
 	if err := assertKeysSlot(keys); err != nil {
 		return err
 	}
@@ -123,11 +123,12 @@ func (s *clusterNodeStub) withKeys(keys []string, asking bool, fn func(clusterSl
 		}
 	}
 
-	return s.withKeyLocked(keys[0], asking, fn)
+	return s.withKeyLocked(keys[0], asking, readonly, fn)
 }
 
 func (s *clusterNodeStub) newConn() Conn {
 	asking := false // flag we hold onto in between commands
+	readonly := false
 	return Stub("tcp", s.addr, func(args []string) interface{} {
 		cmd := strings.ToUpper(args[0])
 
@@ -142,7 +143,7 @@ func (s *clusterNodeStub) newConn() Conn {
 		switch cmd {
 		case "GET":
 			k := args[1]
-			return s.withKey(k, asking, func(slot clusterSlotStub) interface{} {
+			return s.withKey(k, asking, readonly, func(slot clusterSlotStub) interface{} {
 				s, ok := slot.kv[k]
 				if !ok {
 					return nil
@@ -151,7 +152,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			})
 		case "MGET":
 			ks := args[1:]
-			return s.withKeys(ks, asking, func(slot clusterSlotStub) interface{} {
+			return s.withKeys(ks, asking, readonly, func(slot clusterSlotStub) interface{} {
 				ss := make([]string, len(ks))
 				for i, k := range ks {
 					ss[i] = slot.kv[k]
@@ -160,7 +161,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			})
 		case "SET":
 			k := args[1]
-			return s.withKey(k, asking, func(slot clusterSlotStub) interface{} {
+			return s.withKey(k, asking, readonly, func(slot clusterSlotStub) interface{} {
 				slot.kv[k] = args[2]
 				return resp2.SimpleString{S: "OK"}
 			})
@@ -177,7 +178,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			} else if numKeys == 0 {
 				return "EVAL: no keys"
 			}
-			return s.withKey(args[3], asking, func(slot clusterSlotStub) interface{} {
+			return s.withKey(args[3], asking, readonly, func(slot clusterSlotStub) interface{} {
 				return "EVAL: success!"
 			})
 		case "PING":
@@ -205,6 +206,12 @@ func (s *clusterNodeStub) newConn() Conn {
 				return []interface{}{"1", keys}
 			}
 			return []interface{}{"0", []string{}}
+		case "READONLY":
+			readonly = true
+			return resp2.SimpleString{S: "OK"}
+		case "READWRITE":
+			readonly = false
+			return resp2.SimpleString{S: "OK"}
 		}
 
 		return resp2.Error{E: errors.Errorf("unknown command %#v", args)}

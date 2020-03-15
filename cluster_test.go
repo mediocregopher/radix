@@ -222,3 +222,51 @@ func TestClusterEval(t *T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "EVAL: success!", rcv)
 }
+
+func TestClusterDoSecondary(t *T) {
+	var redirects int
+	c, _ := newTestCluster(
+		ClusterWithTrace(trace.ClusterTrace{
+			Redirected: func(trace.ClusterRedirected) {
+				redirects++
+			},
+		}),
+	)
+	defer c.Close()
+
+	key := clusterSlotKeys[0]
+	value := randStr()
+
+	require.NoError(t, c.Do(Cmd(nil, "SET", key, value)))
+
+	var res1 string
+	require.NoError(t, c.Do(Cmd(&res1, "GET", key)))
+	require.Equal(t, value, res1)
+
+	require.Zero(t, redirects)
+
+	var res2 string
+	assert.NoError(t, c.DoSecondary(Cmd(&res2, "GET", key)))
+	assert.Equal(t, value, res2)
+	assert.Equal(t, 1, redirects)
+
+	secAddr := c.secondaries[c.addrForKey(key)][0].Addr
+	sec, err := c.Client(secAddr)
+	require.NoError(t, err)
+
+	assert.NoError(t, sec.Do(Cmd(nil, "READONLY")))
+	assert.Equal(t, 1, redirects)
+
+	var res3 string
+	assert.NoError(t, c.DoSecondary(Cmd(&res3, "GET", key)))
+	assert.Equal(t, value, res3)
+	assert.Equal(t, 1, redirects)
+
+	assert.NoError(t, sec.Do(Cmd(nil, "READWRITE")))
+	assert.Equal(t, 1, redirects)
+
+	var res4 string
+	assert.NoError(t, c.DoSecondary(Cmd(&res4, "GET", key)))
+	assert.Equal(t, value, res4)
+	assert.Equal(t, 2, redirects)
+}
