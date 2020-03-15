@@ -335,6 +335,8 @@ func DialTimeout(d time.Duration) DialOpt {
 	}
 }
 
+const defaultAuthUser = "default"
+
 // DialAuthPass will cause Dial to perform an AUTH command once the connection
 // is created, using the given pass.
 //
@@ -344,7 +346,7 @@ func DialTimeout(d time.Duration) DialOpt {
 // Using DialAuthPass is equivalent to calling DialAuthUser with user "default"
 // and is kept for compatibility with older package versions.
 func DialAuthPass(pass string) DialOpt {
-	return DialAuthUser("default", pass)
+	return DialAuthUser(defaultAuthUser, pass)
 }
 
 // DialAuthUser will cause Dial to perform an AUTH command once the connection
@@ -415,23 +417,22 @@ func parseRedisURL(urlStr string) (string, []DialOpt) {
 		return urlStr, nil
 	}
 
-	var opts []DialOpt
 	q := u.Query()
 
-	n := u.User.Username()
-	if n == "" {
-		n = q.Get("username")
+	username := defaultAuthUser
+	if n := u.User.Username(); n != "" {
+		username = n
+	} else if n := q.Get("username"); n != "" {
+		username = n
 	}
-	if n != "" {
-		p, ok := u.User.Password()
-		if !ok {
-			p = q.Get("password")
-		}
-		opts = append(opts, DialAuthUser(n, p))
-	} else if p, ok := u.User.Password(); ok {
-		opts = append(opts, DialAuthPass(p))
-	} else if qpw := q.Get("password"); qpw != "" {
-		opts = append(opts, DialAuthPass(qpw))
+
+	password := q.Get("password")
+	if p, ok := u.User.Password(); ok {
+		password = p
+	}
+
+	opts := []DialOpt{
+		DialAuthUser(username, password),
 	}
 
 	dbStr := q.Get("db")
@@ -516,7 +517,7 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 		Conn:         netConn,
 	})
 
-	if do.authUser != "" && do.authUser != "default" {
+	if do.authUser != "" && do.authUser != defaultAuthUser {
 		if err := conn.Do(Cmd(nil, "AUTH", do.authUser, do.authPass)); err != nil {
 			conn.Close()
 			return nil, err
