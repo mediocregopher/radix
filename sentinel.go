@@ -205,6 +205,31 @@ func (sc *Sentinel) Do(a Action) error {
 	return sc.clients[sc.primAddr].Do(a)
 }
 
+// DoSecondary is like Do but executes the Action on a random replica if possible.
+//
+// For DoSecondary to work, replicas must be configured with replica-read-only
+// enabled, otherwise calls to DoSecondary may by rejected by the replica.
+//
+// NOTE it's possible that in between Do being called and the Action being
+// actually carried out that there could be a failover event. In that case, the
+// Action will likely fail and return an error.
+func (sc *Sentinel) DoSecondary(a Action) error {
+	sc.l.RLock()
+	var addr string
+	for addr = range sc.clients {
+		if addr != sc.primAddr {
+			break
+		}
+	}
+	sc.l.RUnlock()
+
+	c, err := sc.Client(addr)
+	if err != nil {
+		return err
+	}
+	return c.Do(a)
+}
+
 // Addrs returns the currently known network address of the current primary
 // instance and the addresses of the secondaries.
 func (sc *Sentinel) Addrs() (string, []string) {
