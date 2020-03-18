@@ -210,20 +210,11 @@ func (sc *Sentinel) Do(a Action) error {
 // For DoSecondary to work, replicas must be configured with replica-read-only
 // enabled, otherwise calls to DoSecondary may by rejected by the replica.
 //
-// NOTE it's possible that in between Do being called and the Action being
+// NOTE it's possible that in between DoSecondary being called and the Action being
 // actually carried out that there could be a failover event. In that case, the
 // Action will likely fail and return an error.
 func (sc *Sentinel) DoSecondary(a Action) error {
-	sc.l.RLock()
-	var addr string
-	for addr = range sc.clients {
-		if addr != sc.primAddr {
-			break
-		}
-	}
-	sc.l.RUnlock()
-
-	c, err := sc.Client(addr)
+	c, err := sc.clientInner("")
 	if err != nil {
 		return err
 	}
@@ -267,14 +258,32 @@ func (sc *Sentinel) SentinelAddrs() []string {
 //
 // NOTE the Client should _not_ be closed.
 func (sc *Sentinel) Client(addr string) (Client, error) {
+	if addr == "" {
+		return nil, errUnknownAddress
+	}
+	return sc.clientInner(addr)
+}
+
+func (sc *Sentinel) clientInner(addr string) (Client, error) {
+	var client Client
+
 	sc.l.RLock()
-	client, ok := sc.clients[addr]
+	if addr == "" {
+		for addr, client = range sc.clients {
+			if addr != sc.primAddr {
+				break
+			}
+		}
+	} else {
+		var ok bool
+		if client, ok = sc.clients[addr]; !ok {
+			return nil, errUnknownAddress
+		}
+	}
 	sc.l.RUnlock()
 
 	if client != nil {
 		return client, nil
-	} else if !ok {
-		return nil, errUnknownAddress
 	}
 
 	// if client was nil but ok was true it means the address is a secondary but
