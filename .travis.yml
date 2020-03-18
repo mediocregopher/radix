@@ -1,8 +1,8 @@
 ---
 language: go
 go:
-  - "1.12.x"
   - "1.13.x"
+  - "1.14.x"
 
 services:
   - redis-server
@@ -10,7 +10,7 @@ services:
 before_install:
   # update to latest version of redis
   - sudo apt-get install -y redis-server
-  - GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.18.0
+  - GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.24.0
 
 script:
   # for some reason go test -v -race ./... doesn't work on travis, so use this
