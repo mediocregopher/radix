@@ -133,7 +133,7 @@ func (s *sentinelStub) switchPrimary(newPrimAddr string, newSecAddrs ...string) 
 func TestSentinel(t *T) {
 	stub := newSentinelStub(
 		"127.0.0.1:6379", // primAddr
-		[]string{"127.0.0.2:6379", "127.0.0.3:6379"},                                    //secAddrs
+		[]string{"127.0.0.2:6379", "127.0.0.3:6379"},                                    // secAddrs
 		[]string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"}, // sentAddrs
 	)
 
@@ -418,4 +418,45 @@ func TestSentinelClientsAddrs(t *T) {
 		}
 	}
 
+}
+
+func TestSentinelSecondaryRead(t *T) {
+	stub := newSentinelStub(
+		"127.0.0.1:9736", // primAddr
+		[]string{"127.0.0.2:9736", "127.0.0.3:9736"},                    // secAddrs
+		[]string{"127.0.0.1:29736", "127.0.0.2:9736", "127.0.0.3:9736"}, // sentAddrs
+	)
+
+	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
+	// don't tell anyone
+	poolFn := func(network, addr string) (Client, error) {
+		return Stub(network, addr, func(args []string) interface{} {
+			return addr
+		}), nil
+	}
+
+	scc, err := NewSentinel(
+		"stub",
+		stub.sentAddrs,
+		SentinelConnFunc(stub.newConn),
+		SentinelPoolFunc(poolFn),
+	)
+	require.Nil(t, err)
+
+	runTest := func(n int) {
+		primAddr, secAddrs := scc.Addrs()
+		for i := 0; i < n; i++ {
+			var addr string
+			require.NoError(t, scc.DoSecondary(Cmd(&addr, "GIMME", "YOUR", "ADDRESS")))
+			assert.NotEqualf(t, scc.primAddr, addr, "command was sent to master at %s", primAddr)
+			assert.Containsf(t, secAddrs, addr, "returned address if not a secondary. expected one of %v, got %v", secAddrs, addr)
+		}
+	}
+
+	runTest(32)
+
+	stub.switchPrimary("127.0.0.2:9736", "127.0.0.3:9736")
+	assert.Equal(t, "switch-master completed", <-scc.testEventCh)
+
+	runTest(32)
 }
