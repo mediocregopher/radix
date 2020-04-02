@@ -250,7 +250,10 @@ func TestClusterDoSecondary(t *T) {
 	assert.Equal(t, value, res2)
 	assert.Equal(t, 1, redirects)
 
-	secAddr := c.secondaries[c.addrForKey(key)][0].Addr
+	var secAddr string
+	for secAddr = range c.secondaries[c.addrForKey(key)] {
+		break
+	}
 	sec, err := c.Client(secAddr)
 	require.NoError(t, err)
 

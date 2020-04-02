@@ -123,7 +123,7 @@ type Cluster struct {
 	l              sync.RWMutex
 	pools          map[string]Client
 	primTopo, topo ClusterTopo
-	secondaries    map[string][]ClusterNode
+	secondaries    map[string]map[string]ClusterNode
 
 	closeCh   chan struct{}
 	closeWG   sync.WaitGroup
@@ -388,7 +388,18 @@ func (c *Cluster) sync(p Client) error {
 		defer c.l.Unlock()
 		c.topo = tt
 		c.primTopo = tt.Primaries()
-		c.secondaries = tt.secondariesByPrimary()
+
+		c.secondaries = make(map[string]map[string]ClusterNode, len(c.primTopo))
+		for _, node := range c.topo {
+			if node.SecondaryOfAddr != "" {
+				m := c.secondaries[node.SecondaryOfAddr]
+				if m == nil {
+					m = make(map[string]ClusterNode, len(c.topo)/len(c.primTopo))
+					c.secondaries[node.SecondaryOfAddr] = m
+				}
+				m[node.Addr] = node
+			}
+		}
 
 		tm := tt.Map()
 		for addr, p := range c.pools {
@@ -443,10 +454,11 @@ func (c *Cluster) addrForKey(key string) string {
 func (c *Cluster) secondaryAddrForKey(key string) string {
 	c.l.RLock()
 	defer c.l.RUnlock()
-	for _, node := range c.secondaries[c.addrForKey(key)] {
-		return node.Addr
+	primAddr := c.addrForKey(key)
+	for addr := range c.secondaries[primAddr] {
+		return addr
 	}
-	return ""
+	return primAddr
 }
 
 type askConn struct {
@@ -510,9 +522,6 @@ func (c *Cluster) DoSecondary(a Action) error {
 	} else {
 		key = keys[0]
 		addr = c.secondaryAddrForKey(key)
-		if addr == "" {
-			addr = c.addrForKey(key)
-		}
 	}
 
 	return c.doInner(a, addr, key, false, doAttempts)
