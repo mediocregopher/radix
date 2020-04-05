@@ -493,16 +493,12 @@ func (p *Pool) doOverflowDrain() {
 }
 
 func (p *Pool) getExisting() (*ioErrConn, error) {
-	p.l.RLock()
-	defer p.l.RUnlock()
-
-	if p.closed {
-		return nil, errClientClosed
-	}
-
-	// Fast-path if the pool is not empty.
+	// Fast-path if the pool is not empty. Return error if pool has been closed.
 	select {
-	case ioc := <-p.pool:
+	case ioc, ok := <-p.pool:
+		if !ok {
+			return nil, errClientClosed
+		}
 		return ioc, nil
 	default:
 	}
@@ -523,7 +519,10 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 	}
 
 	select {
-	case ioc := <-p.pool:
+	case ioc, ok := <-p.pool:
+		if !ok {
+			return nil, errClientClosed
+		}
 		return ioc, nil
 	case <-tc:
 		return nil, p.opts.errOnEmpty
