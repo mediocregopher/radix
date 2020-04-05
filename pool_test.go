@@ -236,6 +236,55 @@ func TestPoolPut(t *T) {
 	assertPoolConns(0)
 }
 
+// TestPoolDoDoesNotBlock checks that with a positive onEmptyWait Pool.Do()
+// does not block longer than the timeout period given by user
+func TestPoolDoDoesNotBlock(t *T) {
+	size := 10
+	requestTimeout := 200 * time.Millisecond
+	redialInterval := 100 * time.Millisecond
+
+	connFunc := PoolConnFunc(func(string, string) (Conn, error) {
+		return dial(DialTimeout(requestTimeout)), nil
+	})
+	pool := testPool(size,
+		PoolOnEmptyCreateAfter(redialInterval),
+		PoolPipelineWindow(0, 0),
+		connFunc,
+	)
+
+	assertPoolConns := func(exp int) {
+		assert.Equal(t, exp, pool.NumAvailConns())
+	}
+	assertPoolConns(size)
+
+	var wg sync.WaitGroup
+	var timeExceeded uint32
+
+	// here we try to imitate external requests which come one at a time
+	// and exceed the number of connections in pool
+	for i := 0; i < 5*size; i++ {
+		wg.Add(1)
+		go func(i int) {
+			time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+
+			timeStart := time.Now()
+			pool.Do(WithConn("", func(conn Conn) error {
+				time.Sleep(requestTimeout)
+				conn.(*ioErrConn).lastIOErr = errors.New("i/o timeout")
+				return nil
+			}))
+
+			if time.Since(timeStart)-requestTimeout-redialInterval > 20*time.Millisecond {
+				atomic.AddUint32(&timeExceeded, 1)
+			}
+			wg.Done()
+		}(i)
+	}
+
+	wg.Wait()
+	assert.True(t, timeExceeded == 0)
+}
+
 func TestPoolClose(t *T) {
 	pool := testPool(1)
 	assert.NoError(t, pool.Do(Cmd(nil, "PING")))
