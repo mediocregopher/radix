@@ -69,6 +69,11 @@ type ClusterOpt func(*clusterOpts)
 
 // ClusterPoolFunc tells the Cluster to use the given ClientFunc when creating
 // pools of connections to cluster members.
+//
+// This can be used to allow for secondary reads via the Cluster.DoSecondary
+// method by specifying a ClientFunc that internally creates connections using
+// DefaultClusterConnFunc or a custom ConnFunc that enables READONLY mode on each
+// connection.
 func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.pf = pf
@@ -133,6 +138,22 @@ type Cluster struct {
 	// nothing is reading the channel the errors will be dropped. The channel
 	// will be closed when the Close method is called.
 	ErrCh chan error
+}
+
+// DefaultClusterConnFunc is a ConnFunc which will return a Conn for a node in a
+// redis cluster using sane defaults and which has READONLY mode enabled, allowing
+// read-only commands on the connection even if the connected instance is currently
+// a replica, either by explicitly sending commands on the connection or by using
+// the DoSecondary method on the Cluster that owns the connection.
+var DefaultClusterConnFunc = func(network, addr string) (Conn, error) {
+	c, err := DefaultConnFunc(network, addr)
+	if err != nil {
+		return nil, err
+	} else if err := c.Do(Cmd(nil, "READONLY")); err != nil {
+		c.Close()
+		return nil, err
+	}
+	return c, nil
 }
 
 // NewCluster initializes and returns a Cluster instance. It will try every
@@ -507,9 +528,10 @@ func (c *Cluster) Do(a Action) error {
 
 // DoSecondary is like Do but executes the Action on a random secondary for the affected keys.
 //
-// For DoSecondary to work correctly, all connections must be created in read-only mode,
-// by using a custom ClusterPoolFunc that executes the READONLY command on each new
-// connection.
+// For DoSecondary to work, all connections must be created in read-only mode, by using a
+// custom ClusterPoolFunc that executes the READONLY command on each new connection.
+//
+// See ClusterPoolFunc for an example using the global DefaultClusterConnFunc.
 //
 // If the Action can not be handled by a secondary the Action will be send to the primary instead.
 func (c *Cluster) DoSecondary(a Action) error {

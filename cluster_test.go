@@ -273,3 +273,11 @@ func TestClusterDoSecondary(t *T) {
 	assert.Equal(t, value, res4)
 	assert.Equal(t, 2, redirects)
 }
+
+var clusterAddrs []string
+
+func ExampleClusterPoolFunc_defaultClusterConnFunc() {
+	NewCluster(clusterAddrs, ClusterPoolFunc(func(network, addr string) (Client, error) {
+		return NewPool(network, addr, 4, PoolConnFunc(DefaultClusterConnFunc))
+	}))
+}
