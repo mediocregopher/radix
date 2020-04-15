@@ -69,6 +69,11 @@ type ClusterOpt func(*clusterOpts)
 
 // ClusterPoolFunc tells the Cluster to use the given ClientFunc when creating
 // pools of connections to cluster members.
+//
+// This can be used to allow for secondary reads via the Cluster.DoSecondary
+// method by specifying a ClientFunc that internally creates connections using
+// DefaultClusterConnFunc or a custom ConnFunc that enables READONLY mode on each
+// connection.
 func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.pf = pf
@@ -123,6 +128,7 @@ type Cluster struct {
 	l              sync.RWMutex
 	pools          map[string]Client
 	primTopo, topo ClusterTopo
+	secondaries    map[string]map[string]ClusterNode
 
 	closeCh   chan struct{}
 	closeWG   sync.WaitGroup
@@ -132,6 +138,22 @@ type Cluster struct {
 	// nothing is reading the channel the errors will be dropped. The channel
 	// will be closed when the Close method is called.
 	ErrCh chan error
+}
+
+// DefaultClusterConnFunc is a ConnFunc which will return a Conn for a node in a
+// redis cluster using sane defaults and which has READONLY mode enabled, allowing
+// read-only commands on the connection even if the connected instance is currently
+// a replica, either by explicitly sending commands on the connection or by using
+// the DoSecondary method on the Cluster that owns the connection.
+var DefaultClusterConnFunc = func(network, addr string) (Conn, error) {
+	c, err := DefaultConnFunc(network, addr)
+	if err != nil {
+		return nil, err
+	} else if err := c.Do(Cmd(nil, "READONLY")); err != nil {
+		c.Close()
+		return nil, err
+	}
+	return c, nil
 }
 
 // NewCluster initializes and returns a Cluster instance. It will try every
@@ -388,6 +410,18 @@ func (c *Cluster) sync(p Client) error {
 		c.topo = tt
 		c.primTopo = tt.Primaries()
 
+		c.secondaries = make(map[string]map[string]ClusterNode, len(c.primTopo))
+		for _, node := range c.topo {
+			if node.SecondaryOfAddr != "" {
+				m := c.secondaries[node.SecondaryOfAddr]
+				if m == nil {
+					m = make(map[string]ClusterNode, len(c.topo)/len(c.primTopo))
+					c.secondaries[node.SecondaryOfAddr] = m
+				}
+				m[node.Addr] = node
+			}
+		}
+
 		tm := tt.Map()
 		for addr, p := range c.pools {
 			if _, ok := tm[addr]; !ok {
@@ -438,6 +472,16 @@ func (c *Cluster) addrForKey(key string) string {
 	return ""
 }
 
+func (c *Cluster) secondaryAddrForKey(key string) string {
+	c.l.RLock()
+	defer c.l.RUnlock()
+	primAddr := c.addrForKey(key)
+	for addr := range c.secondaries[primAddr] {
+		return addr
+	}
+	return primAddr
+}
+
 type askConn struct {
 	Conn
 }
@@ -477,6 +521,29 @@ func (c *Cluster) Do(a Action) error {
 	} else {
 		key = keys[0]
 		addr = c.addrForKey(key)
+	}
+
+	return c.doInner(a, addr, key, false, doAttempts)
+}
+
+// DoSecondary is like Do but executes the Action on a random secondary for the affected keys.
+//
+// For DoSecondary to work, all connections must be created in read-only mode, by using a
+// custom ClusterPoolFunc that executes the READONLY command on each new connection.
+//
+// See ClusterPoolFunc for an example using the global DefaultClusterConnFunc.
+//
+// If the Action can not be handled by a secondary the Action will be send to the primary instead.
+func (c *Cluster) DoSecondary(a Action) error {
+	var addr, key string
+	keys := a.Keys()
+	if len(keys) == 0 {
+		// that's ok, key will then just be ""
+	} else if err := assertKeysSlot(keys); err != nil {
+		return err
+	} else {
+		key = keys[0]
+		addr = c.secondaryAddrForKey(key)
 	}
 
 	return c.doInner(a, addr, key, false, doAttempts)
