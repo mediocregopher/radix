@@ -1,5 +1,40 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.5.0
+
+Huge thank you to @nussjustin for all the work he's been doing on this project,
+this release is almost entirely his doing.
+
+**New**
+
+* Add support for `TYPE` option to `Scanner`. (PR #187)
+
+* Add `Sentinel.DoSecondary` method. (PR #197)
+
+* Add `DialAuthUser`, to support username+password authentication. (PR #195)
+
+* Add `Cluster.DoSecondary` method. (PR #198)
+
+**Fixes and Improvements**
+
+* Fix pipeline behavior when a decode error is encountered. (PR #180)
+
+* Fix `Reason` in `PoolConnClosed` in the case of the Pool being full. (PR #186)
+
+* Refactor `PersistentPubSub` to be cleaner, fixing a panic in the process.
+  (PR #185, Issue #184)
+
+* Fix marshaling of nil pointers in structs. (PR #192)
+
+* Wrap errors which get returned from pipeline decoding. (PR #191)
+
+* Simplify and improve pipeline error handling. (PR #190)
+
+* Dodge a `[]byte` allocation when in `StreamReader.Next`. (PR #196)
+
+* Remove excess lock in Pool. (PR #202)
+
+
 # v3.4.2
 
 * Fix alignment for atomic values in structs (PR #171)
