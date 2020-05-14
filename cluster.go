@@ -319,6 +319,9 @@ func (c *Cluster) Topo() ClusterTopo {
 func (c *Cluster) getTopo(p Client) (ClusterTopo, error) {
 	var tt ClusterTopo
 	err := p.Do(Cmd(&tt, "CLUSTER", "SLOTS"))
+	if tt == nil && err == nil {
+		err = errors.New("No Topology Available")
+	}
 	return tt, err
 }
 
