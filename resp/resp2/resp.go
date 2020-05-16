@@ -64,6 +64,7 @@ func (p prefix) String() string {
 var (
 	nilBulkString = []byte("$-1\r\n")
 	nilArray      = []byte("*-1\r\n")
+	emptyArray    = []byte("*0\r\n")
 )
 
 var bools = [][]byte{
@@ -1291,4 +1292,9 @@ func (rm RawMessage) UnmarshalInto(u resp.Unmarshaler) error {
 // IsNil returns true if the contents of RawMessage are one of the nil values.
 func (rm RawMessage) IsNil() bool {
 	return bytes.Equal(rm, nilBulkString) || bytes.Equal(rm, nilArray)
+}
+
+// IsEmptyArray returns true if the contents of RawMessage is empty array value.
+func (rm RawMessage) IsEmptyArray() bool {
+	return bytes.Equal(rm, emptyArray)
 }

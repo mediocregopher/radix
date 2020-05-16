@@ -292,24 +292,31 @@ func (c *cmdAction) ClusterCanRetry() bool {
 
 // MaybeNil is a type which wraps a receiver. It will first detect if what's
 // being received is a nil RESP type (either bulk string or array), and if so
-// set Nil to true. If not the return value will be unmarshaled into Rcv
-// normally.
+// set Nil to true. If not the return value will be unmarshalled into Rcv
+// normally. If the response being received is an empty array then the EmptyArray
+// field will be set and Rcv unmarshalled into normally.
 type MaybeNil struct {
-	Nil bool
-	Rcv interface{}
+	Nil        bool
+	EmptyArray bool
+	Rcv        interface{}
 }
 
 // UnmarshalRESP implements the method for the resp.Unmarshaler interface.
 func (mn *MaybeNil) UnmarshalRESP(br *bufio.Reader) error {
 	var rm resp2.RawMessage
-	if err := rm.UnmarshalRESP(br); err != nil {
+	err := rm.UnmarshalRESP(br)
+	switch {
+	case err != nil:
 		return err
-	} else if rm.IsNil() {
+	case rm.IsNil():
 		mn.Nil = true
 		return nil
+	case rm.IsEmptyArray():
+		mn.EmptyArray = true
+		fallthrough // to not break backwards compatibility
+	default:
+		return rm.UnmarshalInto(resp2.Any{I: mn.Rcv})
 	}
-
-	return rm.UnmarshalInto(resp2.Any{I: mn.Rcv})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
