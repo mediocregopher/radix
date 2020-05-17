@@ -319,6 +319,11 @@ func (c *Cluster) Topo() ClusterTopo {
 func (c *Cluster) getTopo(p Client) (ClusterTopo, error) {
 	var tt ClusterTopo
 	err := p.Do(Cmd(&tt, "CLUSTER", "SLOTS"))
+	if len(tt) == 0 && err == nil {
+		//This will happen between when nodes starts coming up after cluster goes down and
+		//Cluster swarm yet not ready using those nodes.
+		err = errors.New("no cluster slots assigned")
+	}
 	return tt, err
 }
 
