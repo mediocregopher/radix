@@ -128,6 +128,19 @@ func TestFlatCmdActionNil(t *T) {
 	var nilVal MaybeNil
 	require.Nil(t, c.Do(Cmd(&nilVal, "HGET", key, hashKey)))
 	require.False(t, nilVal.Nil)
+	require.False(t, nilVal.EmptyArray)
+}
+
+func TestFlatCmdActionEmpty(t *T) {
+	c := dial()
+	defer c.Close()
+
+	key := randStr()
+
+	var nilVal MaybeNil
+	require.Nil(t, c.Do(Cmd(&nilVal, "HGETALL", key)))
+	require.False(t, nilVal.Nil)
+	require.True(t, nilVal.EmptyArray)
 }
 
 func ExampleFlatCmd() {
@@ -373,8 +386,9 @@ func ExampleWithConn_transaction() {
 
 func TestMaybeNil(t *T) {
 	mntests := []struct {
-		b     string
-		isNil bool
+		b       string
+		isNil   bool
+		isEmpty bool
 	}{
 		{b: "$-1\r\n", isNil: true},
 		{b: "*-1\r\n", isNil: true},
@@ -388,6 +402,7 @@ func TestMaybeNil(t *T) {
 		{b: "$3\r\nfoo\r\n"},
 		{b: "$8\r\nfoo\r\nbar\r\n"},
 		{b: "*2\r\n:1\r\n:2\r\n"},
+		{b: "*0\r\n", isEmpty: true},
 	}
 
 	for _, mnt := range mntests {
@@ -396,9 +411,13 @@ func TestMaybeNil(t *T) {
 			var rm resp2.RawMessage
 			mn := MaybeNil{Rcv: &rm}
 			require.Nil(t, mn.UnmarshalRESP(bufio.NewReader(buf)))
-			if mnt.isNil {
+			switch {
+			case mnt.isNil:
 				assert.True(t, mn.Nil)
-			} else {
+			case mnt.isEmpty:
+				assert.True(t, mn.EmptyArray)
+				assert.Equal(t, mnt.b, string(rm))
+			default:
 				assert.Equal(t, mnt.b, string(rm))
 			}
 		}
