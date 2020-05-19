@@ -1,5 +1,12 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.5.1
+
+* Add `EmptyArray` field to `MaybeNil`. (PR #211)
+
+* Fix `Cluster` not properly re-initializing itself when the cluster goes
+  completely down. (PR #209)
+
 # v3.5.0
 
 Huge thank you to @nussjustin for all the work he's been doing on this project,
