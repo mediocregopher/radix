@@ -263,12 +263,12 @@ func (p *pipelinerPipeline) Perform(c Conn) (err error) {
 			err = fmt.Errorf("%s", v)
 		}
 	}()
-	if err := c.Encode(p); err != nil {
+	if err := c.EncodeDecode(p, nil); err != nil {
 		return err
 	}
 	errConn := ioErrConn{Conn: c}
 	for _, req := range p.pipeline {
-		if _ = errConn.Decode(req); errConn.lastIOErr != nil {
+		if _ = errConn.EncodeDecode(nil, req); errConn.lastIOErr != nil {
 			return errConn.lastIOErr
 		}
 	}

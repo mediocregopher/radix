@@ -24,6 +24,8 @@ func (sa bufferAddr) String() string {
 	return sa.addr
 }
 
+// TODO in the end this is really just a complicated stub of net.Conn, and
+// there's probably a more elegant way to implement it.
 type buffer struct {
 	net.Conn   // always nil
 	remoteAddr bufferAddr
@@ -188,36 +190,46 @@ func (s *stub) Do(a Action) error {
 	return a.Perform(s)
 }
 
-func (s *stub) Encode(m resp.Marshaler) error {
-	// first marshal into a RawMessage
-	buf := new(bytes.Buffer)
-	if err := m.MarshalRESP(buf); err != nil {
-		return err
+func (s *stub) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+	if m != nil {
+		// first marshal into a RawMessage
+		buf := new(bytes.Buffer)
+		if err := m.MarshalRESP(buf); err != nil {
+			return err
+		}
+		br := bufio.NewReader(buf)
+
+		var rm resp2.RawMessage
+		for {
+			if buf.Len() == 0 && br.Buffered() == 0 {
+				break
+			} else if err := rm.UnmarshalRESP(br); err != nil {
+				return err
+			}
+			// unmarshal that into a string slice
+			var ss []string
+			if err := rm.UnmarshalInto(resp2.Any{I: &ss}); err != nil {
+				return err
+			}
+
+			// get return from callback. Results implementing resp.Marshaler are
+			// assumed to be wanting to be written in all cases, otherwise if the
+			// result is an error it is assumed to want to be returned directly.
+			ret := s.fn(ss)
+			if m, ok := ret.(resp.Marshaler); ok {
+				if err := s.buffer.Encode(m); err != nil {
+					return err
+				}
+			} else if err, _ := ret.(error); err != nil {
+				return err
+			} else if err = s.buffer.Encode(resp2.Any{I: ret}); err != nil {
+				return err
+			}
+		}
 	}
-	br := bufio.NewReader(buf)
 
-	var rm resp2.RawMessage
-	for {
-		if buf.Len() == 0 && br.Buffered() == 0 {
-			break
-		} else if err := rm.UnmarshalRESP(br); err != nil {
-			return err
-		}
-		// unmarshal that into a string slice
-		var ss []string
-		if err := rm.UnmarshalInto(resp2.Any{I: &ss}); err != nil {
-			return err
-		}
-
-		// get return from callback. Results implementing resp.Marshaler are
-		// assumed to be wanting to be written in all cases, otherwise if the
-		// result is an error it is assumed to want to be returned directly.
-		ret := s.fn(ss)
-		if m, ok := ret.(resp.Marshaler); ok {
-			return s.buffer.Encode(m)
-		} else if err, _ := ret.(error); err != nil {
-			return err
-		} else if err = s.buffer.Encode(resp2.Any{I: ret}); err != nil {
+	if u != nil {
+		if err := s.buffer.Decode(u); err != nil {
 			return err
 		}
 	}

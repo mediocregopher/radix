@@ -213,21 +213,14 @@ type Conn interface {
 	// itself as the argument.
 	Client
 
-	// Encode and Decode may be called at the same time by two different
-	// go-routines, but each should only be called once at a time (i.e. two
-	// routines shouldn't call Encode at the same time, same with Decode).
+	// EncodeDecode will encode the given Marshaler onto the connection, then
+	// decode a response into the given Unmarshaler. If either parameter is nil
+	// then that step is skipped.
 	//
-	// Encode and Decode should _not_ be called at the same time as Do.
-	//
-	// If either Encode or Decode encounter a net.Error the Conn will be
-	// automatically closed.
-	//
-	// Encode is expected to encode an entire resp message, not a partial one.
-	// In other words, when sending commands to redis, Encode should only be
-	// called once per command. Similarly, Decode is expected to decode an
-	// entire resp response.
-	Encode(resp.Marshaler) error
-	Decode(resp.Unmarshaler) error
+	// The Conn may decide to implicitely pipeline concurrent EncodeDecode
+	// calls, such that multiple Marshaler's are written all at once, then their
+	// associated Unmarshaler's are read into in the same order.
+	EncodeDecode(resp.Marshaler, resp.Unmarshaler) error
 
 	// Returns the underlying network connection, as-is. Read, Write, and Close
 	// should not be called on the returned Conn.
@@ -253,15 +246,23 @@ func (cw *connWrap) Do(a Action) error {
 	return a.Perform(cw)
 }
 
-func (cw *connWrap) Encode(m resp.Marshaler) error {
-	if err := m.MarshalRESP(cw.brw); err != nil {
-		return err
+func (cw *connWrap) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+	// TODO move implicit pipelining logic into here.
+	if m != nil {
+		if err := m.MarshalRESP(cw.brw); err != nil {
+			return err
+		} else if err := cw.brw.Flush(); err != nil {
+			return err
+		}
 	}
-	return cw.brw.Flush()
-}
 
-func (cw *connWrap) Decode(u resp.Unmarshaler) error {
-	return u.UnmarshalRESP(cw.brw.Reader)
+	if u != nil {
+		if err := u.UnmarshalRESP(cw.brw.Reader); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (cw *connWrap) NetConn() net.Conn {

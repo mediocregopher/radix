@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -272,10 +273,7 @@ func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
 }
 
 func (c *cmdAction) Perform(conn Conn) error {
-	if err := conn.Encode(c); err != nil {
-		return err
-	}
-	return conn.Decode(c)
+	return conn.EncodeDecode(c, c)
 }
 
 func (c *cmdAction) String() string {
@@ -395,10 +393,7 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 func (ec *evalAction) Perform(conn Conn) error {
 	run := func(eval bool) error {
 		ec.eval = eval
-		if err := conn.Encode(ec); err != nil {
-			return err
-		}
-		return conn.Decode(resp2.Any{I: ec.rcv})
+		return conn.EncodeDecode(ec, resp2.Any{I: ec.rcv})
 	}
 
 	err := run(false)
@@ -445,24 +440,7 @@ func (p pipeline) Keys() []string {
 }
 
 func (p pipeline) Perform(c Conn) error {
-	if err := c.Encode(p); err != nil {
-		return err
-	}
-
-	for i, cmd := range p {
-		if err := c.Decode(cmd); err != nil {
-			p.drain(c, len(p)-i-1)
-			return decodeErr(cmd, err)
-		}
-	}
-	return nil
-}
-
-func (p pipeline) drain(c Conn, n int) {
-	rcv := resp2.Any{I: nil}
-	for i := 0; i < n; i++ {
-		_ = c.Decode(&rcv)
-	}
+	return c.EncodeDecode(p, p)
 }
 
 func decodeErr(cmd CmdAction, err error) error {
@@ -480,22 +458,33 @@ func decodeErr(cmd CmdAction, err error) error {
 		err)
 }
 
-// MarshalRESP implements the resp.Marshaler interface, so that the pipeline can
-// pass itself to the Conn.Encode method instead of calling Conn.Encode for each
-// CmdAction in the pipeline.
-//
-// This helps with Conn implementations that flush their underlying buffers
-// after each call to Encode, like the default default Conn implementation
-// (connWrap) does, making better use of internal buffering and automatic
-// flushing as well as reducing the number of syscalls that both the client and
-// Redis need to do.
-//
-// Without this, using the default Conn implementation, big pipelines can easily
-// spend much of their time just in flushing (in one case measured, up to 40%).
 func (p pipeline) MarshalRESP(w io.Writer) error {
 	for _, cmd := range p {
 		if err := cmd.MarshalRESP(w); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (p pipeline) drain(br *bufio.Reader, n int) error {
+	for i := 0; i < n; i++ {
+		if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p pipeline) UnmarshalRESP(br *bufio.Reader) error {
+	for i, cmd := range p {
+		if err := cmd.UnmarshalRESP(br); err != nil {
+			if errors.As(err, new(resp.ErrDiscarded)) {
+				if drainErr := p.drain(br, len(p)-i-1); drainErr != nil {
+					err = drainErr
+				}
+			}
+			return decodeErr(cmd, err)
 		}
 	}
 	return nil

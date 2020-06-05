@@ -1,7 +1,9 @@
 package radix
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"sync"
@@ -488,22 +490,32 @@ func (c *Cluster) secondaryAddrForKey(key string) string {
 	return primAddr
 }
 
+type prefixAsking struct {
+	resp.Marshaler
+	resp.Unmarshaler
+}
+
+func (a prefixAsking) MarshalRESP(w io.Writer) error {
+	if err := Cmd(nil, "ASKING").MarshalRESP(w); err != nil {
+		return err
+	}
+	return a.Marshaler.MarshalRESP(w)
+}
+
+func (a prefixAsking) UnmarshalRESP(br *bufio.Reader) error {
+	if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+		return err
+	}
+	return a.Unmarshaler.UnmarshalRESP(br)
+}
+
 type askConn struct {
 	Conn
 }
 
-func (ac askConn) Encode(m resp.Marshaler) error {
-	if err := ac.Conn.Encode(Cmd(nil, "ASKING")); err != nil {
-		return err
-	}
-	return ac.Conn.Encode(m)
-}
-
-func (ac askConn) Decode(um resp.Unmarshaler) error {
-	if err := ac.Conn.Decode(resp2.Any{}); err != nil {
-		return err
-	}
-	return ac.Conn.Decode(um)
+func (ac askConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+	a := prefixAsking{m, u}
+	return ac.Conn.EncodeDecode(a, a)
 }
 
 func (ac askConn) Do(a Action) error {
@@ -656,6 +668,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	// migrated between nodes.
 	thisA := a
 	if ask {
+		// TODO is this still necessary?
 		thisA = WithConn(key, func(conn Conn) error {
 			return askConn{conn}.Do(a)
 		})

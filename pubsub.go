@@ -305,7 +305,7 @@ func (c *pubSubConn) publish(m PubSubMessage) {
 func (c *pubSubConn) spin() {
 	for {
 		var m PubSubMessage
-		err := c.conn.Decode(&m)
+		err := c.conn.EncodeDecode(nil, &m)
 		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 			c.testEvent("timeout")
 			continue
@@ -323,7 +323,7 @@ func (c *pubSubConn) spin() {
 // NOTE cmdL _must_ be held to use do
 func (c *pubSubConn) do(exp int, cmd string, args ...string) error {
 	rcmd := Cmd(nil, cmd, args...)
-	if err := c.conn.Encode(rcmd); err != nil {
+	if err := c.conn.EncodeDecode(rcmd, nil); err != nil {
 		return err
 	}
 

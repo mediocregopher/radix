@@ -8,6 +8,8 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * Remove usage of `xerrors` package.
 
+* Remove `Conn`'s `Encode` and `Decode` methods, add `EncodeDecode` instead.
+
 # v3.5.1
 
 * Add `EmptyArray` field to `MaybeNil`. (PR #211)

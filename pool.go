@@ -3,7 +3,6 @@ package radix
 import (
 	"errors"
 	"io"
-	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,25 +32,12 @@ func newIOErrConn(c Conn) *ioErrConn {
 	return &ioErrConn{Conn: c}
 }
 
-func (ioc *ioErrConn) Encode(m resp.Marshaler) error {
+func (ioc *ioErrConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
 	if ioc.lastIOErr != nil {
 		return ioc.lastIOErr
 	}
-	err := ioc.Conn.Encode(m)
-	if nerr, _ := err.(net.Error); nerr != nil {
-		ioc.lastIOErr = err
-	}
-	return err
-}
-
-func (ioc *ioErrConn) Decode(m resp.Unmarshaler) error {
-	if ioc.lastIOErr != nil {
-		return ioc.lastIOErr
-	}
-	err := ioc.Conn.Decode(m)
-	if nerr, _ := err.(net.Error); nerr != nil {
-		ioc.lastIOErr = err
-	} else if err != nil && !errors.As(err, new(resp.ErrDiscarded)) {
+	err := ioc.Conn.EncodeDecode(m, u)
+	if err != nil && !errors.As(err, new(resp.ErrDiscarded)) {
 		ioc.lastIOErr = err
 	}
 	return err
