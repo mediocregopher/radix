@@ -209,7 +209,7 @@ var DefaultClientFunc = func(network, addr string) (Client, error) {
 // use a *Pool instead
 type Conn interface {
 	// The Do method of a Conn is _not_ expected to be thread-safe with the
-	// other methods of Conn, and merely calls the Action's Run method with
+	// other methods of Conn, and merely calls the Action's Perform method with
 	// itself as the argument.
 	Client
 
@@ -250,7 +250,7 @@ func NewConn(conn net.Conn) Conn {
 }
 
 func (cw *connWrap) Do(a Action) error {
-	return a.Run(cw)
+	return a.Perform(cw)
 }
 
 func (cw *connWrap) Encode(m resp.Marshaler) error {

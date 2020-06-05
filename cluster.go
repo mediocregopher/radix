@@ -506,7 +506,7 @@ func (ac askConn) Decode(um resp.Unmarshaler) error {
 }
 
 func (ac askConn) Do(a Action) error {
-	return a.Run(ac)
+	return a.Perform(ac)
 }
 
 const doAttempts = 5

@@ -186,7 +186,7 @@ func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn 
 }
 
 func (s *stub) Do(a Action) error {
-	return a.Run(s)
+	return a.Perform(s)
 }
 
 func (s *stub) Encode(m resp.Marshaler) error {

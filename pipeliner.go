@@ -241,6 +241,8 @@ type pipelinerPipeline struct {
 	doErr error
 }
 
+var _ Action = new(pipelinerPipeline)
+
 func (p *pipelinerPipeline) flush() {
 	for _, req := range p.pipeline {
 		var err error
@@ -255,7 +257,7 @@ func (p *pipelinerPipeline) flush() {
 	}
 }
 
-func (p *pipelinerPipeline) Run(c Conn) (err error) {
+func (p *pipelinerPipeline) Perform(c Conn) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
 			err = fmt.Errorf("%s", v)

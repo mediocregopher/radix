@@ -24,20 +24,20 @@ type Action interface {
 	// modified.
 	Keys() []string
 
-	// Run actually performs the Action using the given Conn.
-	Run(c Conn) error
+	// Perform actually performs the Action using an existing Conn.
+	Perform(c Conn) error
 }
 
 // CmdAction is a sub-class of Action which can be used in two different ways.
-// The first is as a normal Action, where Run is called with a Conn and returns
-// once the Action has been completed.
+// The first is as a normal Action, where Perform is called with a Conn and
+// returns once the Action has been completed.
 //
 // The second way is as a Pipeline-able command, where one or more commands are
 // written in one step (via the MarshalRESP method) and their results are read
 // later (via the UnmarshalRESP method).
 //
 // When used directly with Do then MarshalRESP/UnmarshalRESP are not called, and
-// when used in a Pipeline the Run method is not called.
+// when used in a Pipeline the Perform method is not called.
 type CmdAction interface {
 	Action
 	resp.Marshaler
@@ -273,7 +273,7 @@ func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
 	return nil
 }
 
-func (c *cmdAction) Run(conn Conn) error {
+func (c *cmdAction) Perform(conn Conn) error {
 	if err := conn.Encode(c); err != nil {
 		return err
 	}
@@ -394,7 +394,7 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 	return err
 }
 
-func (ec *evalAction) Run(conn Conn) error {
+func (ec *evalAction) Perform(conn Conn) error {
 	run := func(eval bool) error {
 		ec.eval = eval
 		if err := conn.Encode(ec); err != nil {
@@ -422,7 +422,7 @@ type pipeline []CmdAction
 // a single write, then reads their responses in a single read. This reduces
 // network delay into a single round-trip.
 //
-// Run will not be called on any of the passed in CmdActions.
+// Perform will not be called on any of the passed in CmdActions.
 //
 // NOTE that, while a Pipeline performs all commands on a single Conn, it
 // shouldn't be used by itself for MULTI/EXEC transactions, because if there's
@@ -446,7 +446,7 @@ func (p pipeline) Keys() []string {
 	return keys
 }
 
-func (p pipeline) Run(c Conn) error {
+func (p pipeline) Perform(c Conn) error {
 	if err := c.Encode(p); err != nil {
 		return err
 	}
@@ -528,6 +528,6 @@ func (wc *withConn) Keys() []string {
 	return wc.key[:]
 }
 
-func (wc *withConn) Run(c Conn) error {
+func (wc *withConn) Perform(c Conn) error {
 	return wc.fn(c)
 }

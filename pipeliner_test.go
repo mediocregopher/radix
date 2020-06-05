@@ -19,7 +19,7 @@ func (p panicingCmdAction) Keys() []string {
 	return nil
 }
 
-func (p panicingCmdAction) Run(c Conn) error {
+func (p panicingCmdAction) Perform(c Conn) error {
 	return c.Do(p)
 }
 

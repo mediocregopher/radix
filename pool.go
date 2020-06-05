@@ -59,7 +59,7 @@ func (ioc *ioErrConn) Decode(m resp.Unmarshaler) error {
 }
 
 func (ioc *ioErrConn) Do(a Action) error {
-	return a.Run(ioc)
+	return a.Perform(ioc)
 }
 
 func (ioc *ioErrConn) Close() error {
@@ -562,8 +562,8 @@ func (p *Pool) put(ioc *ioErrConn) bool {
 }
 
 // Do implements the Do method of the Client interface by retrieving a Conn out
-// of the pool, calling Run on the given Action with it, and returning the Conn
-// to the pool.
+// of the pool, calling Perform on the given Action with it, and returning the
+// Conn to the pool.
 //
 // If the given Action is a CmdAction, it will be pipelined with other concurrent
 // calls to Do, which can improve the performance and resource usage of the Redis
