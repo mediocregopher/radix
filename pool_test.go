@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"

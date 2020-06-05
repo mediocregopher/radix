@@ -4,8 +4,9 @@ import (
 	. "testing"
 	"time"
 
+	"errors"
+
 	"github.com/stretchr/testify/assert"
-	errors "golang.org/x/xerrors"
 )
 
 func closablePersistentPubSub() (PubSubConn, func()) {

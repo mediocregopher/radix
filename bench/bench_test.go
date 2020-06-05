@@ -7,7 +7,7 @@ import (
 	. "testing"
 	"time"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	redigo "github.com/gomodule/redigo/redis"
 	redispipe "github.com/joomcode/redispipe/redis"

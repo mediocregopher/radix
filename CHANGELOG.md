@@ -6,6 +6,8 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * Rename `Action`'s `Run` method to `Perform`.
 
+* Remove usage of `xerrors` package.
+
 # v3.5.1
 
 * Add `EmptyArray` field to `MaybeNil`. (PR #211)

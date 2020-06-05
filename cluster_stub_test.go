@@ -8,7 +8,7 @@ import (
 	"sync"
 	. "testing"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
@@ -94,11 +94,11 @@ func (s *clusterNodeStub) withKeyLocked(key string, asking, readonly bool, fn fu
 		if movedStub == nil {
 			return resp2.Error{E: errors.New("CLUSTERDOWN Hash slot not served")}
 		}
-		return resp2.Error{E: errors.Errorf("MOVED %d %s", slotI, movedStub.addr)}
+		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, movedStub.addr)}
 	} else if _, ok := slot.kv[key]; !ok && slot.migrating != "" {
-		return resp2.Error{E: errors.Errorf("ASK %d %s", slotI, slot.migrating)}
+		return resp2.Error{E: fmt.Errorf("ASK %d %s", slotI, slot.migrating)}
 	} else if slot.importing != "" && !asking {
-		return resp2.Error{E: errors.Errorf("MOVED %d %s", slotI, slot.importing)}
+		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, slot.importing)}
 	}
 
 	return fn(slot)
@@ -214,7 +214,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			return resp2.SimpleString{S: "OK"}
 		}
 
-		return resp2.Error{E: errors.Errorf("unknown command %#v", args)}
+		return resp2.Error{E: fmt.Errorf("unknown command %#v", args)}
 	})
 }
 
@@ -308,7 +308,7 @@ func (scl *clusterStub) clientFunc() ClientFunc {
 				return s.newConn(), nil
 			}
 		}
-		return nil, errors.Errorf("unknown addr: %q", addr)
+		return nil, fmt.Errorf("unknown addr: %q", addr)
 	}
 }
 

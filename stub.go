@@ -3,11 +3,10 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"net"
 	"sync"
 	"time"
-
-	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"

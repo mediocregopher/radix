@@ -1,13 +1,14 @@
 package radix
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
@@ -228,7 +229,7 @@ func assertKeysSlot(keys []string) error {
 		if !ok {
 			ok = true
 		} else if slot != thisSlot {
-			return errors.Errorf("keys %q and %q do not belong to the same slot", prevKey, key)
+			return fmt.Errorf("keys %q and %q do not belong to the same slot", prevKey, key)
 		}
 		prevKey = key
 		slot = thisSlot
@@ -402,7 +403,7 @@ func (c *Cluster) sync(p Client) error {
 	for _, t := range tt {
 		// call pool just to ensure one exists for this addr
 		if _, err := c.pool(t.Addr); err != nil {
-			return errors.Errorf("error connecting to %s: %w", t.Addr, err)
+			return fmt.Errorf("error connecting to %s: %w", t.Addr, err)
 		}
 	}
 
@@ -703,7 +704,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 
 	msgParts := strings.Split(msg, " ")
 	if len(msgParts) < 3 {
-		return errors.Errorf("malformed MOVED/ASK error %q", msg)
+		return fmt.Errorf("malformed MOVED/ASK error %q", msg)
 	}
 	ogAddr, addr := addr, msgParts[2]
 

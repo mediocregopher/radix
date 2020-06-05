@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"sync"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"github.com/mediocregopher/radix/v3/resp"
@@ -727,7 +727,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		return a.marshalStruct(w, vv, false)
 
 	default:
-		return errors.Errorf("could not marshal value of type %T", a.I)
+		return fmt.Errorf("could not marshal value of type %T", a.I)
 	}
 
 	return err
@@ -879,7 +879,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		byteReaderPool.Put(reader)
 		return err
 	default:
-		return errors.Errorf("unknown type prefix %q", b[0])
+		return fmt.Errorf("unknown type prefix %q", b[0])
 	}
 }
 
@@ -962,7 +962,7 @@ func (a Any) unmarshalSingle(body io.Reader, n int) error {
 			break
 		}
 		err = resp.ErrDiscarded{
-			Err: errors.Errorf("can't unmarshal into %T, message body was: %q", a.I, *scratch),
+			Err: fmt.Errorf("can't unmarshal into %T, message body was: %q", a.I, *scratch),
 		}
 		bytesutil.PutBytes(scratch)
 	}
@@ -992,7 +992,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 	v := reflect.ValueOf(a.I)
 	if v.Kind() != reflect.Ptr {
 		err := resp.ErrDiscarded{
-			Err: errors.Errorf("can't unmarshal array into %T", a.I),
+			Err: fmt.Errorf("can't unmarshal array into %T", a.I),
 		}
 		return discardArrayAfterErr(br, int(l), err)
 	}
@@ -1094,7 +1094,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		return nil
 
 	default:
-		err := resp.ErrDiscarded{Err: errors.Errorf("cannot decode redis array into %v", v.Type())}
+		err := resp.ErrDiscarded{Err: fmt.Errorf("cannot decode redis array into %v", v.Type())}
 		return discardArrayAfterErr(br, int(l), err)
 	}
 }
@@ -1270,7 +1270,7 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 	case ErrorPrefix[0], SimpleStringPrefix[0], IntPrefix[0]:
 		return nil
 	default:
-		return errors.Errorf("unknown type prefix %q", b[0])
+		return fmt.Errorf("unknown type prefix %q", b[0])
 	}
 }
 

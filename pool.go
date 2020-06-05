@@ -1,13 +1,12 @@
 package radix
 
 import (
+	"errors"
 	"io"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/trace"

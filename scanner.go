@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 )

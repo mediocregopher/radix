@@ -2,11 +2,10 @@ package radix
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"net"
 	"sort"
-
-	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
@@ -191,7 +190,7 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 		if err := (resp2.Any{I: &nodeStrs}).UnmarshalRESP(br); err != nil {
 			return err
 		} else if len(nodeStrs) < 2 {
-			return errors.Errorf("malformed node array: %#v", nodeStrs)
+			return fmt.Errorf("malformed node array: %#v", nodeStrs)
 		}
 		ip, port := nodeStrs[0], nodeStrs[1]
 		var id string

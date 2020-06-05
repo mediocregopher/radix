@@ -7,7 +7,7 @@ import (
 	"strings"
 	. "testing"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/stretchr/testify/assert"
