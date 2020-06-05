@@ -145,9 +145,15 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	}
 
 	// because we're using persistent these can't _really_ fail
-	sc.pconn = PersistentPubSub("", "", func(_, _ string) (Conn, error) {
+	var err error
+	sc.pconn, err = PersistentPubSub("", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
 		return sc.dialSentinel()
-	})
+	}))
+	if err != nil {
+		sc.Close()
+		return nil, err
+	}
+
 	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
 
 	sc.closeWG.Add(1)

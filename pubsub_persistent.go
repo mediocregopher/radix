@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"fmt"
 	"sync"
 	"time"
 )
@@ -64,10 +63,10 @@ type persistentPubSub struct {
 	closeOnce sync.Once
 }
 
-// PersistentPubSubWithOpts is like PubSub, but instead of taking in an existing
-// Conn to wrap it will create one on the fly. If the connection is ever
-// terminated then a new one will be created and will be reset to the previous
-// connection's state.
+// PersistentPubSub is like PubSub, but instead of taking in an existing Conn to
+// wrap it will create one on the fly. If the connection is ever terminated then
+// a new one will be created and will be reset to the previous connection's
+// state.
 //
 // This is effectively a way to have a permanent PubSubConn established which
 // supports subscribing/unsubscribing but without the hassle of implementing
@@ -82,7 +81,7 @@ type persistentPubSub struct {
 //
 //	PersistentPubSubConnFunc(DefaultConnFunc)
 //
-func PersistentPubSubWithOpts(
+func PersistentPubSub(
 	network, addr string, options ...PersistentPubSubOpt,
 ) (
 	PubSubConn, error,
@@ -106,21 +105,6 @@ func PersistentPubSubWithOpts(
 	}
 	go p.spin()
 	return p, nil
-}
-
-// PersistentPubSub is deprecated in favor of PersistentPubSubWithOpts instead.
-func PersistentPubSub(network, addr string, connFn ConnFunc) PubSubConn {
-	var opts []PersistentPubSubOpt
-	if connFn != nil {
-		opts = append(opts, PersistentPubSubConnFunc(connFn))
-	}
-	// since PersistentPubSubAbortAfter isn't used, this will never return an
-	// error, panic if it does
-	p, err := PersistentPubSubWithOpts(network, addr, opts...)
-	if err != nil {
-		panic(fmt.Sprintf("PersistentPubSubWithOpts impossibly returned an error: %v", err))
-	}
-	return p
 }
 
 // refresh only returns an error if the connection could not be made

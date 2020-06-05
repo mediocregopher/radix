@@ -1,5 +1,9 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v4.0.0
+
+* `PersistentPubSubWithOpts` has been removed.
+
 # v3.5.1
 
 * Add `EmptyArray` field to `MaybeNil`. (PR #211)

@@ -10,7 +10,7 @@ import (
 
 func closablePersistentPubSub() (PubSubConn, func()) {
 	closeCh := make(chan chan bool)
-	p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
+	p, err := PersistentPubSub("", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
 		c := dial()
 		go func() {
 			closeRetCh := <-closeCh
@@ -18,7 +18,10 @@ func closablePersistentPubSub() (PubSubConn, func()) {
 			closeRetCh <- true
 		}()
 		return c, nil
-	})
+	}))
+	if err != nil {
+		panic(err)
+	}
 
 	return p, func() {
 		closeRetCh := make(chan bool)
@@ -56,13 +59,13 @@ func TestPersistentPubSubAbortAfter(t *T) {
 		return dial(), nil
 	}
 
-	_, err := PersistentPubSubWithOpts("", "",
+	_, err := PersistentPubSub("", "",
 		PersistentPubSubConnFunc(connFn),
 		PersistentPubSubAbortAfter(2))
 	assert.Equal(t, errNope, err)
 
 	attempts = 0
-	p, err := PersistentPubSubWithOpts("", "",
+	p, err := PersistentPubSub("", "",
 		PersistentPubSubConnFunc(connFn),
 		PersistentPubSubAbortAfter(3))
 	assert.NoError(t, err)
@@ -92,9 +95,12 @@ func TestPersistentPubSubClose(t *T) {
 	}()
 
 	for i := 0; i < 1000; i++ {
-		p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
+		p, err := PersistentPubSub("", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
 			return dial(), nil
-		})
+		}))
+		if err != nil {
+			panic(err)
+		}
 		msgCh := make(chan PubSubMessage)
 		p.Subscribe(msgCh, channel)
 		// drain msgCh till it closes
