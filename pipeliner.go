@@ -96,7 +96,7 @@ func (p *pipeliner) CanDo(a Action) bool {
 //
 // If a is not a CmdAction, Do panics.
 func (p *pipeliner) Do(a Action) error {
-	req := getPipelinerCmd(a.(CmdAction)) // get this outside the lock to avoid
+	req := getPipelinerCmd(a.(CmdAction))
 
 	p.l.RLock()
 	if p.closed {
@@ -180,11 +180,10 @@ func (p *pipeliner) flush(reqs []CmdAction) []CmdAction {
 		}()
 
 		pp := &pipelinerPipeline{pipeline: pipeline(reqs)}
-		defer pp.flush()
-
 		if err := p.c.Do(pp); err != nil {
 			pp.doErr = err
 		}
+		pp.flush()
 	}()
 
 	return <-p.reqsBufCh
@@ -263,14 +262,5 @@ func (p *pipelinerPipeline) Perform(c Conn) (err error) {
 			err = fmt.Errorf("%s", v)
 		}
 	}()
-	if err := c.EncodeDecode(p, nil); err != nil {
-		return err
-	}
-	errConn := ioErrConn{Conn: c}
-	for _, req := range p.pipeline {
-		if _ = errConn.EncodeDecode(nil, req); errConn.lastIOErr != nil {
-			return errConn.lastIOErr
-		}
-	}
-	return nil
+	return p.pipeline.Perform(c)
 }

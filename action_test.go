@@ -262,7 +262,6 @@ func TestPipelineAction(t *T) {
 
 		err := c.Do(pipeline)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to decode")
 
 		err = c.Do(Cmd(&strRcv, "GET", k1))
 		require.NoError(t, err)

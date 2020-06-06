@@ -409,6 +409,22 @@ func (ec *evalAction) ClusterCanRetry() bool {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type pipelineConn struct {
+	Conn
+	marshalers   []resp.Marshaler
+	unmarshalers []resp.Unmarshaler
+}
+
+func (pc *pipelineConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+	if m != nil {
+		pc.marshalers = append(pc.marshalers, m)
+	}
+	if u != nil {
+		pc.unmarshalers = append(pc.unmarshalers, u)
+	}
+	return nil
+}
+
 type pipeline []CmdAction
 
 // Pipeline returns an Action which first writes multiple commands to a Conn in
@@ -439,54 +455,49 @@ func (p pipeline) Keys() []string {
 	return keys
 }
 
-func (p pipeline) Perform(c Conn) error {
-	return c.EncodeDecode(p, p)
-}
-
-func decodeErr(cmd CmdAction, err error) error {
-	c, ok := cmd.(*cmdAction)
-	if ok {
-		return fmt.Errorf(
-			"failed to decode pipeline CmdAction '%v' with keys %v: %w",
-			c.cmd,
-			c.Keys(),
-			err)
-	}
-	return fmt.Errorf(
-		"failed to decode pipeline CmdAction '%v': %w",
-		cmd,
-		err)
-}
-
-func (p pipeline) MarshalRESP(w io.Writer) error {
-	for _, cmd := range p {
-		if err := cmd.MarshalRESP(w); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (p pipeline) drain(br *bufio.Reader, n int) error {
+func (p pipeline) drain(conn Conn, n int) error {
 	for i := 0; i < n; i++ {
-		if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+		if err := conn.EncodeDecode(nil, resp2.Any{}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (p pipeline) UnmarshalRESP(br *bufio.Reader) error {
-	for i, cmd := range p {
-		if err := cmd.UnmarshalRESP(br); err != nil {
+func (p pipeline) Perform(c Conn) error {
+	pc := pipelineConn{
+		Conn:         c,
+		marshalers:   make([]resp.Marshaler, 0, len(p)),
+		unmarshalers: make([]resp.Unmarshaler, 0, len(p)),
+	}
+	for i := range p {
+		// any errors that happen within Perform will not be IO errors, because
+		// pipelineConn is suppressing all potential IO.
+		if err := p[i].Perform(&pc); err != nil {
+			return err
+		}
+	}
+
+	for _, m := range pc.marshalers {
+		if err := c.EncodeDecode(m, nil); err != nil {
+			return err
+		}
+	}
+
+	for i, u := range pc.unmarshalers {
+		if err := c.EncodeDecode(nil, u); err != nil {
 			if errors.As(err, new(resp.ErrDiscarded)) {
-				if drainErr := p.drain(br, len(p)-i-1); drainErr != nil {
+				if drainErr := p.drain(c, len(pc.unmarshalers)-i-1); drainErr != nil {
 					err = drainErr
 				}
 			}
-			return decodeErr(cmd, err)
+			// TODO this used to return a useful error describing which of the
+			// commands failed, mostly for the case of an application error like
+			// WRONGTYPE.
+			return err
 		}
 	}
+
 	return nil
 }
 
