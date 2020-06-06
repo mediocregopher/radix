@@ -179,10 +179,12 @@ func (cs chanSet) inverse() map[chan<- PubSubMessage][]string {
 //
 // If any methods return an error it means the PubSubConn has been Close'd and
 // subscribed msgCh's will no longer receive PubSubMessages from it. All methods
-// are threadsafe and non-blocking.
+// are threadsafe, but should be called in a different go-routine than that
+// which is reading from the PubSubMessage channels.
 //
-// NOTE if any channels block when being written to they will block all other
-// channels from receiving a publish.
+// NOTE the PubSubMessage channels should never block. If any channels block
+// when being written to they will block all other channels from receiving a
+// publish and block methods from returning.
 type PubSubConn interface {
 	// Subscribe subscribes the PubSubConn to the given set of channels. msgCh
 	// will receieve a PubSubMessage for every publish written to any of the

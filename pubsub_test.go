@@ -340,6 +340,7 @@ func ExamplePubSub() {
 
 	// Pass that connection into PubSub, conn should never get used after this
 	ps := PubSub(conn)
+	defer ps.Close() // this will close Conn as well
 
 	// Subscribe to a channel called "myChannel". All publishes to "myChannel"
 	// will get sent to msgCh after this
@@ -348,8 +349,28 @@ func ExamplePubSub() {
 		panic(err)
 	}
 
-	for msg := range msgCh {
-		log.Printf("publish to channel %q received: %q", msg.Channel, msg.Message)
+	// It's optional, but generally advisable, to periodically Ping the
+	// connection to ensure it's still alive. This should be done in a separate
+	// go-routine from that which is reading from msgCh.
+	errCh := make(chan error, 1)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := ps.Ping(); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case msg := <-msgCh:
+			log.Printf("publish to channel %q received: %q", msg.Channel, msg.Message)
+		case err := <-errCh:
+			panic(err)
+		}
 	}
 }
 
