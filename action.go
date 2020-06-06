@@ -512,10 +512,13 @@ type withConn struct {
 }
 
 // WithConn is used to perform a set of independent Actions on the same Conn.
-// key should be a key which one or more of the inner Actions is acting on, or
-// "" if no keys are being acted on. The callback function is what should
-// actually carry out the inner actions, and the error it returns will be
-// passed back up immediately.
+//
+// key should be a key which one or more of the inner Actions is going to act
+// on, or "" if no keys are being acted on or the keys aren't yet known. key is
+// generally only necessary when using Cluster.
+//
+// The callback function is what should actually carry out the inner actions,
+// and the error it returns will be passed back up immediately.
 //
 // NOTE that WithConn only ensures all inner Actions are performed on the same
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
