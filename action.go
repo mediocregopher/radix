@@ -409,20 +409,29 @@ func (ec *evalAction) ClusterCanRetry() bool {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type marshalerUnmarshaler struct {
+	resp.Marshaler
+	resp.Unmarshaler
+}
+
 type pipelineConn struct {
 	Conn
-	marshalers   []resp.Marshaler
-	unmarshalers []resp.Unmarshaler
+	mm []marshalerUnmarshaler
 }
 
 func (pc *pipelineConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
-	if m != nil {
-		pc.marshalers = append(pc.marshalers, m)
-	}
-	if u != nil {
-		pc.unmarshalers = append(pc.unmarshalers, u)
-	}
+	pc.mm = append(pc.mm, marshalerUnmarshaler{Marshaler: m, Unmarshaler: u})
 	return nil
+}
+
+func (pc *pipelineConn) numUnmarshalersAfter(idx int) int {
+	var n int
+	for i := idx + 1; i < len(pc.mm); i++ {
+		if pc.mm[i].Unmarshaler != nil {
+			n++
+		}
+	}
+	return n
 }
 
 type pipeline []CmdAction
@@ -466,9 +475,9 @@ func (p pipeline) drain(conn Conn, n int) error {
 
 func (p pipeline) Perform(c Conn) error {
 	pc := pipelineConn{
-		Conn:         c,
-		marshalers:   make([]resp.Marshaler, 0, len(p)),
-		unmarshalers: make([]resp.Unmarshaler, 0, len(p)),
+		Conn: c,
+		// TODO this could probably use a Pool
+		mm: make([]marshalerUnmarshaler, 0, len(p)),
 	}
 	for i := range p {
 		// any errors that happen within Perform will not be IO errors, because
@@ -478,16 +487,22 @@ func (p pipeline) Perform(c Conn) error {
 		}
 	}
 
-	for _, m := range pc.marshalers {
-		if err := c.EncodeDecode(m, nil); err != nil {
+	for _, m := range pc.mm {
+		if m.Marshaler == nil {
+			continue
+		}
+		if err := c.EncodeDecode(m.Marshaler, nil); err != nil {
 			return err
 		}
 	}
 
-	for i, u := range pc.unmarshalers {
-		if err := c.EncodeDecode(nil, u); err != nil {
+	for i, m := range pc.mm {
+		if m.Unmarshaler == nil {
+			continue
+		}
+		if err := c.EncodeDecode(nil, m.Unmarshaler); err != nil {
 			if errors.As(err, new(resp.ErrDiscarded)) {
-				if drainErr := p.drain(c, len(pc.unmarshalers)-i-1); drainErr != nil {
+				if drainErr := p.drain(c, pc.numUnmarshalersAfter(i)); drainErr != nil {
 					err = drainErr
 				}
 			}
