@@ -17,19 +17,17 @@ import (
 //
 // A Conn can be used directly as a Client, but in general you probably want to
 // use a *Pool instead
+//
+// Conn is not thread-safe unless its implementation explicitly states
+// otherwise.
 type Conn interface {
-	// The Do method of a Conn is _not_ expected to be thread-safe with the
-	// other methods of Conn, and merely calls the Action's Perform method with
-	// itself as the argument.
+	// The Do method merely calls the Action's Perform method with the Conn as
+	// the argument.
 	Client
 
 	// EncodeDecode will encode the given Marshaler onto the connection, then
 	// decode a response into the given Unmarshaler. If either parameter is nil
 	// then that step is skipped.
-	//
-	// The Conn may decide to implicitly pipeline concurrent EncodeDecode
-	// calls, such that multiple Marshaler's are written all at once, then their
-	// associated Unmarshaler's are read into in the same order.
 	EncodeDecode(resp.Marshaler, resp.Unmarshaler) error
 
 	// Returns the underlying network connection, as-is. Read, Write, and Close

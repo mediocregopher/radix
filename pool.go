@@ -62,9 +62,6 @@ type poolOpts struct {
 	overflowSize          int
 	onEmptyWait           time.Duration
 	errOnEmpty            error
-	pipelineConcurrency   int
-	pipelineLimit         int
-	pipelineWindow        time.Duration
 	pt                    trace.PoolTrace
 }
 
@@ -169,31 +166,6 @@ func PoolOnFullBuffer(size int, drainInterval time.Duration) PoolOpt {
 	}
 }
 
-// PoolPipelineConcurrency sets the maximum number of pipelines that can be
-// executed concurrently.
-//
-// If limit is greater than the pool size or less than 1, the limit will be
-// set to the pool size.
-func PoolPipelineConcurrency(limit int) PoolOpt {
-	return func(po *poolOpts) {
-		po.pipelineConcurrency = limit
-	}
-}
-
-// PoolPipelineWindow sets the duration after which internal pipelines will be
-// flushed and the maximum number of commands that can be pipelined before
-// flushing.
-//
-// If window is zero then implicit pipelining will be disabled.
-// If limit is zero then no limit will be used and pipelines will only be limited
-// by the specified time window.
-func PoolPipelineWindow(window time.Duration, limit int) PoolOpt {
-	return func(po *poolOpts) {
-		po.pipelineLimit = limit
-		po.pipelineWindow = window
-	}
-}
-
 // PoolWithTrace tells the Pool to trace itself with the given PoolTrace
 // Note that PoolTrace will block every point that you set to trace.
 func PoolWithTrace(pt trace.PoolTrace) PoolOpt {
@@ -235,8 +207,6 @@ type Pool struct {
 	// when closed is true (closed is also protected by l)
 	pool   chan *ioErrConn
 	closed bool
-
-	pipeliner *pipeliner
 
 	wg       sync.WaitGroup
 	closeCh  chan bool
@@ -286,9 +256,6 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		PoolRefillInterval(1 * time.Second),
 		PoolOnFullBuffer((size/3)+1, 1*time.Second),
 		PoolPingInterval(5 * time.Second / time.Duration(size+1)),
-		PoolPipelineConcurrency(size),
-		// NOTE if 150us is changed the benchmarks need to be updated too
-		PoolPipelineWindow(150*time.Microsecond, 0),
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {
@@ -336,20 +303,6 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		p.traceInitCompleted(time.Since(startTime))
 	}()
 
-	// needs to be created before starting any background goroutines to avoid
-	// races on p.pipeliner access
-	if p.opts.pipelineWindow > 0 {
-		if p.opts.pipelineConcurrency < 1 || p.opts.pipelineConcurrency > size {
-			p.opts.pipelineConcurrency = size
-		}
-
-		p.pipeliner = newPipeliner(
-			p,
-			p.opts.pipelineConcurrency,
-			p.opts.pipelineLimit,
-			p.opts.pipelineWindow,
-		)
-	}
 	if p.opts.pingInterval > 0 && size > 0 {
 		p.atIntervalDo(p.opts.pingInterval, func() { p.Do(Cmd(nil, "PING")) })
 	}
@@ -561,13 +514,6 @@ func (p *Pool) put(ioc *ioErrConn) bool {
 // are currently not automatically pipelined.
 func (p *Pool) Do(a Action) error {
 	startTime := time.Now()
-	if p.pipeliner != nil && p.pipeliner.CanDo(a) {
-		err := p.pipeliner.Do(a)
-		p.traceDoCompleted(time.Since(startTime), err)
-
-		return err
-	}
-
 	c, err := p.get()
 	if err != nil {
 		return err
@@ -622,12 +568,6 @@ emptyLoop:
 		}
 	}
 	p.l.Unlock()
-
-	if p.pipeliner != nil {
-		if err := p.pipeliner.Close(); err != nil {
-			return err
-		}
-	}
 
 	// by now the pool's go-routines should have bailed, wait to make sure they
 	// do

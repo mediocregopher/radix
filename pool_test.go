@@ -248,7 +248,6 @@ func TestPoolDoDoesNotBlock(t *T) {
 	})
 	pool := testPool(size,
 		PoolOnEmptyCreateAfter(redialInterval),
-		PoolPipelineWindow(0, 0),
 		connFunc,
 	)
 

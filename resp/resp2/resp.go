@@ -727,9 +727,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		return a.marshalStruct(w, vv, false)
 
 	default:
-		return resp.ErrDiscarded{
-			Err: fmt.Errorf("could not marshal value of type %T", a.I),
-		}
+		return fmt.Errorf("could not marshal value of type %T", a.I)
 	}
 
 	return err

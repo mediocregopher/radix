@@ -220,26 +220,30 @@ func ExampleEvalScript() {
 }
 
 func TestPipelineAction(t *T) {
-	c := dial()
-	for i := 0; i < 10; i++ {
-		ss := []string{
-			randStr(),
-			randStr(),
-			randStr(),
-		}
-		out := make([]string, len(ss))
-		var cmds []CmdAction
-		for i := range ss {
-			cmds = append(cmds, Cmd(&out[i], "ECHO", ss[i]))
-		}
-		require.Nil(t, c.Do(Pipeline(cmds...)))
+	t.Run("basic", func(t *T) {
+		c := dial()
+		for i := 0; i < 10; i++ {
+			ss := []string{
+				randStr(),
+				randStr(),
+				randStr(),
+			}
+			out := make([]string, len(ss))
+			var cmds []Action
+			for i := range ss {
+				cmds = append(cmds, Cmd(&out[i], "ECHO", ss[i]))
+			}
+			require.Nil(t, c.Do(Pipeline(cmds...)))
 
-		for i := range ss {
-			assert.Equal(t, ss[i], out[i])
+			for i := range ss {
+				assert.Equal(t, ss[i], out[i])
+			}
 		}
-	}
+	})
 
-	t.Run("drain on decodeErr", func(t *T) {
+	t.Run("errDiscarded", func(t *T) {
+		c := dial()
+
 		// Setup
 		k1 := randStr()
 		k2 := randStr()
@@ -254,19 +258,20 @@ func TestPipelineAction(t *T) {
 
 		var intRcv int
 		var strRcv string
-
 		pipeline := Pipeline(
-			Cmd(&intRcv, "GET", k1),
+			Cmd(&intRcv, "GET", k1), // unmarshal error
 			Cmd(nil, "GET", k2),
+			Cmd(&strRcv, "GET", k2),
 		)
 
 		err := c.Do(pipeline)
 		require.Error(t, err)
+		assert.Equal(t, kvs[k2], strRcv)
 
-		err = c.Do(Cmd(&strRcv, "GET", k1))
+		// make sure the connection is still functional
+		err = c.Do(Cmd(&strRcv, "ECHO", k1))
 		require.NoError(t, err)
-
-		assert.Equal(t, kvs[k1], strRcv)
+		assert.Equal(t, k1, strRcv)
 	})
 }
 
