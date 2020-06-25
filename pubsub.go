@@ -152,7 +152,7 @@ func (cs chanSet) del(s string, ch chan<- PubSubMessage) bool {
 }
 
 func (cs chanSet) missing(ss []string) []string {
-	out := ss[:0]
+	out := make([]string, 0, len(ss))
 	for _, s := range ss {
 		if _, ok := cs[s]; !ok {
 			out = append(out, s)
