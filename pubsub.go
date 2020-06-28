@@ -67,7 +67,7 @@ func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 		if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
 			return err
 		}
-		return resp.ErrDiscarded{Err: errNotPubSubMessage}
+		return resp.ErrConnUsable{Err: errNotPubSubMessage}
 	}
 
 	var ah resp2.ArrayHeader

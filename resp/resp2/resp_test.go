@@ -3,8 +3,10 @@ package resp2
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"reflect"
 	"strings"
+	"testing"
 	. "testing"
 
 	"errors"
@@ -22,13 +24,13 @@ func TestPeekAndAssertPrefix(t *T) {
 
 	tests := []test{
 		{[]byte(":5\r\n"), IntPrefix, nil},
-		{[]byte(":5\r\n"), SimpleStringPrefix, resp.ErrDiscarded{
+		{[]byte(":5\r\n"), SimpleStringPrefix, resp.ErrConnUsable{
 			Err: errUnexpectedPrefix{
 				Prefix: IntPrefix, ExpectedPrefix: SimpleStringPrefix,
 			},
 		}},
 		{[]byte("-foo\r\n"), ErrorPrefix, nil},
-		{[]byte("-foo\r\n"), IntPrefix, resp.ErrDiscarded{Err: Error{
+		{[]byte("-foo\r\n"), IntPrefix, resp.ErrConnUsable{Err: Error{
 			E: errors.New("foo"),
 		}}},
 	}
@@ -39,9 +41,9 @@ func TestPeekAndAssertPrefix(t *T) {
 
 		debugArgs := []interface{}{"%d) %q (got err:%s)", i, test.in, err}
 		assert.IsType(t, test.exp, err, debugArgs...)
-		if expDiscarded, ok := test.exp.(resp.ErrDiscarded); ok {
-			discarded, _ := err.(resp.ErrDiscarded)
-			assert.IsType(t, expDiscarded.Err, discarded.Err, debugArgs...)
+		if expUsable, ok := test.exp.(resp.ErrConnUsable); ok {
+			usable, _ := err.(resp.ErrConnUsable)
+			assert.IsType(t, expUsable.Err, usable.Err, debugArgs...)
 		}
 		if test.exp != nil {
 			assert.Equal(t, test.exp.Error(), err.Error(), debugArgs...)
@@ -192,9 +194,11 @@ func (cm binCPMarshaler) MarshalBinary() ([]byte, error) {
 
 func TestAnyMarshal(t *T) {
 	type encodeTest struct {
-		in             interface{}
-		out            string
-		forceStr, flat bool
+		in               interface{}
+		out              string
+		forceStr, flat   bool
+		expErr           bool
+		expErrConnUsable bool
 	}
 
 	var encodeTests = []encodeTest{
@@ -250,6 +254,21 @@ func TestAnyMarshal(t *T) {
 			flat:     true,
 			out:      "$1\r\na\r\n$1\r\n1\r\n",
 		},
+		{
+			in:     []interface{}{func() {}},
+			expErr: true,
+		},
+		{
+			in:               []interface{}{func() {}},
+			flat:             true,
+			expErr:           true,
+			expErrConnUsable: true,
+		},
+		{
+			in:     []interface{}{"a", func() {}},
+			flat:   true,
+			expErr: true,
+		},
 
 		// Embedded arrays
 		{
@@ -260,6 +279,30 @@ func TestAnyMarshal(t *T) {
 			in:   []interface{}{[]string{"a", "b"}, []int{1, 2}},
 			flat: true,
 			out:  "$1\r\na\r\n$1\r\nb\r\n:1\r\n:2\r\n",
+		},
+		{
+			in: []interface{}{
+				[]interface{}{"a"},
+				[]interface{}{"b", func() {}},
+			},
+			expErr: true,
+		},
+		{
+			in: []interface{}{
+				[]interface{}{"a"},
+				[]interface{}{"b", func() {}},
+			},
+			flat:   true,
+			expErr: true,
+		},
+		{
+			in: []interface{}{
+				[]interface{}{func() {}, "a"},
+				[]interface{}{"b", func() {}},
+			},
+			flat:             true,
+			expErr:           true,
+			expErrConnUsable: true,
 		},
 
 		// Maps
@@ -280,6 +323,25 @@ func TestAnyMarshal(t *T) {
 			in:   map[string]interface{}{"one": []string{"1", "2"}},
 			flat: true,
 			out:  "$3\r\none\r\n$1\r\n1\r\n$1\r\n2\r\n",
+		},
+		{
+			in:     map[string]interface{}{"one": func() {}},
+			expErr: true,
+		},
+		{
+			in:     map[string]interface{}{"one": func() {}},
+			flat:   true,
+			expErr: true,
+		},
+		{
+			in:     map[complex128]interface{}{0: func() {}},
+			expErr: true,
+		},
+		{
+			in:               map[complex128]interface{}{0: func() {}},
+			flat:             true,
+			expErr:           true,
+			expErrConnUsable: true,
 		},
 
 		// Structs
@@ -327,31 +389,32 @@ func TestAnyMarshal(t *T) {
 		},
 	}
 
-	marshal := func(et encodeTest, buf *bytes.Buffer) {
+	marshal := func(t *testing.T, et encodeTest, buf *bytes.Buffer) {
 		a := Any{
 			I:                     et.in,
 			MarshalBulkString:     et.forceStr,
 			MarshalNoArrayHeaders: et.flat,
 		}
-		assert.Nil(t, a.MarshalRESP(buf))
+
+		err := a.MarshalRESP(buf)
+		var errConnUsable resp.ErrConnUsable
+		if et.expErr && err == nil {
+			t.Fatal("expected error")
+		} else if et.expErr && et.expErrConnUsable != errors.As(err, &errConnUsable) {
+			t.Fatalf("expected ErrConnUsable:%v, got: %v", et.expErrConnUsable, err)
+		} else if !et.expErr {
+			assert.Nil(t, err)
+		}
 	}
 
-	for _, et := range encodeTests {
-		buf := new(bytes.Buffer)
-		marshal(et, buf)
-		assert.Equal(t, et.out, buf.String(), "et: %#v", et)
-	}
-
-	// do them by doing all the marshals at once then reading them all at once
-	{
-		buf := new(bytes.Buffer)
-		for _, et := range encodeTests {
-			marshal(et, buf)
-		}
-		for _, et := range encodeTests {
-			out := buf.Next(len(et.out))
-			assert.Equal(t, et.out, string(out))
-		}
+	for i, et := range encodeTests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			buf := new(bytes.Buffer)
+			marshal(t, et, buf)
+			if !et.expErr {
+				assert.Equal(t, et.out, buf.String(), "et: %#v", et)
+			}
+		})
 	}
 }
 
@@ -702,33 +765,19 @@ func TestAnyConsumedOnErr(t *T) {
 	}
 
 	for i, test := range tests {
-		buf := new(bytes.Buffer)
-		require.Nil(t, test.in.MarshalRESP(buf))
-		require.Nil(t, SimpleString{S: "DISCARDED"}.MarshalRESP(buf))
-		br := bufio.NewReader(buf)
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			buf := new(bytes.Buffer)
+			require.Nil(t, test.in.MarshalRESP(buf))
+			require.Nil(t, SimpleString{S: "DISCARDED"}.MarshalRESP(buf))
+			br := bufio.NewReader(buf)
 
-		err := Any{I: test.into}.UnmarshalRESP(br)
-		debugArgs := []interface{}{"%d) %#v err:%#v (%s)", i, test, err, err}
-		assert.Error(t, err, debugArgs...)
-		assert.True(t, errors.As(err, new(resp.ErrDiscarded)), debugArgs...)
+			err := Any{I: test.into}.UnmarshalRESP(br)
+			assert.Error(t, err)
+			assert.True(t, errors.As(err, new(resp.ErrConnUsable)))
 
-		var ss SimpleString
-		assert.NoError(t, ss.UnmarshalRESP(br), debugArgs...)
-		assert.Equal(t, "DISCARDED", ss.S, debugArgs...)
-	}
-}
-
-func TestErrorAs(t *T) {
-	{
-		err := Error{E: errors.New("foo")}
-		var errDiscarded resp.ErrDiscarded
-		assert.True(t, errors.As(err, &errDiscarded))
-		assert.Equal(t, err, errDiscarded.Err)
-	}
-	{
-		err := &Error{E: errors.New("foo")}
-		var errDiscarded resp.ErrDiscarded
-		assert.True(t, errors.As(err, &errDiscarded))
-		assert.Equal(t, *err, errDiscarded.Err)
+			var ss SimpleString
+			assert.NoError(t, ss.UnmarshalRESP(br))
+			assert.Equal(t, "DISCARDED", ss.S)
+		})
 	}
 }

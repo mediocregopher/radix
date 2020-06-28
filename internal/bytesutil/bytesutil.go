@@ -205,7 +205,7 @@ func ReadInt(r io.Reader, n int) (int64, error) {
 	}
 	i, err := ParseInt(*scratch)
 	if err != nil {
-		return 0, resp.ErrDiscarded{Err: err}
+		return 0, resp.ErrConnUsable{Err: err}
 	}
 	return i, nil
 }
@@ -221,7 +221,7 @@ func ReadUint(r io.Reader, n int) (uint64, error) {
 	}
 	ui, err := ParseUint(*scratch)
 	if err != nil {
-		return 0, resp.ErrDiscarded{Err: err}
+		return 0, resp.ErrConnUsable{Err: err}
 	}
 	return ui, nil
 }
@@ -237,7 +237,7 @@ func ReadFloat(r io.Reader, precision, n int) (float64, error) {
 	}
 	f, err := strconv.ParseFloat(string(*scratch), precision)
 	if err != nil {
-		return 0, resp.ErrDiscarded{Err: err}
+		return 0, resp.ErrConnUsable{Err: err}
 	}
 	return f, nil
 }

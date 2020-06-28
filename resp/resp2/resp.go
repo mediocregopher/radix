@@ -106,11 +106,11 @@ func peekAndAssertPrefix(br *bufio.Reader, expectedPrefix []byte) error {
 		if err := respErr.UnmarshalRESP(br); err != nil {
 			return err
 		}
-		return resp.ErrDiscarded{Err: respErr}
+		return resp.ErrConnUsable{Err: respErr}
 	} else if err := (Any{}).UnmarshalRESP(br); err != nil {
 		return err
 	}
-	return resp.ErrDiscarded{Err: errUnexpectedPrefix{
+	return resp.ErrConnUsable{Err: errUnexpectedPrefix{
 		Prefix:         b,
 		ExpectedPrefix: expectedPrefix,
 	}}
@@ -193,17 +193,6 @@ func (e *Error) UnmarshalRESP(br *bufio.Reader) error {
 	b, err := bytesutil.BufferedBytesDelim(br)
 	e.E = errors.New(string(b))
 	return err
-}
-
-// As implements the method for the (x)errors.As function.
-func (e Error) As(target interface{}) bool {
-	switch targetT := target.(type) {
-	case *resp.ErrDiscarded:
-		targetT.Err = e
-		return true
-	default:
-		return false
-	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -447,13 +436,13 @@ func discardArray(br *bufio.Reader, l int) error {
 func discardArrayAfterErr(br *bufio.Reader, left int, err error) error {
 	// if the last error which occurred didn't discard the message it was on, we
 	// can't do anything
-	if !errors.As(err, new(resp.ErrDiscarded)) {
+	if !errors.As(err, new(resp.ErrConnUsable)) {
 		return err
 	} else if err := discardArray(br, left); err != nil {
 		return err
 	}
 
-	// The original error was already wrapped in an ErrDiscarded, so just return
+	// The original error was already wrapped in an ErrConnUsable, so just return
 	// it as it was given
 	return err
 }
@@ -601,6 +590,7 @@ func numElemsStruct(vv reflect.Value, flat bool) int {
 
 // MarshalRESP implements the Marshaler method
 func (a Any) MarshalRESP(w io.Writer) error {
+
 	marshalBulk := func(b []byte) error {
 		bs := BulkStringBytes{B: b, MarshalNotNil: a.MarshalBulkString}
 		return bs.MarshalRESP(w)
@@ -686,17 +676,31 @@ func (a Any) MarshalRESP(w io.Writer) error {
 
 	// some helper functions
 	var err error
+	var anyWritten bool
+	setAnyWritten := func() {
+		var errConnUsable resp.ErrConnUsable
+		if !errors.As(err, &errConnUsable) {
+			anyWritten = true
+		}
+	}
 	arrHeader := func(l int) {
 		if a.MarshalNoArrayHeaders || err != nil {
 			return
 		}
 		err = ArrayHeader{N: l}.MarshalRESP(w)
+		setAnyWritten()
 	}
 	arrVal := func(v interface{}) {
 		if err != nil {
 			return
 		}
 		err = a.cp(v).MarshalRESP(w)
+		setAnyWritten()
+	}
+	unwrapIfAnyWritten := func() {
+		if anyWritten {
+			err = resp.ErrConnUnusable(err)
+		}
 	}
 
 	switch vv.Kind() {
@@ -710,6 +714,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		for i := 0; i < l; i++ {
 			arrVal(vv.Index(i).Interface())
 		}
+		unwrapIfAnyWritten()
 
 	case reflect.Map:
 		if vv.IsNil() && !a.MarshalNoArrayHeaders {
@@ -722,12 +727,15 @@ func (a Any) MarshalRESP(w io.Writer) error {
 			arrVal(kv.Interface())
 			arrVal(vv.MapIndex(kv).Interface())
 		}
+		unwrapIfAnyWritten()
 
 	case reflect.Struct:
 		return a.marshalStruct(w, vv, false)
 
 	default:
-		return fmt.Errorf("could not marshal value of type %T", a.I)
+		return resp.ErrConnUsable{
+			Err: fmt.Errorf("could not marshal value of type %T", a.I),
+		}
 	}
 
 	return err
@@ -841,7 +849,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 
 	switch prefix {
 	case ErrorPrefix[0]:
-		return Error{E: errors.New(string(b))}
+		return resp.ErrConnUsable{Err: Error{E: errors.New(string(b))}}
 	case ArrayPrefix[0]:
 		l, err := bytesutil.ParseInt(b)
 		if err != nil {
@@ -859,12 +867,12 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		}
 
 		// This is a bit of a clusterfuck. Basically:
-		// - If unmarshal returns a non-Discarded error, return that asap.
+		// - If unmarshal returns a non-ErrConnUsable error, return that asap.
 		// - If discarding the last 2 bytes (in order to discard the full
 		//   message) fails, return that asap
 		// - Otherwise return the original error, if there was any
 		if err = a.unmarshalSingle(br, int(l)); err != nil {
-			if !errors.As(err, new(resp.ErrDiscarded)) {
+			if !errors.As(err, new(resp.ErrConnUsable)) {
 				return err
 			}
 		}
@@ -961,7 +969,7 @@ func (a Any) unmarshalSingle(body io.Reader, n int) error {
 		if *scratch, err = bytesutil.ReadNAppend(body, *scratch, n); err != nil {
 			break
 		}
-		err = resp.ErrDiscarded{
+		err = resp.ErrConnUsable{
 			Err: fmt.Errorf("can't unmarshal into %T, message body was: %q", a.I, *scratch),
 		}
 		bytesutil.PutBytes(scratch)
@@ -991,7 +999,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 	size := int(l)
 	v := reflect.ValueOf(a.I)
 	if v.Kind() != reflect.Ptr {
-		err := resp.ErrDiscarded{
+		err := resp.ErrConnUsable{
 			Err: fmt.Errorf("can't unmarshal array into %T", a.I),
 		}
 		return discardArrayAfterErr(br, int(l), err)
@@ -1021,7 +1029,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 
 	case reflect.Map:
 		if size%2 != 0 {
-			err := resp.ErrDiscarded{Err: errors.New("cannot decode redis array with odd number of elements into map")}
+			err := resp.ErrConnUsable{Err: errors.New("cannot decode redis array with odd number of elements into map")}
 			return discardArrayAfterErr(br, int(l), err)
 		} else if v.IsNil() {
 			v.Set(reflect.MakeMapWithSize(v.Type(), size/2))
@@ -1060,7 +1068,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 
 	case reflect.Struct:
 		if size%2 != 0 {
-			err := resp.ErrDiscarded{Err: errors.New("cannot decode redis array with odd number of elements into struct")}
+			err := resp.ErrConnUsable{Err: errors.New("cannot decode redis array with odd number of elements into struct")}
 			return discardArrayAfterErr(br, int(l), err)
 		}
 
@@ -1094,7 +1102,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		return nil
 
 	default:
-		err := resp.ErrDiscarded{Err: fmt.Errorf("cannot decode redis array into %v", v.Type())}
+		err := resp.ErrConnUsable{Err: fmt.Errorf("cannot decode redis array into %v", v.Type())}
 		return discardArrayAfterErr(br, int(l), err)
 	}
 }

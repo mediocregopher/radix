@@ -203,10 +203,11 @@ func TestPoolPut(t *T) {
 	}))
 	assertPoolConns(9)
 
-	// Make sure that a put _does_ accept a connection which had a
-	// marshal/unmarshal error
+	// Make sure that a put _does_ accept a connection which had an unmarshal
+	// error
 	pool.Do(WithConn("", func(conn Conn) error {
-		assert.NotNil(t, conn.Do(FlatCmd(nil, "ECHO", "", func() {})))
+		var i int
+		assert.NotNil(t, conn.Do(Cmd(&i, "ECHO", "foo")))
 		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
 		return nil
 	}))
@@ -307,7 +308,7 @@ func TestIoErrConn(t *T) {
 		defer ioc.Close()
 
 		err1 := ioc.Do(Cmd(nil, "EVAL", "Z", "0"))
-		require.True(t, errors.As(err1, new(resp.ErrDiscarded)))
+		require.True(t, errors.As(err1, new(resp.ErrConnUsable)))
 		require.True(t, errors.As(err1, new(resp2.Error)))
 
 		err2 := ioc.Do(Cmd(nil, "GET", randStr()))

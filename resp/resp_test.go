@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestErrDiscarded(t *T) {
+func TestErrConnUsable(t *T) {
 	err := errors.New("foo")
-	assert.False(t, errors.As(err, new(ErrDiscarded)))
-	assert.True(t, errors.As(ErrDiscarded{Err: err}, new(ErrDiscarded)))
-	assert.True(t, errors.Is(ErrDiscarded{Err: err}, err))
+	assert.False(t, errors.As(err, new(ErrConnUsable)))
+	assert.True(t, errors.As(ErrConnUsable{Err: err}, new(ErrConnUsable)))
+	assert.True(t, errors.Is(ErrConnUsable{Err: err}, err))
 }

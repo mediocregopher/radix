@@ -248,7 +248,7 @@ func (c *cmdAction) flatMarshalRESP(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return a.MarshalRESP(w)
+	return resp.ErrConnUnusable(a.MarshalRESP(w))
 }
 
 func (c *cmdAction) MarshalRESP(w io.Writer) error {
@@ -489,14 +489,18 @@ func (p *pipeline) setErr(startingAt int, err error) {
 func (p *pipeline) MarshalRESP(w io.Writer) error {
 	for i := range p.mm {
 		if p.mm[i].Marshaler == nil {
-			continue
+			// skip
 		} else if err := p.mm[i].Marshaler.MarshalRESP(w); err == nil {
-			continue
+			// ok
+		} else if errors.As(err, new(resp.ErrConnUsable)) {
+			// if the connection is still usable then mark this
+			// pipelineMarshalerUnmarshaler as having had an error but continue
+			// on to the rest...
+			p.mm[i].err = err
 		} else {
-			// TODO for ConnPipeliner this needs to have some kind of check to
-			// know whether or not the marshaling failed due to the connection
-			// being bad or because the marshaler had some kind of internal
-			// error (e.g. invalid type being marshaled).
+			// ..otherwise if the connection isn't usable then mark this and all
+			// subsequent pipelineMarshalerUnmarshalers as having had this
+			// error.
 			p.setErr(i, err)
 			break
 		}
@@ -507,12 +511,11 @@ func (p *pipeline) MarshalRESP(w io.Writer) error {
 func (p *pipeline) UnmarshalRESP(br *bufio.Reader) error {
 	for i := range p.mm {
 		if p.mm[i].Unmarshaler == nil || p.mm[i].err != nil {
-			continue
+			// skip
 		} else if err := p.mm[i].Unmarshaler.UnmarshalRESP(br); err == nil {
-			continue
-		} else if errors.As(err, new(resp.ErrDiscarded)) {
+			// ok
+		} else if errors.As(err, new(resp.ErrConnUsable)) {
 			p.mm[i].err = err
-			continue
 		} else {
 			p.setErr(i, err)
 			break
@@ -545,36 +548,28 @@ func (p *pipeline) Perform(c Conn) error {
 
 	// look through any errors encountered, if any. Perform will only return the
 	// first error encountered, but it does take into account all the others
-	// when determining if that error should be wrapped in ErrDiscarded.
+	// when determining if that error should be wrapped in ErrConnUsable.
 	//
 	// TODO this used to return a useful error describing which of the
 	// commands failed, mostly for the case of an application error like
 	// WRONGTYPE.
 	var err error
-	var errDiscarded resp.ErrDiscarded
-	allDiscarded := true
+	var errConnUsable resp.ErrConnUsable
+	connUsable := true
 	for _, m := range p.mm {
-		if m.err == nil {
-			continue
-		} else if m.err != nil {
-			err = m.err
-		}
-		if !errors.As(m.err, &errDiscarded) {
-			allDiscarded = false
+		if m.err != nil {
+			if err == nil {
+				err = m.err
+			}
+			if !errors.As(m.err, &errConnUsable) {
+				connUsable = false
+			}
 		}
 	}
 
 	// unwrap the error if not all of the errors encountered were discarded.
-	// Unwrapping is done within a for loop in case the error has multiple
-	// levels of ErrDiscarded (somehow).
-	//
-	// TODO there's probably a more elegant way to do this with errors.Unwrap
-	for {
-		if err != nil && !allDiscarded && errors.As(err, &errDiscarded) {
-			err = errDiscarded.Err
-		} else {
-			break
-		}
+	if !connUsable {
+		err = resp.ErrConnUnusable(err)
 	}
 	return err
 }

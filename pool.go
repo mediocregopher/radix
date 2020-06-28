@@ -37,7 +37,7 @@ func (ioc *ioErrConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
 		return ioc.lastIOErr
 	}
 	err := ioc.Conn.EncodeDecode(m, u)
-	if err != nil && !errors.As(err, new(resp.ErrDiscarded)) {
+	if err != nil && !errors.As(err, new(resp.ErrConnUsable)) {
 		ioc.lastIOErr = err
 	}
 	return err

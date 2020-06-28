@@ -241,15 +241,15 @@ func TestPipelineAction(t *T) {
 		}
 	})
 
-	t.Run("errDiscarded", func(t *T) {
+	t.Run("errConnUsable", func(t *T) {
 		c := dial()
 
 		// Setup
 		k1 := randStr()
 		k2 := randStr()
 		kvs := map[string]string{
-			k1: randStr(),
-			k2: randStr(),
+			k1: "foo",
+			k2: "bar",
 		}
 
 		for k, v := range kvs {
@@ -266,9 +266,10 @@ func TestPipelineAction(t *T) {
 
 		err := c.Do(pipeline)
 		require.Error(t, err)
+		assert.Zero(t, intRcv)
 		assert.Equal(t, kvs[k2], strRcv)
 
-		// make sure the connection is still functional
+		// make sure the connection is still usable
 		err = c.Do(Cmd(&strRcv, "ECHO", k1))
 		require.NoError(t, err)
 		assert.Equal(t, k1, strRcv)

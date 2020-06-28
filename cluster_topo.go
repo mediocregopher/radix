@@ -165,7 +165,7 @@ func (tss topoSlotSet) MarshalRESP(w io.Writer) error {
 		marshal(resp2.Any{I: node})
 	}
 
-	return err
+	return resp.ErrConnUnusable(err)
 }
 
 func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {

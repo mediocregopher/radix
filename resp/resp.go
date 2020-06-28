@@ -5,11 +5,17 @@ package resp
 
 import (
 	"bufio"
+	"errors"
 	"io"
 )
 
 // Marshaler is the interface implemented by types that can marshal themselves
 // into valid RESP.
+//
+// NOTE that when implementing a custom Marshaler, especially when resp2.Any is
+// used internally, it's important to keep track of whether a partial RESP
+// message has already been written, and to use ErrConnUnusable when returning
+// errors if a partial RESP message has been written.
 type Marshaler interface {
 	MarshalRESP(io.Writer) error
 }
@@ -17,26 +23,37 @@ type Marshaler interface {
 // Unmarshaler is the interface implemented by types that can unmarshal a RESP
 // description of themselves. UnmarshalRESP should _always_ fully consume a RESP
 // message off the reader, unless there is an error returned from the reader
-// itself.
+// itself. Use ErrConnUsable when applicable.
 //
-// Note that, unlike Marshaler, Unmarshaler _must_ take in a *bufio.Reader.
+// NOTE that, unlike Marshaler, Unmarshaler _must_ take in a *bufio.Reader.
 type Unmarshaler interface {
 	UnmarshalRESP(*bufio.Reader) error
 }
 
-// ErrDiscarded is used to wrap an error encountered while unmarshaling a
-// message. If an error was encountered during unmarshaling but the rest of the
-// message was successfully discarded off of the wire, then the error can be
-// wrapped in this type.
-type ErrDiscarded struct {
+// ErrConnUsable is used to wrap an error encountered while marshaling or
+// unmarshaling a message onto connection. It declares that the network
+// connection is still healthy and that there are no partially written/read
+// messages on the stream.
+type ErrConnUsable struct {
 	Err error
 }
 
-func (ed ErrDiscarded) Error() string {
+// ErrConnUnusable takes an existing error and, if it is wrapped in an
+// ErrConnUsable, unwraps the ErrConnUsable from around it.
+func ErrConnUnusable(err error) error {
+	if err == nil {
+		return nil
+	} else if errConnUsable := (ErrConnUsable{}); errors.As(err, &errConnUsable) {
+		return errConnUsable.Err
+	}
+	return err
+}
+
+func (ed ErrConnUsable) Error() string {
 	return ed.Err.Error()
 }
 
 // Unwrap implements the errors.Wrapper interface.
-func (ed ErrDiscarded) Unwrap() error {
+func (ed ErrConnUsable) Unwrap() error {
 	return ed.Err
 }
