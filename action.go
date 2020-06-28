@@ -27,22 +27,6 @@ type Action interface {
 	Perform(c Conn) error
 }
 
-// CmdAction is a sub-class of Action which can be used in two different ways.
-// The first is as a normal Action, where Perform is called with a Conn and
-// returns once the Action has been completed.
-//
-// The second way is as a Pipeline-able command, where one or more commands are
-// written in one step (via the MarshalRESP method) and their results are read
-// later (via the UnmarshalRESP method).
-//
-// When used directly with Do then MarshalRESP/UnmarshalRESP are not called, and
-// when used in a Pipeline the Perform method is not called.
-type CmdAction interface {
-	Action
-	resp.Marshaler
-	resp.Unmarshaler
-}
-
 var noKeyCmds = map[string]bool{
 	"SENTINEL": true,
 
@@ -157,7 +141,7 @@ func getCmdAction() *cmdAction {
 // pointer must be passed in. It may also be an io.Writer, an
 // encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler. See the package docs
 // for more on how results are unmarshaled into the receiver.
-func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
+func Cmd(rcv interface{}, cmd string, args ...string) Action {
 	c := getCmdAction()
 	*c = cmdAction{
 		rcv:  rcv,
@@ -182,7 +166,7 @@ func Cmd(rcv interface{}, cmd string, args ...string) CmdAction {
 // support resp.Marshaler.
 //
 // The receiver to FlatCmd follows the same rules as for Cmd.
-func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) CmdAction {
+func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) Action {
 	c := getCmdAction()
 	*c = cmdAction{
 		rcv:      rcv,

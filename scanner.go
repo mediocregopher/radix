@@ -47,7 +47,7 @@ type ScanOpts struct {
 	Type string
 }
 
-func (o ScanOpts) cmd(rcv interface{}, cursor string) CmdAction {
+func (o ScanOpts) cmd(rcv interface{}, cursor string) Action {
 	cmdStr := strings.ToUpper(o.Command)
 	args := make([]string, 0, 8)
 	if cmdStr != "SCAN" {
