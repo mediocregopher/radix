@@ -10,6 +10,14 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * Remove `Conn`'s `Encode` and `Decode` methods, add `EncodeDecode` instead.
 
+* Remove `CmdAction`.
+
+* Implement `NewPipeliningConn`, remove implicit pipelining from `Pool`.
+
+* Rename `resp.ErrDiscarded` to `resp.ErrConnUsable`, and change some of the
+  semantics around using the error. A `resp.ErrConnUnusable` convenience
+  function has been added as well.
+
 # v3.5.1
 
 * Add `EmptyArray` field to `MaybeNil`. (PR #211)
