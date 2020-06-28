@@ -71,6 +71,10 @@ type pipeliningConn struct {
 
 	wg        sync.WaitGroup
 	closeOnce sync.Once
+
+	// this is only used in tests. If it's set it will be used for timerChs
+	// instead of an actual timer
+	testTimerCh chan time.Time
 }
 
 var _ Client = new(pipeliningConn)
@@ -116,18 +120,22 @@ func (pc *pipeliningConn) Close() error {
 	return pc.conn.Close()
 }
 
-func (pc *pipeliningConn) maybeFlush(timerCh <-chan time.Time) bool {
-	if len(pc.encDecs) == 0 {
-		return false
-	} else if pc.opts.batchSize > 0 && len(pc.encDecs) < pc.opts.batchSize {
-		return false
+func (pc *pipeliningConn) canFlush(timerCh <-chan time.Time) bool {
+	if pc.opts.batchSize > 0 && len(pc.encDecs) >= pc.opts.batchSize {
+		return true
 	} else if timerCh != nil {
 		select {
 		case <-timerCh:
-			// ok
+			return true
 		default:
-			return false
 		}
+	}
+	return false
+}
+
+func (pc *pipeliningConn) flush() {
+	if len(pc.encDecs) == 0 {
+		return
 	}
 
 	// pipeline's Marshal/UnmarshalRESP methods don't return an error, but
@@ -145,11 +153,12 @@ func (pc *pipeliningConn) maybeFlush(timerCh <-chan time.Time) bool {
 
 	pc.encDecs = pc.encDecs[:0]
 	pc.pipeline.reset()
-	return true
 }
 
 func (pc *pipeliningConn) resetTimer() <-chan time.Time {
-	if pc.opts.batchDur > 0 {
+	if pc.testTimerCh != nil {
+		return pc.testTimerCh
+	} else if pc.opts.batchDur > 0 {
 		pc.batchTimer.Reset(pc.opts.batchDur)
 		return pc.batchTimer.Timer.C
 	}
@@ -157,26 +166,31 @@ func (pc *pipeliningConn) resetTimer() <-chan time.Time {
 }
 
 func (pc *pipeliningConn) spin() {
-
 	timerCh := pc.resetTimer()
-
 	for {
 		select {
 		case encDec, ok := <-pc.encDecCh:
 			if !ok {
-				pc.maybeFlush(nil)
+				pc.flush()
 				return
 			}
 
 			pc.encDecs = append(pc.encDecs, encDec)
 			pc.pipeline.mm = append(pc.pipeline.mm, encDec.pipelineMarshalerUnmarshaler)
 
-			if pc.maybeFlush(timerCh) {
+			if pc.canFlush(timerCh) {
+				pc.flush()
+				timerCh = pc.resetTimer()
+			} else if timerCh == nil {
 				timerCh = pc.resetTimer()
 			}
+
 		case <-timerCh:
-			pc.maybeFlush(nil)
-			timerCh = pc.resetTimer()
+			pc.flush()
+			// don't start a new timer here, only do that the first time a new
+			// encDec comes in, otherwise for really small batchDurs and low
+			// activity this will end up in a tight-ish loop.
+			timerCh = nil
 		}
 	}
 }
