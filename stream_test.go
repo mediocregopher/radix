@@ -347,6 +347,36 @@ func TestStreamEntry(t *T) {
 	assert.Equal(t, map[string]string{"hello": "bar"}, entries[1].Fields)
 
 	assert.True(t, entries[0].ID.Before(entries[1].ID))
+
+	t.Run("UnmarshalRESP", func(t *T) {
+		for _, test := range []struct {
+			In  string
+			E   StreamEntry
+			Err string
+		}{
+			{
+				In: "*2\r\n$3\r\n1-1\r\n*-1\r\n",
+				E: StreamEntry{
+					ID:     StreamEntryID{Time: 1, Seq: 1},
+					Fields: nil,
+				},
+			},
+		} {
+			br := bufio.NewReader(strings.NewReader(test.In))
+
+			var s StreamEntry
+			err := s.UnmarshalRESP(br)
+
+			if test.Err == "" {
+				assert.NoErrorf(t, err, "failed to unmarshal %q", test.In)
+			} else {
+				assert.EqualError(t, err, test.Err)
+			}
+
+			assert.Equal(t, test.E, s)
+		}
+	})
+
 }
 
 func BenchmarkStreamEntry(b *B) {
