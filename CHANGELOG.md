@@ -1,5 +1,15 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.5.2
+
+* Improve docs for `WithConn` and `PubSubConn`.
+
+* Fix `PubSubConn`'s `Subscribe` and `PSubscribe` methods potentially mutating
+  the passed in array of strings. (Issue #217)
+
+* Fix `StreamEntry` not properly handling unmarshaling an entry with a nil
+  fields array. (PR #218)
+
 # v3.5.1
 
 * Add `EmptyArray` field to `MaybeNil`. (PR #211)
