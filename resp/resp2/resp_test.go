@@ -54,7 +54,7 @@ func TestPeekAndAssertPrefix(t *T) {
 func TestRESPTypes(t *T) {
 	newLR := func(s string) resp.LenReader {
 		buf := bytes.NewBufferString(s)
-		return resp.NewLenReader(buf, int64(buf.Len()))
+		return resp.NewLenReader(buf, buf.Len())
 	}
 
 	type encodeTest struct {

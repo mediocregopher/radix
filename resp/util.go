@@ -8,26 +8,26 @@ import (
 // are left till be read until an io.EOF is reached.
 type LenReader interface {
 	io.Reader
-	Len() int64
+	Len() int
 }
 
 type lenReader struct {
 	r io.Reader
-	l int64
+	l int
 }
 
 // NewLenReader wraps an existing io.Reader whose length is known so that it
 // implements LenReader
-func NewLenReader(r io.Reader, l int64) LenReader {
+func NewLenReader(r io.Reader, l int) LenReader {
 	return &lenReader{r: r, l: l}
 }
 
 func (lr *lenReader) Read(b []byte) (int, error) {
 	n, err := lr.r.Read(b)
-	lr.l -= int64(n)
+	lr.l -= n
 	return n, err
 }
 
-func (lr *lenReader) Len() int64 {
+func (lr *lenReader) Len() int {
 	return lr.l
 }

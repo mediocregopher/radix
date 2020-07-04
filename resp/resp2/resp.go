@@ -1,7 +1,6 @@
 // Package resp2 implements the original redis RESP protocol, a plaintext
-// protocol which is also binary safe. Redis uses the RESP protocol to
-// communicate with its clients, but there's nothing about the protocol which
-// ties it to redis, it could be used for almost anything.
+// protocol which is also binary safe. RESP has been supplanted by RESP3,
+// implemented in the resp3 package.
 //
 // See https://redis.io/topics/protocol for more details on the protocol.
 package resp2
@@ -149,7 +148,7 @@ func (ss *SimpleString) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, SimpleStringPrefix); err != nil {
 		return err
 	}
-	b, err := bytesutil.BufferedBytesDelim(br)
+	b, err := bytesutil.ReadBytesDelim(br)
 	if err != nil {
 		return err
 	}
@@ -190,7 +189,7 @@ func (e *Error) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, ErrorPrefix); err != nil {
 		return err
 	}
-	b, err := bytesutil.BufferedBytesDelim(br)
+	b, err := bytesutil.ReadBytesDelim(br)
 	e.E = errors.New(string(b))
 	return err
 }
@@ -218,7 +217,7 @@ func (i *Int) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, IntPrefix); err != nil {
 		return err
 	}
-	n, err := bytesutil.BufferedIntDelim(br)
+	n, err := bytesutil.ReadIntDelim(br)
 	i.I = n
 	return err
 }
@@ -258,7 +257,7 @@ func (b *BulkStringBytes) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, BulkStringPrefix); err != nil {
 		return err
 	}
-	n, err := bytesutil.BufferedIntDelim(br)
+	n, err := bytesutil.ReadIntDelim(br)
 	nn := int(n)
 	if err != nil {
 		return err
@@ -274,7 +273,7 @@ func (b *BulkStringBytes) UnmarshalRESP(br *bufio.Reader) error {
 
 	if _, err := io.ReadFull(br, b.B); err != nil {
 		return err
-	} else if _, err := bytesutil.BufferedBytesDelim(br); err != nil {
+	} else if _, err := bytesutil.ReadBytesDelim(br); err != nil {
 		return err
 	}
 	return nil
@@ -307,7 +306,7 @@ func (b *BulkString) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, BulkStringPrefix); err != nil {
 		return err
 	}
-	n, err := bytesutil.BufferedIntDelim(br)
+	n, err := bytesutil.ReadIntDelim(br)
 	if err != nil {
 		return err
 	} else if n == -1 {
@@ -321,7 +320,7 @@ func (b *BulkString) UnmarshalRESP(br *bufio.Reader) error {
 
 	if _, err := io.ReadFull(br, *scratch); err != nil {
 		return err
-	} else if _, err := bytesutil.BufferedBytesDelim(br); err != nil {
+	} else if _, err := bytesutil.ReadBytesDelim(br); err != nil {
 		return err
 	}
 
@@ -345,7 +344,7 @@ func (b BulkReader) MarshalRESP(w io.Writer) error {
 		return err
 	}
 
-	l := b.LR.Len()
+	l := int64(b.LR.Len())
 	scratch := bytesutil.GetBytes()
 	*scratch = append(*scratch, BulkStringPrefix...)
 	*scratch = strconv.AppendInt(*scratch, l, 10)
@@ -391,7 +390,7 @@ func (ah *ArrayHeader) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, ArrayPrefix); err != nil {
 		return err
 	}
-	n, err := bytesutil.BufferedIntDelim(br)
+	n, err := bytesutil.ReadIntDelim(br)
 	ah.N = int(n)
 	return err
 }
@@ -842,7 +841,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 	}
 
 	br.Discard(1)
-	b, err = bytesutil.BufferedBytesDelim(br)
+	b, err = bytesutil.ReadBytesDelim(br)
 	if err != nil {
 		return err
 	}

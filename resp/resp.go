@@ -12,10 +12,9 @@ import (
 // Marshaler is the interface implemented by types that can marshal themselves
 // into valid RESP.
 //
-// NOTE that when implementing a custom Marshaler, especially when resp2.Any is
-// used internally, it's important to keep track of whether a partial RESP
-// message has already been written, and to use ErrConnUnusable when returning
-// errors if a partial RESP message has been written.
+// NOTE It's important to keep track of whether a partial RESP message has been
+// written to the Writer, and to use ErrConnUnusable when returning errors if a
+// partial RESP message has not been written.
 type Marshaler interface {
 	MarshalRESP(io.Writer) error
 }
@@ -24,14 +23,12 @@ type Marshaler interface {
 // description of themselves. UnmarshalRESP should _always_ fully consume a RESP
 // message off the reader, unless there is an error returned from the reader
 // itself. Use ErrConnUsable when applicable.
-//
-// NOTE that, unlike Marshaler, Unmarshaler _must_ take in a *bufio.Reader.
 type Unmarshaler interface {
 	UnmarshalRESP(*bufio.Reader) error
 }
 
 // ErrConnUsable is used to wrap an error encountered while marshaling or
-// unmarshaling a message onto connection. It declares that the network
+// unmarshaling a message on a connection. It indicates that the network
 // connection is still healthy and that there are no partially written/read
 // messages on the stream.
 type ErrConnUsable struct {

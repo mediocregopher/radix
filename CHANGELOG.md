@@ -18,6 +18,14 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
   semantics around using the error. A `resp.ErrConnUnusable` convenience
   function has been added as well.
 
+* `resp.LenReader` now uses `int` instead of `int64` to signify length.
+
+* Brand new `resp/resp3` package which implements the [RESP3][resp3] protocol.
+  The new package features more consistent type mappings between go and redis
+  and support for streaming types.
+
+[resp3]: https://github.com/antirez/RESP3
+
 # v3.5.1
 
 * Add `EmptyArray` field to `MaybeNil`. (PR #211)
