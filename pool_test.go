@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	errors "golang.org/x/xerrors"
 
-	"github.com/mediocregopher/radix/v3/resp"
-	"github.com/mediocregopher/radix/v3/resp/resp2"
-	"github.com/mediocregopher/radix/v3/trace"
+	"github.com/larryzhu2018/radix/v3/resp"
+	"github.com/larryzhu2018/radix/v3/resp/resp2"
+	"github.com/larryzhu2018/radix/v3/trace"
 )
 
 func testPool(size int, opts ...PoolOpt) *Pool {

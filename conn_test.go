@@ -75,10 +75,10 @@ func TestDialAuth(t *T) {
 
 		runTests(t, []testCase{
 			{url: "redis://user:myPass@127.0.0.1:6379"},
-			{url: "redis://127.0.0.1:6379?username=mediocregopher"},
-			{url: "127.0.0.1:6379", dialOptUser: "mediocregopher"},
-			{url: "redis://127.0.0.1:6379?username=mediocregopher&password=myPass"},
-			{url: "127.0.0.1:6379", dialOptUser: "mediocregopher", dialOptPass: "myPass"},
+			{url: "redis://127.0.0.1:6379?username=larryzhu2018"},
+			{url: "127.0.0.1:6379", dialOptUser: "larryzhu2018"},
+			{url: "redis://127.0.0.1:6379?username=larryzhu2018&password=myPass"},
+			{url: "127.0.0.1:6379", dialOptUser: "larryzhu2018", dialOptPass: "myPass"},
 		}, []string{
 			"WRONGPASS invalid username-password pair",
 		})
