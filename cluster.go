@@ -236,7 +236,7 @@ func assertKeysSlot(keys []string) error {
 	return nil
 }
 
-func (c *Cluster) assertKeyServer(keys []string) error {
+func (c *Cluster) assertKeysServer(keys []string) error {
 	var ok bool
 	var prevKey string
 	var addr string
@@ -542,7 +542,7 @@ func (c *Cluster) Do(a Action) error {
 	keys := a.Keys()
 	if len(keys) == 0 {
 		// that's ok, key will then just be ""
-	} else if err := c.assertKeyServer(keys); err != nil {
+	} else if err := c.assertKeysServer(keys); err != nil {
 		return err
 	} else {
 		key = keys[0]
