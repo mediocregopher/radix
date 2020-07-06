@@ -236,6 +236,23 @@ func assertKeysSlot(keys []string) error {
 	return nil
 }
 
+func (c *Cluster) assertKeyServer(keys []string) error {
+	var ok bool
+	var prevKey string
+	var addr string
+	for _, key := range keys {
+		thisAddr := c.addrForKey(key)
+		if !ok {
+			ok = true
+		} else if addr != thisAddr {
+			return errors.Errorf("keys %q and %q do not belong to the same server", prevKey, key)
+		}
+		prevKey = key
+		addr = thisAddr
+	}
+	return nil
+}
+
 // may return nil, nil if no pool for the addr
 func (c *Cluster) rpool(addr string) (Client, error) {
 	c.l.RLock()
@@ -477,6 +494,10 @@ func (c *Cluster) addrForKey(key string) string {
 	return ""
 }
 
+func (c *Cluster) AddrForKey(key string) string {
+	return c.addrForKey(key)
+}
+
 func (c *Cluster) secondaryAddrForKey(key string) string {
 	c.l.RLock()
 	defer c.l.RUnlock()
@@ -521,7 +542,7 @@ func (c *Cluster) Do(a Action) error {
 	keys := a.Keys()
 	if len(keys) == 0 {
 		// that's ok, key will then just be ""
-	} else if err := assertKeysSlot(keys); err != nil {
+	} else if err := c.assertKeyServer(keys); err != nil {
 		return err
 	} else {
 		key = keys[0]
