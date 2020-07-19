@@ -240,11 +240,23 @@ func BenchmarkParallelGetSet(b *B) {
 
 		do(b, func() error {
 			conn := red.Get()
-			if _, err := conn.Do("SET", "foo", "bar"); err != nil {
+			if err := conn.Send("SET", "foo", "bar"); err != nil {
 				conn.Close()
 				return err
 			}
-			if out, err := redigo.String(conn.Do("GET", "foo")); err != nil {
+			if err := conn.Send("GET", "foo"); err != nil {
+				conn.Close()
+				return err
+			}
+			if err := conn.Flush(); err != nil {
+				conn.Close()
+				return err
+			}
+			if _, err := conn.Receive(); err != nil {
+				conn.Close()
+				return err
+			}
+			if out, err := redigo.String(conn.Receive()); err != nil {
 				conn.Close()
 				return err
 			} else if out != "bar" {
