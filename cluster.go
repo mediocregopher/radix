@@ -666,10 +666,12 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 		return nil
 	}
 
-	if !errors.As(err, new(resp2.Error)) {
+	var respErr resp2.Error
+	if !errors.As(err, &respErr) {
 		return err
 	}
-	msg := err.Error()
+
+	msg := respErr.Error()
 
 	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
 	clusterDownChanged := c.setClusterDown(clusterDown)
