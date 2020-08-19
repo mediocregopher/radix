@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// ErrPersistentPubSubClosed returned for any cmd after PersistentPubSub was closed
+var ErrPersistentPubSubClosed = fmt.Errorf("PersistentPubSub was closed")
+
 type persistentPubSubOpts struct {
 	connFn     ConnFunc
 	abortAfter int
@@ -235,7 +238,10 @@ func (p *persistentPubSub) spin() {
 		case cmd := <-p.cmdCh:
 			cmd.resCh <- p.execCmd(cmd)
 			if cmd.close {
-				return
+				// This loop never finish to avoid deadlock on potential cmd calls after close
+				for cmd := range p.cmdCh {
+					cmd.resCh <- ErrPersistentPubSubClosed
+				}
 			}
 		}
 	}
