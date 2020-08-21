@@ -126,7 +126,7 @@ func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
 	case <-time.After(time.Second):
 		assert.Fail(t, "PUnsubscribe call timeout")
 	case err := <-errch:
-		assert.Equal(t, err, ErrPersistentPubSubClosed)
+		assert.Error(t, err)
 	}
 
 }
