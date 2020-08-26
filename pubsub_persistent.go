@@ -61,6 +61,7 @@ type persistentPubSub struct {
 	cmdCh chan pubSubCmd
 
 	closeErr  error
+	closeCh   chan struct{}
 	closeOnce sync.Once
 }
 
@@ -95,11 +96,12 @@ func PersistentPubSubWithOpts(
 	}
 
 	p := &persistentPubSub{
-		dial:  func() (Conn, error) { return opts.connFn(network, addr) },
-		opts:  opts,
-		subs:  chanSet{},
-		psubs: chanSet{},
-		cmdCh: make(chan pubSubCmd),
+		dial:    func() (Conn, error) { return opts.connFn(network, addr) },
+		opts:    opts,
+		subs:    chanSet{},
+		psubs:   chanSet{},
+		cmdCh:   make(chan pubSubCmd),
+		closeCh: make(chan struct{}),
 	}
 	if err := p.refresh(); err != nil {
 		return nil, err
@@ -243,8 +245,12 @@ func (p *persistentPubSub) spin() {
 
 func (p *persistentPubSub) cmd(cmd pubSubCmd) error {
 	cmd.resCh = make(chan error, 1)
-	p.cmdCh <- cmd
-	return <-cmd.resCh
+	select {
+	case p.cmdCh <- cmd:
+		return <-cmd.resCh
+	case <-p.closeCh:
+		return fmt.Errorf("closed")
+	}
 }
 
 func (p *persistentPubSub) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
@@ -282,6 +288,7 @@ func (p *persistentPubSub) Ping() error {
 func (p *persistentPubSub) Close() error {
 	p.closeOnce.Do(func() {
 		p.closeErr = p.cmd(pubSubCmd{close: true})
+		close(p.closeCh)
 	})
 	return p.closeErr
 }
