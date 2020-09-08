@@ -155,16 +155,19 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
 	}
-	if ah.N%2 != 0 {
+
+	for k := range s.Fields {
+		delete(s.Fields, k)
+	}
+
+	if ah.N == -1 {
+		return nil
+	} else if ah.N%2 != 0 {
 		return errInvalidStreamEntry
 	}
 
 	if s.Fields == nil {
 		s.Fields = make(map[string]string, ah.N/2)
-	} else {
-		for k := range s.Fields {
-			delete(s.Fields, k)
-		}
 	}
 
 	var bs resp2.BulkString
