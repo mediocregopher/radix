@@ -680,6 +680,62 @@ func TestStreamReader(t *T) {
 			assertNoStreamReaderEntries(t, r2)
 			assertConsumer(t, c, stream, group, consumer, 2)
 		})
+
+		t.Run("CountWithRefill", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			consumer, group := randStr(), randStr()
+			stream1, stream2 := randStr(), randStr()
+
+			s1id1 := addStreamEntry(t, c, stream1)
+			s1id2 := addStreamEntry(t, c, stream1)
+			s1id3 := addStreamEntry(t, c, stream1)
+			s2id1 := addStreamEntry(t, c, stream2)
+
+			addStreamGroup(t, c, stream1, group, "0")
+			addStreamGroup(t, c, stream2, group, "0")
+
+			// read all entries once to make them unacknowledged
+			{
+				r := NewStreamReader(c, StreamReaderOpts{
+					Streams: map[string]*StreamEntryID{
+						stream1: nil,
+						stream2: nil,
+					},
+					NoBlock:  true,
+					Group:    group,
+					Consumer: consumer,
+				})
+				for {
+					if stream, entries, ok := r.Next(); stream == "" || entries == nil || !ok {
+						break
+					}
+				}
+			}
+
+			r := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream2: {},
+					stream1: {},
+				},
+				NoBlock:  true,
+				Group:    group,
+				Consumer: consumer,
+				Count:    1,
+			})
+
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
+				stream1: {s1id1},
+				stream2: {s2id1},
+			})
+
+			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
+				stream1: {s1id2, s1id3},
+			})
+
+			assertNoStreamReaderEntries(t, r)
+		})
 	})
 
 	t.Run("NoGroup", func(t *T) {
@@ -898,22 +954,42 @@ func assertStreamReaderEntries(tb TB, r StreamReader, expected map[string][]Stre
 		if !ok {
 			break
 		}
-		if _, ok := expected[stream]; !ok {
-			assert.Fail(tb, "unexpected stream entries", "for %s", stream)
+
+		if len(entries) == 0 {
+			assert.Fail(tb, "unexpected empty result returned")
+			return
+		}
+
+		expectedForStream := expected[stream]
+		if expectedForStream == nil {
+			assert.Failf(tb, "unexpected stream entries", "for %s", stream)
 			break
 		}
 
-		got := make([]StreamEntryID, len(entries))
-		for i, e := range entries {
-			got[i] = e.ID
+		for _, got := range entries {
+			var found bool
+			for i, want := range expectedForStream {
+				if want != got.ID {
+					continue
+				}
+				expectedForStream = append(expectedForStream[:i], expectedForStream[i+1:]...)
+				found = true
+				break
+			}
+			if !found {
+				assert.Failf(tb, "found unexpected entry", "%s in stream %s", got.ID, stream)
+			}
 		}
 
-		assert.Equal(tb, expected[stream], got)
-		delete(expected, stream)
+		if len(expectedForStream) > 0 {
+			expected[stream] = expectedForStream
+		} else {
+			delete(expected, stream)
+		}
 	}
 
 	if len(expected) > 0 {
-		assert.Fail(tb, "unexpected end of stream", "expected one of: %v", expected)
+		assert.Failf(tb, "unexpected end of stream", "expected one of: %v", expected)
 	}
 
 	assert.NoError(tb, r.Err())

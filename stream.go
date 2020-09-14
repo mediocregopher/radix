@@ -339,16 +339,7 @@ func (sr *streamReader) Err() error {
 	return sr.err
 }
 
-// Next implements the StreamReader interface.
-func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
-	if sr.err != nil {
-		return "", nil, false
-	}
-
-	if len(sr.unread) == 0 && !sr.backfill() {
-		return "", nil, false
-	}
-
+func (sr *streamReader) nextFromBuffer() (stream string, entries []StreamEntry) {
 	for len(sr.unread) > 0 {
 		sre := sr.unread[len(sr.unread)-1]
 		sr.unread = sr.unread[:len(sr.unread)-1]
@@ -365,7 +356,28 @@ func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 			sr.ids[stream] = sre.entries[len(sre.entries)-1].ID.String()
 		}
 
-		return stream, sre.entries, true
+		return stream, sre.entries
+	}
+
+	return "", nil
+}
+
+// Next implements the StreamReader interface.
+func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
+	if sr.err != nil {
+		return "", nil, false
+	}
+
+	if stream, entries = sr.nextFromBuffer(); stream != "" {
+		return stream, entries, true
+	}
+
+	if !sr.backfill() {
+		return "", nil, false
+	}
+
+	if stream, entries = sr.nextFromBuffer(); stream != "" {
+		return stream, entries, true
 	}
 
 	return "", nil, true
