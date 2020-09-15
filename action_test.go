@@ -8,7 +8,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/xerrors"
 
+	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
 
@@ -347,8 +349,8 @@ func ExampleWithConn_transaction() {
 
 		// If any of the calls after the MULTI call error it's important that
 		// the transaction is discarded. This isn't strictly necessary if the
-		// error was a network error, as the connection would be closed by the
-		// client anyway, but it's important otherwise.
+		// only possible error is a network error, as the connection would be
+		// closed by the client anyway.
 		var err error
 		defer func() {
 			if err != nil {
@@ -367,15 +369,11 @@ func ExampleWithConn_transaction() {
 			return err
 		}
 
-		// execute the transaction, capturing the result
-		var result []string
-		if err = c.Do(Cmd(&result, "EXEC")); err != nil {
-			return err
-		}
-
-		// capture the output of the first transaction command, i.e. the GET
-		prevVal = result[0]
-		return nil
+		// execute the transaction, capturing the result in a Tuple. We only
+		// care about the first element (the result from GET), so we discard the
+		// second by setting nil.
+		result := Tuple{&prevVal, nil}
+		return c.Do(Cmd(&result, "EXEC"))
 	}))
 	if err != nil {
 		// handle error
@@ -440,6 +438,68 @@ func ExampleMaybeNil() {
 		fmt.Printf("rcv is %d\n", rcv)
 	}
 
+}
+
+func TestTuple(t *T) {
+	intPtr := func(i int) *int { return &i }
+	strPtr := func(s string) *string { return &s }
+
+	tests := []struct {
+		in     string
+		into   Tuple
+		exp    Tuple
+		expErr bool
+	}{
+		{
+			in:   "*0\r\n",
+			into: Tuple{},
+			exp:  Tuple{},
+		},
+		{
+			in:     "*0\r\n",
+			into:   Tuple{new(int)},
+			expErr: true,
+		},
+		{
+			in:   "*1\r\n:1\r\n",
+			into: Tuple{new(int)},
+			exp:  Tuple{intPtr(1)},
+		},
+		{
+			in:   "*2\r\n:1\r\n$3\r\nfoo\r\n",
+			into: Tuple{new(int), new(string)},
+			exp:  Tuple{intPtr(1), strPtr("foo")},
+		},
+		{
+			in:     "*2\r\n:1\r\n$3\r\nfoo\r\n",
+			into:   Tuple{new(int), new(string), new(string)},
+			expErr: true,
+		},
+		{
+			in:     "*2\r\n:1\r\n$3\r\nfoo\r\n",
+			into:   Tuple{new(int), new(int)},
+			expErr: true,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(fmt.Sprint(i), func(t *T) {
+			t.Logf("in:%q", test.in)
+			buf := bytes.NewBufferString(test.in)
+			br := bufio.NewReader(buf)
+			defer func() { assert.Empty(t, buf.Bytes()) }()
+			defer func() { assert.Zero(t, br.Buffered()) }()
+
+			err := test.into.UnmarshalRESP(br)
+			if test.expErr {
+				assert.Error(t, err)
+				assert.True(t, xerrors.As(err, new(resp.ErrDiscarded)))
+				return
+			}
+
+			assert.Equal(t, test.exp, test.into)
+		})
+	}
 }
 
 var benchCmdActionKeys []string // global variable used to store the action keys in benchmarks

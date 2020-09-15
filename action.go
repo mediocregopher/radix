@@ -321,6 +321,49 @@ func (mn *MaybeNil) UnmarshalRESP(br *bufio.Reader) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// Tuple is a helper type which can be used when unmarshaling a RESP array.
+// Each element of Tuple should be a pointer receiver which the corresponding
+// element of the RESP array will be unmarshaled into, or nil to skip that
+// element. The length of Tuple must match the length of the RESP array being
+// unmarshaled.
+//
+// Tuple is useful when unmarshaling the results from commands like EXEC and
+// EVAL.
+type Tuple []interface{}
+
+// UnmarshalRESP implements the method for the resp.Unmarshaler interface.
+func (t Tuple) UnmarshalRESP(br *bufio.Reader) error {
+	var ah resp2.ArrayHeader
+	if err := ah.UnmarshalRESP(br); err != nil {
+		return err
+	} else if ah.N != len(t) {
+		for i := 0; i < ah.N; i++ {
+			if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+				return err
+			}
+		}
+		return resp.ErrDiscarded{
+			Err: fmt.Errorf("expected array of size %d but got array of size %d", len(t), ah.N),
+		}
+	}
+
+	var retErr error
+	for i := 0; i < ah.N; i++ {
+		if err := (resp2.Any{I: t[i]}).UnmarshalRESP(br); err != nil {
+			// if the message was discarded then we can just continue, this
+			// method will return the first error it sees
+			if !xerrors.As(err, new(resp.ErrDiscarded)) {
+				return err
+			} else if retErr == nil {
+				retErr = err
+			}
+		}
+	}
+	return retErr
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // EvalScript contains the body of a script to be used with redis' EVAL
 // functionality. Call Cmd on a EvalScript to actually create an Action which
 // can be run.
