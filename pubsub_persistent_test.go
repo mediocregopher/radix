@@ -117,9 +117,11 @@ func TestPersistentPubSubClose(t *T) {
 func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
 	channel := "TestPersistentPubSubUseAfterCloseDeadlock:" + randStr()
 
-	p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
-		return dial(), nil
-	})
+	connFn := func(_, _ string) (Conn, error) { return dial(), nil }
+	p, err := PersistentPubSub("", "", PersistentPubSubConnFunc(connFn))
+	if err != nil {
+		panic(err)
+	}
 	msgCh := make(chan PubSubMessage)
 	p.Subscribe(msgCh, channel)
 	p.Close()
