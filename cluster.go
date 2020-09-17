@@ -500,7 +500,7 @@ type prefixAsking struct {
 }
 
 func (a prefixAsking) MarshalRESP(w io.Writer) error {
-	if err := Cmd(nil, "ASKING").MarshalRESP(w); err != nil {
+	if err := Cmd(nil, "ASKING").(resp.Marshaler).MarshalRESP(w); err != nil {
 		return err
 	}
 	return a.Marshaler.MarshalRESP(w)

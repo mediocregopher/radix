@@ -324,7 +324,7 @@ func (c *pubSubConn) spin() {
 
 // NOTE cmdL _must_ be held to use do
 func (c *pubSubConn) do(exp int, cmd string, args ...string) error {
-	rcmd := Cmd(nil, cmd, args...)
+	rcmd := Cmd(nil, cmd, args...).(resp.Marshaler)
 	if err := c.conn.EncodeDecode(rcmd, nil); err != nil {
 		return err
 	}

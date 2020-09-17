@@ -8,6 +8,7 @@ import (
 	. "testing"
 	"time"
 
+	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,7 +72,8 @@ func TestStubLockingTimeout(t *T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < c; i++ {
-			require.Nil(t, stub.EncodeDecode(Cmd(nil, "ECHO", strconv.Itoa(i)), nil))
+			m := Cmd(nil, "ECHO", strconv.Itoa(i)).(resp.Marshaler)
+			require.Nil(t, stub.EncodeDecode(m, nil))
 		}
 	}()
 
@@ -92,7 +94,8 @@ func TestStubLockingTimeout(t *T) {
 	now := time.Now()
 	conn := stub.NetConn()
 	conn.SetDeadline(now.Add(2 * time.Second))
-	require.Nil(t, stub.EncodeDecode(Cmd(nil, "ECHO", "1"), resp2.Any{}))
+	m := Cmd(nil, "ECHO", "1").(resp.Marshaler)
+	require.Nil(t, stub.EncodeDecode(m, resp2.Any{}))
 
 	// now there's no data to read, should return after 2-ish seconds with a
 	// timeout error
