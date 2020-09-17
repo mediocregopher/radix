@@ -128,10 +128,10 @@ type kase struct { // "case" is reserved
 	// reverseable, also test AnyMarshaler
 	r bool
 
-	// flatStrEmpty indicates that when marshaling as a flat string (see
-	// msgAsFlatStr) the result is expected to be empty. This is only useful in
-	// some very specific cases, notably nil slices/maps/structs.
-	flatStrEmpty bool
+	// flattenedEmpty indicates that when passed to Flatten the result is
+	// expected to be empty. This is only useful in some very specific cases,
+	// notably nil slices/maps/structs.
+	flattenedEmpty bool
 }
 
 type in struct {
@@ -143,9 +143,8 @@ type in struct {
 	msg  string
 	msgs []string
 
-	// msgAsFlatStr is the msg having been flattened and all non-agg elements
-	// turned into blob strings.
-	msgAsFlatStr string
+	// flattened is the msg having been passed to Flatten after unmarshaling.
+	flattened []string
 
 	// mkCases generates the test cases specific to this particular input.
 	mkCases func() []kase
@@ -156,20 +155,6 @@ func (in in) mkMsg() string {
 		return in.msg
 	}
 	return strings.Join(in.msgs, "")
-}
-
-func (in in) expNumElems() int {
-	var numElems int
-	buf := bytes.NewBufferString(in.msgAsFlatStr)
-	br := bufio.NewReader(buf)
-	for {
-		if br.Buffered() == 0 && buf.Len() == 0 {
-			return numElems
-		} else if err := (Any{}).UnmarshalRESP(br); err != nil {
-			panic(err)
-		}
-		numElems++
-	}
 }
 
 func (in in) prefix() Prefix {
@@ -367,17 +352,17 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			{ie: ie{[]byte{1}, []byte(nil)}},
 		}
 		cases = append(cases, setReversable(in.prefix() == NullPrefix, []kase{
-			{flatStrEmpty: true, ie: ie{[]string(nil), []string(nil)}},
-			{flatStrEmpty: true, ie: ie{[]string{}, []string(nil)}},
-			{flatStrEmpty: true, ie: ie{[]string{"ohey"}, []string(nil)}},
-			{flatStrEmpty: true, ie: ie{map[string]string(nil), map[string]string(nil)}},
-			{flatStrEmpty: true, ie: ie{map[string]string{}, map[string]string(nil)}},
-			{flatStrEmpty: true, ie: ie{map[string]string{"a": "b"}, map[string]string(nil)}},
+			{flattenedEmpty: true, ie: ie{[]string(nil), []string(nil)}},
+			{flattenedEmpty: true, ie: ie{[]string{}, []string(nil)}},
+			{flattenedEmpty: true, ie: ie{[]string{"ohey"}, []string(nil)}},
+			{flattenedEmpty: true, ie: ie{map[string]string(nil), map[string]string(nil)}},
+			{flattenedEmpty: true, ie: ie{map[string]string{}, map[string]string(nil)}},
+			{flattenedEmpty: true, ie: ie{map[string]string{"a": "b"}, map[string]string(nil)}},
 			{ie: ie{(*int64)(nil), (*int64)(nil)}},
 			{ie: ie{intPtr(0), (*int64)(nil)}},
 			{ie: ie{intPtr(1), (*int64)(nil)}},
-			{flatStrEmpty: true, ie: ie{(*testStructA)(nil), (*testStructA)(nil)}},
-			{flatStrEmpty: true, ie: ie{&testStructA{}, (*testStructA)(nil)}},
+			{flattenedEmpty: true, ie: ie{(*testStructA)(nil), (*testStructA)(nil)}},
+			{flattenedEmpty: true, ie: ie{&testStructA{}, (*testStructA)(nil)}},
 			{ie: ie{Null{}, Null{}}},
 		})...)
 		return cases
@@ -387,8 +372,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "empty blob string",
 			ins: []in{{
-				msg:          "$0\r\n\r\n",
-				msgAsFlatStr: "$0\r\n\r\n",
+				msg:       "$0\r\n\r\n",
+				flattened: []string{""},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte{}}, r: true}}
 				},
@@ -398,8 +383,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "blob string",
 			ins: []in{{
-				msg:          "$4\r\nohey\r\n",
-				msgAsFlatStr: "$4\r\nohey\r\n",
+				msg:       "$4\r\nohey\r\n",
+				flattened: []string{"ohey"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte("ohey")}, r: true}}
 				},
@@ -409,8 +394,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "integer blob string",
 			ins: []in{{
-				msg:          "$2\r\n10\r\n",
-				msgAsFlatStr: "$2\r\n10\r\n",
+				msg:       "$2\r\n10\r\n",
+				flattened: []string{"10"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte("10")}, r: true}}
 				},
@@ -420,8 +405,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "float blob string",
 			ins: []in{{
-				msg:          "$4\r\n10.5\r\n",
-				msgAsFlatStr: "$4\r\n10.5\r\n",
+				msg:       "$4\r\n10.5\r\n",
+				flattened: []string{"10.5"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte("10.5")}, r: true}}
 				},
@@ -432,8 +417,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			// only for backwards compatibility
 			descr: "null blob string",
 			ins: []in{{
-				msg:          "$-1\r\n",
-				msgAsFlatStr: "$0\r\n\r\n",
+				msg:       "$-1\r\n",
+				flattened: []string{""},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte(nil)}, r: false}}
 				},
@@ -443,8 +428,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "blob string with delim",
 			ins: []in{{
-				msg:          "$6\r\nab\r\ncd\r\n",
-				msgAsFlatStr: "$6\r\nab\r\ncd\r\n",
+				msg:       "$6\r\nab\r\ncd\r\n",
+				flattened: []string{"ab\r\ncd"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte("ab\r\ncd")}, r: true}}
 				},
@@ -454,8 +439,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "empty simple string",
 			ins: []in{{
-				msg:          "+\r\n",
-				msgAsFlatStr: "$0\r\n\r\n",
+				msg:       "+\r\n",
+				flattened: []string{""},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, ""}, r: false}}
 				},
@@ -465,8 +450,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "simple string",
 			ins: []in{{
-				msg:          "+ohey\r\n",
-				msgAsFlatStr: "$4\r\nohey\r\n",
+				msg:       "+ohey\r\n",
+				flattened: []string{"ohey"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, "ohey"}, r: false}}
 				},
@@ -476,8 +461,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "integer simple string",
 			ins: []in{{
-				msg:          "+10\r\n",
-				msgAsFlatStr: "$2\r\n10\r\n",
+				msg:       "+10\r\n",
+				flattened: []string{"10"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, "10"}, r: false}}
 				},
@@ -487,8 +472,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "float simple string",
 			ins: []in{{
-				msg:          "+10.5\r\n",
-				msgAsFlatStr: "$4\r\n10.5\r\n",
+				msg:       "+10.5\r\n",
+				flattened: []string{"10.5"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, "10.5"}, r: false}}
 				},
@@ -498,24 +483,24 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "empty simple error",
 			ins: []in{{
-				msg:          "-\r\n",
-				msgAsFlatStr: "$0\r\n\r\n",
+				msg:       "-\r\n",
+				flattened: []string{""},
 			}},
 			shouldErr: resp.ErrConnUsable{Err: SimpleError{S: ""}},
 		},
 		{
 			descr: "simple error",
 			ins: []in{{
-				msg:          "-ohey\r\n",
-				msgAsFlatStr: "$4\r\nohey\r\n",
+				msg:       "-ohey\r\n",
+				flattened: []string{"ohey"},
 			}},
 			shouldErr: resp.ErrConnUsable{Err: SimpleError{S: "ohey"}},
 		},
 		{
 			descr: "zero number",
 			ins: []in{{
-				msg:          ":0\r\n",
-				msgAsFlatStr: "$1\r\n0\r\n",
+				msg:       ":0\r\n",
+				flattened: []string{"0"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, int64(0)}, r: true}}
 				},
@@ -525,8 +510,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "positive number",
 			ins: []in{{
-				msg:          ":10\r\n",
-				msgAsFlatStr: "$2\r\n10\r\n",
+				msg:       ":10\r\n",
+				flattened: []string{"10"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, int64(10)}, r: true}}
 				},
@@ -536,8 +521,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "negative number",
 			ins: []in{{
-				msg:          ":-10\r\n",
-				msgAsFlatStr: "$3\r\n-10\r\n",
+				msg:       ":-10\r\n",
+				flattened: []string{"-10"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, int64(-10)}, r: true}}
 				},
@@ -547,8 +532,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "null",
 			ins: []in{{
-				msg:          "_\r\n",
-				msgAsFlatStr: "$0\r\n\r\n",
+				msg:       "_\r\n",
+				flattened: []string{""},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, nil}, r: true}}
 				},
@@ -558,8 +543,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "zero double",
 			ins: []in{{
-				msg:          ",0\r\n",
-				msgAsFlatStr: "$1\r\n0\r\n",
+				msg:       ",0\r\n",
+				flattened: []string{"0"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, float64(0)}, r: true}}
 				},
@@ -569,8 +554,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "positive double",
 			ins: []in{{
-				msg:          ",10.5\r\n",
-				msgAsFlatStr: "$4\r\n10.5\r\n",
+				msg:       ",10.5\r\n",
+				flattened: []string{"10.5"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, float64(10.5)}, r: true}}
 				},
@@ -580,8 +565,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "positive double infinity",
 			ins: []in{{
-				msg:          ",inf\r\n",
-				msgAsFlatStr: "$3\r\ninf\r\n",
+				msg:       ",inf\r\n",
+				flattened: []string{"inf"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, math.Inf(1)}, r: true}}
 				},
@@ -591,8 +576,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "negative double",
 			ins: []in{{
-				msg:          ",-10.5\r\n",
-				msgAsFlatStr: "$5\r\n-10.5\r\n",
+				msg:       ",-10.5\r\n",
+				flattened: []string{"-10.5"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, float64(-10.5)}, r: true}}
 				},
@@ -602,8 +587,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "negative double infinity",
 			ins: []in{{
-				msg:          ",-inf\r\n",
-				msgAsFlatStr: "$4\r\n-inf\r\n",
+				msg:       ",-inf\r\n",
+				flattened: []string{"-inf"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, math.Inf(-1)}, r: true}}
 				},
@@ -615,8 +600,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "true",
 			ins: []in{{
-				msg:          "#t\r\n",
-				msgAsFlatStr: "$1\r\n1\r\n",
+				msg:       "#t\r\n",
+				flattened: []string{"1"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, true}, r: true}}
 				},
@@ -627,8 +612,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "false",
 			ins: []in{{
-				msg:          "#f\r\n",
-				msgAsFlatStr: "$1\r\n0\r\n",
+				msg:       "#f\r\n",
+				flattened: []string{"0"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, false}, r: true}}
 				},
@@ -639,32 +624,32 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "empty blob error",
 			ins: []in{{
-				msg:          "!0\r\n\r\n",
-				msgAsFlatStr: "$0\r\n\r\n",
+				msg:       "!0\r\n\r\n",
+				flattened: []string{""},
 			}},
 			shouldErr: resp.ErrConnUsable{Err: BlobError{B: []byte{}}},
 		},
 		{
 			descr: "blob error",
 			ins: []in{{
-				msg:          "!4\r\nohey\r\n",
-				msgAsFlatStr: "$4\r\nohey\r\n",
+				msg:       "!4\r\nohey\r\n",
+				flattened: []string{"ohey"},
 			}},
 			shouldErr: resp.ErrConnUsable{Err: BlobError{B: []byte("ohey")}},
 		},
 		{
 			descr: "blob error with delim",
 			ins: []in{{
-				msg:          "!6\r\noh\r\ney\r\n",
-				msgAsFlatStr: "$6\r\noh\r\ney\r\n",
+				msg:       "!6\r\noh\r\ney\r\n",
+				flattened: []string{"oh\r\ney"},
 			}},
 			shouldErr: resp.ErrConnUsable{Err: BlobError{B: []byte("oh\r\ney")}},
 		},
 		{
 			descr: "empty verbatim string",
 			ins: []in{{
-				msg:          "=4\r\ntxt:\r\n",
-				msgAsFlatStr: "$0\r\n\r\n",
+				msg:       "=4\r\ntxt:\r\n",
+				flattened: []string{""},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte("")}, r: false}}
 				},
@@ -689,8 +674,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "verbatim string",
 			ins: []in{{
-				msg:          "=8\r\ntxt:ohey\r\n",
-				msgAsFlatStr: "$4\r\nohey\r\n",
+				msg:       "=8\r\ntxt:ohey\r\n",
+				flattened: []string{"ohey"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte("ohey")}, r: false}}
 				},
@@ -721,8 +706,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "verbatim string with delim",
 			ins: []in{{
-				msg:          "=10\r\ntxt:oh\r\ney\r\n",
-				msgAsFlatStr: "$6\r\noh\r\ney\r\n",
+				msg:       "=10\r\ntxt:oh\r\ney\r\n",
+				flattened: []string{"oh\r\ney"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, []byte("oh\r\ney")}, r: false}}
 				},
@@ -753,8 +738,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "zero big number",
 			ins: []in{{
-				msg:          "(0\r\n",
-				msgAsFlatStr: "$1\r\n0\r\n",
+				msg:       "(0\r\n",
+				flattened: []string{"0"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, new(big.Int)}, r: true}}
 				},
@@ -764,8 +749,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "positive big number",
 			ins: []in{{
-				msg:          "(1000\r\n",
-				msgAsFlatStr: "$4\r\n1000\r\n",
+				msg:       "(1000\r\n",
+				flattened: []string{"1000"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, new(big.Int).SetInt64(1000)}, r: true}}
 				},
@@ -775,8 +760,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		{
 			descr: "negative big number",
 			ins: []in{{
-				msg:          "(-1000\r\n",
-				msgAsFlatStr: "$5\r\n-1000\r\n",
+				msg:       "(-1000\r\n",
+				flattened: []string{"-1000"},
 				mkCases: func() []kase {
 					return []kase{{ie: ie{nil, new(big.Int).SetInt64(-1000)}, r: true}}
 				},
@@ -787,10 +772,10 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			// only for backwards compatibility
 			descr: "null array",
 			ins: []in{{
-				msg:          "*-1\r\n",
-				msgAsFlatStr: "$0\r\n\r\n",
+				msg:       "*-1\r\n",
+				flattened: []string{""},
 				mkCases: func() []kase {
-					return []kase{{ie: ie{nil, []interface{}(nil)}, r: false, flatStrEmpty: true}}
+					return []kase{{ie: ie{nil, []interface{}(nil)}, r: false, flattenedEmpty: true}}
 				},
 			}},
 			mkCases: func(in in) []kase { return nullCases(in) },
@@ -799,8 +784,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			descr: "empty agg",
 			ins: []in{
 				{
-					msg:          "*0\r\n",
-					msgAsFlatStr: "",
+					msg:       "*0\r\n",
+					flattened: []string{},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, []interface{}{}}},
@@ -810,8 +795,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msgs:         []string{"*?\r\n", ".\r\n"},
-					msgAsFlatStr: "",
+					msgs:      []string{"*?\r\n", ".\r\n"},
+					flattened: []string{},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{}}},
@@ -839,8 +824,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msg:          "~0\r\n",
-					msgAsFlatStr: "",
+					msg:       "~0\r\n",
+					flattened: []string{},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, map[interface{}]struct{}{}}},
@@ -850,8 +835,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msgs:         []string{"~?\r\n", ".\r\n"},
-					msgAsFlatStr: "",
+					msgs:      []string{"~?\r\n", ".\r\n"},
+					flattened: []string{},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, map[interface{}]struct{}{}}},
@@ -879,8 +864,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msg:          "%0\r\n",
-					msgAsFlatStr: "",
+					msg:       "%0\r\n",
+					flattened: []string{},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, map[interface{}]interface{}{}}},
@@ -890,8 +875,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msgs:         []string{"%?\r\n", ".\r\n"},
-					msgAsFlatStr: "",
+					msgs:      []string{"%?\r\n", ".\r\n"},
+					flattened: []string{},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, map[interface{}]interface{}{}}},
@@ -957,8 +942,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			descr: "two element agg",
 			ins: []in{
 				{
-					msg:          "*2\r\n$1\r\n1\r\n$3\r\n666\r\n",
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					msg:       "*2\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, []interface{}{[]byte("1"), []byte("666")}}},
@@ -979,7 +964,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"$1\r\n1\r\n", ":666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{[]byte("1"), int64(666)}}},
@@ -1001,8 +986,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msg:          "~2\r\n:1\r\n:666\r\n",
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					msg:       "~2\r\n:1\r\n:666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, map[interface{}]struct{}{int64(666): {}, int64(1): {}}}},
@@ -1023,7 +1008,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						":1\r\n", ":666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, map[interface{}]struct{}{int64(1): {}, int64(666): {}}}},
@@ -1045,8 +1030,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msg:          "%1\r\n:1\r\n:666\r\n",
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					msg:       "%1\r\n:1\r\n:666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, map[interface{}]interface{}{int64(1): int64(666)}}},
@@ -1067,7 +1052,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						",1\r\n", ":666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, map[interface{}]interface{}{float64(1): int64(666)}}},
@@ -1089,8 +1074,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msg:          ">2\r\n+1\r\n:666\r\n",
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					msg:       ">2\r\n+1\r\n:666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{"1", int64(666)}}},
@@ -1144,9 +1129,9 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			descr: "nested two element agg",
 			ins: []in{
 				{
-					label:        "arr-arr",
-					msg:          "*1\r\n*2\r\n$1\r\n1\r\n$3\r\n666\r\n",
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					label:     "arr-arr",
+					msg:       "*1\r\n*2\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, []interface{}{[]interface{}{[]byte("1"), []byte("666")}}}},
@@ -1159,7 +1144,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"*2\r\n$1\r\n1\r\n:666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{[]interface{}{[]byte("1"), int64(666)}}}},
@@ -1167,9 +1152,9 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					label:        "arr-set",
-					msg:          "*1\r\n~2\r\n:1\r\n:666\r\n",
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					label:     "arr-set",
+					msg:       "*1\r\n~2\r\n:1\r\n:666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, []interface{}{
@@ -1184,7 +1169,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"~2\r\n:1\r\n:666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{map[interface{}]struct{}{int64(1): {}, int64(666): {}}}}},
@@ -1192,9 +1177,9 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					label:        "arr-map",
-					msg:          "*1\r\n%1\r\n:1\r\n$3\r\n666\r\n",
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					label:     "arr-map",
+					msg:       "*1\r\n%1\r\n:1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, []interface{}{map[interface{}]interface{}{int64(1): []byte("666")}}}},
@@ -1202,9 +1187,9 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					label:        "arr-map-simple",
-					msg:          "*1\r\n%1\r\n:1\r\n$3\r\n666\r\n",
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					label:     "arr-map-simple",
+					msg:       "*1\r\n%1\r\n:1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return setReversable(true, []kase{
 							{ie: ie{nil, []interface{}{map[interface{}]interface{}{int64(1): []byte("666")}}}},
@@ -1217,7 +1202,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"%1\r\n:1\r\n$3\r\n666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{map[interface{}]interface{}{int64(1): []byte("666")}}}},
@@ -1261,8 +1246,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			descr: "keyed nested two element agg",
 			ins: []in{
 				{
-					msg:          "*2\r\n$2\r\n10\r\n*2\r\n$1\r\n1\r\n:666\r\n",
-					msgAsFlatStr: "$2\r\n10\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					msg:       "*2\r\n$2\r\n10\r\n*2\r\n$1\r\n1\r\n:666\r\n",
+					flattened: []string{"10", "1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{r: true, ie: ie{nil, []interface{}{[]byte("10"), []interface{}{[]byte("1"), int64(666)}}}},
@@ -1276,7 +1261,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"*2\r\n$1\r\n1\r\n:666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$2\r\n10\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"10", "1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{[]byte("10"), []interface{}{[]byte("1"), int64(666)}}}},
@@ -1284,8 +1269,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msg:          "*2\r\n$2\r\n10\r\n~2\r\n:1\r\n:666\r\n",
-					msgAsFlatStr: "$2\r\n10\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					msg:       "*2\r\n$2\r\n10\r\n~2\r\n:1\r\n:666\r\n",
+					flattened: []string{"10", "1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{r: true, ie: ie{nil, []interface{}{
@@ -1302,7 +1287,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"~2\r\n:1\r\n:666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$2\r\n10\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"10", "1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{
@@ -1313,8 +1298,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msg:          "%1\r\n:10\r\n%1\r\n:1\r\n$3\r\n666\r\n",
-					msgAsFlatStr: "$2\r\n10\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					msg:       "%1\r\n:10\r\n%1\r\n:1\r\n$3\r\n666\r\n",
+					flattened: []string{"10", "1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{r: true, ie: ie{nil, map[interface{}]interface{}{
@@ -1330,7 +1315,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"%1\r\n:1\r\n$3\r\n666\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$2\r\n10\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					flattened: []string{"10", "1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, map[interface{}]interface{}{
@@ -1340,8 +1325,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msg:          ">2\r\n$2\r\n10\r\n*2\r\n$1\r\n1\r\n:666\r\n",
-					msgAsFlatStr: "$2\r\n10\r\n$1\r\n1\r\n$3\r\n666\r\n",
+					msg:       ">2\r\n$2\r\n10\r\n*2\r\n$1\r\n1\r\n:666\r\n",
+					flattened: []string{"10", "1", "666"},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []interface{}{[]byte("10"), []interface{}{[]byte("1"), int64(666)}}}},
@@ -1372,19 +1357,19 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			descr: "agg into struct",
 			ins: []in{
 				{
-					label:        "arr",
-					msg:          "*10\r\n+Foo\r\n:1\r\n+BAZ\r\n:2\r\n+Boz\r\n:3\r\n+Biz\r\n:4\r\n+Other\r\n:5\r\n",
-					msgAsFlatStr: "$3\r\nFoo\r\n$1\r\n1\r\n$3\r\nBAZ\r\n$1\r\n2\r\n$3\r\nBoz\r\n$1\r\n3\r\n$3\r\nBiz\r\n$1\r\n4\r\n",
+					label:     "arr",
+					msg:       "*10\r\n+Foo\r\n:1\r\n+BAZ\r\n:2\r\n+Boz\r\n:3\r\n+Biz\r\n:4\r\n+Other\r\n:5\r\n",
+					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
 				},
 				{
-					label:        "map",
-					msg:          "%5\r\n+Foo\r\n:1\r\n+BAZ\r\n:2\r\n+Boz\r\n:3\r\n+Biz\r\n:4\r\n+Other\r\n:5\r\n",
-					msgAsFlatStr: "$3\r\nFoo\r\n$1\r\n1\r\n$3\r\nBAZ\r\n$1\r\n2\r\n$3\r\nBoz\r\n$1\r\n3\r\n$3\r\nBiz\r\n$1\r\n4\r\n",
+					label:     "map",
+					msg:       "%5\r\n+Foo\r\n:1\r\n+BAZ\r\n:2\r\n+Boz\r\n:3\r\n+Biz\r\n:4\r\n+Other\r\n:5\r\n",
+					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
 				},
 				{
-					label:        "map-exact",
-					msg:          "%4\r\n+Foo\r\n:1\r\n+BAZ\r\n$1\r\n2\r\n+Boz\r\n:3\r\n+Biz\r\n$1\r\n4\r\n",
-					msgAsFlatStr: "$3\r\nFoo\r\n$1\r\n1\r\n$3\r\nBAZ\r\n$1\r\n2\r\n$3\r\nBoz\r\n$1\r\n3\r\n$3\r\nBiz\r\n$1\r\n4\r\n",
+					label:     "map-exact",
+					msg:       "%4\r\n+Foo\r\n:1\r\n+BAZ\r\n$1\r\n2\r\n+Boz\r\n:3\r\n+Biz\r\n$1\r\n4\r\n",
+					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
 				},
 				{
 					msgs: []string{
@@ -1395,7 +1380,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"+Biz\r\n", ":4\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$3\r\nFoo\r\n$1\r\n1\r\n$3\r\nBAZ\r\n$1\r\n2\r\n$3\r\nBoz\r\n$1\r\n3\r\n$3\r\nBiz\r\n$1\r\n4\r\n",
+					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
 				},
 				{
 					msgs: []string{
@@ -1406,7 +1391,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						"+Biz\r\n", ":4\r\n",
 						".\r\n",
 					},
-					msgAsFlatStr: "$3\r\nFoo\r\n$1\r\n1\r\n$3\r\nBAZ\r\n$1\r\n2\r\n$3\r\nBoz\r\n$1\r\n3\r\n$3\r\nBiz\r\n$1\r\n4\r\n",
+					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
 				},
 			},
 			mkCases: func(in in) []kase {
@@ -1427,8 +1412,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			descr: "empty streamed string",
 			ins: []in{
 				{
-					msgs:         []string{"$?\r\n", ";0\r\n"},
-					msgAsFlatStr: "$0\r\n\r\n",
+					msgs:      []string{"$?\r\n", ";0\r\n"},
+					flattened: []string{""},
 					mkCases: func() []kase {
 						return []kase{
 							{ie: ie{nil, []byte{}}},
@@ -1461,8 +1446,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			descr: "streamed string",
 			ins: []in{
 				{
-					msgs:         []string{"$?\r\n", ";4\r\nohey\r\n", ";0\r\n"},
-					msgAsFlatStr: "$4\r\nohey\r\n",
+					msgs:      []string{"$?\r\n", ";4\r\nohey\r\n", ";0\r\n"},
+					flattened: []string{"ohey"},
 					mkCases: func() []kase {
 						return []kase{
 							{r: true, ie: ie{
@@ -1497,8 +1482,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					},
 				},
 				{
-					msgs:         []string{"$?\r\n", ";2\r\noh\r\n", ";2\r\ney\r\n", ";0\r\n"},
-					msgAsFlatStr: "$4\r\nohey\r\n",
+					msgs:      []string{"$?\r\n", ";2\r\noh\r\n", ";2\r\ney\r\n", ";0\r\n"},
+					flattened: []string{"ohey"},
 					mkCases: func() []kase {
 						return []kase{
 							{r: true, ie: ie{
@@ -1540,7 +1525,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					msgs: []string{
 						"$?\r\n", ";1\r\no\r\n", ";1\r\nh\r\n", ";2\r\ney\r\n", ";0\r\n",
 					},
-					msgAsFlatStr: "$4\r\nohey\r\n",
+					flattened: []string{"ohey"},
 					mkCases: func() []kase {
 						return []kase{
 							{r: true, ie: ie{
@@ -1608,16 +1593,21 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					assert.Equal(t, exp, buf.String())
 				}
 
-				assertMarshalsFlatStr := func(t *testing.T, exp string, i interface{}) {
-					t.Logf("%#v (flattened to blob strings) -> %q", i, in.msgAsFlatStr)
-					buf := new(bytes.Buffer)
-					assert.NoError(t, (Any{
-						I:                    i,
-						MarshalDeterministic: true,
-						MarshalNoAggHeaders:  true,
-						MarshalBlobString:    true,
-					}).MarshalRESP(buf))
-					assert.Equal(t, exp, buf.String())
+				assertMarshalsFlatStr := func(t *testing.T, exp []string, i interface{}) {
+					t.Logf("%#v (flattened to strings) -> %q", i, in.flattened)
+					f := flattener{deterministic: true}
+					assert.NoError(t, f.flatten(i))
+
+					if len(exp) == 0 {
+						assert.Empty(t, f.out)
+						return
+					}
+
+					outStrs := make([]string, len(f.out))
+					for i := range outStrs {
+						outStrs[i] = string(f.out[i])
+					}
+					assert.Equal(t, exp, outStrs)
 				}
 
 				if umt.shouldErr != nil {
@@ -1715,11 +1705,11 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 
 									if kase.r {
 										if _, marshaler := exp.(resp.Marshaler); !marshaler && marshalAsFlatStr {
-											msgAsFlatStr := in.msgAsFlatStr
-											if kase.flatStrEmpty {
-												msgAsFlatStr = ""
+											flattened := in.flattened
+											if kase.flattenedEmpty {
+												flattened = nil
 											}
-											assertMarshalsFlatStr(t, msgAsFlatStr, exp)
+											assertMarshalsFlatStr(t, flattened, exp)
 										} else {
 											assertMarshals(t, inMsg, exp)
 										}
@@ -1733,24 +1723,6 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					t.Run("with attr/marshal", run(true, false))
 					t.Run("without attr/marshalFlatStr", run(false, true))
 					t.Run("with attr/marshalFlatStr", run(true, true))
-
-					t.Run("numElems", func(t *testing.T) {
-						for _, kase := range umt.cases(in) {
-							t.Run(kase.label, func(t *testing.T) {
-								expNumElems := in.expNumElems()
-								if _, ok := kase.ie[1].(resp.Marshaler); ok {
-									t.Skip("is a resp.Marshaler")
-								} else if kase.flatStrEmpty {
-									expNumElems = 0
-								}
-
-								t.Logf("numElems(%#v) -> %d", kase.ie[1], expNumElems)
-								numElems, err := Any{I: kase.ie[1]}.NumElems()
-								assert.NoError(t, err)
-								assert.Equal(t, expNumElems, numElems)
-							})
-						}
-					})
 				})
 			}
 		})

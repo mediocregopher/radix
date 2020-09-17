@@ -19,7 +19,6 @@ import (
 	"encoding"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"reflect"
@@ -124,12 +123,10 @@ var (
 	streamedHeaderTail = []byte("?\r\n")
 	streamAggEnd       = []byte(".\r\n")
 	emptyAggTail       = []byte("0\r\n")
-)
 
-var boolStrs = [][]byte{
-	{'0'},
-	{'1'},
-}
+	infMsg = []byte("inf")
+	infStr = []byte("+inf")
+)
 
 var (
 	emptyStructT             = reflect.TypeOf(struct{}{})
@@ -1318,156 +1315,14 @@ func discardMultiAfterErr(br *bufio.Reader, left int, lastErr error) error {
 type Any struct {
 	I interface{}
 
-	// MarshalBlobString causes MarshalRESP to marshal all simple types (ie
-	// non-aggregated types like array) as blob strings.
-	MarshalBlobString bool
-
-	// MarshalNoAggHeaders causes MarshalRESP to skip marshaling the headers of
-	// aggregated type messages (e.g. arrays).
-	MarshalNoAggHeaders bool
-
-	// If true then map types will have their keys sorted before marshaling, so
-	// that the bytes output will always be the same.
-
 	// MarshalDeterministic causes MarshalRESP to marshal maps and sets
-	// deterministicly.
+	// deterministically.
 	MarshalDeterministic bool
 }
 
 func (a Any) cp(i interface{}) Any {
 	a.I = i
 	return a
-}
-
-// NumElems returns the number of non-aggregated type elements which would be
-// marshalled based on I. For example:
-//
-//	Any{I: "foo"}.NumElems() == 1
-//	Any{I: []string{}}.NumElems() == 0
-//	Any{I: []string{"foo"}}.NumElems() == 1
-//	Any{I: []string{"foo", "bar"}}.NumElems() == 2
-//	Any{I: [][]string{{"foo"}, {"bar", "baz"}, {}}}.NumElems() == 3
-//
-// NumElems may error if the type's number of elements can't be determined.
-func (a Any) NumElems() (int, error) {
-	return numElems(reflect.ValueOf(a.I))
-}
-
-func numElems(vv reflect.Value) (int, error) {
-	if !vv.IsValid() {
-		// if it's just reflect.ValueOf(nil), that'll be 1 element
-		return 1, nil
-	}
-
-	tt := vv.Type()
-	switch {
-	case tt.Implements(readerT):
-		return 1, nil
-	case tt.Implements(lenReaderT):
-		return 1, nil
-	case tt.Implements(encodingTextMarshalerT):
-		return 1, nil
-	case tt.Implements(encodingBinaryMarshalerT):
-		return 1, nil
-	case tt.Implements(respMarshalerT):
-		return 0, fmt.Errorf("cannot determine number of RESP elements in type %v, it is a resp.Marshaler", tt)
-	}
-
-	switch vv.Kind() {
-	case reflect.Ptr:
-		if t := vv.Type(); t.Elem().Kind() == reflect.Struct && vv.IsNil() {
-			return 0, nil
-		} else if vv.IsNil() {
-			return 1, nil
-		}
-		return numElems(vv.Elem())
-	case reflect.Slice, reflect.Array:
-		if vv.Type() == byteSliceT || vv.Type() == runeSliceT {
-			return 1, nil
-		}
-
-		l := vv.Len()
-		var c int
-		for i := 0; i < l; i++ {
-			innerC, err := numElems(vv.Index(i))
-			if err != nil {
-				return 0, err
-			}
-			c += innerC
-		}
-		return c, nil
-
-	case reflect.Map:
-		kkv := vv.MapKeys()
-		var c int
-		for _, kv := range kkv {
-			innerC, err := numElems(kv)
-			if err != nil {
-				return 0, err
-			}
-			c += innerC
-
-			if innerC, err = numElems(vv.MapIndex(kv)); err != nil {
-				return 0, err
-			}
-			c += innerC
-		}
-		return c, nil
-
-	case reflect.Interface:
-		return numElems(vv.Elem())
-
-	case reflect.Struct:
-		_, fieldsAndVals, err := numElemsStruct(vv, true)
-		return fieldsAndVals, err
-
-	default:
-		return 1, nil
-	}
-}
-
-// numElemsStruct is separated out of numElems because marshalStruct is only
-// given the reflect.Value and needs to know the numElems, so it wouldn't make
-// sense to recast to an interface{} to pass into NumElems, it would just get
-// turned into a reflect.Value again.
-//
-// numElemsStruct returns the number of fields and the number of fields+values.
-// fields is the same regardless of the value of flat.
-func numElemsStruct(vv reflect.Value, flat bool) (int, int, error) {
-	tt := vv.Type()
-	l := vv.NumField()
-	var fields, fieldsAndVals int
-	for i := 0; i < l; i++ {
-		ft, fv := tt.Field(i), vv.Field(i)
-		if ft.Anonymous {
-			if fv = reflect.Indirect(fv); fv.IsValid() { // fv isn't nil
-				innerFields, innerFieldsAndVals, err := numElemsStruct(fv, flat)
-				if err != nil {
-					return 0, 0, err
-				}
-				fields += innerFields
-				fieldsAndVals += innerFieldsAndVals
-			}
-			continue
-		} else if ft.PkgPath != "" || ft.Tag.Get("redis") == "-" {
-			continue // continue
-		}
-
-		// for the fields
-		fields++
-		fieldsAndVals++
-
-		if flat {
-			innerFieldsAndVals, err := numElems(fv)
-			if err != nil {
-				return 0, 0, err
-			}
-			fieldsAndVals += innerFieldsAndVals
-		} else {
-			fieldsAndVals++
-		}
-	}
-	return fields, fieldsAndVals, nil
 }
 
 func isSetMap(t reflect.Type) bool {
@@ -1497,31 +1352,18 @@ func isSetMap(t reflect.Type) bool {
 //	map[T]T'       -> map with RT keys and RT' values
 //
 // Structs will be marshaled as a map, where each of the struct's field names
-// will be marshaled as a blob string, and each of the struct's values will be
+// will be marshaled as a simple string, and each of the struct's values will be
 // marshaled as the RESP type corresponding to that value's type. Each field can
 // be tagged with `redis:"fieldName"` to specify the field name manually, or
 // `redis:"-"` to omit the field.
 //
 func (a Any) MarshalRESP(w io.Writer) error {
 	if m, ok := a.I.(resp.Marshaler); ok {
-		if a.MarshalNoAggHeaders || a.MarshalBlobString {
-			return fmt.Errorf("Any cannot marshal resp.Marshaler %T with MarshalNoAggHeaders and/or MarshalBlobString set", a.I)
-		}
 		return m.MarshalRESP(w)
 	}
 
 	marshalBlobStr := func(b []byte) error {
 		return BlobStringBytes{B: b}.MarshalRESP(w)
-	}
-
-	// cleanFloatStr is needed because go likes to marshal infinity values as
-	// "+Inf" and "-Inf", but we need "inf" and "-inf".
-	cleanFloatStr := func(b []byte) []byte {
-		b = bytes.ToLower(b)
-		if b[0] == '+' { // "+inf"
-			b = b[1:]
-		}
-		return b
 	}
 
 	switch at := a.I.(type) {
@@ -1538,40 +1380,16 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		*scratch = append(*scratch, string(at)...)
 		return marshalBlobStr(*scratch)
 	case bool:
-		if a.MarshalBlobString {
-			if at {
-				return marshalBlobStr(boolStrs[1])
-			}
-			return marshalBlobStr(boolStrs[0])
-		}
 		return Boolean{B: at}.MarshalRESP(w)
 	case float32:
-		if a.MarshalBlobString {
-			scratch := bytesutil.GetBytes()
-			defer bytesutil.PutBytes(scratch)
-			*scratch = strconv.AppendFloat(*scratch, float64(at), 'f', -1, 32)
-			return marshalBlobStr(cleanFloatStr(*scratch))
-		}
 		return Double{F: float64(at)}.MarshalRESP(w)
 	case float64:
-		if a.MarshalBlobString {
-			scratch := bytesutil.GetBytes()
-			defer bytesutil.PutBytes(scratch)
-			*scratch = strconv.AppendFloat(*scratch, at, 'f', -1, 64)
-			return marshalBlobStr(cleanFloatStr(*scratch))
-		}
 		return Double{F: at}.MarshalRESP(w)
 	case *big.Float:
 		// big.Float is a TextMarshaler, so we have to catch it here so at
 		// doesn't make it to that case.
 		return a.cp(*at).MarshalRESP(w)
 	case big.Float:
-		if a.MarshalBlobString {
-			scratch := bytesutil.GetBytes()
-			defer bytesutil.PutBytes(scratch)
-			*scratch = at.Append(*scratch, 'f', -1)
-			return marshalBlobStr(cleanFloatStr(*scratch))
-		}
 		f, accuracy := at.Float64()
 		if accuracy != big.Exact {
 			return resp.ErrConnUsable{
@@ -1580,59 +1398,21 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		}
 		return Double{F: f}.MarshalRESP(w)
 	case nil:
-		if a.MarshalBlobString {
-			return marshalBlobStr(nil)
-		}
 		return Null{}.MarshalRESP(w)
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		at64 := bytesutil.AnyIntToInt64(at)
-		if a.MarshalBlobString {
-			scratch := bytesutil.GetBytes()
-			defer bytesutil.PutBytes(scratch)
-			*scratch = strconv.AppendInt(*scratch, at64, 10)
-			return marshalBlobStr(*scratch)
-		}
 		return Number{N: at64}.MarshalRESP(w)
 	case big.Int:
 		// big.Int is a TextMarshaler, so we have to catch it here so at doesn't
 		// make it to that case.
 		return a.cp(&at).MarshalRESP(w)
 	case *big.Int:
-		if a.MarshalBlobString {
-			scratch := bytesutil.GetBytes()
-			defer bytesutil.PutBytes(scratch)
-			*scratch = at.Append(*scratch, 10)
-			return marshalBlobStr(*scratch)
-		}
 		return BigNumber{I: at}.MarshalRESP(w)
 	case error:
-		if a.MarshalBlobString {
-			scratch := bytesutil.GetBytes()
-			defer bytesutil.PutBytes(scratch)
-			*scratch = append(*scratch, at.Error()...)
-			return marshalBlobStr(*scratch)
-		}
 		return BlobError{B: []byte(at.Error())}.MarshalRESP(w)
 	case resp.LenReader:
-		if a.MarshalBlobString {
-			scratch := bytesutil.GetBytes()
-			defer bytesutil.PutBytes(scratch)
-			*scratch = bytesutil.Expand(*scratch, at.Len())
-			if _, err := io.ReadFull(at, *scratch); err != nil {
-				return err
-			}
-			return marshalBlobStr(*scratch)
-		}
 		return BlobStringWriter{LR: at}.MarshalRESP(w)
 	case io.Reader:
-		if a.MarshalBlobString {
-			// TODO use bytes pool here?
-			b, err := ioutil.ReadAll(at)
-			if err != nil {
-				return err
-			}
-			return marshalBlobStr(b)
-		}
 		return StreamedStringWriter{R: at}.MarshalRESP(w)
 	case encoding.TextMarshaler:
 		b, err := at.MarshalText()
@@ -1655,23 +1435,12 @@ func (a Any) MarshalRESP(w io.Writer) error {
 	// we hit nil then we will generally marshal the null message, unless it's a
 	// collection type (slice/array/map/struct) and MarshalNoAggHeaders is set
 	// in which case we don't marshal anything.
-	var isNil bool
 	if vv.Kind() != reflect.Ptr {
 		// ok
-	} else if isNil = vv.IsNil(); isNil {
-		// ok
+	} else if vv.IsNil() {
+		return a.cp(nil).MarshalRESP(w)
 	} else {
 		return a.cp(vv.Elem().Interface()).MarshalRESP(w)
-	}
-
-	if isNil && a.MarshalNoAggHeaders {
-		switch vv.Type().Elem().Kind() {
-		case reflect.Slice, reflect.Array, reflect.Map, reflect.Struct:
-			return nil
-		}
-	}
-	if isNil {
-		return a.cp(nil).MarshalRESP(w)
 	}
 
 	// some helper functions
@@ -1684,21 +1453,21 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		}
 	}
 	arrHeader := func(l int) {
-		if a.MarshalNoAggHeaders || err != nil {
+		if err != nil {
 			return
 		}
 		err = ArrayHeader{NumElems: l}.MarshalRESP(w)
 		setAnyWritten()
 	}
 	setHeader := func(l int) {
-		if a.MarshalNoAggHeaders || err != nil {
+		if err != nil {
 			return
 		}
 		err = SetHeader{NumElems: l}.MarshalRESP(w)
 		setAnyWritten()
 	}
 	mapHeader := func(l int) {
-		if a.MarshalNoAggHeaders || err != nil {
+		if err != nil {
 			return
 		}
 		err = MapHeader{NumPairs: l}.MarshalRESP(w)
@@ -1719,7 +1488,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 
 	switch vv.Kind() {
 	case reflect.Slice, reflect.Array:
-		if vv.IsNil() && !a.MarshalNoAggHeaders {
+		if vv.IsNil() {
 			return a.cp(nil).MarshalRESP(w)
 		}
 		l := vv.Len()
@@ -1730,7 +1499,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		unwrapIfAnyWritten()
 
 	case reflect.Map:
-		if vv.IsNil() && !a.MarshalNoAggHeaders {
+		if vv.IsNil() {
 			return a.cp(nil).MarshalRESP(w)
 		}
 		kkv := vv.MapKeys()
@@ -1768,9 +1537,34 @@ func (a Any) MarshalRESP(w io.Writer) error {
 	return err
 }
 
+// numStructFields returns the number of fields in a struct.
+func numStructFields(vv reflect.Value) (int, error) {
+	tt := vv.Type()
+	l := vv.NumField()
+	var fields int
+	for i := 0; i < l; i++ {
+		ft, fv := tt.Field(i), vv.Field(i)
+		if ft.Anonymous {
+			if fv = reflect.Indirect(fv); fv.IsValid() { // fv isn't nil
+				innerFields, err := numStructFields(fv)
+				if err != nil {
+					return 0, err
+				}
+				fields += innerFields
+			}
+			continue
+		} else if ft.PkgPath != "" || ft.Tag.Get("redis") == "-" {
+			continue // continue
+		}
+
+		fields++
+	}
+	return fields, nil
+}
+
 func (a Any) marshalStruct(w io.Writer, vv reflect.Value, inline bool) error {
-	if !a.MarshalNoAggHeaders && !inline {
-		numFields, _, err := numElemsStruct(vv, false)
+	if !inline {
+		numFields, err := numStructFields(vv)
 		if err != nil {
 			return err
 		} else if err = (MapHeader{NumPairs: numFields}).MarshalRESP(w); err != nil {
@@ -1798,18 +1592,9 @@ func (a Any) marshalStruct(w io.Writer, vv reflect.Value, inline bool) error {
 		if tag != "" {
 			keyName = tag
 		}
-
-		if a.MarshalBlobString {
-			if err := (BlobString{S: keyName}).MarshalRESP(w); err != nil {
-				return err
-			}
-		} else {
-			if err := (SimpleString{S: keyName}).MarshalRESP(w); err != nil {
-				return err
-			}
-		}
-
-		if err := a.cp(fv.Interface()).MarshalRESP(w); err != nil {
+		if err := (SimpleString{S: keyName}).MarshalRESP(w); err != nil {
+			return err
+		} else if err := a.cp(fv.Interface()).MarshalRESP(w); err != nil {
 			return err
 		}
 	}
