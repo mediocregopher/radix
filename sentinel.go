@@ -9,8 +9,9 @@ import (
 )
 
 type sentinelOpts struct {
-	cf ConnFunc
-	pf ClientFunc
+	cf    ConnFunc
+	pf    ClientFunc
+	errCh chan<- error
 }
 
 // SentinelOpt is an optional behavior which can be applied to the NewSentinel
@@ -39,6 +40,15 @@ func SentinelPoolFunc(pf ClientFunc) SentinelOpt {
 	}
 }
 
+// SentinelErrCh takes a channel which asynchronous errors encountered by the
+// Sentinel can be read off of. If the channel blocks the error will be dropped.
+// The channel will be closed when the Sentinel is closed.
+func SentinelErrCh(errCh chan<- error) SentinelOpt {
+	return func(so *sentinelOpts) {
+		so.errCh = errCh
+	}
+}
+
 // Sentinel is a Client which, in the background, connects to an available
 // sentinel node and handles all of the following:
 //
@@ -52,7 +62,7 @@ func SentinelPoolFunc(pf ClientFunc) SentinelOpt {
 // currently connected one becomes unreachable
 //
 type Sentinel struct {
-	so        sentinelOpts
+	opts      sentinelOpts
 	initAddrs []string
 	name      string
 
@@ -67,11 +77,6 @@ type Sentinel struct {
 	// initialization. The pconn is only really kept around for closing
 	pconn   PubSubConn
 	pconnCh chan PubSubMessage
-
-	// Any errors encountered internally will be written to this channel. If
-	// nothing is reading the channel the errors will be dropped. The channel
-	// will be closed when the Close is called.
-	ErrCh chan error
 
 	closeCh   chan bool
 	closeWG   sync.WaitGroup
@@ -104,7 +109,6 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 		name:          primaryName,
 		sentinelAddrs: addrs,
 		pconnCh:       make(chan PubSubMessage, 1),
-		ErrCh:         make(chan error, 1),
 		closeCh:       make(chan bool),
 		testEventCh:   make(chan string, 1),
 	}
@@ -112,7 +116,7 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	// If the given sentinelAddrs have AUTH/SELECT info encoded into them then
 	// use that for all sentinel connections going forward (unless overwritten
 	// by a SentinelConnFunc in opts).
-	sc.so.cf = wrapDefaultConnFunc(sentinelAddrs[0])
+	sc.opts.cf = wrapDefaultConnFunc(sentinelAddrs[0])
 	defaultSentinelOpts := []SentinelOpt{
 		SentinelPoolFunc(DefaultClientFunc),
 	}
@@ -122,7 +126,7 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 		// which someone might have left as nil, in which case this now gives a
 		// weird panic. Just handle it
 		if opt != nil {
-			opt(&(sc.so))
+			opt(&(sc.opts))
 		}
 	}
 
@@ -162,7 +166,7 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 
 func (sc *Sentinel) err(err error) {
 	select {
-	case sc.ErrCh <- err:
+	case sc.opts.errCh <- err:
 	default:
 	}
 }
@@ -181,7 +185,7 @@ func (sc *Sentinel) dialSentinel() (Conn, error) {
 	var conn Conn
 	var err error
 	for addr := range sc.sentinelAddrs {
-		conn, err = sc.so.cf("tcp", addr)
+		conn, err = sc.opts.cf("tcp", addr)
 		if err == nil {
 			return conn, nil
 		}
@@ -190,7 +194,7 @@ func (sc *Sentinel) dialSentinel() (Conn, error) {
 	// try the initAddrs as a last ditch, but don't return their error if this
 	// doesn't work
 	for _, addr := range sc.initAddrs {
-		if conn, err := sc.so.cf("tcp", addr); err == nil {
+		if conn, err := sc.opts.cf("tcp", addr); err == nil {
 			return conn, nil
 		}
 	}
@@ -294,7 +298,7 @@ func (sc *Sentinel) clientInner(addr string) (Client, error) {
 	// if client was nil but ok was true it means the address is a secondary but
 	// a Client for it has never been created. Create one now and store it into
 	// clients.
-	newClient, err := sc.so.pf("tcp", addr)
+	newClient, err := sc.opts.pf("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -329,6 +333,9 @@ func (sc *Sentinel) Close() error {
 			if client != nil {
 				client.Close()
 			}
+		}
+		if sc.opts.errCh != nil {
+			close(sc.opts.errCh)
 		}
 	})
 	return closeErr
@@ -416,7 +423,7 @@ func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client)
 	// lock where it won't block everything else
 	if newClients[newPrimAddr] == nil {
 		var err error
-		if newClients[newPrimAddr], err = sc.so.pf("tcp", newPrimAddr); err != nil {
+		if newClients[newPrimAddr], err = sc.opts.pf("tcp", newPrimAddr); err != nil {
 			return err
 		}
 	}

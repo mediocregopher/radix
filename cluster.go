@@ -64,6 +64,7 @@ type clusterOpts struct {
 	clusterDownWait time.Duration
 	syncEvery       time.Duration
 	ct              trace.ClusterTrace
+	errCh           chan<- error
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -114,6 +115,15 @@ func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
 	}
 }
 
+// ClusterErrCh takes a channel which asynchronous errors encountered by the
+// Cluster can be read off of. If the channel blocks the error will be dropped.
+// The channel will be closed when the Cluster is closed.
+func ClusterErrCh(errCh chan<- error) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.errCh = errCh
+	}
+}
+
 // Cluster contains all information about a redis cluster needed to interact
 // with it, including a set of pools to each of its instances. All methods on
 // Cluster are thread-safe
@@ -123,7 +133,7 @@ type Cluster struct {
 	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	lastClusterdown int64 // unix timestamp in milliseconds, atomic
 
-	co clusterOpts
+	opts clusterOpts
 
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
@@ -136,11 +146,6 @@ type Cluster struct {
 	closeCh   chan struct{}
 	closeWG   sync.WaitGroup
 	closeOnce sync.Once
-
-	// Any errors encountered internally will be written to this channel. If
-	// nothing is reading the channel the errors will be dropped. The channel
-	// will be closed when the Close method is called.
-	ErrCh chan error
 }
 
 // DefaultClusterConnFunc is a ConnFunc which will return a Conn for a node in a
@@ -175,7 +180,6 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		syncDedupe: newDedupe(),
 		pools:      map[string]Client{},
 		closeCh:    make(chan struct{}),
-		ErrCh:      make(chan error, 1),
 	}
 
 	defaultClusterOpts := []ClusterOpt{
@@ -189,13 +193,13 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		// might have left as nil, in which case this now gives a weird panic.
 		// Just handle it
 		if opt != nil {
-			opt(&(c.co))
+			opt(&(c.opts))
 		}
 	}
 
 	// make a pool to base the cluster on
 	for _, addr := range clusterAddrs {
-		p, err := c.co.pf("tcp", addr)
+		p, err := c.opts.pf("tcp", addr)
 		if err != nil {
 			continue
 		}
@@ -210,14 +214,14 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		return nil, err
 	}
 
-	c.syncEvery(c.co.syncEvery)
+	c.syncEvery(c.opts.syncEvery)
 
 	return c, nil
 }
 
 func (c *Cluster) err(err error) {
 	select {
-	case c.ErrCh <- err:
+	case c.opts.errCh <- err:
 	default:
 	}
 }
@@ -293,7 +297,7 @@ func (c *Cluster) pool(addr string) (Client, error) {
 
 	// it's important that the cluster pool set isn't locked while this is
 	// happening, because this could block for a while
-	if p, err = c.co.pf("tcp", addr); err != nil {
+	if p, err = c.opts.pf("tcp", addr); err != nil {
 		return nil, err
 	}
 
@@ -354,7 +358,7 @@ func nodeInfoFromNode(node ClusterNode) trace.ClusterNodeInfo {
 }
 
 func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
-	if c.co.ct.TopoChanged != nil {
+	if c.opts.ct.TopoChanged != nil {
 		var addedNodes []trace.ClusterNodeInfo
 		var removedNodes []trace.ClusterNodeInfo
 		var changedNodes []trace.ClusterNodeInfo
@@ -385,7 +389,7 @@ func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 
 		// Callback when any changes detected
 		if len(addedNodes) != 0 || len(removedNodes) != 0 || len(changedNodes) != 0 {
-			c.co.ct.TopoChanged(trace.ClusterTopoChanged{
+			c.opts.ct.TopoChanged(trace.ClusterTopoChanged{
 				Added:   addedNodes,
 				Removed: removedNodes,
 				Changed: changedNodes,
@@ -626,16 +630,16 @@ func (c *Cluster) setClusterDown(down bool) (changed bool) {
 
 	changed = (prevVal == 0 && newVal != 0) || (prevVal != 0 && newVal == 0)
 
-	if changed && c.co.ct.StateChange != nil {
-		c.co.ct.StateChange(trace.ClusterStateChange{IsDown: down})
+	if changed && c.opts.ct.StateChange != nil {
+		c.opts.ct.StateChange(trace.ClusterStateChange{IsDown: down})
 	}
 
 	return changed
 }
 
 func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, count int, final bool) {
-	if c.co.ct.Redirected != nil {
-		c.co.ct.Redirected(trace.ClusterRedirected{
+	if c.opts.ct.Redirected != nil {
+		c.opts.ct.Redirected(trace.ClusterRedirected{
 			Addr:          addr,
 			Key:           key,
 			Moved:         moved,
@@ -647,12 +651,12 @@ func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, count int, 
 }
 
 func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) error {
-	if downSince := c.getClusterDownSince(); downSince > 0 && c.co.clusterDownWait > 0 {
+	if downSince := c.getClusterDownSince(); downSince > 0 && c.opts.clusterDownWait > 0 {
 		// only wait when the last command was not too long, because
 		// otherwise the chance it high that the cluster already healed
 		elapsed := (time.Now().UnixNano() / 1000 / 1000) - downSince
-		if elapsed < int64(c.co.clusterDownWait/time.Millisecond) {
-			time.Sleep(c.co.clusterDownWait)
+		if elapsed < int64(c.opts.clusterDownWait/time.Millisecond) {
+			time.Sleep(c.opts.clusterDownWait)
 		}
 	}
 
@@ -689,7 +693,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 
 	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
 	clusterDownChanged := c.setClusterDown(clusterDown)
-	if clusterDown && c.co.clusterDownWait > 0 && clusterDownChanged {
+	if clusterDown && c.opts.clusterDownWait > 0 && clusterDownChanged {
 		return c.doInner(a, addr, key, ask, 1)
 	}
 
@@ -738,7 +742,9 @@ func (c *Cluster) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closeCh)
 		c.closeWG.Wait()
-		close(c.ErrCh)
+		if c.opts.errCh != nil {
+			close(c.opts.errCh)
+		}
 
 		c.l.Lock()
 		defer c.l.Unlock()

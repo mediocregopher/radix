@@ -63,6 +63,7 @@ type poolOpts struct {
 	onEmptyWait           time.Duration
 	errOnEmpty            error
 	pt                    trace.PoolTrace
+	errCh                 chan<- error
 }
 
 // PoolOpt is an optional behavior which can be applied to the NewPool function
@@ -178,6 +179,15 @@ func PoolWithTrace(pt trace.PoolTrace) PoolOpt {
 	}
 }
 
+// PoolErrCh takes a channel which asynchronous errors encountered by the Pool
+// can be read off of. If the channel blocks the error will be dropped.  The
+// channel will be closed when the Pool is closed.
+func PoolErrCh(errCh chan<- error) PoolOpt {
+	return func(po *poolOpts) {
+		po.errCh = errCh
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Pool is a dynamic connection pool which implements the Client interface. It
@@ -208,11 +218,6 @@ type Pool struct {
 	wg       sync.WaitGroup
 	closeCh  chan bool
 	initDone chan struct{} // used for tests
-
-	// Any errors encountered internally will be written to this channel. If
-	// nothing is reading the channel the errors will be dropped. The channel
-	// will be closed when Close is called.
-	ErrCh chan error
 }
 
 // NewPool creates a *Pool which will keep open at least the given number of
@@ -238,7 +243,6 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		size:     size,
 		closeCh:  make(chan bool),
 		initDone: make(chan struct{}),
-		ErrCh:    make(chan error, 1),
 	}
 
 	defaultPoolOpts := []PoolOpt{
@@ -318,7 +322,7 @@ func (p *Pool) traceInitCompleted(elapsedTime time.Duration) {
 
 func (p *Pool) err(err error) {
 	select {
-	case p.ErrCh <- err:
+	case p.opts.errCh <- err:
 	default:
 	}
 }
@@ -553,6 +557,8 @@ emptyLoop:
 	// by now the pool's go-routines should have bailed, wait to make sure they
 	// do
 	p.wg.Wait()
-	close(p.ErrCh)
+	if p.opts.errCh != nil {
+		close(p.opts.errCh)
+	}
 	return nil
 }
