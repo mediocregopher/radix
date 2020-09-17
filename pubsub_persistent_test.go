@@ -113,3 +113,27 @@ func TestPersistentPubSubClose(t *T) {
 		close(msgCh)
 	}
 }
+
+func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
+	channel := "TestPersistentPubSubUseAfterCloseDeadlock:" + randStr()
+
+	p := PersistentPubSub("", "", func(_, _ string) (Conn, error) {
+		return dial(), nil
+	})
+	msgCh := make(chan PubSubMessage)
+	p.Subscribe(msgCh, channel)
+	p.Close()
+
+	errch := make(chan error)
+	go func() {
+		errch <- p.PUnsubscribe(msgCh, channel)
+	}()
+
+	select {
+	case <-time.After(time.Second):
+		assert.Fail(t, "PUnsubscribe call timeout")
+	case err := <-errch:
+		assert.Error(t, err)
+	}
+
+}

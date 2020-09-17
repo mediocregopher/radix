@@ -26,6 +26,30 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 [resp3]: https://github.com/antirez/RESP3
 
+# v3.6.0
+
+**New**
+
+* Add `Typle` type, which makes unmarshaling `EXEC` and `EVAL` results easier.
+
+* Add `PersistentPubSubErrCh`, so that asynchronous errors within
+  `PersistentPubSub` can be exposed to the user.
+
+* Add `FlatCmd` method to `EvalScript`.
+
+* Add `StreamEntries` unmarshaler to make unmarshaling `XREAD` and `XREADGROUP`
+  results easier.
+
+**Fixes and Improvements**
+
+* Fix wrapped errors not being handled correctly by `Cluster`. (PR #229)
+
+* Fix `PersistentPubSub` deadlocking when a method was called after `Close`.
+  (PR #230)
+
+* Fix `StreamReader` not correctly handling the case of reading from multiple
+  streams when one is empty. (PR #224)
+
 # v3.5.2
 
 * Improve docs for `WithConn` and `PubSubConn`.
@@ -35,7 +59,6 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * Fix `StreamEntry` not properly handling unmarshaling an entry with a nil
   fields array. (PR #218)
->>>>>>> master
 
 # v3.5.1
 

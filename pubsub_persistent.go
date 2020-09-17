@@ -8,6 +8,7 @@ import (
 type persistentPubSubOpts struct {
 	connFn     ConnFunc
 	abortAfter int
+	errCh      chan<- error
 }
 
 // PersistentPubSubOpt is an optional parameter which can be passed into
@@ -36,6 +37,16 @@ func PersistentPubSubAbortAfter(attempts int) PersistentPubSubOpt {
 	}
 }
 
+// PersistentPubSubErrCh takes a channel which asynchronous errors
+// encountered by the PersistentPubSub can be read off of. If the channel blocks
+// the error will be dropped. The channel will be closed when PersistentPubSub
+// is closed.
+func PersistentPubSubErrCh(errCh chan<- error) PersistentPubSubOpt {
+	return func(opts *persistentPubSubOpts) {
+		opts.errCh = errCh
+	}
+}
+
 type pubSubCmd struct {
 	// msgCh can be set along with one of subscribe/unsubscribe/etc...
 	msgCh                                            chan<- PubSubMessage
@@ -60,6 +71,7 @@ type persistentPubSub struct {
 	cmdCh chan pubSubCmd
 
 	closeErr  error
+	closeCh   chan struct{}
 	closeOnce sync.Once
 }
 
@@ -94,11 +106,12 @@ func PersistentPubSub(
 	}
 
 	p := &persistentPubSub{
-		dial:  func() (Conn, error) { return opts.connFn(network, addr) },
-		opts:  opts,
-		subs:  chanSet{},
-		psubs: chanSet{},
-		cmdCh: make(chan pubSubCmd),
+		dial:    func() (Conn, error) { return opts.connFn(network, addr) },
+		opts:    opts,
+		subs:    chanSet{},
+		psubs:   chanSet{},
+		cmdCh:   make(chan pubSubCmd),
+		closeCh: make(chan struct{}),
 	}
 	if err := p.refresh(); err != nil {
 		return nil, err
@@ -209,13 +222,21 @@ func (p *persistentPubSub) execCmd(cmd pubSubCmd) error {
 	return nil
 }
 
+func (p *persistentPubSub) err(err error) {
+	select {
+	case p.opts.errCh <- err:
+	default:
+	}
+}
+
 func (p *persistentPubSub) spin() {
 	for {
 		select {
-		case <-p.currErrCh:
-			// TODO if refresh fails here the user will never know the error. It
-			// would be good to make that error available somehow.
-			p.refresh()
+		case err := <-p.currErrCh:
+			p.err(err)
+			if err := p.refresh(); err != nil {
+				p.err(err)
+			}
 		case cmd := <-p.cmdCh:
 			cmd.resCh <- p.execCmd(cmd)
 			if cmd.close {
@@ -227,8 +248,12 @@ func (p *persistentPubSub) spin() {
 
 func (p *persistentPubSub) cmd(cmd pubSubCmd) error {
 	cmd.resCh = make(chan error, 1)
-	p.cmdCh <- cmd
-	return <-cmd.resCh
+	select {
+	case p.cmdCh <- cmd:
+		return <-cmd.resCh
+	case <-p.closeCh:
+		return fmt.Errorf("closed")
+	}
 }
 
 func (p *persistentPubSub) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
@@ -266,6 +291,10 @@ func (p *persistentPubSub) Ping() error {
 func (p *persistentPubSub) Close() error {
 	p.closeOnce.Do(func() {
 		p.closeErr = p.cmd(pubSubCmd{close: true})
+		close(p.closeCh)
+		if p.opts.errCh != nil {
+			close(p.opts.errCh)
+		}
 	})
 	return p.closeErr
 }
