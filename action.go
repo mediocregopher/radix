@@ -322,7 +322,7 @@ func (t Tuple) UnmarshalRESP(br *bufio.Reader) error {
 				return err
 			}
 		}
-		return resp.ErrDiscarded{
+		return resp.ErrConnUsable{
 			Err: fmt.Errorf("expected array of size %d but got array of size %d", len(t), ah.N),
 		}
 	}
@@ -332,7 +332,7 @@ func (t Tuple) UnmarshalRESP(br *bufio.Reader) error {
 		if err := (resp2.Any{I: t[i]}).UnmarshalRESP(br); err != nil {
 			// if the message was discarded then we can just continue, this
 			// method will return the first error it sees
-			if !xerrors.As(err, new(resp.ErrDiscarded)) {
+			if !errors.As(err, new(resp.ErrConnUsable)) {
 				return err
 			} else if retErr == nil {
 				retErr = err

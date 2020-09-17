@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
@@ -252,7 +253,7 @@ func (p *persistentPubSub) cmd(cmd pubSubCmd) error {
 	case p.cmdCh <- cmd:
 		return <-cmd.resCh
 	case <-p.closeCh:
-		return fmt.Errorf("closed")
+		return errors.New("closed")
 	}
 }
 

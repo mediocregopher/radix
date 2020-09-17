@@ -3,12 +3,12 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	. "testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
@@ -505,7 +505,7 @@ func TestTuple(t *T) {
 			err := test.into.UnmarshalRESP(br)
 			if test.expErr {
 				assert.Error(t, err)
-				assert.True(t, xerrors.As(err, new(resp.ErrDiscarded)))
+				assert.True(t, errors.As(err, new(resp.ErrConnUsable)))
 				return
 			}
 
