@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"log"
 	. "testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 )
 
 func TestPubSubStub(t *T) {
+	ctx := testCtx(t)
 	conn, stubCh := PubSubStub("tcp", "127.0.0.1:6379", func(in []string) interface{} {
 		return in
 	})
@@ -24,11 +26,11 @@ func TestPubSubStub(t *T) {
 	}
 
 	assertEncode := func(in ...string) {
-		require.Nil(t, conn.EncodeDecode(resp2.Any{I: in}, nil))
+		require.Nil(t, conn.EncodeDecode(ctx, resp2.Any{I: in}, nil))
 	}
 	assertDecode := func(exp ...string) {
 		var into []string
-		require.Nil(t, conn.EncodeDecode(nil, resp2.Any{I: &into}))
+		require.Nil(t, conn.EncodeDecode(ctx, nil, resp2.Any{I: &into}))
 		assert.Equal(t, exp, into)
 	}
 
@@ -44,7 +46,7 @@ func TestPubSubStub(t *T) {
 
 	// should error because we're in pubsub mode
 	assertEncode("wat")
-	assert.Equal(t, errPubSubMode.Error(), conn.EncodeDecode(nil, resp2.Any{}).Error())
+	assert.Equal(t, errPubSubMode.Error(), conn.EncodeDecode(ctx, nil, resp2.Any{}).Error())
 
 	assertEncode("PING")
 	assertDecode("pong", "")
@@ -85,6 +87,9 @@ func TestPubSubStub(t *T) {
 }
 
 func ExamplePubSubStub() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// Make a pubsub stub conn which will return nil for everything except
 	// pubsub commands (which will be handled automatically)
 	stub, stubCh := PubSubStub("tcp", "127.0.0.1:6379", func([]string) interface{} {
@@ -108,7 +113,7 @@ func ExamplePubSubStub() {
 
 	// Subscribe msgCh to "foo"
 	msgCh := make(chan PubSubMessage)
-	if err := pstub.Subscribe(msgCh, "foo"); err != nil {
+	if err := pstub.Subscribe(ctx, msgCh, "foo"); err != nil {
 		log.Fatal(err)
 	}
 

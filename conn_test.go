@@ -1,11 +1,14 @@
 package radix
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	. "testing"
 	"time"
 
+	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -136,4 +139,32 @@ func TestDialSelect(t *T) {
 			t.Fatalf("db not set to 9 (test:%#v)", test)
 		}
 	}
+}
+
+func TestConnConcurrentMarshalUnmarshal(t *T) {
+	ctx := testCtx(t)
+	conn := dial()
+	vv := make([]string, 100)
+	for i := range vv {
+		vv[i] = fmt.Sprint(i)
+	}
+
+	// we can't guarantee that the unmarshal starts before its corresponding
+	// marshal, but hopefully within one of these iterations it'll happen.
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range vv {
+			var got string
+			assert.NoError(t, conn.EncodeDecode(ctx, nil, resp2.Any{I: &got}))
+			assert.Equal(t, vv[i], got)
+		}
+	}()
+
+	for i := range vv {
+		assert.NoError(t, conn.EncodeDecode(ctx, resp2.Any{I: []string{"ECHO", vv[i]}}, nil))
+	}
+	wg.Wait()
 }

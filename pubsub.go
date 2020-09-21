@@ -3,10 +3,9 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"io"
-	"net"
-	"sync"
 	"time"
 
 	"github.com/mediocregopher/radix/v3/resp"
@@ -190,55 +189,46 @@ type PubSubConn interface {
 	// channels. This may be called multiple times for the same channels and
 	// different msgCh's, each msgCh will receieve a copy of the PubSubMessage
 	// for each publish.
-	Subscribe(msgCh chan<- PubSubMessage, channels ...string) error
+	Subscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error
 
 	// Unsubscribe unsubscribes the msgCh from the given set of channels, if it
 	// was subscribed at all.
 	//
-	// NOTE even if msgCh is not subscribed to any other redis channels, it
-	// should still be considered "active", and therefore still be having
-	// messages read from it, until Unsubscribe has returned
-	Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error
+	// NOTE until Unsubscribe has returned it should be assumed that msgCh can
+	// still have messages written to it.
+	Unsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error
 
 	// PSubscribe is like Subscribe, but it subscribes msgCh to a set of
 	// patterns and not individual channels.
-	PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) error
+	PSubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error
 
 	// PUnsubscribe is like Unsubscribe, but it unsubscribes msgCh from a set of
 	// patterns and not individual channels.
-	//
-	// NOTE even if msgCh is not subscribed to any other redis channels, it
-	// should still be considered "active", and therefore still be having
-	// messages read from it, until PUnsubscribe has returned
-	PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string) error
+	PUnsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error
 
 	// Ping performs a simple Ping command on the PubSubConn, returning an error
 	// if it failed for some reason
-	Ping() error
+	Ping(context.Context) error
 
 	// Close closes the PubSubConn so it can't be used anymore. All subscribed
 	// channels will stop receiving PubSubMessages from this Conn (but will not
 	// themselves be closed).
 	//
-	// NOTE all msgChs should be considered "active", and therefore still be
-	// having messages read from them, until Close has returned.
+	// NOTE until Close returns it should be assumed that all subscribed msgChs
+	// can still be written to.
 	Close() error
 }
 
 type pubSubConn struct {
+	proc proc
 	conn Conn
 
-	csL   sync.RWMutex
 	subs  chanSet
 	psubs chanSet
 
-	// These are used for writing commands and waiting for their response (e.g.
+	// used for writing commands and waiting for their response (e.g.
 	// SUBSCRIBE, PING). See the do method for how that works.
-	cmdL     sync.Mutex
 	cmdResCh chan error
-
-	close    sync.Once
-	closeErr error
 
 	// This one is optional, and kind of cheating. We use it in persistent to
 	// get on-the-fly updates of when the connection fails. Maybe one day this
@@ -258,27 +248,15 @@ func PubSub(rc Conn) PubSubConn {
 
 func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
 	c := &pubSubConn{
+		proc:       newProc(),
 		conn:       rc,
 		subs:       chanSet{},
 		psubs:      chanSet{},
 		cmdResCh:   make(chan error, 1),
 		closeErrCh: closeErrCh,
 	}
-	go c.spin()
-
-	// Periodically call Ping so the connection has a keepalive on the
-	// application level. If the Conn is closed Ping will return an error and
-	// this will clean itself up.
-	go func() {
-		t := time.NewTicker(5 * time.Second)
-		defer t.Stop()
-		for range t.C {
-			if err := c.Ping(); err != nil {
-				return
-			}
-		}
-	}()
-
+	c.proc.run(c.spin)
+	c.proc.run(c.pingSpin)
 	return c
 }
 
@@ -289,65 +267,81 @@ func (c *pubSubConn) testEvent(str string) {
 }
 
 func (c *pubSubConn) publish(m PubSubMessage) {
-	c.csL.RLock()
-	defer c.csL.RUnlock()
+	_ = c.proc.withRLock(func() error {
+		var subs map[chan<- PubSubMessage]bool
+		if m.Type == "pmessage" {
+			subs = c.psubs[m.Pattern]
+		} else {
+			subs = c.subs[m.Channel]
+		}
 
-	var subs map[chan<- PubSubMessage]bool
-	if m.Type == "pmessage" {
-		subs = c.psubs[m.Pattern]
-	} else {
-		subs = c.subs[m.Channel]
-	}
-
-	for ch := range subs {
-		ch <- m
-	}
+		for ch := range subs {
+			ch <- m
+		}
+		return nil
+	})
 }
 
-func (c *pubSubConn) spin() {
+const pubSubTimeout = 1 * time.Second
+
+func (c *pubSubConn) spin(ctx context.Context) {
 	for {
 		var m PubSubMessage
-		err := c.conn.EncodeDecode(nil, &m)
-		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+		ctx, cancel := context.WithTimeout(ctx, pubSubTimeout)
+		err := c.conn.EncodeDecode(ctx, nil, &m)
+		cancel()
+		if errors.Is(err, context.DeadlineExceeded) {
 			c.testEvent("timeout")
 			continue
+		} else if errors.Is(err, context.Canceled) {
+			return
 		} else if errors.Is(err, errNotPubSubMessage) {
 			c.cmdResCh <- nil
 			continue
 		} else if err != nil {
-			c.closeInner(err)
+			// this must be done in a new go-routine to avoid deadlocks
+			go c.closeInner(err)
 			return
 		}
 		c.publish(m)
 	}
 }
 
-// NOTE cmdL _must_ be held to use do
-func (c *pubSubConn) do(exp int, cmd string, args ...string) error {
+func (c *pubSubConn) pingSpin(ctx context.Context) {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			err := c.Ping(ctx)
+			cancel()
+			if err != nil {
+				return
+			}
+		}
+	}
+}
+
+// NOTE proc's lock _must_ be held to use do
+func (c *pubSubConn) do(ctx context.Context, exp int, cmd string, args ...string) error {
 	rcmd := Cmd(nil, cmd, args...).(resp.Marshaler)
-	if err := c.conn.EncodeDecode(rcmd, nil); err != nil {
+	if err := c.conn.EncodeDecode(ctx, rcmd, nil); err != nil {
 		return err
 	}
 
 	for i := 0; i < exp; i++ {
-		err, ok := <-c.cmdResCh
-		if err != nil {
+		if err := <-c.cmdResCh; err != nil {
 			return err
-		} else if !ok {
-			return errors.New("connection closed")
 		}
 	}
 	return nil
 }
 
 func (c *pubSubConn) closeInner(cmdResErr error) error {
-	c.close.Do(func() {
-		c.csL.Lock()
-		defer c.csL.Unlock()
-		c.closeErr = c.conn.Close()
-		c.subs = nil
-		c.psubs = nil
-
+	return c.proc.close(func() error {
 		if cmdResErr != nil {
 			select {
 			case c.cmdResCh <- cmdResErr:
@@ -358,104 +352,85 @@ func (c *pubSubConn) closeInner(cmdResErr error) error {
 			c.closeErrCh <- cmdResErr
 			close(c.closeErrCh)
 		}
-		close(c.cmdResCh)
+		err := c.conn.Close()
+		return err
 	})
-	return c.closeErr
 }
 
 func (c *pubSubConn) Close() error {
 	return c.closeInner(nil)
 }
 
-func (c *pubSubConn) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
-	c.cmdL.Lock()
-	defer c.cmdL.Unlock()
-
-	c.csL.RLock()
-	missing := c.subs.missing(channels)
-	c.csL.RUnlock()
-
-	if len(missing) > 0 {
-		if err := c.do(len(missing), "SUBSCRIBE", missing...); err != nil {
-			return err
+func (c *pubSubConn) Subscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
+	return c.proc.withLock(func() error {
+		missing := c.subs.missing(channels)
+		if len(missing) > 0 {
+			if err := c.do(ctx, len(missing), "SUBSCRIBE", missing...); err != nil {
+				return err
+			}
 		}
-	}
 
-	c.csL.Lock()
-	for _, channel := range channels {
-		c.subs.add(channel, msgCh)
-	}
-	c.csL.Unlock()
-
-	return nil
-}
-
-func (c *pubSubConn) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
-	c.cmdL.Lock()
-	defer c.cmdL.Unlock()
-
-	c.csL.Lock()
-	emptyChannels := make([]string, 0, len(channels))
-	for _, channel := range channels {
-		if empty := c.subs.del(channel, msgCh); empty {
-			emptyChannels = append(emptyChannels, channel)
+		for _, channel := range channels {
+			c.subs.add(channel, msgCh)
 		}
-	}
-	c.csL.Unlock()
 
-	if len(emptyChannels) == 0 {
 		return nil
-	}
-
-	return c.do(len(emptyChannels), "UNSUBSCRIBE", emptyChannels...)
+	})
 }
 
-func (c *pubSubConn) PSubscribe(msgCh chan<- PubSubMessage, patterns ...string) error {
-	c.cmdL.Lock()
-	defer c.cmdL.Unlock()
-
-	c.csL.RLock()
-	missing := c.psubs.missing(patterns)
-	c.csL.RUnlock()
-
-	if len(missing) > 0 {
-		if err := c.do(len(missing), "PSUBSCRIBE", missing...); err != nil {
-			return err
+func (c *pubSubConn) Unsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
+	return c.proc.withLock(func() error {
+		emptyChannels := make([]string, 0, len(channels))
+		for _, channel := range channels {
+			if empty := c.subs.del(channel, msgCh); empty {
+				emptyChannels = append(emptyChannels, channel)
+			}
 		}
-	}
 
-	c.csL.Lock()
-	for _, pattern := range patterns {
-		c.psubs.add(pattern, msgCh)
-	}
-	c.csL.Unlock()
+		if len(emptyChannels) == 0 {
+			return nil
+		}
 
-	return nil
+		return c.do(ctx, len(emptyChannels), "UNSUBSCRIBE", emptyChannels...)
+	})
 }
 
-func (c *pubSubConn) PUnsubscribe(msgCh chan<- PubSubMessage, patterns ...string) error {
-	c.cmdL.Lock()
-	defer c.cmdL.Unlock()
-
-	c.csL.Lock()
-	emptyPatterns := make([]string, 0, len(patterns))
-	for _, pattern := range patterns {
-		if empty := c.psubs.del(pattern, msgCh); empty {
-			emptyPatterns = append(emptyPatterns, pattern)
+func (c *pubSubConn) PSubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error {
+	return c.proc.withLock(func() error {
+		missing := c.psubs.missing(patterns)
+		if len(missing) > 0 {
+			if err := c.do(ctx, len(missing), "PSUBSCRIBE", missing...); err != nil {
+				return err
+			}
 		}
-	}
-	c.csL.Unlock()
 
-	if len(emptyPatterns) == 0 {
+		for _, pattern := range patterns {
+			c.psubs.add(pattern, msgCh)
+		}
+
 		return nil
-	}
-
-	return c.do(len(emptyPatterns), "PUNSUBSCRIBE", emptyPatterns...)
+	})
 }
 
-func (c *pubSubConn) Ping() error {
-	c.cmdL.Lock()
-	defer c.cmdL.Unlock()
+func (c *pubSubConn) PUnsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error {
+	return c.proc.withLock(func() error {
+		emptyPatterns := make([]string, 0, len(patterns))
+		for _, pattern := range patterns {
+			if empty := c.psubs.del(pattern, msgCh); empty {
+				emptyPatterns = append(emptyPatterns, pattern)
+			}
+		}
 
-	return c.do(1, "PING")
+		if len(emptyPatterns) == 0 {
+			return nil
+		}
+
+		return c.do(ctx, len(emptyPatterns), "PUNSUBSCRIBE", emptyPatterns...)
+	})
+}
+
+func (c *pubSubConn) Ping(ctx context.Context) error {
+	return c.proc.withRLock(func() error {
+		return c.do(ctx, 1, "PING")
+	})
 }

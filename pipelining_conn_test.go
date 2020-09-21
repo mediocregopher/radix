@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -13,9 +14,9 @@ type pipeliningConnInner struct {
 	encDecCalls int
 }
 
-func (pci *pipeliningConnInner) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+func (pci *pipeliningConnInner) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
 	pci.encDecCalls++
-	err := pci.Conn.EncodeDecode(m, u)
+	err := pci.Conn.EncodeDecode(ctx, m, u)
 	return err
 }
 

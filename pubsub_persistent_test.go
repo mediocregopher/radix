@@ -9,9 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func closablePersistentPubSub() (PubSubConn, func()) {
+func closablePersistentPubSub(t *T) (PubSubConn, func()) {
+	ctx := testCtx(t)
 	closeCh := make(chan chan bool)
-	p, err := PersistentPubSub("", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
+	p, err := PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
 		c := dial()
 		go func() {
 			closeRetCh := <-closeCh
@@ -32,7 +33,10 @@ func closablePersistentPubSub() (PubSubConn, func()) {
 }
 
 func TestPersistentPubSub(t *T) {
-	p, closeFn := closablePersistentPubSub()
+	ctx := testCtx(t)
+	p, closeFn := closablePersistentPubSub(t)
+	_ = closeFn
+	_ = ctx
 	pubCh := make(chan int)
 	go func() {
 		for i := 0; i < 1000; i++ {
@@ -40,7 +44,7 @@ func TestPersistentPubSub(t *T) {
 			if i%100 == 0 {
 				time.Sleep(100 * time.Millisecond)
 				closeFn()
-				assert.Nil(t, p.Ping())
+				assert.Nil(t, p.Ping(ctx))
 			}
 		}
 		close(pubCh)
@@ -50,6 +54,7 @@ func TestPersistentPubSub(t *T) {
 }
 
 func TestPersistentPubSubAbortAfter(t *T) {
+	ctx := testCtx(t)
 	var errNope = errors.New("nope")
 	var attempts int
 	connFn := func(_, _ string) (Conn, error) {
@@ -60,17 +65,17 @@ func TestPersistentPubSubAbortAfter(t *T) {
 		return dial(), nil
 	}
 
-	_, err := PersistentPubSub("", "",
+	_, err := PersistentPubSub(ctx, "", "",
 		PersistentPubSubConnFunc(connFn),
 		PersistentPubSubAbortAfter(2))
 	assert.Equal(t, errNope, err)
 
 	attempts = 0
-	p, err := PersistentPubSub("", "",
+	p, err := PersistentPubSub(ctx, "", "",
 		PersistentPubSubConnFunc(connFn),
 		PersistentPubSubAbortAfter(3))
 	assert.NoError(t, err)
-	assert.NoError(t, p.Ping())
+	assert.NoError(t, p.Ping(ctx))
 	p.Close()
 }
 
@@ -83,28 +88,27 @@ func TestPersistentPubSubClose(t *T) {
 	defer close(stopCh)
 	go func() {
 		pubConn := dial()
+		defer pubConn.Close()
 		for {
 			err := pubConn.Do(ctx, Cmd(nil, "PUBLISH", channel, randStr()))
 			assert.NoError(t, err)
-			time.Sleep(10 * time.Millisecond)
-
 			select {
 			case <-stopCh:
 				return
-			default:
+			case <-time.After(10 * time.Millisecond):
 			}
 		}
 	}()
 
 	for i := 0; i < 1000; i++ {
-		p, err := PersistentPubSub("", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
+		p, err := PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
 			return dial(), nil
 		}))
 		if err != nil {
 			panic(err)
 		}
 		msgCh := make(chan PubSubMessage)
-		p.Subscribe(msgCh, channel)
+		p.Subscribe(ctx, msgCh, channel)
 		// drain msgCh till it closes
 		go func() {
 			for range msgCh {
@@ -116,20 +120,21 @@ func TestPersistentPubSubClose(t *T) {
 }
 
 func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
+	ctx := testCtx(t)
 	channel := "TestPersistentPubSubUseAfterCloseDeadlock:" + randStr()
 
 	connFn := func(_, _ string) (Conn, error) { return dial(), nil }
-	p, err := PersistentPubSub("", "", PersistentPubSubConnFunc(connFn))
+	p, err := PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(connFn))
 	if err != nil {
 		panic(err)
 	}
 	msgCh := make(chan PubSubMessage)
-	p.Subscribe(msgCh, channel)
+	p.Subscribe(ctx, msgCh, channel)
 	p.Close()
 
 	errch := make(chan error)
 	go func() {
-		errch <- p.PUnsubscribe(msgCh, channel)
+		errch <- p.PUnsubscribe(ctx, msgCh, channel)
 	}()
 
 	select {

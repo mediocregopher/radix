@@ -68,6 +68,7 @@ func TestStubPipeline(t *T) {
 }
 
 func TestStubLockingTimeout(t *T) {
+	ctx := testCtx(t)
 	stub := testStub()
 	wg := new(sync.WaitGroup)
 	c := 1000
@@ -77,7 +78,7 @@ func TestStubLockingTimeout(t *T) {
 		defer wg.Done()
 		for i := 0; i < c; i++ {
 			m := Cmd(nil, "ECHO", strconv.Itoa(i)).(resp.Marshaler)
-			require.Nil(t, stub.EncodeDecode(m, nil))
+			require.Nil(t, stub.EncodeDecode(ctx, m, nil))
 		}
 	}()
 
@@ -86,7 +87,7 @@ func TestStubLockingTimeout(t *T) {
 		defer wg.Done()
 		for i := 0; i < c; i++ {
 			var j int
-			require.Nil(t, stub.EncodeDecode(nil, resp2.Any{I: &j}))
+			require.Nil(t, stub.EncodeDecode(ctx, nil, resp2.Any{I: &j}))
 			assert.Equal(t, i, j)
 		}
 	}()
@@ -99,11 +100,11 @@ func TestStubLockingTimeout(t *T) {
 	conn := stub.NetConn()
 	conn.SetDeadline(now.Add(2 * time.Second))
 	m := Cmd(nil, "ECHO", "1").(resp.Marshaler)
-	require.Nil(t, stub.EncodeDecode(m, resp2.Any{}))
+	require.Nil(t, stub.EncodeDecode(ctx, m, resp2.Any{}))
 
 	// now there's no data to read, should return after 2-ish seconds with a
 	// timeout error
-	err := stub.EncodeDecode(nil, resp2.Any{})
+	err := stub.EncodeDecode(ctx, nil, resp2.Any{})
 	nerr, ok := err.(*net.OpError)
 	assert.True(t, ok)
 	assert.True(t, nerr.Timeout())

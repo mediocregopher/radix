@@ -330,7 +330,7 @@ func TestWithConnAction(t *T) {
 	k, v := randStr(), 10
 
 	// TODO WithConn's callback should take a context
-	err := c.Do(ctx, WithConn(k, func(conn Conn) error {
+	err := c.Do(ctx, WithConn(k, func(ctx context.Context, conn Conn) error {
 		require.Nil(t, conn.Do(ctx, FlatCmd(nil, "SET", k, v)))
 		var out int
 		require.Nil(t, conn.Do(ctx, Cmd(&out, "GET", k)))
@@ -354,7 +354,7 @@ func ExampleWithConn() {
 	// instance. NOTE that it does not do this atomically like the INCR command
 	// would.
 	key := "someKey"
-	err = client.Do(ctx, WithConn(key, func(conn Conn) error {
+	err = client.Do(ctx, WithConn(key, func(ctx context.Context, conn Conn) error {
 		var curr int
 		if err := conn.Do(ctx, Cmd(&curr, "GET", key)); err != nil {
 			return err
@@ -382,7 +382,7 @@ func ExampleWithConn_transaction() {
 	key := "someKey"
 	var prevVal string
 
-	err = client.Do(ctx, WithConn(key, func(c Conn) error {
+	err = client.Do(ctx, WithConn(key, func(ctx context.Context, c Conn) error {
 
 		// Begin the transaction with a MULTI command
 		if err := c.Do(ctx, Cmd(nil, "MULTI")); err != nil {
@@ -563,6 +563,6 @@ func BenchmarkFlatCmdActionKeys(b *B) {
 
 func BenchmarkWithConnKeys(b *B) {
 	for i := 0; i < b.N; i++ {
-		benchCmdActionKeys = WithConn("a", func(Conn) error { return nil }).Keys()
+		benchCmdActionKeys = WithConn("a", func(context.Context, Conn) error { return nil }).Keys()
 	}
 }

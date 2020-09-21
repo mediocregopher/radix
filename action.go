@@ -3,6 +3,7 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -24,7 +25,7 @@ type Action interface {
 	Keys() []string
 
 	// Perform actually performs the Action using an existing Conn.
-	Perform(c Conn) error
+	Perform(ctx context.Context, c Conn) error
 }
 
 var noKeyCmds = map[string]bool{
@@ -258,8 +259,8 @@ func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
 	return nil
 }
 
-func (c *cmdAction) Perform(conn Conn) error {
-	return conn.EncodeDecode(c, c)
+func (c *cmdAction) Perform(ctx context.Context, conn Conn) error {
+	return conn.EncodeDecode(ctx, c, c)
 }
 
 func (c *cmdAction) String() string {
@@ -462,10 +463,10 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 	return err
 }
 
-func (ec *evalAction) Perform(conn Conn) error {
+func (ec *evalAction) Perform(ctx context.Context, conn Conn) error {
 	run := func(eval bool) error {
 		ec.eval = eval
-		return conn.EncodeDecode(ec, resp2.Any{I: ec.rcv})
+		return conn.EncodeDecode(ctx, ec, resp2.Any{I: ec.rcv})
 	}
 
 	err := run(false)
@@ -544,7 +545,7 @@ func (p *pipeline) Keys() []string {
 	return keys
 }
 
-func (p *pipeline) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+func (p *pipeline) EncodeDecode(_ context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
 	p.mm = append(p.mm, pipelineMarshalerUnmarshaler{
 		Marshaler:   m,
 		Unmarshaler: u,
@@ -596,15 +597,16 @@ func (p *pipeline) UnmarshalRESP(br *bufio.Reader) error {
 	return nil
 }
 
-func (p *pipeline) Perform(c Conn) error {
+func (p *pipeline) Perform(ctx context.Context, c Conn) error {
 	p.Conn = c
+	// TODO could this happen during reset?
 	defer func() { p.Conn = nil }()
 
 	for _, action := range p.actions {
 		// any errors that happen within Perform will not be IO errors, because
-		// pipelineConn is suppressing all potential IO errors
-		if err := action.Perform(p); err != nil {
-			return err
+		// pipeline is suppressing all potential IO errors
+		if err := action.Perform(ctx, p); err != nil {
+			return resp.ErrConnUsable{Err: err}
 		}
 	}
 
@@ -613,7 +615,7 @@ func (p *pipeline) Perform(c Conn) error {
 	// error it means something else the Conn was doing errored (like flushing
 	// its write buffer). There's not much to be done except return that error
 	// for all pipelineMarshalerUnmarshalers.
-	if err := c.EncodeDecode(p, p); err != nil {
+	if err := c.EncodeDecode(ctx, p, p); err != nil {
 		p.setErr(0, err)
 		return err
 	}
@@ -650,7 +652,7 @@ func (p *pipeline) Perform(c Conn) error {
 
 type withConn struct {
 	key [1]string // use array to avoid allocation in Keys
-	fn  func(Conn) error
+	fn  func(context.Context, Conn) error
 }
 
 // WithConn is used to perform a set of independent Actions on the same Conn.
@@ -665,7 +667,7 @@ type withConn struct {
 // NOTE that WithConn only ensures all inner Actions are performed on the same
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
 // WithConn for transactions, or use EvalScript
-func WithConn(key string, fn func(Conn) error) Action {
+func WithConn(key string, fn func(context.Context, Conn) error) Action {
 	return &withConn{[1]string{key}, fn}
 }
 
@@ -673,6 +675,6 @@ func (wc *withConn) Keys() []string {
 	return wc.key[:]
 }
 
-func (wc *withConn) Perform(c Conn) error {
-	return wc.fn(c)
+func (wc *withConn) Perform(ctx context.Context, c Conn) error {
+	return wc.fn(ctx, c)
 }

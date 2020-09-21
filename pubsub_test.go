@@ -39,11 +39,12 @@ func assertMsgNoRead(t *T, msgCh <-chan PubSubMessage) {
 }
 
 func testSubscribe(t *T, c PubSubConn, pubCh chan int) {
+	ctx := testCtx(t)
 	pubC := dial()
 	msgCh := make(chan PubSubMessage, 1)
 
 	ch1, ch2, msgStr := randStr(), randStr(), randStr()
-	require.Nil(t, c.Subscribe(msgCh, ch1, ch2))
+	require.Nil(t, c.Subscribe(ctx, msgCh, ch1, ch2))
 
 	pubChs := make([]chan int, 3)
 	{
@@ -87,13 +88,13 @@ func testSubscribe(t *T, c PubSubConn, pubCh chan int) {
 	wg.Add(1)
 	go func() {
 		for range pubChs[2] {
-			require.Nil(t, c.Ping())
+			require.Nil(t, c.Ping(ctx))
 		}
 		wg.Done()
 	}()
 	wg.Wait()
 
-	require.Nil(t, c.Unsubscribe(msgCh, ch1))
+	require.Nil(t, c.Unsubscribe(ctx, msgCh, ch1))
 	publish(t, pubC, ch1, msgStr)
 	publish(t, pubC, ch2, msgStr)
 	msg := assertMsgRead(t, msgCh)
@@ -106,6 +107,7 @@ func testSubscribe(t *T, c PubSubConn, pubCh chan int) {
 }
 
 func TestPubSubSubscribe(t *T) {
+	ctx := testCtx(t)
 	pubCh := make(chan int)
 	go func() {
 		for i := 0; i < 1000; i++ {
@@ -117,12 +119,13 @@ func TestPubSubSubscribe(t *T) {
 	testSubscribe(t, c, pubCh)
 
 	c.Close()
-	assert.NotNil(t, c.Ping())
-	assert.NotNil(t, c.Ping())
-	assert.NotNil(t, c.Ping())
+	assert.NotNil(t, c.Ping(ctx))
+	assert.NotNil(t, c.Ping(ctx))
+	assert.NotNil(t, c.Ping(ctx))
 }
 
 func TestPubSubPSubscribe(t *T) {
+	ctx := testCtx(t)
 	pubC := dial()
 	c := PubSub(dial())
 	msgCh := make(chan PubSubMessage, 1)
@@ -131,7 +134,7 @@ func TestPubSubPSubscribe(t *T) {
 	ch1, ch2 := p1+"_"+randStr(), p2+"_"+randStr()
 	p3, p4 := randStr()+"_?", randStr()+"_[ae]"
 	ch3, ch4 := p3[:len(p3)-len("?")]+"a", p4[:len(p4)-len("[ae]")]+"a"
-	require.Nil(t, c.PSubscribe(msgCh, p1, p2, p3, p4))
+	require.Nil(t, c.PSubscribe(ctx, msgCh, p1, p2, p3, p4))
 
 	count := 1000
 	wg := new(sync.WaitGroup)
@@ -161,14 +164,14 @@ func TestPubSubPSubscribe(t *T) {
 	wg.Add(1)
 	go func() {
 		for i := 0; i < count; i++ {
-			require.Nil(t, c.Ping())
+			require.Nil(t, c.Ping(ctx))
 		}
 		wg.Done()
 	}()
 
 	wg.Wait()
 
-	require.Nil(t, c.PUnsubscribe(msgCh, p1))
+	require.Nil(t, c.PUnsubscribe(ctx, msgCh, p1))
 	publish(t, pubC, ch1, msgStr)
 	publish(t, pubC, ch2, msgStr)
 	msg := assertMsgRead(t, msgCh)
@@ -198,15 +201,16 @@ func TestPubSubPSubscribe(t *T) {
 	}, msg)
 
 	c.Close()
-	assert.NotNil(t, c.Ping())
-	assert.NotNil(t, c.Ping())
-	assert.NotNil(t, c.Ping())
+	assert.NotNil(t, c.Ping(ctx))
+	assert.NotNil(t, c.Ping(ctx))
+	assert.NotNil(t, c.Ping(ctx))
 	publish(t, pubC, ch2, msgStr)
 	time.Sleep(250 * time.Millisecond)
 	assertMsgNoRead(t, msgCh)
 }
 
 func TestPubSubMixedSubscribe(t *T) {
+	ctx := testCtx(t)
 	pubC := dial()
 	defer pubC.Close()
 
@@ -217,8 +221,8 @@ func TestPubSubMixedSubscribe(t *T) {
 
 	const msgStr = "bar"
 
-	require.Nil(t, c.Subscribe(msgCh, "foo"))
-	require.Nil(t, c.PSubscribe(msgCh, "f[aeiou]o"))
+	require.Nil(t, c.Subscribe(ctx, msgCh, "foo"))
+	require.Nil(t, c.PSubscribe(ctx, msgCh, "f[aeiou]o"))
 
 	publish(t, pubC, "foo", msgStr)
 
@@ -247,15 +251,15 @@ func TestPubSubMixedSubscribe(t *T) {
 // from returns a timeout error
 func TestPubSubTimeout(t *T) {
 	ctx := testCtx(t)
-	c, pubC := PubSub(dial(DialReadTimeout(1*time.Second))), dial()
+	c, pubC := PubSub(dial()), dial()
 	c.(*pubSubConn).testEventCh = make(chan string, 1)
 
 	ch, msgCh := randStr(), make(chan PubSubMessage, 1)
-	require.Nil(t, c.Subscribe(msgCh, ch))
+	require.Nil(t, c.Subscribe(ctx, msgCh, ch))
 
 	msgStr := randStr()
 	go func() {
-		time.Sleep(2 * time.Second)
+		time.Sleep(pubSubTimeout + time.Second)
 		assert.Nil(t, pubC.Do(ctx, Cmd(nil, "PUBLISH", ch, msgStr)))
 	}()
 
@@ -267,6 +271,7 @@ func TestPubSubTimeout(t *T) {
 // This attempts to catch weird race conditions which might occur due to
 // subscribing/unsubscribing quickly on an active channel.
 func TestPubSubChaotic(t *T) {
+	ctx := testCtx(t)
 	c, pubC := PubSub(dial()), dial()
 	ch, msgStr := randStr(), randStr()
 
@@ -285,10 +290,10 @@ func TestPubSubChaotic(t *T) {
 	}()
 
 	msgCh := make(chan PubSubMessage, 100)
-	require.Nil(t, c.Subscribe(msgCh, ch))
+	require.Nil(t, c.Subscribe(ctx, msgCh, ch))
 
-	stopAfter := time.After(10 * time.Second)
-	toggleTimer := time.Tick(250 * time.Millisecond)
+	stopAfter := time.After(5 * time.Second)
+	toggleTicker := time.Tick(250 * time.Millisecond)
 	subbed := true
 	for {
 		waitFor := time.NewTimer(100 * time.Millisecond)
@@ -302,12 +307,12 @@ func TestPubSubChaotic(t *T) {
 		case msg := <-msgCh:
 			waitFor.Stop()
 			assert.Equal(t, msgStr, string(msg.Message))
-		case <-toggleTimer:
+		case <-toggleTicker:
 			waitFor.Stop()
 			if subbed {
-				require.Nil(t, c.Unsubscribe(msgCh, ch))
+				require.Nil(t, c.Unsubscribe(ctx, msgCh, ch))
 			} else {
-				require.Nil(t, c.Subscribe(msgCh, ch))
+				require.Nil(t, c.Subscribe(ctx, msgCh, ch))
 			}
 			subbed = !subbed
 		}
@@ -322,7 +327,7 @@ func BenchmarkPubSub(b *B) {
 
 	msg := randStr()
 	msgCh := make(chan PubSubMessage, 1)
-	require.Nil(b, c.Subscribe(msgCh, "benchmark"))
+	require.Nil(b, c.Subscribe(ctx, msgCh, "benchmark"))
 
 	b.ResetTimer()
 
@@ -335,6 +340,9 @@ func BenchmarkPubSub(b *B) {
 }
 
 func ExamplePubSub() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// Create a normal redis connection
 	conn, err := Dial("tcp", "127.0.0.1:6379")
 	if err != nil {
@@ -348,7 +356,7 @@ func ExamplePubSub() {
 	// Subscribe to a channel called "myChannel". All publishes to "myChannel"
 	// will get sent to msgCh after this
 	msgCh := make(chan PubSubMessage)
-	if err := ps.Subscribe(msgCh, "myChannel"); err != nil {
+	if err := ps.Subscribe(ctx, msgCh, "myChannel"); err != nil {
 		panic(err)
 	}
 
@@ -360,7 +368,7 @@ func ExamplePubSub() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			if err := ps.Ping(); err != nil {
+			if err := ps.Ping(ctx); err != nil {
 				errCh <- err
 				return
 			}
@@ -392,18 +400,20 @@ func ExamplePersistentPubSub_cluster() {
 	// Have PersistentPubSub pick a random cluster node everytime it wants to
 	// make a new connection. If the node fails PersistentPubSub will
 	// automatically pick a new node to connect to.
-	ps, err := PersistentPubSub("", "", PersistentPubSubConnFunc(func(string, string) (Conn, error) {
-		topo := cluster.Topo()
-		node := topo[rand.Intn(len(topo))]
-		return Dial("tcp", node.Addr)
-	}))
+	ps, err := PersistentPubSub(ctx, "", "",
+		PersistentPubSubConnFunc(func(string, string) (Conn, error) {
+			topo := cluster.Topo()
+			node := topo[rand.Intn(len(topo))]
+			return Dial("tcp", node.Addr)
+		},
+		))
 	if err != nil {
 		panic(err)
 	}
 
 	// Use the PubSubConn as normal.
 	msgCh := make(chan PubSubMessage)
-	ps.Subscribe(msgCh, "myChannel")
+	ps.Subscribe(ctx, msgCh, "myChannel")
 	for msg := range msgCh {
 		log.Printf("publish to channel %q received: %q", msg.Channel, msg.Message)
 	}

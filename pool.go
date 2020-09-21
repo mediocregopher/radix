@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,11 +32,11 @@ func newIOErrConn(c Conn) *ioErrConn {
 	return &ioErrConn{Conn: c}
 }
 
-func (ioc *ioErrConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+func (ioc *ioErrConn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
 	if ioc.lastIOErr != nil {
 		return ioc.lastIOErr
 	}
-	err := ioc.Conn.EncodeDecode(m, u)
+	err := ioc.Conn.EncodeDecode(ctx, m, u)
 	if err != nil && !errors.As(err, new(resp.ErrConnUsable)) {
 		ioc.lastIOErr = err
 	}
@@ -45,7 +44,7 @@ func (ioc *ioErrConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
 }
 
 func (ioc *ioErrConn) Do(ctx context.Context, a Action) error {
-	return a.Perform(ioc)
+	return a.Perform(ctx, ioc)
 }
 
 func (ioc *ioErrConn) Close() error {
@@ -206,18 +205,13 @@ type Pool struct {
 	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	totalConns int64 // atomic, must only be access using functions from sync/atomic
 
+	proc          proc
 	opts          poolOpts
 	network, addr string
 	size          int
+	pool          chan *ioErrConn
 
-	l sync.RWMutex
-	// pool is read-protected by l, and should not be written to or read from
-	// when closed is true (closed is also protected by l)
-	pool   chan *ioErrConn
-	closed bool
-
-	wg       sync.WaitGroup
-	closeCh  chan bool
+	// TODO replace with tracing
 	initDone chan struct{} // used for tests
 }
 
@@ -239,10 +233,10 @@ type Pool struct {
 //
 func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
+		proc:     newProc(),
 		network:  network,
 		addr:     addr,
 		size:     size,
-		closeCh:  make(chan bool),
 		initDone: make(chan struct{}),
 	}
 
@@ -274,10 +268,8 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	}
 	p.put(ioc)
 
-	p.wg.Add(1)
-	go func() {
+	p.proc.run(func(ctx context.Context) {
 		startTime := time.Now()
-		defer p.wg.Done()
 		for i := 0; i < size-1; i++ {
 			ioc, err := p.newConn(trace.PoolConnCreatedReasonInitialization)
 			if err != nil {
@@ -297,11 +289,12 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 		}
 		close(p.initDone)
 		p.traceInitCompleted(time.Since(startTime))
-	}()
+
+	})
 
 	if p.opts.pingInterval > 0 && size > 0 {
-		p.atIntervalDo(p.opts.pingInterval, func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		p.atIntervalDo(p.opts.pingInterval, func(ctx context.Context) {
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			p.Do(ctx, Cmd(nil, "PING"))
 		})
@@ -373,24 +366,23 @@ func (p *Pool) newConn(reason trace.PoolConnCreatedReason) (*ioErrConn, error) {
 	return ioc, nil
 }
 
-func (p *Pool) atIntervalDo(d time.Duration, do func()) {
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+func (p *Pool) atIntervalDo(d time.Duration, do func(context.Context)) {
+	p.proc.run(func(ctx context.Context) {
 		t := time.NewTicker(d)
 		defer t.Stop()
 		for {
 			select {
 			case <-t.C:
-				do()
-			case <-p.closeCh:
+				do(ctx)
+			case <-ctx.Done():
 				return
 			}
 		}
-	}()
+
+	})
 }
 
-func (p *Pool) doRefill() {
+func (p *Pool) doRefill(context.Context) {
 	if atomic.LoadInt64(&p.totalConns) >= int64(p.size) {
 		return
 	}
@@ -402,13 +394,8 @@ func (p *Pool) doRefill() {
 	}
 }
 
-func (p *Pool) doOverflowDrain() {
-	// the other do* processes inherently handle this case, this one needs to do
-	// it manually
-	p.l.RLock()
-
-	if p.closed || len(p.pool) <= p.size {
-		p.l.RUnlock()
+func (p *Pool) doOverflowDrain(context.Context) {
+	if len(p.pool) <= p.size {
 		return
 	}
 
@@ -419,11 +406,6 @@ func (p *Pool) doOverflowDrain() {
 	default:
 		// pool is empty, nothing to drain
 	}
-	p.l.RUnlock()
-
-	if ioc == nil {
-		return
-	}
 
 	ioc.Close()
 	p.traceConnClosed(trace.PoolConnClosedReasonBufferDrain)
@@ -433,10 +415,9 @@ func (p *Pool) doOverflowDrain() {
 func (p *Pool) getExisting() (*ioErrConn, error) {
 	// Fast-path if the pool is not empty. Return error if pool has been closed.
 	select {
-	case ioc, ok := <-p.pool:
-		if !ok {
-			return nil, errClientClosed
-		}
+	case <-p.proc.closedCh():
+		return nil, errPreviouslyClosed
+	case ioc := <-p.pool:
 		return ioc, nil
 	default:
 	}
@@ -457,10 +438,9 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 	}
 
 	select {
-	case ioc, ok := <-p.pool:
-		if !ok {
-			return nil, errClientClosed
-		}
+	case <-p.proc.closedCh():
+		return nil, errPreviouslyClosed
+	case ioc := <-p.pool:
 		return ioc, nil
 	case <-tc:
 		return nil, p.opts.errOnEmpty
@@ -480,16 +460,20 @@ func (p *Pool) get() (*ioErrConn, error) {
 // returns true if the connection was put back, false if it was closed and
 // discarded.
 func (p *Pool) put(ioc *ioErrConn) bool {
-	p.l.RLock()
-	if ioc.lastIOErr == nil && !p.closed {
-		select {
-		case p.pool <- ioc:
-			p.l.RUnlock()
+	if ioc.lastIOErr == nil {
+		var ok bool
+		_ = p.proc.withRLock(func() error {
+			select {
+			case p.pool <- ioc:
+				ok = true
+			default:
+			}
+			return nil
+		})
+		if ok {
 			return true
-		default:
 		}
 	}
-	p.l.RUnlock()
 
 	// the pool might close here, but that's fine, because all that's happening
 	// at this point is that the connection is being closed
@@ -533,19 +517,7 @@ func (p *Pool) NumAvailConns() int {
 	return len(p.pool)
 }
 
-// Close implements the Close method of the Client
-func (p *Pool) Close() error {
-	p.l.Lock()
-	if p.closed {
-		p.l.Unlock()
-		return errClientClosed
-	}
-	p.closed = true
-	close(p.closeCh)
-
-	// at this point get and put won't work anymore, so it's safe to empty and
-	// close the pool channel
-emptyLoop:
+func (p *Pool) drain() {
 	for {
 		select {
 		case ioc := <-p.pool:
@@ -553,17 +525,19 @@ emptyLoop:
 			atomic.AddInt64(&p.totalConns, -1)
 			p.traceConnClosed(trace.PoolConnClosedReasonPoolClosed)
 		default:
-			close(p.pool)
-			break emptyLoop
+			return
 		}
 	}
-	p.l.Unlock()
+}
 
-	// by now the pool's go-routines should have bailed, wait to make sure they
-	// do
-	p.wg.Wait()
-	if p.opts.errCh != nil {
-		close(p.opts.errCh)
-	}
-	return nil
+// Close implements the Close method of the Client
+func (p *Pool) Close() error {
+	return p.proc.close(func() error {
+		p.drain()
+		close(p.pool)
+		if p.opts.errCh != nil {
+			close(p.opts.errCh)
+		}
+		return nil
+	})
 }

@@ -1,8 +1,7 @@
 package radix
 
 import (
-	"errors"
-	"sync"
+	"context"
 	"time"
 )
 
@@ -49,18 +48,21 @@ func PersistentPubSubErrCh(errCh chan<- error) PersistentPubSubOpt {
 }
 
 type pubSubCmd struct {
+	ctx context.Context
+
 	// msgCh can be set along with one of subscribe/unsubscribe/etc...
 	msgCh                                            chan<- PubSubMessage
 	subscribe, unsubscribe, psubscribe, punsubscribe []string
 
-	// ... or one of ping or close can be set
-	ping, close bool
+	// ... or ping can be set
+	ping bool
 
 	// resCh is always set
 	resCh chan error
 }
 
 type persistentPubSub struct {
+	proc proc
 	dial func() (Conn, error)
 	opts persistentPubSubOpts
 
@@ -70,10 +72,6 @@ type persistentPubSub struct {
 	currErrCh chan error
 
 	cmdCh chan pubSubCmd
-
-	closeErr  error
-	closeCh   chan struct{}
-	closeOnce sync.Once
 }
 
 // PersistentPubSub is like PubSub, but instead of taking in an existing Conn to
@@ -95,6 +93,7 @@ type persistentPubSub struct {
 //	PersistentPubSubConnFunc(DefaultConnFunc)
 //
 func PersistentPubSub(
+	ctx context.Context,
 	network, addr string, options ...PersistentPubSubOpt,
 ) (
 	PubSubConn, error,
@@ -107,22 +106,22 @@ func PersistentPubSub(
 	}
 
 	p := &persistentPubSub{
-		dial:    func() (Conn, error) { return opts.connFn(network, addr) },
-		opts:    opts,
-		subs:    chanSet{},
-		psubs:   chanSet{},
-		cmdCh:   make(chan pubSubCmd),
-		closeCh: make(chan struct{}),
+		proc:  newProc(),
+		dial:  func() (Conn, error) { return opts.connFn(network, addr) },
+		opts:  opts,
+		subs:  chanSet{},
+		psubs: chanSet{},
+		cmdCh: make(chan pubSubCmd),
 	}
-	if err := p.refresh(); err != nil {
+	if err := p.refresh(ctx); err != nil {
 		return nil, err
 	}
-	go p.spin()
+	p.proc.run(p.spin)
 	return p, nil
 }
 
 // refresh only returns an error if the connection could not be made
-func (p *persistentPubSub) refresh() error {
+func (p *persistentPubSub) refresh(ctx context.Context) error {
 	if p.curr != nil {
 		p.curr.Close()
 		<-p.currErrCh
@@ -139,14 +138,14 @@ func (p *persistentPubSub) refresh() error {
 		pc := newPubSub(c, errCh)
 
 		for msgCh, channels := range p.subs.inverse() {
-			if err := pc.Subscribe(msgCh, channels...); err != nil {
+			if err := pc.Subscribe(ctx, msgCh, channels...); err != nil {
 				pc.Close()
 				return nil, nil, err
 			}
 		}
 
 		for msgCh, patterns := range p.psubs.inverse() {
-			if err := pc.PSubscribe(msgCh, patterns...); err != nil {
+			if err := pc.PSubscribe(ctx, msgCh, patterns...); err != nil {
 				pc.Close()
 				return nil, nil, err
 			}
@@ -159,6 +158,8 @@ func (p *persistentPubSub) refresh() error {
 		var err error
 		if p.curr, p.currErrCh, err = attempt(); err == nil {
 			return nil
+		} else if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
 		}
 		attempts++
 		if p.opts.abortAfter > 0 && attempts >= p.opts.abortAfter {
@@ -170,7 +171,7 @@ func (p *persistentPubSub) refresh() error {
 
 func (p *persistentPubSub) execCmd(cmd pubSubCmd) error {
 	if p.curr == nil {
-		if err := p.refresh(); err != nil {
+		if err := p.refresh(cmd.ctx); err != nil {
 			return err
 		}
 	}
@@ -184,41 +185,35 @@ func (p *persistentPubSub) execCmd(cmd pubSubCmd) error {
 		for _, channel := range cmd.subscribe {
 			p.subs.add(channel, cmd.msgCh)
 		}
-		err = p.curr.Subscribe(cmd.msgCh, cmd.subscribe...)
+		err = p.curr.Subscribe(cmd.ctx, cmd.msgCh, cmd.subscribe...)
 
 	case len(cmd.unsubscribe) > 0:
 		for _, channel := range cmd.unsubscribe {
 			p.subs.del(channel, cmd.msgCh)
 		}
-		err = p.curr.Unsubscribe(cmd.msgCh, cmd.unsubscribe...)
+		err = p.curr.Unsubscribe(cmd.ctx, cmd.msgCh, cmd.unsubscribe...)
 
 	case len(cmd.psubscribe) > 0:
 		for _, channel := range cmd.psubscribe {
 			p.psubs.add(channel, cmd.msgCh)
 		}
-		err = p.curr.PSubscribe(cmd.msgCh, cmd.psubscribe...)
+		err = p.curr.PSubscribe(cmd.ctx, cmd.msgCh, cmd.psubscribe...)
 
 	case len(cmd.punsubscribe) > 0:
 		for _, channel := range cmd.punsubscribe {
 			p.psubs.del(channel, cmd.msgCh)
 		}
-		err = p.curr.PUnsubscribe(cmd.msgCh, cmd.punsubscribe...)
+		err = p.curr.PUnsubscribe(cmd.ctx, cmd.msgCh, cmd.punsubscribe...)
 
 	case cmd.ping:
-		err = p.curr.Ping()
-
-	case cmd.close:
-		if p.curr != nil {
-			err = p.curr.Close()
-			<-p.currErrCh
-		}
+		err = p.curr.Ping(cmd.ctx)
 
 	default:
 		// don't do anything I guess
 	}
 
 	if err != nil {
-		return p.refresh()
+		return p.refresh(cmd.ctx)
 	}
 	return nil
 }
@@ -230,72 +225,82 @@ func (p *persistentPubSub) err(err error) {
 	}
 }
 
-func (p *persistentPubSub) spin() {
+func (p *persistentPubSub) spin(ctx context.Context) {
 	for {
 		select {
 		case err := <-p.currErrCh:
 			p.err(err)
-			if err := p.refresh(); err != nil {
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err = p.refresh(ctx)
+			cancel()
+			if err != nil {
 				p.err(err)
 			}
 		case cmd := <-p.cmdCh:
 			cmd.resCh <- p.execCmd(cmd)
-			if cmd.close {
-				return
-			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
 func (p *persistentPubSub) cmd(cmd pubSubCmd) error {
-	cmd.resCh = make(chan error, 1)
-	select {
-	case p.cmdCh <- cmd:
+	return p.proc.withLock(func() error {
+		cmd.resCh = make(chan error, 1)
+		p.cmdCh <- cmd
 		return <-cmd.resCh
-	case <-p.closeCh:
-		return errors.New("closed")
-	}
+	})
 }
 
-func (p *persistentPubSub) Subscribe(msgCh chan<- PubSubMessage, channels ...string) error {
+func (p *persistentPubSub) Subscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
 	return p.cmd(pubSubCmd{
+		ctx:       ctx,
 		msgCh:     msgCh,
 		subscribe: channels,
 	})
 }
 
-func (p *persistentPubSub) Unsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
+func (p *persistentPubSub) Unsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
 	return p.cmd(pubSubCmd{
+		ctx:         ctx,
 		msgCh:       msgCh,
 		unsubscribe: channels,
 	})
 }
 
-func (p *persistentPubSub) PSubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
+func (p *persistentPubSub) PSubscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
 	return p.cmd(pubSubCmd{
+		ctx:        ctx,
 		msgCh:      msgCh,
 		psubscribe: channels,
 	})
 }
 
-func (p *persistentPubSub) PUnsubscribe(msgCh chan<- PubSubMessage, channels ...string) error {
+func (p *persistentPubSub) PUnsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
 	return p.cmd(pubSubCmd{
+		ctx:          ctx,
 		msgCh:        msgCh,
 		punsubscribe: channels,
 	})
 }
 
-func (p *persistentPubSub) Ping() error {
-	return p.cmd(pubSubCmd{ping: true})
+func (p *persistentPubSub) Ping(ctx context.Context) error {
+	return p.cmd(pubSubCmd{
+		ctx:  ctx,
+		ping: true,
+	})
 }
 
 func (p *persistentPubSub) Close() error {
-	p.closeOnce.Do(func() {
-		p.closeErr = p.cmd(pubSubCmd{close: true})
-		close(p.closeCh)
+	return p.proc.close(func() error {
+		var closeErr error
+		if p.curr != nil {
+			closeErr = p.curr.Close()
+			<-p.currErrCh
+		}
 		if p.opts.errCh != nil {
 			close(p.opts.errCh)
 		}
+		return closeErr
 	})
-	return p.closeErr
 }

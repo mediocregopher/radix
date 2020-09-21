@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -63,13 +62,12 @@ func SentinelErrCh(errCh chan<- error) SentinelOpt {
 // currently connected one becomes unreachable
 //
 type Sentinel struct {
+	proc      proc
 	opts      sentinelOpts
 	initAddrs []string
 	name      string
 
-	// we read lock when calling methods on prim, and normal lock when swapping
-	// the value of prim, primAddr, and sentAddrs
-	l             sync.RWMutex
+	// these fields are protected by proc's lock
 	primAddr      string
 	clients       map[string]Client
 	sentinelAddrs map[string]bool // the known sentinel addresses
@@ -78,10 +76,6 @@ type Sentinel struct {
 	// initialization. The pconn is only really kept around for closing
 	pconn   PubSubConn
 	pconnCh chan PubSubMessage
-
-	closeCh   chan bool
-	closeWG   sync.WaitGroup
-	closeOnce sync.Once
 
 	// only used by tests to ensure certain actions have happened before
 	// continuing on during the test
@@ -110,11 +104,11 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	}
 
 	sc := &Sentinel{
+		proc:          newProc(),
 		initAddrs:     sentinelAddrs,
 		name:          primaryName,
 		sentinelAddrs: addrs,
 		pconnCh:       make(chan PubSubMessage, 1),
-		closeCh:       make(chan bool),
 		testEventCh:   make(chan string, 1),
 	}
 
@@ -154,7 +148,7 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 
 	// because we're using persistent these can't _really_ fail
 	var err error
-	sc.pconn, err = PersistentPubSub("", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
+	sc.pconn, err = PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
 		return sc.dialSentinel()
 	}))
 	if err != nil {
@@ -162,10 +156,8 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 		return nil, err
 	}
 
-	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
-
-	sc.closeWG.Add(1)
-	go sc.spin()
+	sc.pconn.Subscribe(ctx, sc.pconnCh, "switch-master")
+	sc.proc.run(sc.spin)
 	return sc, nil
 }
 
@@ -183,28 +175,25 @@ func (sc *Sentinel) testEvent(event string) {
 	}
 }
 
-func (sc *Sentinel) dialSentinel() (Conn, error) {
-	sc.l.RLock()
-	defer sc.l.RUnlock()
-
-	var conn Conn
-	var err error
-	for addr := range sc.sentinelAddrs {
-		conn, err = sc.opts.cf("tcp", addr)
-		if err == nil {
-			return conn, nil
+func (sc *Sentinel) dialSentinel() (conn Conn, err error) {
+	err = sc.proc.withRLock(func() error {
+		for addr := range sc.sentinelAddrs {
+			if conn, err = sc.opts.cf("tcp", addr); err == nil {
+				return nil
+			}
 		}
-	}
 
-	// try the initAddrs as a last ditch, but don't return their error if this
-	// doesn't work
-	for _, addr := range sc.initAddrs {
-		if conn, err := sc.opts.cf("tcp", addr); err == nil {
-			return conn, nil
+		// try the initAddrs as a last ditch, but don't return their error if
+		// this doesn't work
+		for _, addr := range sc.initAddrs {
+			var initErr error
+			if conn, initErr = sc.opts.cf("tcp", addr); initErr == nil {
+				return nil
+			}
 		}
-	}
-
-	return nil, err
+		return err
+	})
+	return
 }
 
 // Do implements the method for the Client interface. It will pass the given
@@ -214,9 +203,9 @@ func (sc *Sentinel) dialSentinel() (Conn, error) {
 // actually carried out that there could be a failover event. In that case, the
 // Action will likely fail and return an error.
 func (sc *Sentinel) Do(ctx context.Context, a Action) error {
-	sc.l.RLock()
-	defer sc.l.RUnlock()
-	return sc.clients[sc.primAddr].Do(ctx, a)
+	return sc.proc.withRLock(func() error {
+		return sc.clients[sc.primAddr].Do(ctx, a)
+	})
 }
 
 // DoSecondary is like Do but executes the Action on a random replica if possible.
@@ -237,29 +226,37 @@ func (sc *Sentinel) DoSecondary(ctx context.Context, a Action) error {
 
 // Addrs returns the currently known network address of the current primary
 // instance and the addresses of the secondaries.
-func (sc *Sentinel) Addrs() (string, []string) {
-	sc.l.RLock()
-	defer sc.l.RUnlock()
-	secAddrs := make([]string, 0, len(sc.clients))
-	for addr := range sc.clients {
-		if addr == sc.primAddr {
-			continue
+func (sc *Sentinel) Addrs() (primAddr string, secAddrs []string) {
+	// if the proc is closed already then this method will merely return empty
+	// results.  We could have it return an error, but that doesn't seem worth
+	// the effort.
+	_ = sc.proc.withRLock(func() error {
+		primAddr = sc.primAddr
+		secAddrs = make([]string, 0, len(sc.clients))
+		for addr := range sc.clients {
+			if addr == sc.primAddr {
+				continue
+			}
+			secAddrs = append(secAddrs, addr)
 		}
-		secAddrs = append(secAddrs, addr)
-	}
-	return sc.primAddr, secAddrs
+		return nil
+	})
+	return
 }
 
 // SentinelAddrs returns the addresses of all known sentinels.
-func (sc *Sentinel) SentinelAddrs() []string {
-	sc.l.RLock()
-	defer sc.l.RUnlock()
-
-	sentAddrs := make([]string, 0, len(sc.sentinelAddrs))
-	for addr := range sc.sentinelAddrs {
-		sentAddrs = append(sentAddrs, addr)
-	}
-	return sentAddrs
+func (sc *Sentinel) SentinelAddrs() (sentAddrs []string) {
+	// if the proc is closed already then this method will merely return empty
+	// results.  We could have it return an error, but that doesn't seem worth
+	// the effort.
+	_ = sc.proc.withRLock(func() error {
+		sentAddrs = make([]string, 0, len(sc.sentinelAddrs))
+		for addr := range sc.sentinelAddrs {
+			sentAddrs = append(sentAddrs, addr)
+		}
+		return nil
+	})
+	return
 }
 
 // Client returns a Client for the given address, which could be either the
@@ -280,23 +277,24 @@ func (sc *Sentinel) Client(addr string) (Client, error) {
 
 func (sc *Sentinel) clientInner(addr string) (Client, error) {
 	var client Client
-
-	sc.l.RLock()
-	if addr == "" {
-		for addr, client = range sc.clients {
-			if addr != sc.primAddr {
-				break
+	err := sc.proc.withRLock(func() error {
+		if addr == "" {
+			for addr, client = range sc.clients {
+				if addr != sc.primAddr {
+					break
+				}
+			}
+		} else {
+			var ok bool
+			if client, ok = sc.clients[addr]; !ok {
+				return errUnknownAddress
 			}
 		}
-	} else {
-		var ok bool
-		if client, ok = sc.clients[addr]; !ok {
-			return nil, errUnknownAddress
-		}
-	}
-	sc.l.RUnlock()
-
-	if client != nil {
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	} else if client != nil {
 		return client, nil
 	}
 
@@ -311,15 +309,16 @@ func (sc *Sentinel) clientInner(addr string) (Client, error) {
 	// two routines might be requesting the same addr at the same time, and
 	// both create the client. The second one needs to make sure it closes its
 	// own pool when it sees the other got there first.
-	sc.l.Lock()
-	if client = sc.clients[addr]; client == nil {
-		sc.clients[addr] = newClient
-	}
-	sc.l.Unlock()
+	err = sc.proc.withLock(func() error {
+		if client = sc.clients[addr]; client == nil {
+			sc.clients[addr] = newClient
+		}
+		return nil
+	})
 
-	if client != nil {
+	if client != nil || err != nil {
 		newClient.Close()
-		return client, nil
+		return client, err
 	}
 
 	return newClient, nil
@@ -327,13 +326,7 @@ func (sc *Sentinel) clientInner(addr string) (Client, error) {
 
 // Close implements the method for the Client interface.
 func (sc *Sentinel) Close() error {
-	closeErr := errClientClosed
-	sc.closeOnce.Do(func() {
-		close(sc.closeCh)
-		sc.closeWG.Wait()
-		closeErr = nil
-		sc.l.Lock()
-		defer sc.l.Unlock()
+	return sc.proc.close(func() error {
 		for _, client := range sc.clients {
 			if client != nil {
 				client.Close()
@@ -342,8 +335,8 @@ func (sc *Sentinel) Close() error {
 		if sc.opts.errCh != nil {
 			close(sc.opts.errCh)
 		}
+		return nil
 	})
-	return closeErr
 }
 
 // cmd should be the command called which generated m
@@ -387,41 +380,42 @@ func (sc *Sentinel) ensureClients(ctx context.Context, conn Conn) error {
 func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client) error {
 	newClients[newPrimAddr] = nil
 	var toClose []Client
+	var stateChanged bool
+	err := sc.proc.withRLock(func() error {
 
-	sc.l.RLock()
+		// stateChanged may be set to true in other ways later in the method
+		stateChanged = sc.primAddr != newPrimAddr
 
-	// stateChanged may be set to true in other ways later in the method
-	stateChanged := sc.primAddr != newPrimAddr
+		// for each actual Client instance in sc.client, either move it over to
+		// newClients (if the address is shared) or make sure it is closed
+		for addr, client := range sc.clients {
+			if client == nil {
+				// do nothing
+			} else if _, ok := newClients[addr]; ok {
+				newClients[addr] = client
+			} else {
+				toClose = append(toClose, client)
+			}
 
-	// for each actual Client instance in sc.client, either move it over to
-	// newClients (if the address is shared) or make sure it is closed
-	for addr, client := range sc.clients {
-		if client == nil {
-			// do nothing
-		} else if _, ok := newClients[addr]; ok {
-			newClients[addr] = client
-		} else {
-			toClose = append(toClose, client)
+			// separately, if the newClients doesn't have the address it means
+			// the state has changed
+			if _, ok := newClients[addr]; !ok {
+				stateChanged = true
+			}
 		}
 
-		// separately, if the newClients doesn't have address it means the state
-		// has changed
-		if _, ok := newClients[addr]; !ok {
-			stateChanged = true
+		// this only checks if a client was added so we know the replica set
+		// state has changed later in the method.
+		for addr := range newClients {
+			if _, ok := sc.clients[addr]; !ok {
+				stateChanged = true
+			}
 		}
-	}
-
-	// this is only checks if a client was added so we know the replica set
-	// state has changed later in the method.
-	for addr := range newClients {
-		if _, ok := sc.clients[addr]; !ok {
-			stateChanged = true
-		}
-	}
-
-	sc.l.RUnlock()
-	if !stateChanged {
 		return nil
+	})
+
+	if err != nil || !stateChanged {
+		return err
 	}
 
 	// if the primary doesn't have a client created, create it here outside the
@@ -433,10 +427,13 @@ func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client)
 		}
 	}
 
-	sc.l.Lock()
-	sc.primAddr = newPrimAddr
-	sc.clients = newClients
-	sc.l.Unlock()
+	if err = sc.proc.withLock(func() error {
+		sc.primAddr = newPrimAddr
+		sc.clients = newClients
+		return nil
+	}); err != nil {
+		return err
+	}
 
 	for _, client := range toClose {
 		client.Close()
@@ -459,17 +456,16 @@ func (sc *Sentinel) ensureSentinelAddrs(ctx context.Context, conn Conn) error {
 		addrs[net.JoinHostPort(m["ip"], m["port"])] = true
 	}
 
-	sc.l.Lock()
-	sc.sentinelAddrs = addrs
-	sc.l.Unlock()
-	return nil
+	return sc.proc.withLock(func() error {
+		sc.sentinelAddrs = addrs
+		return nil
+	})
 }
 
-func (sc *Sentinel) spin() {
-	defer sc.closeWG.Done()
+func (sc *Sentinel) spin(ctx context.Context) {
 	defer sc.pconn.Close()
 	for {
-		if err := sc.innerSpin(); err != nil {
+		if err := sc.innerSpin(ctx); err != nil {
 			sc.err(err)
 			// sleep a second so we don't end up in a tight loop
 			time.Sleep(1 * time.Second)
@@ -477,7 +473,7 @@ func (sc *Sentinel) spin() {
 		// This also gets checked within innerSpin to short-circuit that, but
 		// we also must check in here to short-circuit this
 		select {
-		case <-sc.closeCh:
+		case <-ctx.Done():
 			return
 		default:
 		}
@@ -493,7 +489,7 @@ func (sc *Sentinel) spin() {
 // * Periodically re-ensuring that the list of sentinel addresses is up-to-date
 // * Periodically re-checking the current primary, in case the switch-master was
 //   missed somehow
-func (sc *Sentinel) innerSpin() error {
+func (sc *Sentinel) innerSpin(ctx context.Context) error {
 	conn, err := sc.dialSentinel()
 	if err != nil {
 		return err
@@ -511,16 +507,17 @@ func (sc *Sentinel) innerSpin() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := sc.ensureSentinelAddrs(ctx, conn); err != nil {
-				return err
+				return fmt.Errorf("retrieving addresses of sentinel instances: %w", err)
 			} else if err := sc.ensureClients(ctx, conn); err != nil {
-				return err
+				return fmt.Errorf("creating clients based on sentinel addresses: %w", err)
+			} else if err := sc.pconn.Ping(ctx); err != nil {
+				return fmt.Errorf("calling PING on sentinel instance: %w", err)
 			}
 			return nil
 		}()
 		if err != nil {
 			return err
 		}
-		sc.pconn.Ping()
 
 		// the tests want to know when the client state has been updated due to
 		// a switch-master event
@@ -538,7 +535,7 @@ func (sc *Sentinel) innerSpin() error {
 				time.Sleep(time.Duration(waitFor) * time.Millisecond)
 			}
 			// loop
-		case <-sc.closeCh:
+		case <-ctx.Done():
 			return nil
 		}
 	}

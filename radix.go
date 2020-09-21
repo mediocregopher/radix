@@ -146,16 +146,12 @@ package radix
 
 import (
 	"context"
-	"errors"
 )
-
-var errClientClosed = errors.New("client is closed")
 
 // Client describes an entity which can carry out Actions, e.g. a connection
 // pool for a single redis instance or the cluster client.
 //
-// Implementations of Client are expected to be thread-safe, except in cases
-// like Conn where they specify otherwise.
+// Implementations of Client are expected to be thread-safe.
 type Client interface {
 	// Do performs an Action, returning any error.
 	Do(context.Context, Action) error

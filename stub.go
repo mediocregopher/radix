@@ -168,9 +168,11 @@ type stub struct {
 // instance, but is instead using the given callback to service requests. It is
 // primarily useful for writing tests.
 //
+// TODO this comment is wrong.
+//
 // When Encode is called the given value is marshalled into bytes then
 // unmarshalled into a []string, which is passed to the callback. The return
-// from the callback is then marshalled and buffered interanlly, and will be
+// from the callback is then marshalled and buffered internally, and will be
 // unmarshalled in the next call to Decode.
 //
 // remoteNetwork and remoteAddr can be empty, but if given will be used as the
@@ -188,10 +190,10 @@ func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn 
 }
 
 func (s *stub) Do(ctx context.Context, a Action) error {
-	return a.Perform(s)
+	return a.Perform(ctx, s)
 }
 
-func (s *stub) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+func (s *stub) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
 	if m != nil {
 		// first marshal into a RawMessage
 		buf := new(bytes.Buffer)

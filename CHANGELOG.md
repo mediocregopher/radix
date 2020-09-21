@@ -4,7 +4,8 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * `PersistentPubSubWithOpts` has been removed.
 
-* Rename `Action`'s `Run` method to `Perform`.
+* Rename `Action`'s `Run` method to `Perform`, and add `context.Context`
+  parameter.
 
 * Remove usage of `xerrors` package.
 
@@ -23,6 +24,12 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 * Brand new `resp/resp3` package which implements the [RESP3][resp3] protocol.
   The new package features more consistent type mappings between go and redis
   and support for streaming types.
+
+* Add `context.Context` parameter to `Client.Do`, `PubSub` methods, and
+  `WithConn`.
+
+* `Dial` options related to timeout have been removed in favor of context
+  deadlines.
 
 [resp3]: https://github.com/antirez/RESP3
 

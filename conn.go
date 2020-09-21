@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"strconv"
@@ -18,11 +20,6 @@ import (
 //
 // A Conn can be used directly as a Client, but in general you probably want to
 // use a *Pool instead
-//
-// Conn is not thread-safe unless its implementation explicitly states
-// otherwise.
-//
-// TODO make thread-safe.
 type Conn interface {
 	// The Do method merely calls the Action's Perform method with the Conn as
 	// the argument.
@@ -31,7 +28,7 @@ type Conn interface {
 	// EncodeDecode will encode the given Marshaler onto the connection, then
 	// decode a response into the given Unmarshaler. If either parameter is nil
 	// then that step is skipped.
-	EncodeDecode(resp.Marshaler, resp.Unmarshaler) error
+	EncodeDecode(context.Context, resp.Marshaler, resp.Unmarshaler) error
 
 	// Returns the underlying network connection, as-is. Read, Write, and Close
 	// should not be called on the returned Conn.
@@ -50,6 +47,7 @@ var DefaultConnFunc = func(network, addr string) (Conn, error) {
 	return Dial(network, addr)
 }
 
+// TODO what is this? is it needed?
 func wrapDefaultConnFunc(addr string) ConnFunc {
 	_, opts := parseRedisURL(addr)
 	return func(network, addr string) (Conn, error) {
@@ -57,53 +55,165 @@ func wrapDefaultConnFunc(addr string) ConnFunc {
 	}
 }
 
-type connWrap struct {
+////////////////////////////////////////////////////////////////////////////////
+
+type connMarshalerUnmarshaler struct {
+	ctx         context.Context
+	marshaler   resp.Marshaler
+	unmarshaler resp.Unmarshaler
+	errCh       chan error
+}
+
+type conn struct {
+	proc proc
+
 	net.Conn
-	brw *bufio.ReadWriter
+	brw      *bufio.ReadWriter
+	rCh, wCh chan connMarshalerUnmarshaler
 }
 
 // NewConn takes an existing net.Conn and wraps it to support the Conn interface
 // of this package. The Read and Write methods on the original net.Conn should
 // not be used after calling this method.
-func NewConn(conn net.Conn) Conn {
-	return &connWrap{
-		Conn: conn,
-		brw:  bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn)),
+func NewConn(netConn net.Conn) Conn {
+	c := &conn{
+		proc: newProc(),
+		Conn: netConn,
+		brw:  bufio.NewReadWriter(bufio.NewReader(netConn), bufio.NewWriter(netConn)),
+		rCh:  make(chan connMarshalerUnmarshaler, 128),
+		wCh:  make(chan connMarshalerUnmarshaler, 128),
 	}
+	c.proc.run(c.reader)
+	c.proc.run(c.writer)
+	return c
 }
 
-func (cw *connWrap) Do(ctx context.Context, a Action) error {
-	return a.Perform(cw)
+func (c *conn) Close() error {
+	return c.proc.prefixedClose(c.Conn.Close, nil)
 }
 
-func (cw *connWrap) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
-	if m != nil {
-		if err := m.MarshalRESP(cw.brw); err != nil {
-			return err
-		} else if err := cw.brw.Flush(); err != nil {
-			return err
+func (c *conn) writer(ctx context.Context) {
+	doneCh := ctx.Done()
+	for {
+		select {
+		case <-doneCh:
+			return
+		case mu := <-c.wCh:
+			if mu.marshaler != nil {
+				if err := mu.ctx.Err(); err != nil {
+					mu.errCh <- err
+					continue
+				} else if deadline, ok := mu.ctx.Deadline(); ok {
+					if err := c.Conn.SetWriteDeadline(deadline); err != nil {
+						mu.errCh <- fmt.Errorf("setting read deadline to %v: %w", deadline, err)
+						continue
+					}
+				}
+
+				if err := mu.marshaler.MarshalRESP(c.brw.Writer); err != nil {
+					mu.errCh <- err
+					continue
+				} else if err := c.brw.Writer.Flush(); err != nil {
+					mu.errCh <- err
+					continue
+				}
+			}
+
+			// if there's no unmarshaler then don't forward to the reader
+			if mu.unmarshaler == nil {
+				mu.errCh <- nil
+				continue
+			}
+
+			select {
+			case <-doneCh:
+				return
+			case c.rCh <- mu:
+			}
 		}
 	}
+}
 
-	if u != nil {
-		if err := u.UnmarshalRESP(cw.brw.Reader); err != nil {
-			return err
+func (c *conn) reader(ctx context.Context) {
+	doneCh := ctx.Done()
+	for {
+		select {
+		case <-doneCh:
+			return
+		case mu := <-c.rCh:
+
+			if mu.unmarshaler == nil {
+				continue
+			} else if err := mu.ctx.Err(); err != nil {
+				mu.errCh <- err
+				continue
+			} else if deadline, ok := mu.ctx.Deadline(); ok {
+				if err := c.Conn.SetReadDeadline(deadline); err != nil {
+					mu.errCh <- fmt.Errorf("setting write deadline to %v: %w", deadline, err)
+					continue
+				}
+			}
+			err := mu.unmarshaler.UnmarshalRESP(c.brw.Reader)
+			mu.errCh <- err
 		}
 	}
-
-	return nil
 }
 
-func (cw *connWrap) NetConn() net.Conn {
-	return cw.Conn
+func (c *conn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
+	mu := connMarshalerUnmarshaler{
+		ctx:         ctx,
+		marshaler:   m,
+		unmarshaler: u,
+		errCh:       make(chan error, 1),
+	}
+	doneCh := ctx.Done()
+	closedCh := c.proc.closedCh()
+	select {
+	case <-doneCh:
+		return ctx.Err()
+	case <-closedCh:
+		return errPreviouslyClosed
+	case c.wCh <- mu:
+	}
+
+	var err error
+	select {
+	case <-doneCh:
+		err = ctx.Err()
+	case <-closedCh:
+		return errPreviouslyClosed
+	case err = <-mu.errCh:
+	}
+
+	// it's possible to get back either a network timeout error or a
+	// context.DeadlineExceeded error, since it's a race between the context's
+	// doneCh and the read deadline on the connection. Translate the network
+	// timeout into a context.DeadlineExceeded.
+	var netErr net.Error
+	if err == nil {
+		return nil
+	} else if errors.As(err, &netErr) && netErr.Timeout() {
+		return context.DeadlineExceeded
+	}
+	return err
 }
+
+func (c *conn) Do(ctx context.Context, a Action) error {
+	return a.Perform(ctx, c)
+}
+
+func (c *conn) NetConn() net.Conn {
+	return c.Conn
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 type dialOpts struct {
-	connectTimeout, readTimeout, writeTimeout time.Duration
-	authUser, authPass                        string
-	selectDB                                  string
-	useTLSConfig                              bool
-	tlsConfig                                 *tls.Config
+	connectTimeout     time.Duration
+	authUser, authPass string
+	selectDB           string
+	useTLSConfig       bool
+	tlsConfig          *tls.Config
 }
 
 // DialOpt is an optional behavior which can be applied to the Dial function to
@@ -115,32 +225,6 @@ type DialOpt func(*dialOpts)
 func DialConnectTimeout(d time.Duration) DialOpt {
 	return func(do *dialOpts) {
 		do.connectTimeout = d
-	}
-}
-
-// DialReadTimeout determines the deadline to set when reading from a dialed
-// connection. If not set then SetReadDeadline is never called.
-func DialReadTimeout(d time.Duration) DialOpt {
-	return func(do *dialOpts) {
-		do.readTimeout = d
-	}
-}
-
-// DialWriteTimeout determines the deadline to set when writing to a dialed
-// connection. If not set then SetWriteDeadline is never called.
-func DialWriteTimeout(d time.Duration) DialOpt {
-	return func(do *dialOpts) {
-		do.writeTimeout = d
-	}
-}
-
-// DialTimeout is the equivalent to using DialConnectTimeout, DialReadTimeout,
-// and DialWriteTimeout all with the same value.
-func DialTimeout(d time.Duration) DialOpt {
-	return func(do *dialOpts) {
-		DialConnectTimeout(d)(do)
-		DialReadTimeout(d)(do)
-		DialWriteTimeout(d)(do)
 	}
 }
 
@@ -191,27 +275,8 @@ func DialUseTLS(config *tls.Config) DialOpt {
 	}
 }
 
-type timeoutConn struct {
-	net.Conn
-	readTimeout, writeTimeout time.Duration
-}
-
-func (tc *timeoutConn) Read(b []byte) (int, error) {
-	if tc.readTimeout > 0 {
-		tc.Conn.SetReadDeadline(time.Now().Add(tc.readTimeout))
-	}
-	return tc.Conn.Read(b)
-}
-
-func (tc *timeoutConn) Write(b []byte) (int, error) {
-	if tc.writeTimeout > 0 {
-		tc.Conn.SetWriteDeadline(time.Now().Add(tc.writeTimeout))
-	}
-	return tc.Conn.Write(b)
-}
-
 var defaultDialOpts = []DialOpt{
-	DialTimeout(10 * time.Second),
+	DialConnectTimeout(10 * time.Second),
 }
 
 func parseRedisURL(urlStr string) (string, []DialOpt) {
@@ -324,11 +389,7 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 		}
 	}
 
-	conn := NewConn(&timeoutConn{
-		readTimeout:  do.readTimeout,
-		writeTimeout: do.writeTimeout,
-		Conn:         netConn,
-	})
+	conn := NewConn(netConn)
 
 	if do.authUser != "" && do.authUser != defaultAuthUser {
 		if err := conn.Do(ctx, Cmd(nil, "AUTH", do.authUser, do.authPass)); err != nil {

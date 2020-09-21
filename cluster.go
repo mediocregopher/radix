@@ -134,19 +134,16 @@ type Cluster struct {
 	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	lastClusterdown int64 // unix timestamp in milliseconds, atomic
 
+	proc proc
 	opts clusterOpts
 
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
 
-	l              sync.RWMutex
+	// these fields are protected by proc's lock
 	pools          map[string]Client
 	primTopo, topo ClusterTopo
 	secondaries    map[string]map[string]ClusterNode
-
-	closeCh   chan struct{}
-	closeWG   sync.WaitGroup
-	closeOnce sync.Once
 }
 
 // DefaultClusterConnFunc is a ConnFunc which will return a Conn for a node in a
@@ -182,9 +179,9 @@ var DefaultClusterConnFunc = func(network, addr string) (Conn, error) {
 //
 func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c := &Cluster{
+		proc:       newProc(),
 		syncDedupe: newDedupe(),
 		pools:      map[string]Client{},
-		closeCh:    make(chan struct{}),
 	}
 
 	defaultClusterOpts := []ClusterOpt{
@@ -219,7 +216,7 @@ func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) 
 		return nil, err
 	}
 
-	c.syncEvery(c.opts.syncEvery)
+	c.proc.run(c.syncEvery)
 
 	return c, nil
 }
@@ -249,18 +246,18 @@ func assertKeysSlot(keys []string) error {
 }
 
 // may return nil, nil if no pool for the addr
-func (c *Cluster) rpool(addr string) (Client, error) {
-	c.l.RLock()
-	defer c.l.RUnlock()
-	if addr == "" {
-		for _, p := range c.pools {
-			return p, nil
+func (c *Cluster) rpool(addr string) (client Client, err error) {
+	err = c.proc.withRLock(func() error {
+		if addr == "" {
+			for _, client = range c.pools {
+				return nil
+			}
+			return errors.New("no pools available")
 		}
-		return nil, errors.New("no pools available")
-	} else if p, ok := c.pools[addr]; ok {
-		return p, nil
-	}
-	return nil, nil
+		client, _ = c.pools[addr]
+		return nil
+	})
+	return
 }
 
 var errUnknownAddress = errors.New("unknown address")
@@ -309,23 +306,27 @@ func (c *Cluster) pool(addr string) (Client, error) {
 	// we've made a new pool, but we need to double-check someone else didn't
 	// make one at the same time and add it in first. If they did, close this
 	// one and return that one
-	c.l.Lock()
-	if p2, ok := c.pools[addr]; ok {
-		c.l.Unlock()
-		p.Close()
-		return p2, nil
-	}
-	c.pools[addr] = p
-	c.l.Unlock()
-	return p, nil
+	err = c.proc.withLock(func() error {
+		if p2, ok := c.pools[addr]; ok {
+			p.Close()
+			p = p2
+			return nil
+		}
+		c.pools[addr] = p
+		return nil
+	})
+	return p, err
 }
 
 // Topo returns the Cluster's topology as it currently knows it. See
 // ClusterTopo's docs for more on its default order.
 func (c *Cluster) Topo() ClusterTopo {
-	c.l.RLock()
-	defer c.l.RUnlock()
-	return c.topo
+	var topo ClusterTopo
+	_ = c.proc.withRLock(func() error {
+		topo = c.topo
+		return nil
+	})
+	return topo
 }
 
 func (c *Cluster) getTopo(ctx context.Context, p Client) (ClusterTopo, error) {
@@ -420,10 +421,8 @@ func (c *Cluster) sync(ctx context.Context, p Client) error {
 
 	c.traceTopoChanged(c.topo, tt)
 
-	var toclose []Client
-	func() {
-		c.l.Lock()
-		defer c.l.Unlock()
+	var toClose []Client
+	err = c.proc.withLock(func() error {
 		c.topo = tt
 		c.primTopo = tt.Primaries()
 
@@ -442,64 +441,69 @@ func (c *Cluster) sync(ctx context.Context, p Client) error {
 		tm := tt.Map()
 		for addr, p := range c.pools {
 			if _, ok := tm[addr]; !ok {
-				toclose = append(toclose, p)
+				toClose = append(toClose, p)
 				delete(c.pools, addr)
 			}
 		}
-	}()
-
-	for _, p := range toclose {
-		p.Close()
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
+	for _, p := range toClose {
+		p.Close()
+	}
 	return nil
 }
 
-func (c *Cluster) syncEvery(d time.Duration) {
-	c.closeWG.Add(1)
-	go func() {
-		defer c.closeWG.Done()
-		t := time.NewTicker(d)
-		defer t.Stop()
+func (c *Cluster) syncEvery(ctx context.Context) {
+	t := time.NewTicker(c.opts.syncEvery)
+	defer t.Stop()
 
-		for {
-			select {
-			case <-t.C:
-				ctx, cancel := context.WithTimeout(context.Background(), d)
-				err := c.Sync(ctx)
-				cancel()
-				if err != nil {
-					c.err(err)
-				}
-			case <-c.closeCh:
-				return
+	for {
+		select {
+		case <-t.C:
+			ctx, cancel := context.WithTimeout(ctx, c.opts.syncEvery)
+			err := c.Sync(ctx)
+			cancel()
+			if err != nil {
+				c.err(err)
 			}
+		case <-c.proc.closedCh():
+			return
 		}
-	}()
+	}
 }
 
 func (c *Cluster) addrForKey(key string) string {
 	s := ClusterSlot([]byte(key))
-	c.l.RLock()
-	defer c.l.RUnlock()
-	for _, t := range c.primTopo {
-		for _, slot := range t.Slots {
-			if s >= slot[0] && s < slot[1] {
-				return t.Addr
+	var addr string
+	_ = c.proc.withRLock(func() error {
+		for _, t := range c.primTopo {
+			for _, slot := range t.Slots {
+				if s >= slot[0] && s < slot[1] {
+					addr = t.Addr
+					return nil
+				}
 			}
 		}
-	}
-	return ""
+		return nil
+	})
+	return addr
 }
 
 func (c *Cluster) secondaryAddrForKey(key string) string {
-	c.l.RLock()
-	defer c.l.RUnlock()
-	primAddr := c.addrForKey(key)
-	for addr := range c.secondaries[primAddr] {
-		return addr
-	}
-	return primAddr
+	var addr string
+	_ = c.proc.withRLock(func() error {
+		primAddr := c.addrForKey(key)
+		for addr = range c.secondaries[primAddr] {
+			return nil
+		}
+		addr = primAddr
+		return nil
+	})
+	return addr
 }
 
 type prefixAsking struct {
@@ -525,13 +529,13 @@ type askConn struct {
 	Conn
 }
 
-func (ac askConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
+func (ac askConn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
 	a := prefixAsking{m, u}
-	return ac.Conn.EncodeDecode(a, a)
+	return ac.Conn.EncodeDecode(ctx, a, a)
 }
 
 func (ac askConn) Do(ctx context.Context, a Action) error {
-	return a.Perform(ac)
+	return a.Perform(ctx, ac)
 }
 
 const doAttempts = 5
@@ -701,7 +705,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 	thisA := params.action
 	if params.ask {
 		// TODO is this still necessary?
-		thisA = WithConn(params.key, func(conn Conn) error {
+		thisA = WithConn(params.key, func(ctx context.Context, conn Conn) error {
 			return askConn{conn}.Do(params.ctx, params.action)
 		})
 	}
@@ -772,23 +776,17 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 // Close cleans up all goroutines spawned by Cluster and closes all of its
 // Pools.
 func (c *Cluster) Close() error {
-	closeErr := errClientClosed
-	c.closeOnce.Do(func() {
-		close(c.closeCh)
-		c.closeWG.Wait()
+	return c.proc.close(func() error {
 		if c.opts.errCh != nil {
 			close(c.opts.errCh)
 		}
 
-		c.l.Lock()
-		defer c.l.Unlock()
 		var pErr error
 		for _, p := range c.pools {
 			if err := p.Close(); pErr == nil && err != nil {
 				pErr = err
 			}
 		}
-		closeErr = pErr
+		return pErr
 	})
-	return closeErr
 }

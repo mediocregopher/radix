@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"errors"
 	"io"
 	"sync"
@@ -16,19 +17,21 @@ import (
 	"github.com/mediocregopher/radix/v3/trace"
 )
 
-func testPool(size int, opts ...PoolOpt) *Pool {
+func testPool(t *T, size int, opts ...PoolOpt) *Pool {
 	pool, err := NewPool("tcp", "localhost:6379", size, opts...)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	<-pool.initDone
+	t.Cleanup(func() {
+		pool.Close()
+	})
 	return pool
 }
 
 func TestPool(t *T) {
-	ctx := testCtx(t)
 
-	testEcho := func(c Conn) error {
+	testEcho := func(ctx context.Context, c Conn) error {
 		exp := randStr()
 		var out string
 		assert.Nil(t, c.Do(ctx, Cmd(&out, "ECHO", exp)))
@@ -36,10 +39,11 @@ func TestPool(t *T) {
 		return nil
 	}
 
-	do := func(opts ...PoolOpt) {
+	do := func(t *T, opts ...PoolOpt) {
+		ctx := testCtx(t)
 		opts = append(opts, PoolOnFullClose())
 		size := 10
-		pool := testPool(size, opts...)
+		pool := testPool(t, size, opts...)
 		var wg sync.WaitGroup
 		for i := 0; i < size*4; i++ {
 			wg.Add(1)
@@ -56,12 +60,12 @@ func TestPool(t *T) {
 		assert.Equal(t, 0, pool.NumAvailConns())
 	}
 
-	t.Run("onEmptyWait", func(t *T) { do(PoolOnEmptyWait()) })
-	t.Run("onEmptyCreate", func(t *T) { do(PoolOnEmptyCreateAfter(0)) })
-	t.Run("onEmptyCreateAfter", func(t *T) { do(PoolOnEmptyCreateAfter(1 * time.Second)) })
+	t.Run("onEmptyWait", func(t *T) { do(t, PoolOnEmptyWait()) })
+	t.Run("onEmptyCreate", func(t *T) { do(t, PoolOnEmptyCreateAfter(0)) })
+	t.Run("onEmptyCreateAfter", func(t *T) { do(t, PoolOnEmptyCreateAfter(1*time.Second)) })
 	// This one is expected to error, since this test empties the pool by design
 	//t.Run("onEmptyErr", func(t *T) { do(PoolOnEmptyErrAfter(0)) })
-	t.Run("onEmptyErrAfter", func(t *T) { do(PoolOnEmptyErrAfter(1 * time.Second)) })
+	t.Run("onEmptyErrAfter", func(t *T) { do(t, PoolOnEmptyErrAfter(1*time.Second)) })
 
 	t.Run("withTrace", func(t *T) {
 		var connCreatedCount int
@@ -82,7 +86,7 @@ func TestPool(t *T) {
 				initializedAvailCount = completed.AvailCount
 			},
 		}
-		do(PoolWithTrace(pt))
+		do(t, PoolWithTrace(pt))
 		if initializedAvailCount != 10 {
 			t.Fail()
 		}
@@ -105,7 +109,7 @@ func TestPoolGet(t *T) {
 
 	// this one is a bit weird, cause it would block infinitely if we let it
 	t.Run("onEmptyWait", func(t *T) {
-		pool := testPool(1, PoolOnEmptyWait())
+		pool := testPool(t, 1, PoolOnEmptyWait())
 		conn, err := pool.get()
 		assert.NoError(t, err)
 
@@ -121,7 +125,7 @@ func TestPoolGet(t *T) {
 	// the rest are pretty straightforward
 	gen := func(mkOpt func(time.Duration) PoolOpt, d time.Duration, expErr error) func(*T) {
 		return func(t *T) {
-			pool := testPool(0, PoolOnFullClose(), mkOpt(d))
+			pool := testPool(t, 0, PoolOnFullClose(), mkOpt(d))
 			took, err := getBlock(pool)
 			assert.Equal(t, expErr, err)
 			assert.True(t, took-d < 20*time.Millisecond)
@@ -137,7 +141,7 @@ func TestPoolGet(t *T) {
 func TestPoolOnFull(t *T) {
 	t.Run("onFullClose", func(t *T) {
 		var reason trace.PoolConnClosedReason
-		pool := testPool(1,
+		pool := testPool(t, 1,
 			PoolOnFullClose(),
 			PoolWithTrace(trace.PoolTrace{ConnClosed: func(c trace.PoolConnClosed) {
 				reason = c.Reason
@@ -154,7 +158,7 @@ func TestPoolOnFull(t *T) {
 	})
 
 	t.Run("onFullBuffer", func(t *T) {
-		pool := testPool(1, PoolOnFullBuffer(1, 1*time.Second))
+		pool := testPool(t, 1, PoolOnFullBuffer(1, 1*time.Second))
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
 
@@ -190,7 +194,7 @@ func TestPoolOnFull(t *T) {
 func TestPoolPut(t *T) {
 	ctx := testCtx(t)
 	size := 10
-	pool := testPool(size)
+	pool := testPool(t, size)
 
 	assertPoolConns := func(exp int) {
 		assert.Equal(t, exp, pool.NumAvailConns())
@@ -199,7 +203,7 @@ func TestPoolPut(t *T) {
 
 	// Make sure that put does not accept a connection which has had a critical
 	// network error
-	pool.Do(ctx, WithConn("", func(conn Conn) error {
+	pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
 		assertPoolConns(9)
 		conn.(*ioErrConn).lastIOErr = io.EOF
 		return nil
@@ -208,7 +212,7 @@ func TestPoolPut(t *T) {
 
 	// Make sure that a put _does_ accept a connection which had an unmarshal
 	// error
-	pool.Do(ctx, WithConn("", func(conn Conn) error {
+	pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
 		var i int
 		assert.NotNil(t, conn.Do(ctx, Cmd(&i, "ECHO", "foo")))
 		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
@@ -218,7 +222,7 @@ func TestPoolPut(t *T) {
 
 	// Make sure that a put _does_ accept a connection which had an app level
 	// resp error
-	pool.Do(ctx, WithConn("", func(conn Conn) error {
+	pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
 		assert.NotNil(t, Cmd(nil, "CMDDNE"))
 		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
 		return nil
@@ -232,7 +236,7 @@ func TestPoolPut(t *T) {
 		assert.Nil(t, pool.Close())
 		closeCh <- true
 	}()
-	pool.Do(ctx, WithConn("", func(conn Conn) error {
+	pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
 		closeCh <- true
 		<-closeCh
 		return nil
@@ -249,9 +253,9 @@ func TestPoolDoDoesNotBlock(t *T) {
 	redialInterval := 100 * time.Millisecond
 
 	connFunc := PoolConnFunc(func(string, string) (Conn, error) {
-		return dial(DialTimeout(requestTimeout)), nil
+		return dial(), nil
 	})
-	pool := testPool(size,
+	pool := testPool(t, size,
 		PoolOnEmptyCreateAfter(redialInterval),
 		connFunc,
 	)
@@ -272,7 +276,7 @@ func TestPoolDoDoesNotBlock(t *T) {
 			time.Sleep(time.Duration(i) * 10 * time.Millisecond)
 
 			timeStart := time.Now()
-			pool.Do(ctx, WithConn("", func(conn Conn) error {
+			pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
 				time.Sleep(requestTimeout)
 				conn.(*ioErrConn).lastIOErr = errors.New("i/o timeout")
 				return nil
@@ -291,20 +295,21 @@ func TestPoolDoDoesNotBlock(t *T) {
 
 func TestPoolClose(t *T) {
 	ctx := testCtx(t)
-	pool := testPool(1)
+	pool := testPool(t, 1)
 	assert.NoError(t, pool.Do(ctx, Cmd(nil, "PING")))
 	assert.NoError(t, pool.Close())
-	assert.Error(t, errClientClosed, pool.Do(ctx, Cmd(nil, "PING")))
+	assert.Error(t, errPreviouslyClosed, pool.Do(ctx, Cmd(nil, "PING")))
 }
 
 func TestIoErrConn(t *T) {
 	t.Run("NotReusableAfterError", func(t *T) {
+		ctx := testCtx(t)
 		dummyError := errors.New("i am error")
 
 		ioc := newIOErrConn(Stub("tcp", "127.0.0.1:6379", nil))
 		ioc.lastIOErr = dummyError
 
-		require.Equal(t, dummyError, ioc.EncodeDecode(&resp2.Any{}, &resp2.Any{}))
+		require.Equal(t, dummyError, ioc.EncodeDecode(ctx, &resp2.Any{}, &resp2.Any{}))
 		require.Nil(t, ioc.Close())
 	})
 
