@@ -20,6 +20,7 @@ func (pci *pipeliningConnInner) EncodeDecode(m resp.Marshaler, u resp.Unmarshale
 }
 
 func TestPipeliningConn(t *testing.T) {
+	ctx := testCtx(t)
 	const concurrent = 10
 
 	timerCh := make(chan time.Time)
@@ -32,7 +33,7 @@ func TestPipeliningConn(t *testing.T) {
 	do := func() {
 		in := randStr()
 		var out string
-		err := pc.Do(Cmd(&out, "ECHO", in))
+		err := pc.Do(ctx, Cmd(&out, "ECHO", in))
 		assert.NoError(t, err)
 		assert.Equal(t, in, out)
 		doneCh <- struct{}{}

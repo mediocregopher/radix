@@ -2,6 +2,7 @@ package radix
 
 import (
 	"bufio"
+	"context"
 	"strconv"
 	"strings"
 
@@ -18,7 +19,7 @@ import (
 // results to retrieve or if an error occurred, at which point Close should be
 // called to retrieve any error.
 type Scanner interface {
-	Next(*string) bool
+	Next(context.Context, *string) bool
 	Close() error
 }
 
@@ -96,7 +97,7 @@ func NewScanner(c Client, o ScanOpts) Scanner {
 	}
 }
 
-func (s *scanner) Next(res *string) bool {
+func (s *scanner) Next(ctx context.Context, res *string) bool {
 	for {
 		if s.err != nil {
 			return false
@@ -114,7 +115,7 @@ func (s *scanner) Next(res *string) bool {
 			return false
 		}
 
-		s.err = s.Client.Do(s.cmd(&s.res, s.res.cur))
+		s.err = s.Client.Do(ctx, s.cmd(&s.res, s.res.cur))
 		s.resIdx = 0
 	}
 }

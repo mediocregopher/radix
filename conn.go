@@ -2,6 +2,7 @@ package radix
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"net"
 	"net/url"
@@ -20,6 +21,8 @@ import (
 //
 // Conn is not thread-safe unless its implementation explicitly states
 // otherwise.
+//
+// TODO make thread-safe.
 type Conn interface {
 	// The Do method merely calls the Action's Perform method with the Conn as
 	// the argument.
@@ -69,7 +72,7 @@ func NewConn(conn net.Conn) Conn {
 	}
 }
 
-func (cw *connWrap) Do(a Action) error {
+func (cw *connWrap) Do(ctx context.Context, a Action) error {
 	return a.Perform(cw)
 }
 
@@ -269,6 +272,10 @@ func parseRedisURL(urlStr string) (string, []DialOpt) {
 //	DialTimeout(10 * time.Second)
 //
 func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
+	// TODO have Dial/ConnFunc take in Context
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	var do dialOpts
 	for _, opt := range defaultDialOpts {
 		opt(&do)
@@ -324,19 +331,19 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 	})
 
 	if do.authUser != "" && do.authUser != defaultAuthUser {
-		if err := conn.Do(Cmd(nil, "AUTH", do.authUser, do.authPass)); err != nil {
+		if err := conn.Do(ctx, Cmd(nil, "AUTH", do.authUser, do.authPass)); err != nil {
 			conn.Close()
 			return nil, err
 		}
 	} else if do.authPass != "" {
-		if err := conn.Do(Cmd(nil, "AUTH", do.authPass)); err != nil {
+		if err := conn.Do(ctx, Cmd(nil, "AUTH", do.authPass)); err != nil {
 			conn.Close()
 			return nil, err
 		}
 	}
 
 	if do.selectDB != "" {
-		if err := conn.Do(Cmd(nil, "SELECT", do.selectDB)); err != nil {
+		if err := conn.Do(ctx, Cmd(nil, "SELECT", do.selectDB)); err != nil {
 			conn.Close()
 			return nil, err
 		}

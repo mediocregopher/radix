@@ -76,6 +76,7 @@ func TestPersistentPubSubAbortAfter(t *T) {
 
 // https://github.com/mediocregopher/radix/issues/184
 func TestPersistentPubSubClose(t *T) {
+	ctx := testCtx(t)
 	channel := "TestPersistentPubSubClose:" + randStr()
 
 	stopCh := make(chan struct{})
@@ -83,7 +84,7 @@ func TestPersistentPubSubClose(t *T) {
 	go func() {
 		pubConn := dial()
 		for {
-			err := pubConn.Do(Cmd(nil, "PUBLISH", channel, randStr()))
+			err := pubConn.Do(ctx, Cmd(nil, "PUBLISH", channel, randStr()))
 			assert.NoError(t, err)
 			time.Sleep(10 * time.Millisecond)
 

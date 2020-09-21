@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"errors"
 	"io"
 	"sync"
@@ -43,7 +44,7 @@ func (ioc *ioErrConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
 	return err
 }
 
-func (ioc *ioErrConn) Do(a Action) error {
+func (ioc *ioErrConn) Do(ctx context.Context, a Action) error {
 	return a.Perform(ioc)
 }
 
@@ -299,7 +300,11 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	}()
 
 	if p.opts.pingInterval > 0 && size > 0 {
-		p.atIntervalDo(p.opts.pingInterval, func() { p.Do(Cmd(nil, "PING")) })
+		p.atIntervalDo(p.opts.pingInterval, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			p.Do(ctx, Cmd(nil, "PING"))
+		})
 	}
 	if p.opts.refillInterval > 0 && size > 0 {
 		p.atIntervalDo(p.opts.refillInterval, p.doRefill)
@@ -497,14 +502,14 @@ func (p *Pool) put(ioc *ioErrConn) bool {
 // Do implements the Do method of the Client interface by retrieving a Conn out
 // of the pool, calling Perform on the given Action with it, and returning the
 // Conn to the pool.
-func (p *Pool) Do(a Action) error {
+func (p *Pool) Do(ctx context.Context, a Action) error {
 	startTime := time.Now()
-	c, err := p.get()
+	c, err := p.get() // TODO make get take the context?
 	if err != nil {
 		return err
 	}
 
-	err = c.Do(a)
+	err = c.Do(ctx, a)
 	p.put(c)
 	p.traceDoCompleted(time.Since(startTime), err)
 

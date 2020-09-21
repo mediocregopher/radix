@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"net"
 	"sync"
 	"time"
@@ -195,7 +196,7 @@ func (pc *pipeliningConn) spin() {
 	}
 }
 
-func (pc *pipeliningConn) Do(action Action) error {
+func (pc *pipeliningConn) Do(ctx context.Context, action Action) error {
 	return action.Perform(pc)
 }
 

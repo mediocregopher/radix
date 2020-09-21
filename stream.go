@@ -3,6 +3,7 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -273,7 +274,7 @@ type StreamReader interface {
 	// If there was an error, ok will be false. Otherwise, even if no entries were read, ok will be true.
 	//
 	// If there was an error, all future calls to Next will return ok == false.
-	Next() (stream string, entries []StreamEntry, ok bool)
+	Next(context.Context) (stream string, entries []StreamEntry, ok bool)
 }
 
 // NewStreamReader returns a new StreamReader for the given client.
@@ -352,14 +353,14 @@ type streamReader struct {
 	err    error
 }
 
-func (sr *streamReader) backfill() bool {
+func (sr *streamReader) backfill(ctx context.Context) bool {
 	sr.args = append(sr.args[:0], sr.fixedArgs...)
 
 	for _, s := range sr.streams {
 		sr.args = append(sr.args, sr.ids[s])
 	}
 
-	if sr.err = sr.c.Do(Cmd(&sr.unread, sr.cmd, sr.args...)); sr.err != nil {
+	if sr.err = sr.c.Do(ctx, Cmd(&sr.unread, sr.cmd, sr.args...)); sr.err != nil {
 		return false
 	}
 
@@ -395,7 +396,7 @@ func (sr *streamReader) nextFromBuffer() (stream string, entries []StreamEntry) 
 }
 
 // Next implements the StreamReader interface.
-func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
+func (sr *streamReader) Next(ctx context.Context) (stream string, entries []StreamEntry, ok bool) {
 	if sr.err != nil {
 		return "", nil, false
 	}
@@ -404,7 +405,7 @@ func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 		return stream, entries, true
 	}
 
-	if !sr.backfill() {
+	if !sr.backfill(ctx) {
 		return "", nil, false
 	}
 

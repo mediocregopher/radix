@@ -3,9 +3,11 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	. "testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,25 +17,27 @@ import (
 )
 
 func TestCmdAction(t *T) {
+	ctx := testCtx(t)
 	c := dial()
 	key, val := randStr(), randStr()
 
-	require.Nil(t, c.Do(Cmd(nil, "SET", key, val)))
+	require.Nil(t, c.Do(ctx, Cmd(nil, "SET", key, val)))
 	var got string
-	require.Nil(t, c.Do(Cmd(&got, "GET", key)))
+	require.Nil(t, c.Do(ctx, Cmd(&got, "GET", key)))
 	assert.Equal(t, val, got)
 
 	// because BITOP is weird
-	require.Nil(t, c.Do(Cmd(nil, "SET", key, val)))
+	require.Nil(t, c.Do(ctx, Cmd(nil, "SET", key, val)))
 	bitopCmd := Cmd(nil, "BITOP", "AND", key+key, key, key)
 	assert.Equal(t, []string{key + key, key, key}, bitopCmd.Keys())
-	require.Nil(t, c.Do(bitopCmd))
+	require.Nil(t, c.Do(ctx, bitopCmd))
 	var dstval string
-	require.Nil(t, c.Do(Cmd(&dstval, "GET", key+key)))
+	require.Nil(t, c.Do(ctx, Cmd(&dstval, "GET", key+key)))
 	assert.Equal(t, val, dstval)
 }
 
 func TestCmdActionStreams(t *T) {
+	ctx := testCtx(t)
 	c := dial()
 	key, val := randStr(), randStr()
 
@@ -42,9 +46,9 @@ func TestCmdActionStreams(t *T) {
 	consumer := randStr()
 	skeys := []string{"1", "1-", "1-1", "s1", ""} // make sure that we can handle empty and ID-like keys
 	for _, skey := range skeys {
-		require.Nil(t, c.Do(Cmd(nil, "DEL", skey)))
-		require.NoError(t, c.Do(Cmd(nil, "XADD", skey, "1-1", key, val)))
-		require.NoError(t, c.Do(Cmd(nil, "XGROUP", "CREATE", skey, group, "0-0")))
+		require.Nil(t, c.Do(ctx, Cmd(nil, "DEL", skey)))
+		require.NoError(t, c.Do(ctx, Cmd(nil, "XADD", skey, "1-1", key, val)))
+		require.NoError(t, c.Do(ctx, Cmd(nil, "XGROUP", "CREATE", skey, group, "0-0")))
 
 		// so many possible arguments, so many tests...
 		for _, args := range [][]string{
@@ -66,7 +70,7 @@ func TestCmdActionStreams(t *T) {
 		} {
 			xCmd := Cmd(nil, args[0], args[1:]...)
 			assert.Equal(t, []string{skey}, xCmd.Keys())
-			require.NoError(t, c.Do(xCmd))
+			require.NoError(t, c.Do(ctx, xCmd))
 		}
 	}
 
@@ -77,26 +81,29 @@ func TestCmdActionStreams(t *T) {
 	} {
 		xCmd := Cmd(nil, args[0], args[1:]...)
 		assert.Equal(t, skeys[:3], xCmd.Keys())
-		require.NoError(t, c.Do(xCmd))
+		require.NoError(t, c.Do(ctx, xCmd))
 	}
 
 	xCmd := Cmd(nil, "XINFO", "HELP")
 	assert.Equal(t, []string(nil), xCmd.Keys())
-	require.NoError(t, c.Do(xCmd))
+	require.NoError(t, c.Do(ctx, xCmd))
 }
 
 func ExampleCmd() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		panic(err)
 	}
 
-	if err := client.Do(Cmd(nil, "SET", "foo", "bar")); err != nil {
+	if err := client.Do(ctx, Cmd(nil, "SET", "foo", "bar")); err != nil {
 		panic(err)
 	}
 
 	var fooVal string
-	if err := client.Do(Cmd(&fooVal, "GET", "foo")); err != nil {
+	if err := client.Do(ctx, Cmd(&fooVal, "GET", "foo")); err != nil {
 		panic(err)
 	}
 	fmt.Println(fooVal)
@@ -104,6 +111,7 @@ func ExampleCmd() {
 }
 
 func TestFlatCmdAction(t *T) {
+	ctx := testCtx(t)
 	c := dial()
 	key := randStr()
 	m := map[string]string{
@@ -111,67 +119,73 @@ func TestFlatCmdAction(t *T) {
 		randStr(): randStr(),
 		randStr(): randStr(),
 	}
-	require.Nil(t, c.Do(FlatCmd(nil, "HMSET", key, m)))
+	require.Nil(t, c.Do(ctx, FlatCmd(nil, "HMSET", key, m)))
 
 	var got map[string]string
-	require.Nil(t, c.Do(FlatCmd(&got, "HGETALL", key)))
+	require.Nil(t, c.Do(ctx, FlatCmd(&got, "HGETALL", key)))
 	assert.Equal(t, m, got)
 }
 
 func TestFlatCmdActionNil(t *T) {
+	ctx := testCtx(t)
 	c := dial()
 	defer c.Close()
 
 	key := randStr()
 	hashKey := randStr()
 
-	require.Nil(t, c.Do(FlatCmd(nil, "HMSET", key, hashKey, nil)))
+	require.Nil(t, c.Do(ctx, FlatCmd(nil, "HMSET", key, hashKey, nil)))
 
 	var nilVal MaybeNil
-	require.Nil(t, c.Do(Cmd(&nilVal, "HGET", key, hashKey)))
+	require.Nil(t, c.Do(ctx, Cmd(&nilVal, "HGET", key, hashKey)))
 	require.False(t, nilVal.Nil)
 	require.False(t, nilVal.EmptyArray)
 }
 
 func TestFlatCmdActionEmpty(t *T) {
+	ctx := testCtx(t)
 	c := dial()
 	defer c.Close()
 
 	key := randStr()
 
 	var nilVal MaybeNil
-	require.Nil(t, c.Do(Cmd(&nilVal, "HGETALL", key)))
+	require.Nil(t, c.Do(ctx, Cmd(&nilVal, "HGETALL", key)))
 	require.False(t, nilVal.Nil)
 	require.True(t, nilVal.EmptyArray)
 }
 
 func ExampleFlatCmd() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		panic(err)
 	}
 
 	// performs "SET" "foo" "1"
-	err = client.Do(FlatCmd(nil, "SET", "foo", 1))
+	err = client.Do(ctx, FlatCmd(nil, "SET", "foo", 1))
 	if err != nil {
 		panic(err)
 	}
 
 	// performs "SADD" "fooSet" "1" "2" "3"
-	err = client.Do(FlatCmd(nil, "SADD", "fooSet", []string{"1", "2", "3"}))
+	err = client.Do(ctx, FlatCmd(nil, "SADD", "fooSet", []string{"1", "2", "3"}))
 	if err != nil {
 		panic(err)
 	}
 
 	// performs "HMSET" "foohash" "a" "1" "b" "2" "c" "3"
 	m := map[string]int{"a": 1, "b": 2, "c": 3}
-	err = client.Do(FlatCmd(nil, "HMSET", "fooHash", m))
+	err = client.Do(ctx, FlatCmd(nil, "HMSET", "fooHash", m))
 	if err != nil {
 		panic(err)
 	}
 }
 
 func TestEvalAction(t *T) {
+	ctx := testCtx(t)
 	getSet := NewEvalScript(1, `
 		local prev = redis.call("GET", KEYS[1])
 		redis.call("SET", KEYS[1], ARGV[1])
@@ -185,27 +199,30 @@ func TestEvalAction(t *T) {
 
 	{
 		var res string
-		err := c.Do(getSet.Cmd(&res, key, val1))
+		err := c.Do(ctx, getSet.Cmd(&res, key, val1))
 		require.Nil(t, err, "%s", err)
 		assert.Empty(t, res)
 	}
 
 	{
 		var res string
-		err := c.Do(getSet.Cmd(&res, key, val2))
+		err := c.Do(ctx, getSet.Cmd(&res, key, val2))
 		require.Nil(t, err)
 		assert.Equal(t, val1, res)
 	}
 
 	{
 		var res string
-		err := c.Do(getSet.FlatCmd(&res, []string{key}, val3))
+		err := c.Do(ctx, getSet.FlatCmd(&res, []string{key}, val3))
 		require.Nil(t, err)
 		assert.Equal(t, val2, res)
 	}
 }
 
 func ExampleEvalScript() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// set as a global variable, this script is equivalent to the builtin GETSET
 	// redis command
 	var getSet = NewEvalScript(1, `
@@ -221,7 +238,7 @@ func ExampleEvalScript() {
 
 	key := "someKey"
 	var prevVal string
-	if err := client.Do(getSet.Cmd(&prevVal, key, "myVal")); err != nil {
+	if err := client.Do(ctx, getSet.Cmd(&prevVal, key, "myVal")); err != nil {
 		// handle error
 	}
 
@@ -230,6 +247,7 @@ func ExampleEvalScript() {
 
 func TestPipelineAction(t *T) {
 	t.Run("basic", func(t *T) {
+		ctx := testCtx(t)
 		c := dial()
 		for i := 0; i < 10; i++ {
 			ss := []string{
@@ -242,7 +260,7 @@ func TestPipelineAction(t *T) {
 			for i := range ss {
 				cmds = append(cmds, Cmd(&out[i], "ECHO", ss[i]))
 			}
-			require.Nil(t, c.Do(Pipeline(cmds...)))
+			require.Nil(t, c.Do(ctx, Pipeline(cmds...)))
 
 			for i := range ss {
 				assert.Equal(t, ss[i], out[i])
@@ -251,6 +269,7 @@ func TestPipelineAction(t *T) {
 	})
 
 	t.Run("errConnUsable", func(t *T) {
+		ctx := testCtx(t)
 		c := dial()
 
 		// Setup
@@ -262,7 +281,7 @@ func TestPipelineAction(t *T) {
 		}
 
 		for k, v := range kvs {
-			require.NoError(t, c.Do(Cmd(nil, "SET", k, v)))
+			require.NoError(t, c.Do(ctx, Cmd(nil, "SET", k, v)))
 		}
 
 		var intRcv int
@@ -273,19 +292,22 @@ func TestPipelineAction(t *T) {
 			Cmd(&strRcv, "GET", k2),
 		)
 
-		err := c.Do(pipeline)
+		err := c.Do(ctx, pipeline)
 		require.Error(t, err)
 		assert.Zero(t, intRcv)
 		assert.Equal(t, kvs[k2], strRcv)
 
 		// make sure the connection is still usable
-		err = c.Do(Cmd(&strRcv, "ECHO", k1))
+		err = c.Do(ctx, Cmd(&strRcv, "ECHO", k1))
 		require.NoError(t, err)
 		assert.Equal(t, k1, strRcv)
 	})
 }
 
 func ExamplePipeline() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
@@ -295,7 +317,7 @@ func ExamplePipeline() {
 		FlatCmd(nil, "SET", "foo", 1),
 		Cmd(&fooVal, "GET", "foo"),
 	)
-	if err := client.Do(p); err != nil {
+	if err := client.Do(ctx, p); err != nil {
 		// handle error
 	}
 	fmt.Printf("fooVal: %q\n", fooVal)
@@ -303,13 +325,15 @@ func ExamplePipeline() {
 }
 
 func TestWithConnAction(t *T) {
+	ctx := testCtx(t)
 	c := dial()
 	k, v := randStr(), 10
 
-	err := c.Do(WithConn(k, func(conn Conn) error {
-		require.Nil(t, conn.Do(FlatCmd(nil, "SET", k, v)))
+	// TODO WithConn's callback should take a context
+	err := c.Do(ctx, WithConn(k, func(conn Conn) error {
+		require.Nil(t, conn.Do(ctx, FlatCmd(nil, "SET", k, v)))
 		var out int
-		require.Nil(t, conn.Do(Cmd(&out, "GET", k)))
+		require.Nil(t, conn.Do(ctx, Cmd(&out, "GET", k)))
 		assert.Equal(t, v, out)
 		return nil
 	}))
@@ -317,6 +341,9 @@ func TestWithConnAction(t *T) {
 }
 
 func ExampleWithConn() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
@@ -327,14 +354,14 @@ func ExampleWithConn() {
 	// instance. NOTE that it does not do this atomically like the INCR command
 	// would.
 	key := "someKey"
-	err = client.Do(WithConn(key, func(conn Conn) error {
+	err = client.Do(ctx, WithConn(key, func(conn Conn) error {
 		var curr int
-		if err := conn.Do(Cmd(&curr, "GET", key)); err != nil {
+		if err := conn.Do(ctx, Cmd(&curr, "GET", key)); err != nil {
 			return err
 		}
 
 		curr++
-		return conn.Do(FlatCmd(nil, "SET", key, curr))
+		return conn.Do(ctx, FlatCmd(nil, "SET", key, curr))
 	}))
 	if err != nil {
 		// handle error
@@ -342,6 +369,9 @@ func ExampleWithConn() {
 }
 
 func ExampleWithConn_transaction() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
@@ -352,10 +382,10 @@ func ExampleWithConn_transaction() {
 	key := "someKey"
 	var prevVal string
 
-	err = client.Do(WithConn(key, func(c Conn) error {
+	err = client.Do(ctx, WithConn(key, func(c Conn) error {
 
 		// Begin the transaction with a MULTI command
-		if err := c.Do(Cmd(nil, "MULTI")); err != nil {
+		if err := c.Do(ctx, Cmd(nil, "MULTI")); err != nil {
 			return err
 		}
 
@@ -369,15 +399,15 @@ func ExampleWithConn_transaction() {
 				// The return from DISCARD doesn't matter. If it's an error then
 				// it's a network error and the Conn will be closed by the
 				// client.
-				c.Do(Cmd(nil, "DISCARD"))
+				c.Do(ctx, Cmd(nil, "DISCARD"))
 			}
 		}()
 
 		// queue up the transaction's commands
-		if err = c.Do(Cmd(nil, "GET", key)); err != nil {
+		if err = c.Do(ctx, Cmd(nil, "GET", key)); err != nil {
 			return err
 		}
-		if err = c.Do(Cmd(nil, "SET", key, "someOtherValue")); err != nil {
+		if err = c.Do(ctx, Cmd(nil, "SET", key, "someOtherValue")); err != nil {
 			return err
 		}
 
@@ -385,7 +415,7 @@ func ExampleWithConn_transaction() {
 		// care about the first element (the result from GET), so we discard the
 		// second by setting nil.
 		result := Tuple{&prevVal, nil}
-		return c.Do(Cmd(&result, "EXEC"))
+		return c.Do(ctx, Cmd(&result, "EXEC"))
 	}))
 	if err != nil {
 		// handle error
@@ -435,6 +465,9 @@ func TestMaybeNil(t *T) {
 }
 
 func ExampleMaybeNil() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
@@ -442,7 +475,7 @@ func ExampleMaybeNil() {
 
 	var rcv int64
 	mn := MaybeNil{Rcv: &rcv}
-	if err := client.Do(Cmd(&mn, "GET", "foo")); err != nil {
+	if err := client.Do(ctx, Cmd(&mn, "GET", "foo")); err != nil {
 		// handle error
 	} else if mn.Nil {
 		fmt.Println("rcv is nil")

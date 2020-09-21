@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"strings"
 )
 
@@ -73,11 +74,11 @@ func (cs *clusterScanner) nextScanner() {
 	}
 }
 
-func (cs *clusterScanner) Next(res *string) bool {
+func (cs *clusterScanner) Next(ctx context.Context, res *string) bool {
 	for {
 		if cs.currScanner == nil {
 			return false
-		} else if out := cs.currScanner.Next(res); out {
+		} else if out := cs.currScanner.Next(ctx, res); out {
 			return true
 		}
 		cs.nextScanner()

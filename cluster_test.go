@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	. "testing"
 	"time"
 
@@ -34,23 +35,17 @@ var clusterSlotKeys = func() [numSlots]string {
 	return a
 }()
 
-func newTestCluster(opts ...ClusterOpt) (*Cluster, *clusterStub) {
+func newTestCluster(ctx context.Context, opts ...ClusterOpt) (*Cluster, *clusterStub) {
 	scl := newStubCluster(testTopo)
-	return scl.newCluster(opts...), scl
-}
-
-// sanity check that Cluster is a client
-func TestClusterClient(t *T) {
-	c, _ := newTestCluster()
-	defer c.Close()
-	assert.Implements(t, new(Client), c)
+	return scl.newCluster(ctx, opts...), scl
 }
 
 func TestClusterSync(t *T) {
-	c, scl := newTestCluster()
+	ctx := testCtx(t)
+	c, scl := newTestCluster(ctx)
 	defer c.Close()
 	assertClusterState := func() {
-		require.Nil(t, c.Sync())
+		require.Nil(t, c.Sync(ctx))
 		c.l.RLock()
 		defer c.l.RUnlock()
 		assert.Equal(t, c.topo, scl.topo())
@@ -85,16 +80,18 @@ func TestClusterSync(t *T) {
 }
 
 func TestClusterGet(t *T) {
-	c, _ := newTestCluster()
+	ctx := testCtx(t)
+	c, _ := newTestCluster(ctx)
 	defer c.Close()
 	for s := uint16(0); s < numSlots; s++ {
-		require.Nil(t, c.Do(Cmd(nil, "GET", clusterSlotKeys[s])))
+		require.Nil(t, c.Do(ctx, Cmd(nil, "GET", clusterSlotKeys[s])))
 	}
 }
 
 func TestClusterDo(t *T) {
+	ctx := testCtx(t)
 	var lastRedirect trace.ClusterRedirected
-	c, scl := newTestCluster(ClusterWithTrace(trace.ClusterTrace{
+	c, scl := newTestCluster(ctx, ClusterWithTrace(trace.ClusterTrace{
 		Redirected: func(r trace.ClusterRedirected) { lastRedirect = r },
 	}))
 	defer c.Close()
@@ -106,10 +103,10 @@ func TestClusterDo(t *T) {
 
 	// basic Cmd
 	k, v := clusterSlotKeys[0], randStr()
-	require.Nil(t, c.Do(Cmd(nil, "SET", k, v)))
+	require.Nil(t, c.Do(ctx, Cmd(nil, "SET", k, v)))
 	{
 		var vgot string
-		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
+		require.Nil(t, c.Do(ctx, Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
 		assert.Equal(t, trace.ClusterRedirected{}, lastRedirect)
 	}
@@ -119,7 +116,13 @@ func TestClusterDo(t *T) {
 	{
 		var vgot string
 		cmd := Cmd(&vgot, "GET", k)
-		require.Nil(t, c.doInner(cmd, stub16k.addr, k, false, doAttempts))
+		require.Nil(t, c.doInner(clusterDoInnerParams{
+			ctx:      ctx,
+			action:   cmd,
+			addr:     stub16k.addr,
+			key:      k,
+			attempts: doAttempts,
+		}))
 		assert.Equal(t, v, vgot)
 		assert.Equal(t, trace.ClusterRedirected{
 			Addr:          stub16k.addr,
@@ -135,7 +138,7 @@ func TestClusterDo(t *T) {
 		scl.migrateInit(stub16k.addr, 0)
 		scl.migrateKey(k)
 		var vgot string
-		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
+		require.Nil(t, c.Do(ctx, Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
 		assert.Equal(t, trace.ClusterRedirected{
 			Addr:          stub0.addr,
@@ -151,19 +154,18 @@ func TestClusterDo(t *T) {
 		scl.migrateDone(0)
 		lastRedirect = trace.ClusterRedirected{}
 		var vgot string
-		require.Nil(t, c.Sync())
-		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
+		require.Nil(t, c.Sync(ctx))
+		require.Nil(t, c.Do(ctx, Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
 		assert.Equal(t, trace.ClusterRedirected{}, lastRedirect)
 	}
 }
 
 func TestClusterDoWhenDown(t *T) {
+	ctx := testCtx(t)
 	var stub *clusterNodeStub
-
 	var isDown bool
-
-	c, scl := newTestCluster(
+	c, scl := newTestCluster(ctx,
 		ClusterOnDownDelayActionsBy(50*time.Millisecond),
 		ClusterWithTrace(trace.ClusterTrace{
 			StateChange: func(d trace.ClusterStateChange) {
@@ -184,31 +186,33 @@ func TestClusterDoWhenDown(t *T) {
 
 	k := clusterSlotKeys[0]
 
-	err := c.Do(Cmd(nil, "GET", k))
+	err := c.Do(ctx, Cmd(nil, "GET", k))
 	assert.EqualError(t, err, "CLUSTERDOWN Hash slot not served")
 	assert.True(t, isDown)
 
-	err = c.Do(Cmd(nil, "GET", k))
+	err = c.Do(ctx, Cmd(nil, "GET", k))
 	assert.Nil(t, err)
 	assert.False(t, isDown)
 }
 
 func BenchmarkClusterDo(b *B) {
-	c, _ := newTestCluster()
+	ctx := testCtx(b)
+	c, _ := newTestCluster(ctx)
 	defer c.Close()
 
 	k, v := clusterSlotKeys[0], randStr()
-	require.Nil(b, c.Do(Cmd(nil, "SET", k, v)))
+	require.Nil(b, c.Do(ctx, Cmd(nil, "SET", k, v)))
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		require.Nil(b, c.Do(Cmd(nil, "GET", k)))
+		require.Nil(b, c.Do(ctx, Cmd(nil, "GET", k)))
 	}
 }
 
 func TestClusterEval(t *T) {
-	c, scl := newTestCluster()
+	ctx := testCtx(t)
+	c, scl := newTestCluster(ctx)
 	defer c.Close()
 	key := clusterSlotKeys[0]
 	dst := scl.stubForSlot(10000)
@@ -217,15 +221,16 @@ func TestClusterEval(t *T) {
 
 	eval := NewEvalScript(1, `return nil`)
 	var rcv string
-	err := c.Do(eval.Cmd(&rcv, key, "foo"))
+	err := c.Do(ctx, eval.Cmd(&rcv, key, "foo"))
 
 	assert.Nil(t, err)
 	assert.Equal(t, "EVAL: success!", rcv)
 }
 
 func TestClusterDoSecondary(t *T) {
+	ctx := testCtx(t)
 	var redirects int
-	c, _ := newTestCluster(
+	c, _ := newTestCluster(ctx,
 		ClusterWithTrace(trace.ClusterTrace{
 			Redirected: func(trace.ClusterRedirected) {
 				redirects++
@@ -237,16 +242,16 @@ func TestClusterDoSecondary(t *T) {
 	key := clusterSlotKeys[0]
 	value := randStr()
 
-	require.NoError(t, c.Do(Cmd(nil, "SET", key, value)))
+	require.NoError(t, c.Do(ctx, Cmd(nil, "SET", key, value)))
 
 	var res1 string
-	require.NoError(t, c.Do(Cmd(&res1, "GET", key)))
+	require.NoError(t, c.Do(ctx, Cmd(&res1, "GET", key)))
 	require.Equal(t, value, res1)
 
 	require.Zero(t, redirects)
 
 	var res2 string
-	assert.NoError(t, c.DoSecondary(Cmd(&res2, "GET", key)))
+	assert.NoError(t, c.DoSecondary(ctx, Cmd(&res2, "GET", key)))
 	assert.Equal(t, value, res2)
 	assert.Equal(t, 1, redirects)
 
@@ -257,19 +262,19 @@ func TestClusterDoSecondary(t *T) {
 	sec, err := c.Client(secAddr)
 	require.NoError(t, err)
 
-	assert.NoError(t, sec.Do(Cmd(nil, "READONLY")))
+	assert.NoError(t, sec.Do(ctx, Cmd(nil, "READONLY")))
 	assert.Equal(t, 1, redirects)
 
 	var res3 string
-	assert.NoError(t, c.DoSecondary(Cmd(&res3, "GET", key)))
+	assert.NoError(t, c.DoSecondary(ctx, Cmd(&res3, "GET", key)))
 	assert.Equal(t, value, res3)
 	assert.Equal(t, 1, redirects)
 
-	assert.NoError(t, sec.Do(Cmd(nil, "READWRITE")))
+	assert.NoError(t, sec.Do(ctx, Cmd(nil, "READWRITE")))
 	assert.Equal(t, 1, redirects)
 
 	var res4 string
-	assert.NoError(t, c.DoSecondary(Cmd(&res4, "GET", key)))
+	assert.NoError(t, c.DoSecondary(ctx, Cmd(&res4, "GET", key)))
 	assert.Equal(t, value, res4)
 	assert.Equal(t, 2, redirects)
 }
@@ -277,7 +282,10 @@ func TestClusterDoSecondary(t *T) {
 var clusterAddrs []string
 
 func ExampleClusterPoolFunc_defaultClusterConnFunc() {
-	NewCluster(clusterAddrs, ClusterPoolFunc(func(network, addr string) (Client, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	NewCluster(ctx, clusterAddrs, ClusterPoolFunc(func(network, addr string) (Client, error) {
 		return NewPool(network, addr, 4, PoolConnFunc(DefaultClusterConnFunc))
 	}))
 }

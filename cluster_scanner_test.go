@@ -8,18 +8,19 @@ import (
 )
 
 func TestClusterScanner(t *T) {
-	c, _ := newTestCluster()
+	ctx := testCtx(t)
+	c, _ := newTestCluster(ctx)
 	defer c.Close()
 	exp := map[string]bool{}
 	for _, k := range clusterSlotKeys {
 		exp[k] = true
-		require.Nil(t, c.Do(Cmd(nil, "SET", k, "1")))
+		require.Nil(t, c.Do(ctx, Cmd(nil, "SET", k, "1")))
 	}
 
 	scanner := c.NewScanner(ScanAllKeys)
 	var k string
 	got := map[string]bool{}
-	for scanner.Next(&k) {
+	for scanner.Next(ctx, &k) {
 		got[k] = true
 	}
 

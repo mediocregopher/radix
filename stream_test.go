@@ -327,17 +327,18 @@ func BenchmarkStreamEntryID(b *B) {
 }
 
 func TestStreamEntry(t *T) {
+	ctx := testCtx(t)
 	c := dial()
 	defer c.Close()
 
 	stream := randStr()
 
 	var id1, id2 string
-	require.NoError(t, c.Do(Cmd(&id1, "XADD", stream, "*", "hello", "world", "foo", "bar")))
-	require.NoError(t, c.Do(Cmd(&id2, "XADD", stream, "*", "hello", "bar")))
+	require.NoError(t, c.Do(ctx, Cmd(&id1, "XADD", stream, "*", "hello", "world", "foo", "bar")))
+	require.NoError(t, c.Do(ctx, Cmd(&id2, "XADD", stream, "*", "hello", "bar")))
 
 	var entries []StreamEntry
-	assert.NoError(t, c.Do(Cmd(&entries, "XRANGE", stream, "-", "+")))
+	assert.NoError(t, c.Do(ctx, Cmd(&entries, "XRANGE", stream, "-", "+")))
 	assert.Len(t, entries, 2, "got wrong number of stream entries")
 
 	assert.Equal(t, id1, entries[0].ID.String(), "parsed ID differs from ID returned by XADD")
@@ -380,11 +381,12 @@ func TestStreamEntry(t *T) {
 }
 
 func BenchmarkStreamEntry(b *B) {
+	ctx := testCtx(b)
 	c := dial()
 	defer c.Close()
 
 	stream := randStr()
-	require.NoError(b, c.Do(Cmd(nil, "XADD", stream, "*", "hello", "world", "foo", "bar")))
+	require.NoError(b, c.Do(ctx, Cmd(nil, "XADD", stream, "*", "hello", "world", "foo", "bar")))
 
 	b.ResetTimer()
 
@@ -393,7 +395,7 @@ func BenchmarkStreamEntry(b *B) {
 
 	for i := 0; i < b.N; i++ {
 		entries = entries[:0]
-		benchErr = c.Do(Cmd(&entries, "XRANGE", stream, "-", "+"))
+		benchErr = c.Do(ctx, Cmd(&entries, "XRANGE", stream, "-", "+"))
 	}
 }
 
@@ -418,11 +420,11 @@ func TestStreamReader(t *T) {
 
 			addStreamGroup(t, c, stream1, group, "0-0")
 			addStreamGroup(t, c, stream2, group, "0-0")
-
 			assertNoStreamReaderEntries(t, r)
 		})
 
 		t.Run("NoGroup", func(t *T) {
+			ctx := testCtx(t)
 			c := dial()
 			defer c.Close()
 
@@ -437,7 +439,7 @@ func TestStreamReader(t *T) {
 				NoBlock: true,
 			})
 
-			_, _, ok := r.Next()
+			_, _, ok := r.Next(ctx)
 			assert.False(t, ok)
 			err := r.Err()
 			assert.Error(t, err)
@@ -518,12 +520,13 @@ func TestStreamReader(t *T) {
 		})
 
 		t.Run("WrongType", func(t *T) {
+			ctx := testCtx(t)
 			c := dial()
 			defer c.Close()
 
 			stream1 := randStr()
 
-			require.NoError(t, c.Do(Cmd(nil, "SET", stream1, "1")))
+			require.NoError(t, c.Do(ctx, Cmd(nil, "SET", stream1, "1")))
 
 			r := NewStreamReader(c, StreamReaderOpts{
 				Streams: map[string]*StreamEntryID{
@@ -533,17 +536,18 @@ func TestStreamReader(t *T) {
 				Consumer: randStr(),
 			})
 
-			_, _, ok := r.Next()
+			_, _, ok := r.Next(ctx)
 			assert.False(t, ok)
 			err := r.Err()
 			assert.Error(t, err)
 
-			_, _, ok = r.Next()
+			_, _, ok = r.Next(ctx)
 			assert.False(t, ok)
 			assert.Equal(t, err, r.Err())
 		})
 
 		t.Run("Blocking", func(t *T) {
+			ctx := testCtx(t)
 			c := dial()
 			defer c.Close()
 
@@ -570,7 +574,7 @@ func TestStreamReader(t *T) {
 					idChan <- addStreamEntry(t, c, stream)
 				})
 
-				_, entries, ok := r.Next()
+				_, entries, ok := r.Next(ctx)
 				id := <-idChan
 				assert.True(t, ok)
 				assert.Len(t, entries, 1)
@@ -682,6 +686,7 @@ func TestStreamReader(t *T) {
 		})
 
 		t.Run("CountWithRefill", func(t *T) {
+			ctx := testCtx(t)
 			c := dial()
 			defer c.Close()
 
@@ -708,7 +713,7 @@ func TestStreamReader(t *T) {
 					Consumer: consumer,
 				})
 				for {
-					if stream, entries, ok := r.Next(); stream == "" || entries == nil || !ok {
+					if stream, entries, ok := r.Next(ctx); stream == "" || entries == nil || !ok {
 						break
 					}
 				}
@@ -815,12 +820,13 @@ func TestStreamReader(t *T) {
 		})
 
 		t.Run("WrongType", func(t *T) {
+			ctx := testCtx(t)
 			c := dial()
 			defer c.Close()
 
 			stream := randStr()
 
-			require.NoError(t, c.Do(Cmd(nil, "SET", stream, "1")))
+			require.NoError(t, c.Do(ctx, Cmd(nil, "SET", stream, "1")))
 
 			r := NewStreamReader(c, StreamReaderOpts{
 				Streams: map[string]*StreamEntryID{
@@ -828,17 +834,18 @@ func TestStreamReader(t *T) {
 				},
 			})
 
-			_, _, ok := r.Next()
+			_, _, ok := r.Next(ctx)
 			assert.False(t, ok)
 			err := r.Err()
 			assert.Error(t, err)
 
-			_, _, ok = r.Next()
+			_, _, ok = r.Next(ctx)
 			assert.False(t, ok)
 			assert.Equal(t, err, r.Err())
 		})
 
 		t.Run("Blocking", func(t *T) {
+			ctx := testCtx(t)
 			c := dial()
 			defer c.Close()
 
@@ -860,7 +867,7 @@ func TestStreamReader(t *T) {
 					idChan <- addStreamEntry(t, c, stream)
 				})
 
-				_, entries, ok := r.Next()
+				_, entries, ok := r.Next(ctx)
 				id := <-idChan
 				assert.True(t, ok)
 				assert.Len(t, entries, 1)
@@ -898,6 +905,7 @@ func TestStreamReader(t *T) {
 }
 
 func BenchmarkStreamReader(b *B) {
+	ctx := testCtx(b)
 	c := dial()
 	defer c.Close()
 
@@ -916,7 +924,7 @@ func BenchmarkStreamReader(b *B) {
 			NoBlock: true,
 		})
 
-		for _, entries, ok := r.Next(); ok && len(entries) > 0; _, entries, ok = r.Next() {
+		for _, entries, ok := r.Next(ctx); ok && len(entries) > 0; _, entries, ok = r.Next(ctx) {
 			benchErr = r.Err()
 		}
 	}
@@ -925,7 +933,7 @@ func BenchmarkStreamReader(b *B) {
 func addStreamEntry(tb TB, c Client, stream string) StreamEntryID {
 	tb.Helper()
 	var id StreamEntryID
-	require.NoError(tb, c.Do(Cmd(&id, "XADD", stream, "*", randStr(), randStr())))
+	require.NoError(tb, c.Do(testCtx(tb), Cmd(&id, "XADD", stream, "*", randStr(), randStr())))
 	return id
 }
 
@@ -940,7 +948,7 @@ func addNStreamEntries(tb TB, c Client, stream string, n int) []StreamEntryID {
 
 func assertNoStreamReaderEntries(tb TB, r StreamReader) {
 	tb.Helper()
-	stream, entries, ok := r.Next()
+	stream, entries, ok := r.Next(testCtx(tb))
 	assert.Empty(tb, stream)
 	assert.Empty(tb, entries)
 	assert.True(tb, ok)
@@ -950,7 +958,7 @@ func assertStreamReaderEntries(tb TB, r StreamReader, expected map[string][]Stre
 	tb.Helper()
 
 	for len(expected) > 0 {
-		stream, entries, ok := r.Next()
+		stream, entries, ok := r.Next(testCtx(tb))
 		if !ok {
 			break
 		}
@@ -997,13 +1005,13 @@ func assertStreamReaderEntries(tb TB, r StreamReader, expected map[string][]Stre
 
 func addStreamGroup(tb TB, c Client, stream, group, id string) {
 	tb.Helper()
-	require.NoError(tb, c.Do(Cmd(nil, "XGROUP", "CREATE", stream, group, id, "MKSTREAM")))
+	require.NoError(tb, c.Do(testCtx(tb), Cmd(nil, "XGROUP", "CREATE", stream, group, id, "MKSTREAM")))
 }
 
 func assertConsumer(tb TB, c Client, stream, group, consumer string, pending int) {
 	tb.Helper()
 	var cs []map[string]string
-	require.NoError(tb, c.Do(Cmd(&cs, "XINFO", "CONSUMERS", stream, group)))
+	require.NoError(tb, c.Do(testCtx(tb), Cmd(&cs, "XINFO", "CONSUMERS", stream, group)))
 
 	for _, c := range cs {
 		if c["name"] != consumer {

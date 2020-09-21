@@ -141,6 +141,8 @@ func getCmdAction() *cmdAction {
 // pointer must be passed in. It may also be an io.Writer, an
 // encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler. See the package docs
 // for more on how results are unmarshaled into the receiver.
+//
+// The Action returned by Cmd also implements resp.Marshaler.
 func Cmd(rcv interface{}, cmd string, args ...string) Action {
 	c := getCmdAction()
 	*c = cmdAction{

@@ -129,6 +129,7 @@ func (s *sentinelStub) switchPrimary(newPrimAddr string, newSecAddrs ...string) 
 }
 
 func TestSentinel(t *T) {
+	ctx := testCtx(t)
 	stub := newSentinelStub(
 		"127.0.0.1:6379", // primAddr
 		[]string{"127.0.0.2:6379", "127.0.0.3:6379"},                                    // secAddrs
@@ -176,9 +177,9 @@ func TestSentinel(t *T) {
 		for i := 0; i < c; i++ {
 			go func() {
 				key, val := randStr(), randStr()
-				require.Nil(t, scc.Do(Cmd(nil, "SET", key, val)))
+				require.Nil(t, scc.Do(ctx, Cmd(nil, "SET", key, val)))
 				var out string
-				require.Nil(t, scc.Do(Cmd(&out, "GET", key)))
+				require.Nil(t, scc.Do(ctx, Cmd(&out, "GET", key)))
 				assert.Equal(t, val, out)
 				wg.Done()
 			}()
@@ -419,6 +420,7 @@ func TestSentinelClientsAddrs(t *T) {
 }
 
 func TestSentinelSecondaryRead(t *T) {
+	ctx := testCtx(t)
 	stub := newSentinelStub(
 		"127.0.0.1:9736", // primAddr
 		[]string{"127.0.0.2:9736", "127.0.0.3:9736"},                    // secAddrs
@@ -445,7 +447,7 @@ func TestSentinelSecondaryRead(t *T) {
 		primAddr, secAddrs := scc.Addrs()
 		for i := 0; i < n; i++ {
 			var addr string
-			require.NoError(t, scc.DoSecondary(Cmd(&addr, "GIMME", "YOUR", "ADDRESS")))
+			require.NoError(t, scc.DoSecondary(ctx, Cmd(&addr, "GIMME", "YOUR", "ADDRESS")))
 			assert.NotEqualf(t, scc.primAddr, addr, "command was sent to master at %s", primAddr)
 			assert.Containsf(t, secAddrs, addr, "returned address if not a secondary. expected one of %v, got %v", secAddrs, addr)
 		}

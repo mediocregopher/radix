@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -99,6 +100,10 @@ type Sentinel struct {
 //	SentinelPoolFunc(DefaultClientFunc)
 //
 func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt) (*Sentinel, error) {
+	// TODO make NewSentinel/ClientFunc take a Context
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	addrs := map[string]bool{}
 	for _, addr := range sentinelAddrs {
 		addrs[addr] = true
@@ -140,9 +145,9 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 		}
 		defer conn.Close()
 
-		if err := sc.ensureSentinelAddrs(conn); err != nil {
+		if err := sc.ensureSentinelAddrs(ctx, conn); err != nil {
 			return nil, err
-		} else if err := sc.ensureClients(conn); err != nil {
+		} else if err := sc.ensureClients(ctx, conn); err != nil {
 			return nil, err
 		}
 	}
@@ -208,10 +213,10 @@ func (sc *Sentinel) dialSentinel() (Conn, error) {
 // NOTE it's possible that in between Do being called and the Action being
 // actually carried out that there could be a failover event. In that case, the
 // Action will likely fail and return an error.
-func (sc *Sentinel) Do(a Action) error {
+func (sc *Sentinel) Do(ctx context.Context, a Action) error {
 	sc.l.RLock()
 	defer sc.l.RUnlock()
-	return sc.clients[sc.primAddr].Do(a)
+	return sc.clients[sc.primAddr].Do(ctx, a)
 }
 
 // DoSecondary is like Do but executes the Action on a random replica if possible.
@@ -222,12 +227,12 @@ func (sc *Sentinel) Do(a Action) error {
 // NOTE it's possible that in between DoSecondary being called and the Action being
 // actually carried out that there could be a failover event. In that case, the
 // Action will likely fail and return an error.
-func (sc *Sentinel) DoSecondary(a Action) error {
+func (sc *Sentinel) DoSecondary(ctx context.Context, a Action) error {
 	c, err := sc.clientInner("")
 	if err != nil {
 		return err
 	}
-	return c.Do(a)
+	return c.Do(ctx, a)
 }
 
 // Addrs returns the currently known network address of the current primary
@@ -351,10 +356,10 @@ func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
 
 // given a connection to a sentinel, ensures that the Clients currently being
 // held agrees with what the sentinel thinks they should be
-func (sc *Sentinel) ensureClients(conn Conn) error {
+func (sc *Sentinel) ensureClients(ctx context.Context, conn Conn) error {
 	var primM map[string]string
 	var secMM []map[string]string
-	if err := conn.Do(Pipeline(
+	if err := conn.Do(ctx, Pipeline(
 		Cmd(&primM, "SENTINEL", "MASTER", sc.name),
 		Cmd(&secMM, "SENTINEL", "SLAVES", sc.name),
 	)); err != nil {
@@ -442,9 +447,9 @@ func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client)
 
 // annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_
 // sentinel instance, only the others it knows about for that primary
-func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
+func (sc *Sentinel) ensureSentinelAddrs(ctx context.Context, conn Conn) error {
 	var mm []map[string]string
-	err := conn.Do(Cmd(&mm, "SENTINEL", "SENTINELS", sc.name))
+	err := conn.Do(ctx, Cmd(&mm, "SENTINEL", "SENTINELS", sc.name))
 	if err != nil {
 		return err
 	}
@@ -500,9 +505,19 @@ func (sc *Sentinel) innerSpin() error {
 
 	var switchMaster bool
 	for {
-		if err := sc.ensureSentinelAddrs(conn); err != nil {
-			return err
-		} else if err := sc.ensureClients(conn); err != nil {
+		err := func() error {
+			// putting this in an anonymous function is only slightly less ugly
+			// than calling cancel in every if-error case.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := sc.ensureSentinelAddrs(ctx, conn); err != nil {
+				return err
+			} else if err := sc.ensureClients(ctx, conn); err != nil {
+				return err
+			}
+			return nil
+		}()
+		if err != nil {
 			return err
 		}
 		sc.pconn.Ping()

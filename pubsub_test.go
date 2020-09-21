@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"log"
 	"math/rand"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 )
 
 func publish(t *T, c Conn, ch, msg string) {
-	require.Nil(t, c.Do(Cmd(nil, "PUBLISH", ch, msg)))
+	require.Nil(t, c.Do(testCtx(t), Cmd(nil, "PUBLISH", ch, msg)))
 }
 
 func assertMsgRead(t *T, msgCh <-chan PubSubMessage) PubSubMessage {
@@ -245,6 +246,7 @@ func TestPubSubMixedSubscribe(t *T) {
 // Ensure that PubSubConn properly handles the case where the Conn it's reading
 // from returns a timeout error
 func TestPubSubTimeout(t *T) {
+	ctx := testCtx(t)
 	c, pubC := PubSub(dial(DialReadTimeout(1*time.Second))), dial()
 	c.(*pubSubConn).testEventCh = make(chan string, 1)
 
@@ -254,7 +256,7 @@ func TestPubSubTimeout(t *T) {
 	msgStr := randStr()
 	go func() {
 		time.Sleep(2 * time.Second)
-		assert.Nil(t, pubC.Do(Cmd(nil, "PUBLISH", ch, msgStr)))
+		assert.Nil(t, pubC.Do(ctx, Cmd(nil, "PUBLISH", ch, msgStr)))
 	}()
 
 	assert.Equal(t, "timeout", <-c.(*pubSubConn).testEventCh)
@@ -313,6 +315,7 @@ func TestPubSubChaotic(t *T) {
 }
 
 func BenchmarkPubSub(b *B) {
+	ctx := testCtx(b)
 	c, pubC := PubSub(dial()), dial()
 	defer c.Close()
 	defer pubC.Close()
@@ -324,7 +327,7 @@ func BenchmarkPubSub(b *B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := pubC.Do(Cmd(nil, "PUBLISH", "benchmark", msg)); err != nil {
+		if err := pubC.Do(ctx, Cmd(nil, "PUBLISH", "benchmark", msg)); err != nil {
 			b.Fatal(err)
 		}
 		<-msgCh
@@ -377,8 +380,11 @@ func ExamplePubSub() {
 func ExamplePersistentPubSub_cluster() {
 	// Example of how to use PersistentPubSub with a Cluster instance.
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// Initialize the cluster in any way you see fit
-	cluster, err := NewCluster([]string{"127.0.0.1:6379"})
+	cluster, err := NewCluster(ctx, []string{"127.0.0.1:6379"})
 	if err != nil {
 		panic(err)
 	}

@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
@@ -34,27 +35,30 @@ func testStub() Conn {
 }
 
 func TestStub(t *T) {
+	ctx := testCtx(t)
 	stub := testStub()
 
 	{ // Basic test
 		var foo string
-		require.Nil(t, stub.Do(Cmd(nil, "SET", "foo", "a")))
-		require.Nil(t, stub.Do(Cmd(&foo, "GET", "foo")))
+		require.Nil(t, stub.Do(ctx, Cmd(nil, "SET", "foo", "a")))
+		require.Nil(t, stub.Do(ctx, Cmd(&foo, "GET", "foo")))
 		assert.Equal(t, "a", foo)
 	}
 
 	{ // Basic test with an int, to ensure marshalling/unmarshalling all works
 		var foo int
-		require.Nil(t, stub.Do(FlatCmd(nil, "SET", "foo", 1)))
-		require.Nil(t, stub.Do(Cmd(&foo, "GET", "foo")))
+		require.Nil(t, stub.Do(ctx, FlatCmd(nil, "SET", "foo", 1)))
+		require.Nil(t, stub.Do(ctx, Cmd(&foo, "GET", "foo")))
 		assert.Equal(t, 1, foo)
 	}
 }
 
 func TestStubPipeline(t *T) {
+	ctx := testCtx(t)
 	stub := testStub()
+
 	var out string
-	err := stub.Do(Pipeline(
+	err := stub.Do(ctx, Pipeline(
 		Cmd(nil, "SET", "foo", "bar"),
 		Cmd(&out, "GET", "foo"),
 	))
@@ -106,6 +110,9 @@ func TestStubLockingTimeout(t *T) {
 }
 
 func ExampleStub() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	m := map[string]string{}
 	stub := Stub("tcp", "127.0.0.1:6379", func(args []string) interface{} {
 		switch args[0] {
@@ -119,9 +126,9 @@ func ExampleStub() {
 		}
 	})
 
-	stub.Do(Cmd(nil, "SET", "foo", "1"))
+	stub.Do(ctx, Cmd(nil, "SET", "foo", "1"))
 
 	var foo int
-	stub.Do(Cmd(&foo, "GET", "foo"))
+	stub.Do(ctx, Cmd(&foo, "GET", "foo"))
 	fmt.Printf("foo: %d\n", foo)
 }

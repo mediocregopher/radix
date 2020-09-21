@@ -1,8 +1,12 @@
 package radix
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"sync"
+	. "testing"
+	"time"
 )
 
 func randStr() string {
@@ -19,4 +23,23 @@ func dial(opts ...DialOpt) Conn {
 		panic(err)
 	}
 	return c
+}
+
+var (
+	testCtxs  = map[TB]context.Context{}
+	testCtxsL sync.Mutex
+)
+
+func testCtx(t TB) context.Context {
+	testCtxsL.Lock()
+	defer testCtxsL.Unlock()
+
+	if ctx, ok := testCtxs[t]; ok {
+		return ctx
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	testCtxs[t] = ctx
+	return ctx
 }

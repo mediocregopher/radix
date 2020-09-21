@@ -3,6 +3,7 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"net"
 	"sync"
@@ -186,7 +187,7 @@ func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn 
 	}
 }
 
-func (s *stub) Do(a Action) error {
+func (s *stub) Do(ctx context.Context, a Action) error {
 	return a.Perform(s)
 }
 

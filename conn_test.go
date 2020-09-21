@@ -11,23 +11,25 @@ import (
 )
 
 func TestCloseBehavior(t *T) {
+	ctx := testCtx(t)
 	c := dial()
 
 	// sanity check
 	var out string
-	require.Nil(t, c.Do(Cmd(&out, "ECHO", "foo")))
+	require.Nil(t, c.Do(ctx, Cmd(&out, "ECHO", "foo")))
 	assert.Equal(t, "foo", out)
 
 	c.Close()
-	require.NotNil(t, c.Do(Cmd(&out, "ECHO", "foo")))
+	require.NotNil(t, c.Do(ctx, Cmd(&out, "ECHO", "foo")))
 	require.NotNil(t, c.NetConn().SetDeadline(time.Now()))
 }
 
 func TestDialURI(t *T) {
+	ctx := testCtx(t)
 	c, err := Dial("tcp", "redis://127.0.0.1:6379")
 	if err != nil {
 		t.Fatal(err)
-	} else if err := c.Do(Cmd(nil, "PING")); err != nil {
+	} else if err := c.Do(ctx, Cmd(nil, "PING")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -86,17 +88,18 @@ func TestDialAuth(t *T) {
 }
 
 func TestDialSelect(t *T) {
+	ctx := testCtx(t)
 
 	// unfortunately this is the best way to discover the currently selected
 	// database, and it's janky af
 	assertDB := func(c Conn) bool {
 		name := randStr()
-		if err := c.Do(Cmd(nil, "CLIENT", "SETNAME", name)); err != nil {
+		if err := c.Do(ctx, Cmd(nil, "CLIENT", "SETNAME", name)); err != nil {
 			t.Fatal(err)
 		}
 
 		var list string
-		if err := c.Do(Cmd(&list, "CLIENT", "LIST")); err != nil {
+		if err := c.Do(ctx, Cmd(&list, "CLIENT", "LIST")); err != nil {
 			t.Fatal(err)
 		}
 

@@ -2,6 +2,7 @@ package radix
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"reflect"
@@ -154,10 +155,14 @@ type Cluster struct {
 // a replica, either by explicitly sending commands on the connection or by using
 // the DoSecondary method on the Cluster that owns the connection.
 var DefaultClusterConnFunc = func(network, addr string) (Conn, error) {
+	// TODO ConnFunc should take a Context
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	c, err := DefaultConnFunc(network, addr)
 	if err != nil {
 		return nil, err
-	} else if err := c.Do(Cmd(nil, "READONLY")); err != nil {
+	} else if err := c.Do(ctx, Cmd(nil, "READONLY")); err != nil {
 		c.Close()
 		return nil, err
 	}
@@ -175,7 +180,7 @@ var DefaultClusterConnFunc = func(network, addr string) (Conn, error) {
 //     ClusterSyncEvery(5 * time.Second)
 //     ClusterOnDownDelayActionsBy(100 * time.Millisecond)
 //
-func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
+func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c := &Cluster{
 		syncDedupe: newDedupe(),
 		pools:      map[string]Client{},
@@ -207,7 +212,7 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		break
 	}
 
-	if err := c.Sync(); err != nil {
+	if err := c.Sync(ctx); err != nil {
 		for _, p := range c.pools {
 			p.Close()
 		}
@@ -323,9 +328,9 @@ func (c *Cluster) Topo() ClusterTopo {
 	return c.topo
 }
 
-func (c *Cluster) getTopo(p Client) (ClusterTopo, error) {
+func (c *Cluster) getTopo(ctx context.Context, p Client) (ClusterTopo, error) {
 	var tt ClusterTopo
-	err := p.Do(Cmd(&tt, "CLUSTER", "SLOTS"))
+	err := p.Do(ctx, Cmd(&tt, "CLUSTER", "SLOTS"))
 	if len(tt) == 0 && err == nil {
 		//This will happen between when nodes starts coming up after cluster goes down and
 		//Cluster swarm yet not ready using those nodes.
@@ -338,13 +343,13 @@ func (c *Cluster) getTopo(p Client) (ClusterTopo, error) {
 // to new instances and removing ones from instances no longer in the cluster.
 // This will be called periodically automatically, but you can manually call it
 // at any time as well
-func (c *Cluster) Sync() error {
+func (c *Cluster) Sync(ctx context.Context) error {
 	p, err := c.pool("")
 	if err != nil {
 		return err
 	}
 	c.syncDedupe.do(func() {
-		err = c.sync(p)
+		err = c.sync(ctx, p)
 	})
 	return err
 }
@@ -400,8 +405,8 @@ func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 
 // while this method is normally deduplicated by the Sync method's use of
 // dedupe it is perfectly thread-safe on its own and can be used whenever.
-func (c *Cluster) sync(p Client) error {
-	tt, err := c.getTopo(p)
+func (c *Cluster) sync(ctx context.Context, p Client) error {
+	tt, err := c.getTopo(ctx, p)
 	if err != nil {
 		return err
 	}
@@ -460,7 +465,10 @@ func (c *Cluster) syncEvery(d time.Duration) {
 		for {
 			select {
 			case <-t.C:
-				if err := c.Sync(); err != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), d)
+				err := c.Sync(ctx)
+				cancel()
+				if err != nil {
 					c.err(err)
 				}
 			case <-c.closeCh:
@@ -522,7 +530,7 @@ func (ac askConn) EncodeDecode(m resp.Marshaler, u resp.Unmarshaler) error {
 	return ac.Conn.EncodeDecode(a, a)
 }
 
-func (ac askConn) Do(a Action) error {
+func (ac askConn) Do(ctx context.Context, a Action) error {
 	return a.Perform(ac)
 }
 
@@ -533,7 +541,7 @@ const doAttempts = 5
 //
 // This method handles MOVED and ASK errors automatically in most cases, see
 // ClusterCanRetryAction's docs for more.
-func (c *Cluster) Do(a Action) error {
+func (c *Cluster) Do(ctx context.Context, a Action) error {
 	var addr, key string
 	keys := a.Keys()
 	if len(keys) == 0 {
@@ -545,7 +553,13 @@ func (c *Cluster) Do(a Action) error {
 		addr = c.addrForKey(key)
 	}
 
-	return c.doInner(a, addr, key, false, doAttempts)
+	return c.doInner(clusterDoInnerParams{
+		ctx:      ctx,
+		action:   a,
+		addr:     addr,
+		key:      key,
+		attempts: doAttempts,
+	})
 }
 
 // DoSecondary is like Do but executes the Action on a random secondary for the affected keys.
@@ -556,7 +570,7 @@ func (c *Cluster) Do(a Action) error {
 // See ClusterPoolFunc for an example using the global DefaultClusterConnFunc.
 //
 // If the Action can not be handled by a secondary the Action will be send to the primary instead.
-func (c *Cluster) DoSecondary(a Action) error {
+func (c *Cluster) DoSecondary(ctx context.Context, a Action) error {
 	var addr, key string
 	keys := a.Keys()
 	if len(keys) == 0 {
@@ -568,7 +582,13 @@ func (c *Cluster) DoSecondary(a Action) error {
 		addr = c.secondaryAddrForKey(key)
 	}
 
-	return c.doInner(a, addr, key, false, doAttempts)
+	return c.doInner(clusterDoInnerParams{
+		ctx:      ctx,
+		action:   a,
+		addr:     addr,
+		key:      key,
+		attempts: doAttempts,
+	})
 }
 
 func (c *Cluster) getClusterDownSince() int64 {
@@ -650,17 +670,25 @@ func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, count int, 
 	}
 }
 
-func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) error {
+type clusterDoInnerParams struct {
+	ctx       context.Context
+	action    Action
+	addr, key string
+	ask       bool
+	attempts  int
+}
+
+func (c *Cluster) doInner(params clusterDoInnerParams) error {
 	if downSince := c.getClusterDownSince(); downSince > 0 && c.opts.clusterDownWait > 0 {
 		// only wait when the last command was not too long, because
-		// otherwise the chance it high that the cluster already healed
+		// otherwise the chance is high that the cluster already healed
 		elapsed := (time.Now().UnixNano() / 1000 / 1000) - downSince
 		if elapsed < int64(c.opts.clusterDownWait/time.Millisecond) {
 			time.Sleep(c.opts.clusterDownWait)
 		}
 	}
 
-	p, err := c.pool(addr)
+	p, err := c.pool(params.addr)
 	if err != nil {
 		return err
 	}
@@ -670,15 +698,15 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	// avoids a few allocations, and execute our Action directly on p. This
 	// helps with most calls since ask will only be true when a key gets
 	// migrated between nodes.
-	thisA := a
-	if ask {
+	thisA := params.action
+	if params.ask {
 		// TODO is this still necessary?
-		thisA = WithConn(key, func(conn Conn) error {
-			return askConn{conn}.Do(a)
+		thisA = WithConn(params.key, func(conn Conn) error {
+			return askConn{conn}.Do(params.ctx, params.action)
 		})
 	}
 
-	err = p.Do(thisA)
+	err = p.Do(params.ctx, thisA)
 	if err == nil {
 		c.setClusterDown(false)
 		return nil
@@ -694,13 +722,14 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
 	clusterDownChanged := c.setClusterDown(clusterDown)
 	if clusterDown && c.opts.clusterDownWait > 0 && clusterDownChanged {
-		return c.doInner(a, addr, key, ask, 1)
+		params.attempts++ // TODO should this be --?
+		return c.doInner(params)
 	}
 
 	// if the error was a MOVED or ASK we can potentially retry
 	moved := strings.HasPrefix(msg, "MOVED ")
-	ask = strings.HasPrefix(msg, "ASK ")
-	if !moved && !ask {
+	params.ask = strings.HasPrefix(msg, "ASK ")
+	if !moved && !params.ask {
 		return err
 	}
 
@@ -712,12 +741,12 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	// Also, even if the Action isn't a ClusterCanRetryAction we want a MOVED to
 	// prompt a Sync
 	if moved {
-		if serr := c.Sync(); serr != nil {
+		if serr := c.Sync(params.ctx); serr != nil {
 			return serr
 		}
 	}
 
-	if ccra, ok := a.(ClusterCanRetryAction); !ok || !ccra.ClusterCanRetry() {
+	if ccra, ok := params.action.(ClusterCanRetryAction); !ok || !ccra.ClusterCanRetry() {
 		return err
 	}
 
@@ -725,14 +754,19 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 	if len(msgParts) < 3 {
 		return fmt.Errorf("malformed MOVED/ASK error %q", msg)
 	}
-	ogAddr, addr := addr, msgParts[2]
 
-	c.traceRedirected(ogAddr, key, moved, ask, doAttempts-attempts+1, attempts <= 1)
-	if attempts--; attempts <= 0 {
+	ogAddr := params.addr
+	params.addr = msgParts[2]
+
+	c.traceRedirected(
+		ogAddr, params.key, moved, params.ask, doAttempts-params.attempts+1,
+		params.attempts <= 1,
+	)
+	if params.attempts--; params.attempts <= 0 {
 		return errors.New("cluster action redirected too many times")
 	}
 
-	return c.doInner(a, addr, key, ask, attempts)
+	return c.doInner(params)
 }
 
 // Close cleans up all goroutines spawned by Cluster and closes all of its

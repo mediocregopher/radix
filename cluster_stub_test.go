@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -320,9 +321,9 @@ func (scl *clusterStub) addrs() []string {
 	return res
 }
 
-func (scl *clusterStub) newCluster(opts ...ClusterOpt) *Cluster {
+func (scl *clusterStub) newCluster(ctx context.Context, opts ...ClusterOpt) *Cluster {
 	opts = append([]ClusterOpt{ClusterPoolFunc(scl.clientFunc())}, opts...)
-	c, err := NewCluster(scl.addrs(), opts...)
+	c, err := NewCluster(ctx, scl.addrs(), opts...)
 	if err != nil {
 		panic(err)
 	}
@@ -424,10 +425,11 @@ func (scl *clusterStub) migrateSlotRange(dstAddr string, start, end uint16) {
 
 // Who watches the watchmen?
 func TestClusterStub(t *T) {
+	ctx := testCtx(t)
 	scl := newStubCluster(testTopo)
 
 	var outTT ClusterTopo
-	err := scl.randStub().newConn().Do(Cmd(&outTT, "CLUSTER", "SLOTS"))
+	err := scl.randStub().newConn().Do(ctx, Cmd(&outTT, "CLUSTER", "SLOTS"))
 	require.Nil(t, err)
 	assert.Equal(t, testTopo, outTT)
 
@@ -437,48 +439,48 @@ func TestClusterStub(t *T) {
 	src := scl.stubForSlot(0)
 	srcConn := src.newConn()
 	key := clusterSlotKeys[0]
-	require.Nil(t, srcConn.Do(Cmd(nil, "SET", key, "foo")))
+	require.Nil(t, srcConn.Do(ctx, Cmd(nil, "SET", key, "foo")))
 	dst := scl.stubForSlot(10000)
 	dstConn := dst.newConn()
 	scl.migrateInit(dst.addr, 0)
 
 	// getting a key from that slot from the original should still work
 	var val string
-	require.Nil(t, srcConn.Do(Cmd(&val, "GET", key)))
+	require.Nil(t, srcConn.Do(ctx, Cmd(&val, "GET", key)))
 	assert.Equal(t, "foo", val)
 	var vals []string
-	require.Nil(t, srcConn.Do(Cmd(&vals, "MGET", key)))
+	require.Nil(t, srcConn.Do(ctx, Cmd(&vals, "MGET", key)))
 	assert.Len(t, vals, 1)
 	assert.Equal(t, "foo", vals[0])
 
 	// getting on the new dst should give MOVED
-	err = dstConn.Do(Cmd(nil, "GET", key))
+	err = dstConn.Do(ctx, Cmd(nil, "GET", key))
 	assert.EqualError(t, err, "MOVED 0 "+src.addr)
 
 	// actually migrate that key ...
 	scl.migrateKey(key)
 	// ... then doing the GET on the src should give an ASK error ...
-	err = srcConn.Do(Cmd(nil, "GET", key))
+	err = srcConn.Do(ctx, Cmd(nil, "GET", key))
 	assert.EqualError(t, err, "ASK 0 "+dst.addr)
 	// ... doing the GET on the dst _without_ asking should give MOVED again ...
-	err = dstConn.Do(Cmd(nil, "GET", key))
+	err = dstConn.Do(ctx, Cmd(nil, "GET", key))
 	assert.EqualError(t, err, "MOVED 0 "+src.addr)
 	// ... but doing it with ASKING on dst should work
-	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
-	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
+	require.Nil(t, dstConn.Do(ctx, Cmd(nil, "ASKING")))
+	require.Nil(t, dstConn.Do(ctx, Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
 
 	// while migrating a slot
 	// ... trying to get multiple keys on the dst should give a MOVED ..
-	err = dstConn.Do(Cmd(nil, "MGET", key, "{"+key+"}.foo"))
+	err = dstConn.Do(ctx, Cmd(nil, "MGET", key, "{"+key+"}.foo"))
 	assert.EqualError(t, err, "MOVED 0 "+src.addr)
 	// ... but doing it with ASKING on dst should return a TRYAGAIN ...
-	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
-	err = dstConn.Do(Cmd(nil, "MGET", key, "{"+key+"}.foo"))
+	require.Nil(t, dstConn.Do(ctx, Cmd(nil, "ASKING")))
+	err = dstConn.Do(ctx, Cmd(nil, "MGET", key, "{"+key+"}.foo"))
 	assert.EqualError(t, err, "TRYAGAIN Multiple keys request during rehashing of slot")
 	// ... unless we only try to get one key
-	require.Nil(t, dstConn.Do(Cmd(nil, "ASKING")))
-	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", "{"+key+"}.foo")))
+	require.Nil(t, dstConn.Do(ctx, Cmd(nil, "ASKING")))
+	require.Nil(t, dstConn.Do(ctx, Cmd(&vals, "MGET", "{"+key+"}.foo")))
 	assert.Len(t, vals, 1)
 	assert.Equal(t, "", vals[0])
 
@@ -486,17 +488,18 @@ func TestClusterStub(t *T) {
 	// work
 	scl.migrateAllKeys(0)
 	scl.migrateDone(0)
-	err = srcConn.Do(Cmd(nil, "GET", key))
+	err = srcConn.Do(ctx, Cmd(nil, "GET", key))
 	assert.EqualError(t, err, "MOVED 0 "+dst.addr)
-	require.Nil(t, dstConn.Do(Cmd(nil, "GET", key)))
+	require.Nil(t, dstConn.Do(ctx, Cmd(nil, "GET", key)))
 	assert.Equal(t, "foo", val)
-	require.Nil(t, dstConn.Do(Cmd(&vals, "MGET", key, "{"+key+"}.foo")))
+	require.Nil(t, dstConn.Do(ctx, Cmd(&vals, "MGET", key, "{"+key+"}.foo")))
 	assert.Len(t, vals, 2)
 	assert.Equal(t, vals[0], "foo")
 	assert.Equal(t, vals[1], "")
 }
 
 func TestClusterStubSlotNotBound(t *T) {
+	ctx := testCtx(t)
 	scl := newStubCluster(testTopo)
 
 	stub0 := scl.stubForSlot(0)
@@ -504,11 +507,11 @@ func TestClusterStubSlotNotBound(t *T) {
 
 	key := clusterSlotKeys[0]
 
-	err := stub0.newConn().Do(Cmd(nil, "GET", key))
+	err := stub0.newConn().Do(ctx, Cmd(nil, "GET", key))
 	assert.EqualError(t, err, "CLUSTERDOWN Hash slot not served")
 
 	stub0.addSlot(0)
 
-	err = stub0.newConn().Do(Cmd(nil, "GET", key))
+	err = stub0.newConn().Do(ctx, Cmd(nil, "GET", key))
 	assert.Nil(t, err)
 }

@@ -145,6 +145,7 @@
 package radix
 
 import (
+	"context"
 	"errors"
 )
 
@@ -157,7 +158,7 @@ var errClientClosed = errors.New("client is closed")
 // like Conn where they specify otherwise.
 type Client interface {
 	// Do performs an Action, returning any error.
-	Do(Action) error
+	Do(context.Context, Action) error
 
 	// Once Close() is called all future method calls on the Client will return
 	// an error
