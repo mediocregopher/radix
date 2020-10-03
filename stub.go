@@ -25,17 +25,15 @@ func (sa bufferAddr) String() string {
 	return sa.addr
 }
 
-// TODO in the end this is really just a complicated stub of net.Conn, and
-// there's probably a more elegant way to implement it.
+// in the end this is really just a complicated stub of net.Conn
 type buffer struct {
 	net.Conn   // always nil
 	remoteAddr bufferAddr
 
-	bufL         *sync.Cond
-	buf          *bytes.Buffer
-	bufbr        *bufio.Reader
-	closed       bool
-	readDeadline time.Time
+	bufL   *sync.Cond
+	buf    *bytes.Buffer
+	bufbr  *bufio.Reader
+	closed bool
 }
 
 func newBuffer(remoteNetwork, remoteAddr string) *buffer {
@@ -65,24 +63,12 @@ func (b *buffer) Encode(m resp.Marshaler) error {
 	return nil
 }
 
-func (b *buffer) Decode(u resp.Unmarshaler) error {
+func (b *buffer) Decode(ctx context.Context, u resp.Unmarshaler) error {
 	b.bufL.L.Lock()
 	defer b.bufL.L.Unlock()
 
-	var timeoutCh chan struct{}
-	if b.readDeadline.IsZero() {
-		// no readDeadline, timeoutCh will never be written to
-	} else if now := time.Now(); b.readDeadline.Before(now) {
-		return b.err("read", new(timeoutError))
-	} else {
-		timeoutCh = make(chan struct{}, 2)
-		sleep := b.readDeadline.Sub(now)
-		go func() {
-			time.Sleep(sleep)
-			timeoutCh <- struct{}{}
-			b.bufL.Broadcast()
-		}()
-	}
+	wakeupTicker := time.NewTicker(250 * time.Millisecond)
+	defer wakeupTicker.Stop()
 
 	for b.buf.Len() == 0 && b.bufbr.Buffered() == 0 {
 		if b.closed {
@@ -90,19 +76,16 @@ func (b *buffer) Decode(u resp.Unmarshaler) error {
 		}
 
 		select {
-		case <-timeoutCh:
-			return b.err("read", new(timeoutError))
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
 
-		// we have to periodically wakeup to double-check the timeoutCh, if
-		// there is one
-		if timeoutCh != nil {
-			go func() {
-				time.Sleep(1 * time.Second)
-				b.bufL.Broadcast()
-			}()
-		}
+		// we have to periodically wakeup to check if the context is done
+		go func() {
+			<-wakeupTicker.C
+			b.bufL.Broadcast()
+		}()
 
 		b.bufL.Wait()
 	}
@@ -123,20 +106,6 @@ func (b *buffer) Close() error {
 
 func (b *buffer) RemoteAddr() net.Addr {
 	return b.remoteAddr
-}
-
-func (b *buffer) SetDeadline(t time.Time) error {
-	return b.SetReadDeadline(t)
-}
-
-func (b *buffer) SetReadDeadline(t time.Time) error {
-	b.bufL.L.Lock()
-	defer b.bufL.L.Unlock()
-	if b.closed {
-		return b.err("set", errClosed)
-	}
-	b.readDeadline = t
-	return nil
 }
 
 func (b *buffer) err(op string, err error) error {
@@ -168,20 +137,15 @@ type stub struct {
 // instance, but is instead using the given callback to service requests. It is
 // primarily useful for writing tests.
 //
-// TODO this comment is wrong.
-//
-// When Encode is called the given value is marshalled into bytes then
-// unmarshalled into a []string, which is passed to the callback. The return
-// from the callback is then marshalled and buffered internally, and will be
-// unmarshalled in the next call to Decode.
+// When EncodeDecode is called the value to be marshaled is converted into a
+// []string and passed to the callback. The return from the callback is then
+// marshaled into an internal buffer. The value to be decoded is unmarshaled
+// into using the internal buffer. If the internal buffer is empty at
+// this step then the call will block.
 //
 // remoteNetwork and remoteAddr can be empty, but if given will be used as the
 // return from the RemoteAddr method.
 //
-// If the internal buffer is empty then Decode will block until Encode is called
-// in a separate go-routine. The SetDeadline and SetReadDeadline methods can be
-// used as usual to limit how long Decode blocks. All other inherited net.Conn
-// methods will panic.
 func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn {
 	return &stub{
 		buffer: newBuffer(remoteNetwork, remoteAddr),
@@ -195,29 +159,24 @@ func (s *stub) Do(ctx context.Context, a Action) error {
 
 func (s *stub) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
 	if m != nil {
-		// first marshal into a RawMessage
 		buf := new(bytes.Buffer)
 		if err := m.MarshalRESP(buf); err != nil {
 			return err
 		}
 		br := bufio.NewReader(buf)
 
-		var rm resp2.RawMessage
 		for {
+			var ss []string
 			if buf.Len() == 0 && br.Buffered() == 0 {
 				break
-			} else if err := rm.UnmarshalRESP(br); err != nil {
-				return err
-			}
-			// unmarshal that into a string slice
-			var ss []string
-			if err := rm.UnmarshalInto(resp2.Any{I: &ss}); err != nil {
+			} else if err := (resp2.Any{I: &ss}).UnmarshalRESP(br); err != nil {
 				return err
 			}
 
 			// get return from callback. Results implementing resp.Marshaler are
-			// assumed to be wanting to be written in all cases, otherwise if the
-			// result is an error it is assumed to want to be returned directly.
+			// assumed to be wanting to be written in all cases, otherwise if
+			// the result is an error it is assumed to want to be returned
+			// directly.
 			ret := s.fn(ss)
 			if m, ok := ret.(resp.Marshaler); ok {
 				if err := s.buffer.Encode(m); err != nil {
@@ -232,7 +191,7 @@ func (s *stub) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmars
 	}
 
 	if u != nil {
-		if err := s.buffer.Decode(u); err != nil {
+		if err := s.buffer.Decode(ctx, u); err != nil {
 			return err
 		}
 	}

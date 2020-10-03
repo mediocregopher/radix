@@ -465,17 +465,21 @@ func (sc *Sentinel) ensureSentinelAddrs(ctx context.Context, conn Conn) error {
 func (sc *Sentinel) spin(ctx context.Context) {
 	defer sc.pconn.Close()
 	for {
-		if err := sc.innerSpin(ctx); err != nil {
-			sc.err(err)
-			// sleep a second so we don't end up in a tight loop
-			time.Sleep(1 * time.Second)
-		}
+		err := sc.innerSpin(ctx)
+
 		// This also gets checked within innerSpin to short-circuit that, but
-		// we also must check in here to short-circuit this
+		// we also must check in here to short-circuit this. The error returned
+		// doesn't really matter if the whole Sentinel is closing.
 		select {
 		case <-ctx.Done():
 			return
 		default:
+		}
+
+		if err != nil {
+			sc.err(err)
+			// sleep a second so we don't end up in a tight loop
+			time.Sleep(1 * time.Second)
 		}
 	}
 }
@@ -504,7 +508,7 @@ func (sc *Sentinel) innerSpin(ctx context.Context) error {
 		err := func() error {
 			// putting this in an anonymous function is only slightly less ugly
 			// than calling cancel in every if-error case.
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			if err := sc.ensureSentinelAddrs(ctx, conn); err != nil {
 				return fmt.Errorf("retrieving addresses of sentinel instances: %w", err)

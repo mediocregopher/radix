@@ -84,6 +84,8 @@ func TestPubSubStub(t *T) {
 	// No longer in pubsub mode, normal requests should work again
 	assertEncode("wat")
 	assertDecode("wat")
+
+	assert.NoError(t, conn.Close())
 }
 
 func ExamplePubSubStub() {

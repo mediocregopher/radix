@@ -3,7 +3,6 @@ package radix
 import (
 	"context"
 	"fmt"
-	"net"
 	"strconv"
 	"sync"
 	. "testing"
@@ -96,18 +95,21 @@ func TestStubLockingTimeout(t *T) {
 
 	// test out timeout. do a write-then-read to ensure nothing bad happens
 	// when there's actually data to read
-	now := time.Now()
-	conn := stub.NetConn()
-	conn.SetDeadline(now.Add(2 * time.Second))
-	m := Cmd(nil, "ECHO", "1").(resp.Marshaler)
-	require.Nil(t, stub.EncodeDecode(ctx, m, resp2.Any{}))
+	{
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		m := Cmd(nil, "ECHO", "1").(resp.Marshaler)
+		assert.NoError(t, stub.EncodeDecode(ctx, m, resp2.Any{}))
+		cancel()
+	}
 
 	// now there's no data to read, should return after 2-ish seconds with a
 	// timeout error
-	err := stub.EncodeDecode(ctx, nil, resp2.Any{})
-	nerr, ok := err.(*net.OpError)
-	assert.True(t, ok)
-	assert.True(t, nerr.Timeout())
+	{
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := stub.EncodeDecode(ctx, nil, resp2.Any{})
+		cancel()
+		assert.Equal(t, context.DeadlineExceeded, err)
+	}
 }
 
 func ExampleStub() {

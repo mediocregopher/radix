@@ -2,6 +2,7 @@ package radix
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"strconv"
@@ -118,7 +119,7 @@ func TestPubSubSubscribe(t *T) {
 	c := PubSub(dial())
 	testSubscribe(t, c, pubCh)
 
-	c.Close()
+	assert.NoError(t, c.Close())
 	assert.NotNil(t, c.Ping(ctx))
 	assert.NotNil(t, c.Ping(ctx))
 	assert.NotNil(t, c.Ping(ctx))
@@ -142,6 +143,7 @@ func TestPubSubPSubscribe(t *T) {
 	wg.Add(1)
 	go func() {
 		for i := 0; i < count; i++ {
+			msgStr := fmt.Sprintf("%s-%d", msgStr, i)
 			publish(t, pubC, ch1, msgStr)
 		}
 		wg.Done()
@@ -155,7 +157,7 @@ func TestPubSubPSubscribe(t *T) {
 				Type:    "pmessage",
 				Pattern: p1,
 				Channel: ch1,
-				Message: []byte(msgStr),
+				Message: []byte(fmt.Sprintf("%s-%d", msgStr, i)),
 			}, msg)
 		}
 		wg.Done()
@@ -215,7 +217,9 @@ func TestPubSubMixedSubscribe(t *T) {
 	defer pubC.Close()
 
 	c := PubSub(dial())
-	defer c.Close()
+	defer func() {
+		assert.NoError(t, c.Close())
+	}()
 
 	msgCh := make(chan PubSubMessage, 2)
 
@@ -258,9 +262,14 @@ func TestPubSubTimeout(t *T) {
 	require.Nil(t, c.Subscribe(ctx, msgCh, ch))
 
 	msgStr := randStr()
+	doneCh := make(chan struct{})
+	defer func() {
+		<-doneCh
+	}()
 	go func() {
 		time.Sleep(pubSubTimeout + time.Second)
-		assert.Nil(t, pubC.Do(ctx, Cmd(nil, "PUBLISH", ch, msgStr)))
+		assert.NoError(t, pubC.Do(ctx, Cmd(nil, "PUBLISH", ch, msgStr)))
+		close(doneCh)
 	}()
 
 	assert.Equal(t, "timeout", <-c.(*pubSubConn).testEventCh)
@@ -273,14 +282,22 @@ func TestPubSubTimeout(t *T) {
 func TestPubSubChaotic(t *T) {
 	ctx := testCtx(t)
 	c, pubC := PubSub(dial()), dial()
+	defer func() {
+		assert.NoError(t, c.Close())
+	}()
+
 	ch, msgStr := randStr(), randStr()
 
 	stopCh := make(chan struct{})
-	defer close(stopCh)
+	defer func() {
+		stopCh <- struct{}{}
+		<-stopCh
+	}()
 	go func() {
 		for {
 			select {
 			case <-stopCh:
+				stopCh <- struct{}{}
 				return
 			default:
 				publish(t, pubC, ch, msgStr)

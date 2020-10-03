@@ -226,6 +226,9 @@ type pubSubConn struct {
 	subs  chanSet
 	psubs chanSet
 
+	// pubCh is used for communicating between spin and pubSpin
+	pubCh chan PubSubMessage
+
 	// used for writing commands and waiting for their response (e.g.
 	// SUBSCRIBE, PING). See the do method for how that works.
 	cmdResCh chan error
@@ -252,9 +255,11 @@ func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
 		conn:       rc,
 		subs:       chanSet{},
 		psubs:      chanSet{},
+		pubCh:      make(chan PubSubMessage, 1024),
 		cmdResCh:   make(chan error, 1),
 		closeErrCh: closeErrCh,
 	}
+	c.proc.run(c.pubSpin)
 	c.proc.run(c.spin)
 	c.proc.run(c.pingSpin)
 	return c
@@ -282,9 +287,22 @@ func (c *pubSubConn) publish(m PubSubMessage) {
 	})
 }
 
+func (c *pubSubConn) pubSpin(ctx context.Context) {
+	doneCh := ctx.Done()
+	for {
+		select {
+		case <-doneCh:
+			return
+		case m := <-c.pubCh:
+			c.publish(m)
+		}
+	}
+}
+
 const pubSubTimeout = 1 * time.Second
 
 func (c *pubSubConn) spin(ctx context.Context) {
+	doneCh := ctx.Done()
 	for {
 		var m PubSubMessage
 		ctx, cancel := context.WithTimeout(ctx, pubSubTimeout)
@@ -303,7 +321,14 @@ func (c *pubSubConn) spin(ctx context.Context) {
 			go c.closeInner(err)
 			return
 		}
-		c.publish(m)
+
+		select {
+		case c.pubCh <- m:
+		case <-doneCh:
+			return
+		default:
+			panic("TODO figure out what to do in this case")
+		}
 	}
 }
 
@@ -332,9 +357,15 @@ func (c *pubSubConn) do(ctx context.Context, exp int, cmd string, args ...string
 		return err
 	}
 
+	doneCh := c.proc.closedCh()
 	for i := 0; i < exp; i++ {
-		if err := <-c.cmdResCh; err != nil {
-			return err
+		select {
+		case err := <-c.cmdResCh:
+			if err != nil {
+				return err
+			}
+		case <-doneCh:
+			return errPreviouslyClosed
 		}
 	}
 	return nil

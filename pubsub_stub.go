@@ -172,7 +172,7 @@ func (s *pubSubStub) spin(ctx context.Context) {
 					m.Type = "pmessage"
 				}
 			}
-			if err := s.Conn.EncodeDecode(context.Background(), m, nil); err != nil {
+			if err := s.Conn.EncodeDecode(ctx, m, nil); err != nil {
 				panic(fmt.Sprintf("error encoding message in PubSubStub: %s", err))
 			}
 			select {

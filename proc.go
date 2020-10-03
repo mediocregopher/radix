@@ -49,10 +49,12 @@ func (p *proc) prefixedClose(prefixFn, fn func() error) error {
 	p.closeOnce.Do(func() {
 		err = prefixFn()
 		p.ctxCancelFn()
-		p.wg.Wait()
+
 		p.lock.Lock()
-		defer p.lock.Unlock()
 		p.closed = true
+		p.lock.Unlock()
+
+		p.wg.Wait()
 		if fn != nil {
 			if fnErr := fn(); err == nil {
 				err = fnErr

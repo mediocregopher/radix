@@ -51,6 +51,7 @@ func TestPersistentPubSub(t *T) {
 	}()
 
 	testSubscribe(t, p, pubCh)
+	assert.NoError(t, p.Close())
 }
 
 func TestPersistentPubSubAbortAfter(t *T) {
@@ -76,7 +77,7 @@ func TestPersistentPubSubAbortAfter(t *T) {
 		PersistentPubSubAbortAfter(3))
 	assert.NoError(t, err)
 	assert.NoError(t, p.Ping(ctx))
-	p.Close()
+	assert.NoError(t, p.Close())
 }
 
 // https://github.com/mediocregopher/radix/issues/184
@@ -85,7 +86,10 @@ func TestPersistentPubSubClose(t *T) {
 	channel := "TestPersistentPubSubClose:" + randStr()
 
 	stopCh := make(chan struct{})
-	defer close(stopCh)
+	defer func() {
+		stopCh <- struct{}{}
+		<-stopCh
+	}()
 	go func() {
 		pubConn := dial()
 		defer pubConn.Close()
@@ -94,6 +98,7 @@ func TestPersistentPubSubClose(t *T) {
 			assert.NoError(t, err)
 			select {
 			case <-stopCh:
+				stopCh <- struct{}{}
 				return
 			case <-time.After(10 * time.Millisecond):
 			}
@@ -143,5 +148,4 @@ func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
 	case err := <-errch:
 		assert.Error(t, err)
 	}
-
 }

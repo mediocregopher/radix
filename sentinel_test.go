@@ -139,7 +139,7 @@ func TestSentinel(t *T) {
 	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
 	// don't tell anyone
 	poolFn := func(string, string) (Client, error) {
-		return NewPool("tcp", "127.0.0.1:6379", 10)
+		return NewPool("tcp", "127.0.0.1:6379", 1)
 	}
 
 	scc, err := NewSentinel(
