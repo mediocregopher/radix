@@ -303,7 +303,7 @@ func (scl *clusterStub) topo() ClusterTopo {
 }
 
 func (scl *clusterStub) clientFunc() ClientFunc {
-	return func(network, addr string) (Client, error) {
+	return func(ctx context.Context, network, addr string) (Client, error) {
 		for _, s := range scl.stubs {
 			if s.addr == addr {
 				return s.newConn(), nil

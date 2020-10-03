@@ -18,7 +18,8 @@ import (
 )
 
 func testPool(t *T, size int, opts ...PoolOpt) *Pool {
-	pool, err := NewPool("tcp", "localhost:6379", size, opts...)
+	ctx := testCtx(t)
+	pool, err := NewPool(ctx, "tcp", "localhost:6379", size, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,16 +102,17 @@ func TestPool(t *T) {
 
 // Test all the different OnEmpty behaviors
 func TestPoolGet(t *T) {
+	ctx := testCtx(t)
 	getBlock := func(p *Pool) (time.Duration, error) {
 		start := time.Now()
-		_, err := p.get()
+		_, err := p.get(ctx)
 		return time.Since(start), err
 	}
 
 	// this one is a bit weird, cause it would block infinitely if we let it
 	t.Run("onEmptyWait", func(t *T) {
 		pool := testPool(t, 1, PoolOnEmptyWait())
-		conn, err := pool.get()
+		conn, err := pool.get(ctx)
 		assert.NoError(t, err)
 
 		go func() {
@@ -140,6 +142,7 @@ func TestPoolGet(t *T) {
 
 func TestPoolOnFull(t *T) {
 	t.Run("onFullClose", func(t *T) {
+		ctx := testCtx(t)
 		var reason trace.PoolConnClosedReason
 		pool := testPool(t, 1,
 			PoolOnFullClose(),
@@ -150,7 +153,7 @@ func TestPoolOnFull(t *T) {
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
 
-		spc, err := pool.newConn("TEST")
+		spc, err := pool.newConn(ctx, "TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 1, len(pool.pool))
@@ -158,18 +161,19 @@ func TestPoolOnFull(t *T) {
 	})
 
 	t.Run("onFullBuffer", func(t *T) {
+		ctx := testCtx(t)
 		pool := testPool(t, 1, PoolOnFullBuffer(1, 1*time.Second))
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
 
 		// putting a conn should overflow
-		spc, err := pool.newConn("TEST")
+		spc, err := pool.newConn(ctx, "TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))
 
 		// another shouldn't, overflow is full
-		spc, err = pool.newConn("TEST")
+		spc, err = pool.newConn(ctx, "TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))
@@ -182,7 +186,7 @@ func TestPoolOnFull(t *T) {
 		assert.Equal(t, 1, len(pool.pool))
 
 		// if both are full then drain should remove the overflow one
-		spc, err = pool.newConn("TEST")
+		spc, err = pool.newConn(ctx, "TEST")
 		assert.NoError(t, err)
 		pool.put(spc)
 		assert.Equal(t, 2, len(pool.pool))
@@ -252,7 +256,7 @@ func TestPoolDoDoesNotBlock(t *T) {
 	requestTimeout := 200 * time.Millisecond
 	redialInterval := 100 * time.Millisecond
 
-	connFunc := PoolConnFunc(func(string, string) (Conn, error) {
+	connFunc := PoolConnFunc(func(context.Context, string, string) (Conn, error) {
 		return dial(), nil
 	})
 	pool := testPool(t, size,

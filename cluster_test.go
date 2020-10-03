@@ -287,7 +287,7 @@ func ExampleClusterPoolFunc_defaultClusterConnFunc() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	NewCluster(ctx, clusterAddrs, ClusterPoolFunc(func(network, addr string) (Client, error) {
-		return NewPool(network, addr, 4, PoolConnFunc(DefaultClusterConnFunc))
+	NewCluster(ctx, clusterAddrs, ClusterPoolFunc(func(ctx context.Context, network, addr string) (Client, error) {
+		return NewPool(ctx, network, addr, 4, PoolConnFunc(DefaultClusterConnFunc))
 	}))
 }

@@ -165,7 +165,7 @@ func ExampleNewScanner_scan() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := DefaultClientFunc("tcp", "126.0.0.1:6379")
+	client, err := DefaultClientFunc(ctx, "tcp", "126.0.0.1:6379")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func ExampleNewScanner_hscan() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := DefaultClientFunc("tcp", "126.0.0.1:6379")
+	client, err := DefaultClientFunc(ctx, "tcp", "126.0.0.1:6379")
 	if err != nil {
 		log.Fatal(err)
 	}

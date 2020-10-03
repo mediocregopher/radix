@@ -163,10 +163,10 @@ type Client interface {
 
 // ClientFunc is a function which can be used to create a Client for a single
 // redis instance on the given network/address.
-type ClientFunc func(network, addr string) (Client, error)
+type ClientFunc func(ctx context.Context, network, addr string) (Client, error)
 
 // DefaultClientFunc is a ClientFunc which will return a Client for a redis
 // instance using sane defaults.
-var DefaultClientFunc = func(network, addr string) (Client, error) {
-	return NewPool(network, addr, 4)
+var DefaultClientFunc = func(ctx context.Context, network, addr string) (Client, error) {
+	return NewPool(ctx, network, addr, 4)
 }

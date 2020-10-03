@@ -151,12 +151,8 @@ type Cluster struct {
 // read-only commands on the connection even if the connected instance is currently
 // a replica, either by explicitly sending commands on the connection or by using
 // the DoSecondary method on the Cluster that owns the connection.
-var DefaultClusterConnFunc = func(network, addr string) (Conn, error) {
-	// TODO ConnFunc should take a Context
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	c, err := DefaultConnFunc(network, addr)
+var DefaultClusterConnFunc = func(ctx context.Context, network, addr string) (Conn, error) {
+	c, err := DefaultConnFunc(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	} else if err := c.Do(ctx, Cmd(nil, "READONLY")); err != nil {
@@ -201,7 +197,7 @@ func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) 
 
 	// make a pool to base the cluster on
 	for _, addr := range clusterAddrs {
-		p, err := c.opts.pf("tcp", addr)
+		p, err := c.opts.pf(ctx, "tcp", addr)
 		if err != nil {
 			continue
 		}
@@ -287,7 +283,7 @@ func (c *Cluster) Client(addr string) (Client, error) {
 
 // if addr is "" returns a random pool. If addr is given but there's no pool for
 // it one will be created on-the-fly
-func (c *Cluster) pool(addr string) (Client, error) {
+func (c *Cluster) pool(ctx context.Context, addr string) (Client, error) {
 	p, err := c.rpool(addr)
 	if p != nil || err != nil {
 		return p, err
@@ -299,7 +295,7 @@ func (c *Cluster) pool(addr string) (Client, error) {
 
 	// it's important that the cluster pool set isn't locked while this is
 	// happening, because this could block for a while
-	if p, err = c.opts.pf("tcp", addr); err != nil {
+	if p, err = c.opts.pf(ctx, "tcp", addr); err != nil {
 		return nil, err
 	}
 
@@ -345,7 +341,7 @@ func (c *Cluster) getTopo(ctx context.Context, p Client) (ClusterTopo, error) {
 // This will be called periodically automatically, but you can manually call it
 // at any time as well
 func (c *Cluster) Sync(ctx context.Context) error {
-	p, err := c.pool("")
+	p, err := c.pool(ctx, "")
 	if err != nil {
 		return err
 	}
@@ -414,7 +410,7 @@ func (c *Cluster) sync(ctx context.Context, p Client) error {
 
 	for _, t := range tt {
 		// call pool just to ensure one exists for this addr
-		if _, err := c.pool(t.Addr); err != nil {
+		if _, err := c.pool(ctx, t.Addr); err != nil {
 			return fmt.Errorf("error connecting to %s: %w", t.Addr, err)
 		}
 	}
@@ -692,7 +688,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 		}
 	}
 
-	p, err := c.pool(params.addr)
+	p, err := c.pool(params.ctx, params.addr)
 	if err != nil {
 		return err
 	}

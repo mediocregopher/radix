@@ -361,7 +361,7 @@ func ExamplePubSub() {
 	defer cancel()
 
 	// Create a normal redis connection
-	conn, err := Dial("tcp", "127.0.0.1:6379")
+	conn, err := Dial(ctx, "tcp", "127.0.0.1:6379")
 	if err != nil {
 		panic(err)
 	}
@@ -418,10 +418,10 @@ func ExamplePersistentPubSub_cluster() {
 	// make a new connection. If the node fails PersistentPubSub will
 	// automatically pick a new node to connect to.
 	ps, err := PersistentPubSub(ctx, "", "",
-		PersistentPubSubConnFunc(func(string, string) (Conn, error) {
+		PersistentPubSubConnFunc(func(ctx context.Context, _ string, _ string) (Conn, error) {
 			topo := cluster.Topo()
 			node := topo[rand.Intn(len(topo))]
-			return Dial("tcp", node.Addr)
+			return Dial(ctx, "tcp", node.Addr)
 		},
 		))
 	if err != nil {

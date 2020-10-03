@@ -29,7 +29,7 @@ func TestCloseBehavior(t *T) {
 
 func TestDialURI(t *T) {
 	ctx := testCtx(t)
-	c, err := Dial("tcp", "redis://127.0.0.1:6379")
+	c, err := Dial(ctx, "tcp", "redis://127.0.0.1:6379")
 	if err != nil {
 		t.Fatal(err)
 	} else if err := c.Do(ctx, Cmd(nil, "PING")); err != nil {
@@ -43,6 +43,7 @@ func TestDialAuth(t *T) {
 	}
 
 	runTests := func(t *T, tests []testCase, allowedErrs []string) {
+		ctx := testCtx(t)
 		for _, test := range tests {
 			var opts []DialOpt
 			if test.dialOptUser != "" {
@@ -50,7 +51,7 @@ func TestDialAuth(t *T) {
 			} else if test.dialOptPass != "" {
 				opts = append(opts, DialAuthPass(test.dialOptPass))
 			}
-			_, err := Dial("tcp", test.url, opts...)
+			_, err := Dial(ctx, "tcp", test.url, opts...)
 
 			// It's difficult to test _which_ password is being sent, but it's easy
 			// enough to tell that one was sent because redis returns an error if one
@@ -130,7 +131,7 @@ func TestDialSelect(t *T) {
 		if test.dialOptSelect > 0 {
 			opts = append(opts, DialSelectDB(test.dialOptSelect))
 		}
-		c, err := Dial("tcp", test.url, opts...)
+		c, err := Dial(ctx, "tcp", test.url, opts...)
 		if err != nil {
 			t.Fatalf("got err connecting:%v (test:%#v)", err, test)
 		}

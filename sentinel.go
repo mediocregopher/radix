@@ -93,11 +93,7 @@ type Sentinel struct {
 //	SentinelConnFunc(DefaultConnFunc)
 //	SentinelPoolFunc(DefaultClientFunc)
 //
-func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt) (*Sentinel, error) {
-	// TODO make NewSentinel/ClientFunc take a Context
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string, opts ...SentinelOpt) (*Sentinel, error) {
 	addrs := map[string]bool{}
 	for _, addr := range sentinelAddrs {
 		addrs[addr] = true
@@ -133,7 +129,7 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	// connectable connection. This connection is only used during
 	// initialization, it gets closed right after
 	{
-		conn, err := sc.dialSentinel()
+		conn, err := sc.dialSentinel(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -148,8 +144,8 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 
 	// because we're using persistent these can't _really_ fail
 	var err error
-	sc.pconn, err = PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
-		return sc.dialSentinel()
+	sc.pconn, err = PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(ctx context.Context, _, _ string) (Conn, error) {
+		return sc.dialSentinel(ctx)
 	}))
 	if err != nil {
 		sc.Close()
@@ -175,10 +171,10 @@ func (sc *Sentinel) testEvent(event string) {
 	}
 }
 
-func (sc *Sentinel) dialSentinel() (conn Conn, err error) {
+func (sc *Sentinel) dialSentinel(ctx context.Context) (conn Conn, err error) {
 	err = sc.proc.withRLock(func() error {
 		for addr := range sc.sentinelAddrs {
-			if conn, err = sc.opts.cf("tcp", addr); err == nil {
+			if conn, err = sc.opts.cf(ctx, "tcp", addr); err == nil {
 				return nil
 			}
 		}
@@ -187,7 +183,7 @@ func (sc *Sentinel) dialSentinel() (conn Conn, err error) {
 		// this doesn't work
 		for _, addr := range sc.initAddrs {
 			var initErr error
-			if conn, initErr = sc.opts.cf("tcp", addr); initErr == nil {
+			if conn, initErr = sc.opts.cf(ctx, "tcp", addr); initErr == nil {
 				return nil
 			}
 		}
@@ -217,7 +213,7 @@ func (sc *Sentinel) Do(ctx context.Context, a Action) error {
 // actually carried out that there could be a failover event. In that case, the
 // Action will likely fail and return an error.
 func (sc *Sentinel) DoSecondary(ctx context.Context, a Action) error {
-	c, err := sc.clientInner("")
+	c, err := sc.clientInner(ctx, "")
 	if err != nil {
 		return err
 	}
@@ -268,14 +264,14 @@ func (sc *Sentinel) SentinelAddrs() (sentAddrs []string) {
 // on the nature of the failover.
 //
 // NOTE the Client should _not_ be closed.
-func (sc *Sentinel) Client(addr string) (Client, error) {
+func (sc *Sentinel) Client(ctx context.Context, addr string) (Client, error) {
 	if addr == "" {
 		return nil, errUnknownAddress
 	}
-	return sc.clientInner(addr)
+	return sc.clientInner(ctx, addr)
 }
 
-func (sc *Sentinel) clientInner(addr string) (Client, error) {
+func (sc *Sentinel) clientInner(ctx context.Context, addr string) (Client, error) {
 	var client Client
 	err := sc.proc.withRLock(func() error {
 		if addr == "" {
@@ -301,7 +297,7 @@ func (sc *Sentinel) clientInner(addr string) (Client, error) {
 	// if client was nil but ok was true it means the address is a secondary but
 	// a Client for it has never been created. Create one now and store it into
 	// clients.
-	newClient, err := sc.opts.pf("tcp", addr)
+	newClient, err := sc.opts.pf(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -373,11 +369,11 @@ func (sc *Sentinel) ensureClients(ctx context.Context, conn Conn) error {
 		newClients[newSecAddr] = nil
 	}
 
-	return sc.setClients(newPrimAddr, newClients)
+	return sc.setClients(ctx, newPrimAddr, newClients)
 }
 
 // all values of newClients should be nil
-func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client) error {
+func (sc *Sentinel) setClients(ctx context.Context, newPrimAddr string, newClients map[string]Client) error {
 	newClients[newPrimAddr] = nil
 	var toClose []Client
 	var stateChanged bool
@@ -422,7 +418,7 @@ func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client)
 	// lock where it won't block everything else
 	if newClients[newPrimAddr] == nil {
 		var err error
-		if newClients[newPrimAddr], err = sc.opts.pf("tcp", newPrimAddr); err != nil {
+		if newClients[newPrimAddr], err = sc.opts.pf(ctx, "tcp", newPrimAddr); err != nil {
 			return err
 		}
 	}
@@ -494,7 +490,7 @@ func (sc *Sentinel) spin(ctx context.Context) {
 // * Periodically re-checking the current primary, in case the switch-master was
 //   missed somehow
 func (sc *Sentinel) innerSpin(ctx context.Context) error {
-	conn, err := sc.dialSentinel()
+	conn, err := sc.dialSentinel(ctx)
 	if err != nil {
 		return err
 	}

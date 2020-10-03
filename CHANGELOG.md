@@ -28,6 +28,8 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 * Add `context.Context` parameter to `Client.Do`, `PubSub` methods, and
   `WithConn`.
 
+* Add `context.Context` parameter to all `Client` and `Conn` creation functions.
+
 * `Dial` options related to timeout have been removed in favor of context
   deadlines.
 

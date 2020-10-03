@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -57,7 +58,7 @@ func (ssc *sentinelStubConn) Close() error {
 }
 
 // addr must be one of sentAddrs
-func (s *sentinelStub) newConn(network, addr string) (Conn, error) {
+func (s *sentinelStub) newConn(ctx context.Context, network, addr string) (Conn, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -138,12 +139,12 @@ func TestSentinel(t *T) {
 
 	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
 	// don't tell anyone
-	poolFn := func(string, string) (Client, error) {
-		return NewPool("tcp", "127.0.0.1:6379", 1)
+	poolFn := func(ctx context.Context, _ string, _ string) (Client, error) {
+		return NewPool(ctx, "tcp", "127.0.0.1:6379", 1)
 	}
 
 	scc, err := NewSentinel(
-		"stub", stub.sentAddrs,
+		ctx, "stub", stub.sentAddrs,
 		SentinelConnFunc(stub.newConn), SentinelPoolFunc(poolFn),
 	)
 	require.Nil(t, err)
@@ -229,6 +230,7 @@ func (ssp *stubSentinelPool) Close() error {
 
 // this also tests that Clients get carried over during failover.
 func TestSentinelClientsAddrs(t *T) {
+	ctx := testCtx(t)
 
 	type testState struct {
 		primAddr              string
@@ -271,7 +273,7 @@ func TestSentinelClientsAddrs(t *T) {
 		closed     []string
 	}
 
-	poolFn := func(network, addr string) (Client, error) {
+	poolFn := func(ctx context.Context, network, addr string) (Client, error) {
 		return &stubSentinelPool{addr: addr}, nil
 	}
 
@@ -344,7 +346,7 @@ func TestSentinelClientsAddrs(t *T) {
 		stub := newSentinelStub(tc.start.primAddr, secAddrs(tc.start), []string{"127.0.0.1:26379"})
 
 		sc, err := NewSentinel(
-			"stub", stub.sentAddrs,
+			ctx, "stub", stub.sentAddrs,
 			SentinelConnFunc(stub.newConn), SentinelPoolFunc(poolFn),
 		)
 		require.Nil(t, err)
@@ -352,7 +354,7 @@ func TestSentinelClientsAddrs(t *T) {
 		// call Client on all secAddrs so Clients get created for them, double
 		// check that the clients were indeed created in clients map
 		for _, addr := range tc.start.secAddrs {
-			client, err := sc.Client(addr)
+			client, err := sc.Client(ctx, addr)
 			assert.Nil(t, err)
 			assert.NotNil(t, client)
 			assert.Equal(t, client, sc.clients[addr])
@@ -390,7 +392,7 @@ func TestSentinelClientsAddrs(t *T) {
 		// should stay the same from there.
 		assertClient := func(addr string) {
 			assert.Contains(t, sc.clients, addr)
-			client, err := sc.Client(addr)
+			client, err := sc.Client(ctx, addr)
 			assert.Nil(t, err)
 			if prevClient := prevClients[addr]; prevClient != nil {
 				assert.Equal(t, prevClient, client)
@@ -409,12 +411,12 @@ func TestSentinelClientsAddrs(t *T) {
 			assert.Contains(t, sc.clients, nilSecAddr)
 			assert.Nil(t, sc.clients[nilSecAddr])
 
-			client, err := sc.Client(nilSecAddr)
+			client, err := sc.Client(ctx, nilSecAddr)
 			assert.Nil(t, err)
 			assert.NotNil(t, client)
 			assert.Equal(t, client, sc.clients[nilSecAddr])
 
-			client2, err := sc.Client(nilSecAddr)
+			client2, err := sc.Client(ctx, nilSecAddr)
 			assert.Nil(t, err)
 			assert.Equal(t, client, client2)
 		}
@@ -432,14 +434,14 @@ func TestSentinelSecondaryRead(t *T) {
 
 	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
 	// don't tell anyone
-	poolFn := func(network, addr string) (Client, error) {
+	poolFn := func(ctx context.Context, network, addr string) (Client, error) {
 		return Stub(network, addr, func(args []string) interface{} {
 			return addr
 		}), nil
 	}
 
 	scc, err := NewSentinel(
-		"stub",
+		ctx, "stub",
 		stub.sentAddrs,
 		SentinelConnFunc(stub.newConn),
 		SentinelPoolFunc(poolFn),

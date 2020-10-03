@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -169,7 +168,7 @@ Baas4jyR6hQ0qRSe4PmQrA==
 	}()
 
 	// Connect to the proxy, passing in an insecure flag as we are self-signed
-	c, err := Dial("tcp", "127.0.0.1:63790", DialUseTLS(&tls.Config{
+	c, err := Dial(ctx, "tcp", "127.0.0.1:63790", DialUseTLS(&tls.Config{
 		InsecureSkipVerify: true,
 	}))
 	if err != nil {
@@ -179,6 +178,6 @@ Baas4jyR6hQ0qRSe4PmQrA==
 	}
 
 	// Confirm that the connection fails if verifying certificate
-	_, err = Dial("tcp", "127.0.0.1:63790", DialUseTLS(nil), DialConnectTimeout(60*time.Minute))
+	_, err = Dial(ctx, "tcp", "127.0.0.1:63790", DialUseTLS(nil))
 	assert.Error(t, err)
 }

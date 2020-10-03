@@ -231,7 +231,7 @@ type Pool struct {
 // The recommended size of the pool depends on many factors, such as the number
 // of concurrent goroutines that will use the pool.
 //
-func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
+func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
 		proc:     newProc(),
 		network:  network,
@@ -262,7 +262,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 
 	// make one Conn synchronously to ensure there's actually a redis instance
 	// present. The rest will be created asynchronously.
-	ioc, err := p.newConn(trace.PoolConnCreatedReasonInitialization)
+	ioc, err := p.newConn(ctx, trace.PoolConnCreatedReasonInitialization)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +271,7 @@ func NewPool(network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p.proc.run(func(ctx context.Context) {
 		startTime := time.Now()
 		for i := 0; i < size-1; i++ {
-			ioc, err := p.newConn(trace.PoolConnCreatedReasonInitialization)
+			ioc, err := p.newConn(ctx, trace.PoolConnCreatedReasonInitialization)
 			if err != nil {
 				p.err(err)
 				// if there was an error connecting to the instance than it
@@ -353,9 +353,9 @@ func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
 	}
 }
 
-func (p *Pool) newConn(reason trace.PoolConnCreatedReason) (*ioErrConn, error) {
+func (p *Pool) newConn(ctx context.Context, reason trace.PoolConnCreatedReason) (*ioErrConn, error) {
 	start := time.Now()
-	c, err := p.opts.cf(p.network, p.addr)
+	c, err := p.opts.cf(ctx, p.network, p.addr)
 	elapsed := time.Since(start)
 	p.traceConnCreated(elapsed, reason, err)
 	if err != nil {
@@ -382,11 +382,11 @@ func (p *Pool) atIntervalDo(d time.Duration, do func(context.Context)) {
 	})
 }
 
-func (p *Pool) doRefill(context.Context) {
+func (p *Pool) doRefill(ctx context.Context) {
 	if atomic.LoadInt64(&p.totalConns) >= int64(p.size) {
 		return
 	}
-	ioc, err := p.newConn(trace.PoolConnCreatedReasonRefill)
+	ioc, err := p.newConn(ctx, trace.PoolConnCreatedReasonRefill)
 	if err == nil {
 		p.put(ioc)
 	} else if err != errPoolFull {
@@ -447,14 +447,16 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 	}
 }
 
-func (p *Pool) get() (*ioErrConn, error) {
+func (p *Pool) get(ctx context.Context) (*ioErrConn, error) {
+	// TODO make getExisting take a context and probably simplify a bunch of
+	// Pool's options
 	ioc, err := p.getExisting()
 	if err != nil {
 		return nil, err
 	} else if ioc != nil {
 		return ioc, nil
 	}
-	return p.newConn(trace.PoolConnCreatedReasonPoolEmpty)
+	return p.newConn(ctx, trace.PoolConnCreatedReasonPoolEmpty)
 }
 
 // returns true if the connection was put back, false if it was closed and
@@ -488,7 +490,7 @@ func (p *Pool) put(ioc *ioErrConn) bool {
 // Conn to the pool.
 func (p *Pool) Do(ctx context.Context, a Action) error {
 	startTime := time.Now()
-	c, err := p.get() // TODO make get take the context?
+	c, err := p.get(ctx)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"context"
 	. "testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 func closablePersistentPubSub(t *T) (PubSubConn, func()) {
 	ctx := testCtx(t)
 	closeCh := make(chan chan bool)
-	p, err := PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
+	p, err := PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(_ context.Context, _, _ string) (Conn, error) {
 		c := dial()
 		go func() {
 			closeRetCh := <-closeCh
@@ -58,7 +59,7 @@ func TestPersistentPubSubAbortAfter(t *T) {
 	ctx := testCtx(t)
 	var errNope = errors.New("nope")
 	var attempts int
-	connFn := func(_, _ string) (Conn, error) {
+	connFn := func(_ context.Context, _, _ string) (Conn, error) {
 		attempts++
 		if attempts%3 != 0 {
 			return nil, errNope
@@ -106,7 +107,7 @@ func TestPersistentPubSubClose(t *T) {
 	}()
 
 	for i := 0; i < 1000; i++ {
-		p, err := PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(_, _ string) (Conn, error) {
+		p, err := PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(_ context.Context, _, _ string) (Conn, error) {
 			return dial(), nil
 		}))
 		if err != nil {
@@ -128,7 +129,7 @@ func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
 	ctx := testCtx(t)
 	channel := "TestPersistentPubSubUseAfterCloseDeadlock:" + randStr()
 
-	connFn := func(_, _ string) (Conn, error) { return dial(), nil }
+	connFn := func(_ context.Context, _, _ string) (Conn, error) { return dial(), nil }
 	p, err := PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(connFn))
 	if err != nil {
 		panic(err)

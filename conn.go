@@ -39,19 +39,19 @@ type Conn interface {
 // Functions like NewPool or NewCluster take in a ConnFunc in order to allow for
 // things like calls to AUTH on each new connection, setting timeouts, custom
 // Conn implementations, etc... See the package docs for more details.
-type ConnFunc func(network, addr string) (Conn, error)
+type ConnFunc func(ctx context.Context, network, addr string) (Conn, error)
 
 // DefaultConnFunc is a ConnFunc which will return a Conn for a redis instance
 // using sane defaults.
-var DefaultConnFunc = func(network, addr string) (Conn, error) {
-	return Dial(network, addr)
+var DefaultConnFunc = func(ctx context.Context, network, addr string) (Conn, error) {
+	return Dial(ctx, network, addr)
 }
 
 // TODO what is this? is it needed?
 func wrapDefaultConnFunc(addr string) ConnFunc {
 	_, opts := parseRedisURL(addr)
-	return func(network, addr string) (Conn, error) {
-		return Dial(network, addr, opts...)
+	return func(ctx context.Context, network, addr string) (Conn, error) {
+		return Dial(ctx, network, addr, opts...)
 	}
 }
 
@@ -209,7 +209,6 @@ func (c *conn) NetConn() net.Conn {
 ////////////////////////////////////////////////////////////////////////////////
 
 type dialOpts struct {
-	connectTimeout     time.Duration
 	authUser, authPass string
 	selectDB           string
 	useTLSConfig       bool
@@ -219,14 +218,6 @@ type dialOpts struct {
 // DialOpt is an optional behavior which can be applied to the Dial function to
 // effect its behavior, or the behavior of the Conn it creates.
 type DialOpt func(*dialOpts)
-
-// DialConnectTimeout determines the timeout value to pass into net.DialTimeout
-// when creating the connection. If not set then net.Dial is called instead.
-func DialConnectTimeout(d time.Duration) DialOpt {
-	return func(do *dialOpts) {
-		do.connectTimeout = d
-	}
-}
 
 const defaultAuthUser = "default"
 
@@ -273,10 +264,6 @@ func DialUseTLS(config *tls.Config) DialOpt {
 		do.tlsConfig = config
 		do.useTLSConfig = true
 	}
-}
-
-var defaultDialOpts = []DialOpt{
-	DialConnectTimeout(10 * time.Second),
 }
 
 func parseRedisURL(urlStr string) (string, []DialOpt) {
@@ -336,15 +323,8 @@ func parseRedisURL(urlStr string) (string, []DialOpt) {
 //
 //	DialTimeout(10 * time.Second)
 //
-func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
-	// TODO have Dial/ConnFunc take in Context
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func Dial(ctx context.Context, network, addr string, opts ...DialOpt) (Conn, error) {
 	var do dialOpts
-	for _, opt := range defaultDialOpts {
-		opt(&do)
-	}
 	addr, addrOpts := parseRedisURL(addr)
 	for _, opt := range addrOpts {
 		opt(&do)
@@ -353,18 +333,19 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 		opt(&do)
 	}
 
-	var netConn net.Conn
-	var err error
-	dialer := net.Dialer{}
-	if do.connectTimeout > 0 {
-		dialer.Timeout = do.connectTimeout
-	}
-	if do.useTLSConfig {
-		netConn, err = tls.DialWithDialer(&dialer, network, addr, do.tlsConfig)
-	} else {
-		netConn, err = dialer.Dial(network, addr)
+	var dialer interface {
+		DialContext(context.Context, string, string) (net.Conn, error)
 	}
 
+	if do.useTLSConfig {
+		dialer = &tls.Dialer{
+			Config: do.tlsConfig,
+		}
+	} else {
+		dialer = &net.Dialer{}
+	}
+
+	netConn, err := dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}

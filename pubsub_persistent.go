@@ -63,7 +63,7 @@ type pubSubCmd struct {
 
 type persistentPubSub struct {
 	proc proc
-	dial func() (Conn, error)
+	dial func(context.Context) (Conn, error)
 	opts persistentPubSubOpts
 
 	subs, psubs chanSet
@@ -106,8 +106,10 @@ func PersistentPubSub(
 	}
 
 	p := &persistentPubSub{
-		proc:  newProc(),
-		dial:  func() (Conn, error) { return opts.connFn(network, addr) },
+		proc: newProc(),
+		dial: func(ctx context.Context) (Conn, error) {
+			return opts.connFn(ctx, network, addr)
+		},
 		opts:  opts,
 		subs:  chanSet{},
 		psubs: chanSet{},
@@ -130,7 +132,7 @@ func (p *persistentPubSub) refresh(ctx context.Context) error {
 	}
 
 	attempt := func() (PubSubConn, chan error, error) {
-		c, err := p.dial()
+		c, err := p.dial(ctx)
 		if err != nil {
 			return nil, nil, err
 		}

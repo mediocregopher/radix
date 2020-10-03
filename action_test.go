@@ -93,7 +93,7 @@ func ExampleCmd() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	client, err := NewPool(ctx, "tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		panic(err)
 	}
@@ -159,7 +159,7 @@ func ExampleFlatCmd() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	client, err := NewPool(ctx, "tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		panic(err)
 	}
@@ -231,7 +231,7 @@ func ExampleEvalScript() {
 		return prev
 `)
 
-	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	client, err := NewPool(ctx, "tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
 	}
@@ -308,7 +308,7 @@ func ExamplePipeline() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	client, err := NewPool(ctx, "tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
 	}
@@ -329,7 +329,6 @@ func TestWithConnAction(t *T) {
 	c := dial()
 	k, v := randStr(), 10
 
-	// TODO WithConn's callback should take a context
 	err := c.Do(ctx, WithConn(k, func(ctx context.Context, conn Conn) error {
 		require.Nil(t, conn.Do(ctx, FlatCmd(nil, "SET", k, v)))
 		var out int
@@ -344,7 +343,7 @@ func ExampleWithConn() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	client, err := NewPool(ctx, "tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
 	}
@@ -372,7 +371,7 @@ func ExampleWithConn_transaction() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	client, err := NewPool(ctx, "tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
 	}
@@ -468,7 +467,7 @@ func ExampleMaybeNil() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := NewPool("tcp", "127.0.0.1:6379", 10) // or any other client
+	client, err := NewPool(ctx, "tcp", "127.0.0.1:6379", 10) // or any other client
 	if err != nil {
 		// handle error
 	}
