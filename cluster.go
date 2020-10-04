@@ -13,6 +13,7 @@ import (
 
 	"errors"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp2"
 	"github.com/mediocregopher/radix/v4/trace"
@@ -134,7 +135,7 @@ type Cluster struct {
 	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	lastClusterdown int64 // unix timestamp in milliseconds, atomic
 
-	proc proc
+	proc *proc.Proc
 	opts clusterOpts
 
 	// used to deduplicate calls to sync
@@ -175,7 +176,7 @@ var DefaultClusterConnFunc = func(ctx context.Context, network, addr string) (Co
 //
 func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 	c := &Cluster{
-		proc:       newProc(),
+		proc:       proc.New(),
 		syncDedupe: newDedupe(),
 		pools:      map[string]Client{},
 	}
@@ -214,7 +215,7 @@ func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) 
 		return nil, err
 	}
 
-	c.proc.run(c.syncEvery)
+	c.proc.Run(c.syncEvery)
 
 	return c, nil
 }
@@ -245,7 +246,7 @@ func assertKeysSlot(keys []string) error {
 
 // may return nil, nil if no pool for the addr
 func (c *Cluster) rpool(addr string) (client Client, err error) {
-	err = c.proc.withRLock(func() error {
+	err = c.proc.WithRLock(func() error {
 		if addr == "" {
 			for _, client = range c.pools {
 				return nil
@@ -304,7 +305,7 @@ func (c *Cluster) pool(ctx context.Context, addr string) (Client, error) {
 	// we've made a new pool, but we need to double-check someone else didn't
 	// make one at the same time and add it in first. If they did, close this
 	// one and return that one
-	err = c.proc.withLock(func() error {
+	err = c.proc.WithLock(func() error {
 		if p2, ok := c.pools[addr]; ok {
 			p.Close()
 			p = p2
@@ -320,7 +321,7 @@ func (c *Cluster) pool(ctx context.Context, addr string) (Client, error) {
 // ClusterTopo's docs for more on its default order.
 func (c *Cluster) Topo() ClusterTopo {
 	var topo ClusterTopo
-	_ = c.proc.withRLock(func() error {
+	_ = c.proc.WithRLock(func() error {
 		topo = c.topo
 		return nil
 	})
@@ -420,7 +421,7 @@ func (c *Cluster) sync(ctx context.Context, p Client) error {
 	c.traceTopoChanged(c.topo, tt)
 
 	var toClose []Client
-	err = c.proc.withLock(func() error {
+	err = c.proc.WithLock(func() error {
 		c.topo = tt
 		c.primTopo = tt.Primaries()
 
@@ -468,7 +469,7 @@ func (c *Cluster) syncEvery(ctx context.Context) {
 			if err != nil {
 				c.err(err)
 			}
-		case <-c.proc.closedCh():
+		case <-c.proc.ClosedCh():
 			return
 		}
 	}
@@ -477,7 +478,7 @@ func (c *Cluster) syncEvery(ctx context.Context) {
 func (c *Cluster) addrForKey(key string) string {
 	s := ClusterSlot([]byte(key))
 	var addr string
-	_ = c.proc.withRLock(func() error {
+	_ = c.proc.WithRLock(func() error {
 		for _, t := range c.primTopo {
 			for _, slot := range t.Slots {
 				if s >= slot[0] && s < slot[1] {
@@ -493,7 +494,7 @@ func (c *Cluster) addrForKey(key string) string {
 
 func (c *Cluster) secondaryAddrForKey(key string) string {
 	var addr string
-	_ = c.proc.withRLock(func() error {
+	_ = c.proc.WithRLock(func() error {
 		primAddr := c.addrForKey(key)
 		for addr = range c.secondaries[primAddr] {
 			return nil
@@ -774,7 +775,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 // Close cleans up all goroutines spawned by Cluster and closes all of its
 // Pools.
 func (c *Cluster) Close() error {
-	return c.proc.close(func() error {
+	return c.proc.Close(func() error {
 		if c.opts.errCh != nil {
 			close(c.opts.errCh)
 		}

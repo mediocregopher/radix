@@ -3,6 +3,8 @@ package radix
 import (
 	"context"
 	"time"
+
+	"github.com/mediocregopher/radix/v4/internal/proc"
 )
 
 type persistentPubSubOpts struct {
@@ -62,7 +64,7 @@ type pubSubCmd struct {
 }
 
 type persistentPubSub struct {
-	proc proc
+	proc *proc.Proc
 	dial func(context.Context) (Conn, error)
 	opts persistentPubSubOpts
 
@@ -106,7 +108,7 @@ func NewPersistentPubSubConn(
 	}
 
 	p := &persistentPubSub{
-		proc: newProc(),
+		proc: proc.New(),
 		dial: func(ctx context.Context) (Conn, error) {
 			return opts.connFn(ctx, network, addr)
 		},
@@ -118,7 +120,7 @@ func NewPersistentPubSubConn(
 	if err := p.refresh(ctx); err != nil {
 		return nil, err
 	}
-	p.proc.run(p.spin)
+	p.proc.Run(p.spin)
 	return p, nil
 }
 
@@ -247,7 +249,7 @@ func (p *persistentPubSub) spin(ctx context.Context) {
 }
 
 func (p *persistentPubSub) cmd(cmd pubSubCmd) error {
-	return p.proc.withLock(func() error {
+	return p.proc.WithLock(func() error {
 		cmd.resCh = make(chan error, 1)
 		p.cmdCh <- cmd
 		return <-cmd.resCh
@@ -294,7 +296,7 @@ func (p *persistentPubSub) Ping(ctx context.Context) error {
 }
 
 func (p *persistentPubSub) Close() error {
-	return p.proc.close(func() error {
+	return p.proc.Close(func() error {
 		var closeErr error
 		if p.curr != nil {
 			closeErr = p.curr.Close()

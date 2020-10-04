@@ -163,7 +163,7 @@ func TestSentinel(t *T) {
 			assert.Contains(t, gotSentAddrs, sentAddrs[i])
 		}
 
-		err := scc.proc.withRLock(func() error {
+		err := scc.proc.WithRLock(func() error {
 			assert.Len(t, scc.sentinelAddrs, len(sentAddrs))
 			for i := range sentAddrs {
 				assert.Contains(t, scc.sentinelAddrs, sentAddrs[i])
@@ -210,7 +210,7 @@ func TestSentinel(t *T) {
 
 	// Check that closing the instance doesn't deadlock while updating the state.
 	// This is racy but should be good enough for now.
-	scc.proc.withLock(func() error {
+	scc.proc.WithLock(func() error {
 		scc.forceMasterSwitch(100 * time.Millisecond) // delay so that Close has a chance to acquire scc.l
 		return nil
 	})

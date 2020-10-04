@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp2"
 )
@@ -27,7 +28,7 @@ func (mm multiMarshal) MarshalRESP(w io.Writer) error {
 }
 
 type pubSubStub struct {
-	proc proc
+	proc *proc.Proc
 	Conn
 	fn   func([]string) interface{}
 	inCh <-chan PubSubMessage
@@ -57,7 +58,7 @@ type pubSubStub struct {
 func PubSubStub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (Conn, chan<- PubSubMessage) {
 	ch := make(chan PubSubMessage)
 	s := &pubSubStub{
-		proc:    newProc(),
+		proc:    proc.New(),
 		fn:      fn,
 		inCh:    ch,
 		subbed:  map[string]bool{},
@@ -65,13 +66,13 @@ func PubSubStub(remoteNetwork, remoteAddr string, fn func([]string) interface{})
 		mDoneCh: make(chan struct{}, 1),
 	}
 	s.Conn = Stub(remoteNetwork, remoteAddr, s.innerFn)
-	s.proc.run(s.spin)
+	s.proc.Run(s.spin)
 	return s, ch
 }
 
 func (s *pubSubStub) innerFn(ss []string) interface{} {
 	var res interface{}
-	err := s.proc.withLock(func() error {
+	err := s.proc.WithLock(func() error {
 		writeRes := func(mm multiMarshal, cmd, subj string) multiMarshal {
 			c := len(s.subbed) + len(s.psubbed)
 			s.pubsubMode = c > 0
@@ -153,7 +154,7 @@ func (s *pubSubStub) innerFn(ss []string) interface{} {
 }
 
 func (s *pubSubStub) Close() error {
-	return s.proc.close(func() error {
+	return s.proc.Close(func() error {
 		return s.Conn.Close()
 	})
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp2"
 )
@@ -220,7 +221,7 @@ type PubSubConn interface {
 }
 
 type pubSubConn struct {
-	proc proc
+	proc *proc.Proc
 	conn Conn
 
 	subs  chanSet
@@ -251,7 +252,7 @@ func NewPubSubConn(rc Conn) PubSubConn {
 
 func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
 	c := &pubSubConn{
-		proc:       newProc(),
+		proc:       proc.New(),
 		conn:       rc,
 		subs:       chanSet{},
 		psubs:      chanSet{},
@@ -259,9 +260,9 @@ func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
 		cmdResCh:   make(chan error, 1),
 		closeErrCh: closeErrCh,
 	}
-	c.proc.run(c.pubSpin)
-	c.proc.run(c.spin)
-	c.proc.run(c.pingSpin)
+	c.proc.Run(c.pubSpin)
+	c.proc.Run(c.spin)
+	c.proc.Run(c.pingSpin)
 	return c
 }
 
@@ -272,7 +273,7 @@ func (c *pubSubConn) testEvent(str string) {
 }
 
 func (c *pubSubConn) publish(m PubSubMessage) {
-	_ = c.proc.withRLock(func() error {
+	_ = c.proc.WithRLock(func() error {
 		var subs map[chan<- PubSubMessage]bool
 		if m.Type == "pmessage" {
 			subs = c.psubs[m.Pattern]
@@ -357,7 +358,7 @@ func (c *pubSubConn) do(ctx context.Context, exp int, cmd string, args ...string
 		return err
 	}
 
-	doneCh := c.proc.closedCh()
+	doneCh := c.proc.ClosedCh()
 	for i := 0; i < exp; i++ {
 		select {
 		case err := <-c.cmdResCh:
@@ -365,14 +366,14 @@ func (c *pubSubConn) do(ctx context.Context, exp int, cmd string, args ...string
 				return err
 			}
 		case <-doneCh:
-			return errPreviouslyClosed
+			return proc.ErrClosed
 		}
 	}
 	return nil
 }
 
 func (c *pubSubConn) closeInner(cmdResErr error) error {
-	return c.proc.close(func() error {
+	return c.proc.Close(func() error {
 		if cmdResErr != nil {
 			select {
 			case c.cmdResCh <- cmdResErr:
@@ -393,7 +394,7 @@ func (c *pubSubConn) Close() error {
 }
 
 func (c *pubSubConn) Subscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
-	return c.proc.withLock(func() error {
+	return c.proc.WithLock(func() error {
 		missing := c.subs.missing(channels)
 		if len(missing) > 0 {
 			if err := c.do(ctx, len(missing), "SUBSCRIBE", missing...); err != nil {
@@ -410,7 +411,7 @@ func (c *pubSubConn) Subscribe(ctx context.Context, msgCh chan<- PubSubMessage, 
 }
 
 func (c *pubSubConn) Unsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
-	return c.proc.withLock(func() error {
+	return c.proc.WithLock(func() error {
 		emptyChannels := make([]string, 0, len(channels))
 		for _, channel := range channels {
 			if empty := c.subs.del(channel, msgCh); empty {
@@ -427,7 +428,7 @@ func (c *pubSubConn) Unsubscribe(ctx context.Context, msgCh chan<- PubSubMessage
 }
 
 func (c *pubSubConn) PSubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error {
-	return c.proc.withLock(func() error {
+	return c.proc.WithLock(func() error {
 		missing := c.psubs.missing(patterns)
 		if len(missing) > 0 {
 			if err := c.do(ctx, len(missing), "PSUBSCRIBE", missing...); err != nil {
@@ -444,7 +445,7 @@ func (c *pubSubConn) PSubscribe(ctx context.Context, msgCh chan<- PubSubMessage,
 }
 
 func (c *pubSubConn) PUnsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error {
-	return c.proc.withLock(func() error {
+	return c.proc.WithLock(func() error {
 		emptyPatterns := make([]string, 0, len(patterns))
 		for _, pattern := range patterns {
 			if empty := c.psubs.del(pattern, msgCh); empty {
@@ -461,7 +462,7 @@ func (c *pubSubConn) PUnsubscribe(ctx context.Context, msgCh chan<- PubSubMessag
 }
 
 func (c *pubSubConn) Ping(ctx context.Context) error {
-	return c.proc.withRLock(func() error {
+	return c.proc.WithRLock(func() error {
 		return c.do(ctx, 1, "PING")
 	})
 }

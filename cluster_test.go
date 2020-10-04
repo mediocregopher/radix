@@ -46,7 +46,7 @@ func TestClusterSync(t *T) {
 	defer c.Close()
 	assertClusterState := func() {
 		require.Nil(t, c.Sync(ctx))
-		err := c.proc.withRLock(func() error {
+		err := c.proc.WithRLock(func() error {
 			assert.Equal(t, c.topo, scl.topo())
 			assert.Len(t, c.pools, len(c.topo))
 			for _, node := range c.topo {

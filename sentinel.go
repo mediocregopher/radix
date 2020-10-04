@@ -6,6 +6,8 @@ import (
 	"net"
 	"sync/atomic"
 	"time"
+
+	"github.com/mediocregopher/radix/v4/internal/proc"
 )
 
 type sentinelOpts struct {
@@ -62,7 +64,7 @@ func SentinelErrCh(errCh chan<- error) SentinelOpt {
 // currently connected one becomes unreachable
 //
 type Sentinel struct {
-	proc      proc
+	proc      *proc.Proc
 	opts      sentinelOpts
 	initAddrs []string
 	name      string
@@ -100,7 +102,7 @@ func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string
 	}
 
 	sc := &Sentinel{
-		proc:          newProc(),
+		proc:          proc.New(),
 		initAddrs:     sentinelAddrs,
 		name:          primaryName,
 		sentinelAddrs: addrs,
@@ -153,7 +155,7 @@ func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string
 	}
 
 	sc.pconn.Subscribe(ctx, sc.pconnCh, "switch-master")
-	sc.proc.run(sc.spin)
+	sc.proc.Run(sc.spin)
 	return sc, nil
 }
 
@@ -172,7 +174,7 @@ func (sc *Sentinel) testEvent(event string) {
 }
 
 func (sc *Sentinel) dialSentinel(ctx context.Context) (conn Conn, err error) {
-	err = sc.proc.withRLock(func() error {
+	err = sc.proc.WithRLock(func() error {
 		for addr := range sc.sentinelAddrs {
 			if conn, err = sc.opts.cf(ctx, "tcp", addr); err == nil {
 				return nil
@@ -199,7 +201,7 @@ func (sc *Sentinel) dialSentinel(ctx context.Context) (conn Conn, err error) {
 // actually carried out that there could be a failover event. In that case, the
 // Action will likely fail and return an error.
 func (sc *Sentinel) Do(ctx context.Context, a Action) error {
-	return sc.proc.withRLock(func() error {
+	return sc.proc.WithRLock(func() error {
 		return sc.clients[sc.primAddr].Do(ctx, a)
 	})
 }
@@ -226,7 +228,7 @@ func (sc *Sentinel) Addrs() (primAddr string, secAddrs []string) {
 	// if the proc is closed already then this method will merely return empty
 	// results.  We could have it return an error, but that doesn't seem worth
 	// the effort.
-	_ = sc.proc.withRLock(func() error {
+	_ = sc.proc.WithRLock(func() error {
 		primAddr = sc.primAddr
 		secAddrs = make([]string, 0, len(sc.clients))
 		for addr := range sc.clients {
@@ -245,7 +247,7 @@ func (sc *Sentinel) SentinelAddrs() (sentAddrs []string) {
 	// if the proc is closed already then this method will merely return empty
 	// results.  We could have it return an error, but that doesn't seem worth
 	// the effort.
-	_ = sc.proc.withRLock(func() error {
+	_ = sc.proc.WithRLock(func() error {
 		sentAddrs = make([]string, 0, len(sc.sentinelAddrs))
 		for addr := range sc.sentinelAddrs {
 			sentAddrs = append(sentAddrs, addr)
@@ -273,7 +275,7 @@ func (sc *Sentinel) Client(ctx context.Context, addr string) (Client, error) {
 
 func (sc *Sentinel) clientInner(ctx context.Context, addr string) (Client, error) {
 	var client Client
-	err := sc.proc.withRLock(func() error {
+	err := sc.proc.WithRLock(func() error {
 		if addr == "" {
 			for addr, client = range sc.clients {
 				if addr != sc.primAddr {
@@ -305,7 +307,7 @@ func (sc *Sentinel) clientInner(ctx context.Context, addr string) (Client, error
 	// two routines might be requesting the same addr at the same time, and
 	// both create the client. The second one needs to make sure it closes its
 	// own pool when it sees the other got there first.
-	err = sc.proc.withLock(func() error {
+	err = sc.proc.WithLock(func() error {
 		if client = sc.clients[addr]; client == nil {
 			sc.clients[addr] = newClient
 		}
@@ -322,7 +324,7 @@ func (sc *Sentinel) clientInner(ctx context.Context, addr string) (Client, error
 
 // Close implements the method for the Client interface.
 func (sc *Sentinel) Close() error {
-	return sc.proc.close(func() error {
+	return sc.proc.Close(func() error {
 		for _, client := range sc.clients {
 			if client != nil {
 				client.Close()
@@ -377,7 +379,7 @@ func (sc *Sentinel) setClients(ctx context.Context, newPrimAddr string, newClien
 	newClients[newPrimAddr] = nil
 	var toClose []Client
 	var stateChanged bool
-	err := sc.proc.withRLock(func() error {
+	err := sc.proc.WithRLock(func() error {
 
 		// stateChanged may be set to true in other ways later in the method
 		stateChanged = sc.primAddr != newPrimAddr
@@ -423,7 +425,7 @@ func (sc *Sentinel) setClients(ctx context.Context, newPrimAddr string, newClien
 		}
 	}
 
-	if err = sc.proc.withLock(func() error {
+	if err = sc.proc.WithLock(func() error {
 		sc.primAddr = newPrimAddr
 		sc.clients = newClients
 		return nil
@@ -452,7 +454,7 @@ func (sc *Sentinel) ensureSentinelAddrs(ctx context.Context, conn Conn) error {
 		addrs[net.JoinHostPort(m["ip"], m["port"])] = true
 	}
 
-	return sc.proc.withLock(func() error {
+	return sc.proc.WithLock(func() error {
 		sc.sentinelAddrs = addrs
 		return nil
 	})

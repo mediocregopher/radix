@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp2"
 	"github.com/mediocregopher/radix/v4/trace"
@@ -302,7 +303,7 @@ func TestPoolClose(t *T) {
 	pool := testPool(t, 1)
 	assert.NoError(t, pool.Do(ctx, Cmd(nil, "PING")))
 	assert.NoError(t, pool.Close())
-	assert.Error(t, errPreviouslyClosed, pool.Do(ctx, Cmd(nil, "PING")))
+	assert.Error(t, proc.ErrClosed, pool.Do(ctx, Cmd(nil, "PING")))
 }
 
 func TestIoErrConn(t *T) {

@@ -5,6 +5,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 )
 
@@ -60,7 +61,7 @@ type pipeliningConnEncDec struct {
 //
 // pipeliningConn's methods are thread-safe.
 type pipeliningConn struct {
-	proc     proc
+	proc     *proc.Proc
 	conn     Conn
 	opts     pipeliningConnOpts
 	encDecCh chan pipeliningConnEncDec
@@ -95,19 +96,19 @@ func NewPipeliningConn(conn Conn, opts ...PipeliningConnOpt) Conn {
 	}
 
 	pc := &pipeliningConn{
-		proc:       newProc(),
+		proc:       proc.New(),
 		conn:       conn,
 		opts:       pco,
 		encDecCh:   make(chan pipeliningConnEncDec, 16),
 		pipeline:   newPipeline(),
 		batchTimer: new(timer),
 	}
-	pc.proc.run(pc.spin)
+	pc.proc.Run(pc.spin)
 	return pc
 }
 
 func (pc *pipeliningConn) Close() error {
-	return pc.proc.close(func() error {
+	return pc.proc.Close(func() error {
 		return pc.conn.Close()
 	})
 }
@@ -202,19 +203,19 @@ func (pc *pipeliningConn) EncodeDecode(ctx context.Context, m resp.Marshaler, u 
 		make(chan error, 1),
 	}
 	doneCh := ctx.Done()
-	closedCh := pc.proc.closedCh()
+	closedCh := pc.proc.ClosedCh()
 	select {
 	case <-doneCh:
 		return ctx.Err()
 	case <-closedCh:
-		return errPreviouslyClosed
+		return proc.ErrClosed
 	case pc.encDecCh <- encDec:
 	}
 	select {
 	case <-doneCh:
 		return ctx.Err()
 	case <-closedCh:
-		return errPreviouslyClosed
+		return proc.ErrClosed
 	case err := <-encDec.resCh:
 		return err
 	}

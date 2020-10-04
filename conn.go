@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 )
 
@@ -65,7 +66,7 @@ type connMarshalerUnmarshaler struct {
 }
 
 type conn struct {
-	proc proc
+	proc *proc.Proc
 
 	net.Conn
 	brw      *bufio.ReadWriter
@@ -81,20 +82,20 @@ type conn struct {
 // not be used after calling this method.
 func NewConn(netConn net.Conn) Conn {
 	c := &conn{
-		proc:      newProc(),
+		proc:      proc.New(),
 		Conn:      netConn,
 		brw:       bufio.NewReadWriter(bufio.NewReader(netConn), bufio.NewWriter(netConn)),
 		rCh:       make(chan connMarshalerUnmarshaler, 128),
 		wCh:       make(chan connMarshalerUnmarshaler, 128),
 		errChPool: make(chan chan error, 16),
 	}
-	c.proc.run(c.reader)
-	c.proc.run(c.writer)
+	c.proc.Run(c.reader)
+	c.proc.Run(c.writer)
 	return c
 }
 
 func (c *conn) Close() error {
-	return c.proc.prefixedClose(c.Conn.Close, nil)
+	return c.proc.PrefixedClose(c.Conn.Close, nil)
 }
 
 func (c *conn) writer(ctx context.Context) {
@@ -205,13 +206,13 @@ func (c *conn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmars
 		errCh:       c.getErrCh(),
 	}
 	doneCh := ctx.Done()
-	closedCh := c.proc.closedCh()
+	closedCh := c.proc.ClosedCh()
 
 	select {
 	case <-doneCh:
 		return ctx.Err()
 	case <-closedCh:
-		return errPreviouslyClosed
+		return proc.ErrClosed
 	case c.wCh <- mu:
 	}
 
@@ -219,7 +220,7 @@ func (c *conn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmars
 	case <-doneCh:
 		return ctx.Err()
 	case <-closedCh:
-		return errPreviouslyClosed
+		return proc.ErrClosed
 	case err := <-mu.errCh:
 		// it's important that we only put the error channel back in the pool if
 		// it's actually been used, otherwise it might still end up with

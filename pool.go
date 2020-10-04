@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/trace"
 )
@@ -205,7 +206,7 @@ type Pool struct {
 	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	totalConns int64 // atomic, must only be access using functions from sync/atomic
 
-	proc          proc
+	proc          *proc.Proc
 	opts          poolOpts
 	network, addr string
 	size          int
@@ -232,7 +233,7 @@ type Pool struct {
 //
 func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
-		proc:     newProc(),
+		proc:     proc.New(),
 		network:  network,
 		addr:     addr,
 		size:     size,
@@ -262,7 +263,7 @@ func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOp
 	}
 	p.put(ioc)
 
-	p.proc.run(func(ctx context.Context) {
+	p.proc.Run(func(ctx context.Context) {
 		startTime := time.Now()
 		for i := 0; i < size-1; i++ {
 			ioc, err := p.newConn(ctx, trace.PoolConnCreatedReasonInitialization)
@@ -361,7 +362,7 @@ func (p *Pool) newConn(ctx context.Context, reason trace.PoolConnCreatedReason) 
 }
 
 func (p *Pool) atIntervalDo(d time.Duration, do func(context.Context)) {
-	p.proc.run(func(ctx context.Context) {
+	p.proc.Run(func(ctx context.Context) {
 		t := time.NewTicker(d)
 		defer t.Stop()
 		for {
@@ -409,8 +410,8 @@ func (p *Pool) doOverflowDrain(context.Context) {
 func (p *Pool) getExisting() (*ioErrConn, error) {
 	// Fast-path if the pool is not empty. Return error if pool has been closed.
 	select {
-	case <-p.proc.closedCh():
-		return nil, errPreviouslyClosed
+	case <-p.proc.ClosedCh():
+		return nil, proc.ErrClosed
 	case ioc := <-p.pool:
 		return ioc, nil
 	default:
@@ -432,8 +433,8 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 	}
 
 	select {
-	case <-p.proc.closedCh():
-		return nil, errPreviouslyClosed
+	case <-p.proc.ClosedCh():
+		return nil, proc.ErrClosed
 	case ioc := <-p.pool:
 		return ioc, nil
 	case <-tc:
@@ -458,7 +459,7 @@ func (p *Pool) get(ctx context.Context) (*ioErrConn, error) {
 func (p *Pool) put(ioc *ioErrConn) bool {
 	if ioc.lastIOErr == nil {
 		var ok bool
-		_ = p.proc.withRLock(func() error {
+		_ = p.proc.WithRLock(func() error {
 			select {
 			case p.pool <- ioc:
 				ok = true
@@ -528,7 +529,7 @@ func (p *Pool) drain() {
 
 // Close implements the Close method of the Client
 func (p *Pool) Close() error {
-	return p.proc.close(func() error {
+	return p.proc.Close(func() error {
 		p.drain()
 		close(p.pool)
 		if p.opts.errCh != nil {
