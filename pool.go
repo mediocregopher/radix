@@ -226,7 +226,6 @@ type Pool struct {
 //	PoolRefillInterval(1 * time.Second)
 //	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
 //	PoolPingInterval(5 * time.Second / (size+1))
-//	PoolPipelineConcurrency(size)
 //
 // The recommended size of the pool depends on many factors, such as the number
 // of concurrent goroutines that will use the pool.
@@ -249,12 +248,7 @@ func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOp
 	}
 
 	for _, opt := range append(defaultPoolOpts, opts...) {
-		// the other args to NewPool used to be a ConnFunc, which someone might
-		// have left as nil, in which case this now gives a weird panic. Just
-		// handle it
-		if opt != nil {
-			opt(&(p.opts))
-		}
+		opt(&(p.opts))
 	}
 
 	totalSize := size + p.opts.overflowSize

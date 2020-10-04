@@ -181,7 +181,9 @@ func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) 
 	}
 
 	defaultClusterOpts := []ClusterOpt{
-		ClusterPoolFunc(DefaultClientFunc),
+		ClusterPoolFunc(func(ctx context.Context, network, addr string) (Client, error) {
+			return NewPool(ctx, network, addr, 4, PoolConnFunc(DefaultConnFunc))
+		}),
 		ClusterSyncEvery(5 * time.Second),
 		ClusterOnDownDelayActionsBy(100 * time.Millisecond),
 	}
