@@ -407,7 +407,7 @@ func (p *Pool) doOverflowDrain(context.Context) {
 	atomic.AddInt64(&p.totalConns, -1)
 }
 
-func (p *Pool) getExisting() (*ioErrConn, error) {
+func (p *Pool) getExisting(ctx context.Context) (*ioErrConn, error) {
 	// Fast-path if the pool is not empty. Return error if pool has been closed.
 	select {
 	case <-p.proc.ClosedCh():
@@ -435,6 +435,8 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 	select {
 	case <-p.proc.ClosedCh():
 		return nil, proc.ErrClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	case ioc := <-p.pool:
 		return ioc, nil
 	case <-tc:
@@ -443,9 +445,7 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 }
 
 func (p *Pool) get(ctx context.Context) (*ioErrConn, error) {
-	// TODO make getExisting take a context and probably simplify a bunch of
-	// Pool's options
-	ioc, err := p.getExisting()
+	ioc, err := p.getExisting(ctx)
 	if err != nil {
 		return nil, err
 	} else if ioc != nil {
