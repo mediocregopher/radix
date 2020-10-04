@@ -74,10 +74,10 @@ type persistentPubSub struct {
 	cmdCh chan pubSubCmd
 }
 
-// PersistentPubSub is like PubSub, but instead of taking in an existing Conn to
-// wrap it will create one on the fly. If the connection is ever terminated then
-// a new one will be created and will be reset to the previous connection's
-// state.
+// NewPersistentPubSubConn is like NewPubSubConn, but instead of taking in an
+// existing Conn to wrap it will create one on the fly. If the connection is
+// ever terminated then a new one will be created and will be reset to the
+// previous connection's state.
 //
 // This is effectively a way to have a permanent PubSubConn established which
 // supports subscribing/unsubscribing but without the hassle of implementing
@@ -92,7 +92,7 @@ type persistentPubSub struct {
 //
 //	PersistentPubSubConnFunc(DefaultConnFunc)
 //
-func PersistentPubSub(
+func NewPersistentPubSubConn(
 	ctx context.Context,
 	network, addr string, options ...PersistentPubSubOpt,
 ) (

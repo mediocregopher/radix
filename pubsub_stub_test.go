@@ -111,7 +111,7 @@ func ExamplePubSubStub() {
 	}()
 
 	// Use PubSub to wrap the stub like we would for a normal redis connection
-	pstub := PubSub(stub)
+	pstub := NewPubSubConn(stub)
 
 	// Subscribe msgCh to "foo"
 	msgCh := make(chan PubSubMessage)

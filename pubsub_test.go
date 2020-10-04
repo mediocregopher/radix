@@ -116,7 +116,7 @@ func TestPubSubSubscribe(t *T) {
 		}
 		close(pubCh)
 	}()
-	c := PubSub(dial())
+	c := NewPubSubConn(dial())
 	testSubscribe(t, c, pubCh)
 
 	assert.NoError(t, c.Close())
@@ -128,7 +128,7 @@ func TestPubSubSubscribe(t *T) {
 func TestPubSubPSubscribe(t *T) {
 	ctx := testCtx(t)
 	pubC := dial()
-	c := PubSub(dial())
+	c := NewPubSubConn(dial())
 	msgCh := make(chan PubSubMessage, 1)
 
 	p1, p2, msgStr := randStr()+"_*", randStr()+"_*", randStr()
@@ -216,7 +216,7 @@ func TestPubSubMixedSubscribe(t *T) {
 	pubC := dial()
 	defer pubC.Close()
 
-	c := PubSub(dial())
+	c := NewPubSubConn(dial())
 	defer func() {
 		assert.NoError(t, c.Close())
 	}()
@@ -255,7 +255,7 @@ func TestPubSubMixedSubscribe(t *T) {
 // from returns a timeout error
 func TestPubSubTimeout(t *T) {
 	ctx := testCtx(t)
-	c, pubC := PubSub(dial()), dial()
+	c, pubC := NewPubSubConn(dial()), dial()
 	c.(*pubSubConn).testEventCh = make(chan string, 1)
 
 	ch, msgCh := randStr(), make(chan PubSubMessage, 1)
@@ -281,7 +281,7 @@ func TestPubSubTimeout(t *T) {
 // subscribing/unsubscribing quickly on an active channel.
 func TestPubSubChaotic(t *T) {
 	ctx := testCtx(t)
-	c, pubC := PubSub(dial()), dial()
+	c, pubC := NewPubSubConn(dial()), dial()
 	defer func() {
 		assert.NoError(t, c.Close())
 	}()
@@ -338,7 +338,7 @@ func TestPubSubChaotic(t *T) {
 
 func BenchmarkPubSub(b *B) {
 	ctx := testCtx(b)
-	c, pubC := PubSub(dial()), dial()
+	c, pubC := NewPubSubConn(dial()), dial()
 	defer c.Close()
 	defer pubC.Close()
 
@@ -356,7 +356,7 @@ func BenchmarkPubSub(b *B) {
 	}
 }
 
-func ExamplePubSub() {
+func ExampleNewPubSubConn() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -367,7 +367,7 @@ func ExamplePubSub() {
 	}
 
 	// Pass that connection into PubSub, conn should never get used after this
-	ps := PubSub(conn)
+	ps := NewPubSubConn(conn)
 	defer ps.Close() // this will close Conn as well
 
 	// Subscribe to a channel called "myChannel". All publishes to "myChannel"
@@ -402,7 +402,7 @@ func ExamplePubSub() {
 	}
 }
 
-func ExamplePersistentPubSub_cluster() {
+func ExampleNewPersistentPubSubConn_cluster() {
 	// Example of how to use PersistentPubSub with a Cluster instance.
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -417,7 +417,7 @@ func ExamplePersistentPubSub_cluster() {
 	// Have PersistentPubSub pick a random cluster node everytime it wants to
 	// make a new connection. If the node fails PersistentPubSub will
 	// automatically pick a new node to connect to.
-	ps, err := PersistentPubSub(ctx, "", "",
+	ps, err := NewPersistentPubSubConn(ctx, "", "",
 		PersistentPubSubConnFunc(func(ctx context.Context, _ string, _ string) (Conn, error) {
 			topo := cluster.Topo()
 			node := topo[rand.Intn(len(topo))]

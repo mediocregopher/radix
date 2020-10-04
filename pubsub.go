@@ -243,9 +243,9 @@ type pubSubConn struct {
 	testEventCh chan string
 }
 
-// PubSub wraps the given Conn so that it becomes a PubSubConn. The passed in
-// Conn should not be used after this call.
-func PubSub(rc Conn) PubSubConn {
+// NewPubSubConn wraps the given Conn so that it becomes a PubSubConn. The
+// passed in Conn should not be used after this call.
+func NewPubSubConn(rc Conn) PubSubConn {
 	return newPubSub(rc, nil)
 }
 

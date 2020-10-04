@@ -144,7 +144,7 @@ func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string
 
 	// because we're using persistent these can't _really_ fail
 	var err error
-	sc.pconn, err = PersistentPubSub(ctx, "", "", PersistentPubSubConnFunc(func(ctx context.Context, _, _ string) (Conn, error) {
+	sc.pconn, err = NewPersistentPubSubConn(ctx, "", "", PersistentPubSubConnFunc(func(ctx context.Context, _, _ string) (Conn, error) {
 		return sc.dialSentinel(ctx)
 	}))
 	if err != nil {

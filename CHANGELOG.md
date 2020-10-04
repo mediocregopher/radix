@@ -33,6 +33,9 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 * `Dial` options related to timeout have been removed in favor of context
   deadlines.
 
+* `PubSub` and `PersistentPubSub` have been renamed to `NewPubSubConn` and
+  `NewPersistentPubSubConn`, respectively.
+
 [resp3]: https://github.com/antirez/RESP3
 
 # v3.6.0
