@@ -221,9 +221,9 @@ func TestClusterEval(t *T) {
 	scl.migrateInit(dst.addr, 0)
 	// now, when interacting with key, the stub should return an ASK error
 
-	eval := NewEvalScript(1, `return nil`)
+	eval := NewEvalScript(`return nil`)
 	var rcv string
-	err := c.Do(ctx, eval.Cmd(&rcv, key, "foo"))
+	err := c.Do(ctx, eval.Cmd(&rcv, []string{key}, "foo"))
 
 	assert.Nil(t, err)
 	assert.Equal(t, "EVAL: success!", rcv)

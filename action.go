@@ -352,18 +352,15 @@ func (t Tuple) UnmarshalRESP(br *bufio.Reader) error {
 // can be run.
 type EvalScript struct {
 	script, sum string
-	numKeys     int
 }
 
-// NewEvalScript initializes a EvalScript instance. numKeys corresponds to the
-// number of arguments which will be keys when Cmd is called
-func NewEvalScript(numKeys int, script string) EvalScript {
+// NewEvalScript initializes a EvalScript instance with the given script.
+func NewEvalScript(script string) EvalScript {
 	sumRaw := sha1.Sum([]byte(script))
 	sum := hex.EncodeToString(sumRaw[:])
 	return EvalScript{
-		script:  script,
-		sum:     sum,
-		numKeys: numKeys,
+		script: script,
+		sum:    sum,
 	}
 }
 
@@ -387,14 +384,11 @@ type evalAction struct {
 // EVALSHA command (and will automatically fallback to EVAL as necessary).
 // keysAndArgs must be at least as long as the numKeys argument of
 // NewEvalScript.
-func (es EvalScript) Cmd(rcv interface{}, keysAndArgs ...string) Action {
-	if len(keysAndArgs) < es.numKeys {
-		panic("not enough arguments passed into EvalScript.Cmd")
-	}
+func (es EvalScript) Cmd(rcv interface{}, keys []string, args ...string) Action {
 	return &evalAction{
 		EvalScript: es,
-		keys:       keysAndArgs[:es.numKeys],
-		args:       keysAndArgs[es.numKeys:],
+		keys:       keys,
+		args:       args,
 		rcv:        rcv,
 	}
 }
@@ -403,9 +397,6 @@ func (es EvalScript) Cmd(rcv interface{}, keysAndArgs ...string) Action {
 // perform an EVALSHA command (and will automatically fallback to EVAL as
 // necessary). keys must be as long as the numKeys argument of NewEvalScript.
 func (es EvalScript) FlatCmd(rcv interface{}, keys []string, args ...interface{}) Action {
-	if len(keys) != es.numKeys {
-		panic("incorrect number of keys passed into EvalScript.FlatCmd")
-	}
 	return &evalAction{
 		EvalScript: es,
 		keys:       keys,
@@ -441,7 +432,7 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 		err = marshalBulkString(err, w, ec.sum)
 	}
 
-	err = marshalBulkString(err, w, strconv.Itoa(ec.numKeys))
+	err = marshalBulkString(err, w, strconv.Itoa(len(ec.keys)))
 	for i := range ec.keys {
 		err = marshalBulkString(err, w, ec.keys[i])
 	}

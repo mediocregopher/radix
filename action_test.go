@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	. "testing"
 	"time"
 
@@ -186,11 +187,11 @@ func ExampleFlatCmd() {
 
 func TestEvalAction(t *T) {
 	ctx := testCtx(t)
-	getSet := NewEvalScript(1, `
+	getSet := NewEvalScript(`
 		local prev = redis.call("GET", KEYS[1])
 		redis.call("SET", KEYS[1], ARGV[1])
 		return prev
-		-- `+randStr() /* so there's an eval everytime */ +`
+		-- ` + randStr() /* so there's an eval everytime */ + `
 	`)
 
 	c := dial()
@@ -199,14 +200,14 @@ func TestEvalAction(t *T) {
 
 	{
 		var res string
-		err := c.Do(ctx, getSet.Cmd(&res, key, val1))
+		err := c.Do(ctx, getSet.Cmd(&res, []string{key}, val1))
 		require.Nil(t, err, "%s", err)
 		assert.Empty(t, res)
 	}
 
 	{
 		var res string
-		err := c.Do(ctx, getSet.Cmd(&res, key, val2))
+		err := c.Do(ctx, getSet.Cmd(&res, []string{key}, val2))
 		require.Nil(t, err)
 		assert.Equal(t, val1, res)
 	}
@@ -225,7 +226,7 @@ func ExampleEvalScript() {
 
 	// set as a global variable, this script is equivalent to the builtin GETSET
 	// redis command
-	var getSet = NewEvalScript(1, `
+	var getSet = NewEvalScript(`
 		local prev = redis.call("GET", KEYS[1])
 		redis.call("SET", KEYS[1], ARGV[1])
 		return prev
@@ -238,7 +239,7 @@ func ExampleEvalScript() {
 
 	key := "someKey"
 	var prevVal string
-	if err := client.Do(ctx, getSet.Cmd(&prevVal, key, "myVal")); err != nil {
+	if err := client.Do(ctx, getSet.Cmd(&prevVal, []string{key}, "myVal")); err != nil {
 		// handle error
 	}
 
@@ -322,6 +323,24 @@ func ExamplePipeline() {
 	}
 	fmt.Printf("fooVal: %q\n", fooVal)
 	// Output: fooVal: "1"
+}
+
+func TestPipelineEvalAction(t *T) {
+	ctx := testCtx(t)
+	str := randStr()
+	script := NewEvalScript(`return '` + str + `'`)
+
+	c := dial()
+	var got string
+	err := c.Do(ctx, Pipeline(
+		script.Cmd(&got, nil),
+	))
+
+	// TODO it'd be nice if this case was handled more gracefully, maybe by not
+	// allowing the user to do this in the first place.
+	require.Error(t, err)
+	assert.True(t, strings.HasPrefix(err.Error(), "NOSCRIPT "))
+	assert.Empty(t, got)
 }
 
 func TestWithConnAction(t *T) {
