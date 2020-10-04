@@ -70,6 +70,10 @@ type conn struct {
 	net.Conn
 	brw      *bufio.ReadWriter
 	rCh, wCh chan connMarshalerUnmarshaler
+
+	// errChPool is a buffered channel used as a makeshift pool of chan errors,s
+	// owe don't have to make a new one on every EncodeDecode call.
+	errChPool chan chan error
 }
 
 // NewConn takes an existing net.Conn and wraps it to support the Conn interface
@@ -77,11 +81,12 @@ type conn struct {
 // not be used after calling this method.
 func NewConn(netConn net.Conn) Conn {
 	c := &conn{
-		proc: newProc(),
-		Conn: netConn,
-		brw:  bufio.NewReadWriter(bufio.NewReader(netConn), bufio.NewWriter(netConn)),
-		rCh:  make(chan connMarshalerUnmarshaler, 128),
-		wCh:  make(chan connMarshalerUnmarshaler, 128),
+		proc:      newProc(),
+		Conn:      netConn,
+		brw:       bufio.NewReadWriter(bufio.NewReader(netConn), bufio.NewWriter(netConn)),
+		rCh:       make(chan connMarshalerUnmarshaler, 128),
+		wCh:       make(chan connMarshalerUnmarshaler, 128),
+		errChPool: make(chan chan error, 16),
 	}
 	c.proc.run(c.reader)
 	c.proc.run(c.writer)
@@ -105,9 +110,12 @@ func (c *conn) writer(ctx context.Context) {
 					continue
 				} else if deadline, ok := mu.ctx.Deadline(); ok {
 					if err := c.Conn.SetWriteDeadline(deadline); err != nil {
-						mu.errCh <- fmt.Errorf("setting read deadline to %v: %w", deadline, err)
+						mu.errCh <- fmt.Errorf("setting write deadline to %v: %w", deadline, err)
 						continue
 					}
+				} else if err := c.Conn.SetWriteDeadline(time.Time{}); err != nil {
+					mu.errCh <- fmt.Errorf("unsetting write deadline: %w", err)
+					continue
 				}
 
 				if err := mu.marshaler.MarshalRESP(c.brw.Writer); err != nil {
@@ -149,13 +157,43 @@ func (c *conn) reader(ctx context.Context) {
 				continue
 			} else if deadline, ok := mu.ctx.Deadline(); ok {
 				if err := c.Conn.SetReadDeadline(deadline); err != nil {
-					mu.errCh <- fmt.Errorf("setting write deadline to %v: %w", deadline, err)
+					mu.errCh <- fmt.Errorf("setting read deadline to %v: %w", deadline, err)
 					continue
 				}
+			} else if err := c.Conn.SetReadDeadline(time.Time{}); err != nil {
+				mu.errCh <- fmt.Errorf("unsetting read deadline: %w", err)
+				continue
 			}
+
 			err := mu.unmarshaler.UnmarshalRESP(c.brw.Reader)
+			if err != nil {
+				// simplify things for the caller by translating network
+				// timeouts into DeadlineExceeded, since that's actually what
+				// happened.
+				var netErr net.Error
+				if errors.As(err, &netErr) && netErr.Timeout() {
+					err = context.DeadlineExceeded
+				}
+			}
+
 			mu.errCh <- err
 		}
+	}
+}
+
+func (c *conn) getErrCh() chan error {
+	select {
+	case errCh := <-c.errChPool:
+		return errCh
+	default:
+		return make(chan error, 1)
+	}
+}
+
+func (c *conn) putErrCh(errCh chan error) {
+	select {
+	case c.errChPool <- errCh:
+	default:
 	}
 }
 
@@ -164,10 +202,11 @@ func (c *conn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmars
 		ctx:         ctx,
 		marshaler:   m,
 		unmarshaler: u,
-		errCh:       make(chan error, 1),
+		errCh:       c.getErrCh(),
 	}
 	doneCh := ctx.Done()
 	closedCh := c.proc.closedCh()
+
 	select {
 	case <-doneCh:
 		return ctx.Err()
@@ -176,26 +215,18 @@ func (c *conn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmars
 	case c.wCh <- mu:
 	}
 
-	var err error
 	select {
 	case <-doneCh:
-		err = ctx.Err()
+		return ctx.Err()
 	case <-closedCh:
 		return errPreviouslyClosed
-	case err = <-mu.errCh:
+	case err := <-mu.errCh:
+		// it's important that we only put the error channel back in the pool if
+		// it's actually been used, otherwise it might still end up with
+		// something written to it.
+		c.putErrCh(mu.errCh)
+		return err
 	}
-
-	// it's possible to get back either a network timeout error or a
-	// context.DeadlineExceeded error, since it's a race between the context's
-	// doneCh and the read deadline on the connection. Translate the network
-	// timeout into a context.DeadlineExceeded.
-	var netErr net.Error
-	if err == nil {
-		return nil
-	} else if errors.As(err, &netErr) && netErr.Timeout() {
-		return context.DeadlineExceeded
-	}
-	return err
 }
 
 func (c *conn) Do(ctx context.Context, a Action) error {
