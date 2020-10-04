@@ -133,7 +133,7 @@ type StreamEntry struct {
 	ID StreamEntryID
 
 	// Fields contains the fields and values for the stream entry.
-	Fields map[string]string
+	Fields [][2]string
 }
 
 var _ resp.Unmarshaler = (*StreamEntry)(nil)
@@ -152,9 +152,7 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 	}
 
 	// put this here in case the array has size -1
-	for k := range s.Fields {
-		delete(s.Fields, k)
-	}
+	s.Fields = s.Fields[:0]
 
 	// resp2.Any{I: &s.Fields}.UnmarshalRESP(br)
 	if err := ah.UnmarshalRESP(br); err != nil {
@@ -164,7 +162,7 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 	} else if ah.N%2 != 0 {
 		return errInvalidStreamEntry
 	} else if s.Fields == nil {
-		s.Fields = make(map[string]string, ah.N/2)
+		s.Fields = make([][2]string, 0, ah.N)
 	}
 
 	var bs resp2.BulkString
@@ -176,7 +174,7 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 		if err := bs.UnmarshalRESP(br); err != nil {
 			return err
 		}
-		s.Fields[key] = bs.S
+		s.Fields = append(s.Fields, [2]string{key, bs.S})
 	}
 	return nil
 }

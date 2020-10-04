@@ -342,10 +342,10 @@ func TestStreamEntry(t *T) {
 	assert.Len(t, entries, 2, "got wrong number of stream entries")
 
 	assert.Equal(t, id1, entries[0].ID.String(), "parsed ID differs from ID returned by XADD")
-	assert.Equal(t, map[string]string{"hello": "world", "foo": "bar"}, entries[0].Fields)
+	assert.Equal(t, [][2]string{{"hello", "world"}, {"foo", "bar"}}, entries[0].Fields)
 
 	assert.Equal(t, id2, entries[1].ID.String(), "parsed ID differs from ID returned by XADD")
-	assert.Equal(t, map[string]string{"hello": "bar"}, entries[1].Fields)
+	assert.Equal(t, [][2]string{{"hello", "bar"}}, entries[1].Fields)
 
 	assert.True(t, entries[0].ID.Before(entries[1].ID))
 
