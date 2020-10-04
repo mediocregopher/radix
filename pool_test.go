@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/mediocregopher/radix/v3/resp"
-	"github.com/mediocregopher/radix/v3/resp/resp2"
-	"github.com/mediocregopher/radix/v3/trace"
+	"github.com/mediocregopher/radix/v4/resp"
+	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/trace"
 )
 
 func testPool(t *T, size int, opts ...PoolOpt) *Pool {

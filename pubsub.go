@@ -8,8 +8,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/mediocregopher/radix/v3/resp"
-	"github.com/mediocregopher/radix/v3/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp"
+	"github.com/mediocregopher/radix/v4/resp/resp2"
 )
 
 // PubSubMessage describes a message being published to a subscribed channel

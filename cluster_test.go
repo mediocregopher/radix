@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/mediocregopher/radix/v3/trace"
+	"github.com/mediocregopher/radix/v4/trace"
 )
 
 // clusterSlotKeys contains a random key for every slot. Unfortunately I haven't

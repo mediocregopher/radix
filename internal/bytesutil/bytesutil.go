@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/mediocregopher/radix/v3/resp"
+	"github.com/mediocregopher/radix/v4/resp"
 )
 
 // AnyIntToInt64 converts a value of any of Go's integer types (signed and unsigned) into a signed int64.

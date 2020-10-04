@@ -1,4 +1,4 @@
-module github.com/mediocregopher/radix/v3
+module github.com/mediocregopher/radix/v4
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

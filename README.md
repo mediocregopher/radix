@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.org/mediocregopher/radix.svg)](https://travis-ci.org/mediocregopher/radix)
 ![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/mediocregopher/radix.svg)
 [![GoDoc](https://godoc.org/github.com/mediocregopher/radix?status.svg)][godoc]
-[![Go Report Card](https://goreportcard.com/badge/github.com/mediocregopher/radix/v3)](https://goreportcard.com/report/github.com/mediocregopher/radix/v3)
+[![Go Report Card](https://goreportcard.com/badge/github.com/mediocregopher/radix/v4)](https://goreportcard.com/report/github.com/mediocregopher/radix/v4)
 
 Radix is a full-featured [Redis][redis] client for Go. See the [GoDoc][godoc]
 for documentation and general usage examples.
@@ -39,8 +39,8 @@ to support others prior to those two.
 
 [Module][module]-aware mode:
 
-    go get github.com/mediocregopher/radix/v3
-    // import github.com/mediocregopher/radix/v3
+    go get github.com/mediocregopher/radix/v4
+    // import github.com/mediocregopher/radix/v4
 
 Legacy GOPATH mode:
 
@@ -50,12 +50,12 @@ Legacy GOPATH mode:
 ## Testing
 
     # requires a redis server running on 127.0.0.1:6379
-    go test github.com/mediocregopher/radix/v3
+    go test github.com/mediocregopher/radix/v4
 
 ## Benchmarks
 
 Thanks to a huge amount of work put in by @nussjustin, and inspiration from the
-[redispipe][redispipe] project and @funny-falcon, radix/v3 is significantly
+[redispipe][redispipe] project and @funny-falcon, radix/v4 is significantly
 faster than most redis drivers, including redigo, for normal parallel workloads,
 and is pretty comparable for serial workloads.
 

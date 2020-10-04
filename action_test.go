@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/mediocregopher/radix/v3/resp"
-	"github.com/mediocregopher/radix/v3/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp"
+	"github.com/mediocregopher/radix/v4/resp/resp2"
 )
 
 func TestCmdAction(t *T) {

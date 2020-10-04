@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mediocregopher/radix/v3/resp"
+	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/stretchr/testify/assert"
 )
 

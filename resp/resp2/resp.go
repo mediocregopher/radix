@@ -17,8 +17,8 @@ import (
 
 	"errors"
 
-	"github.com/mediocregopher/radix/v3/internal/bytesutil"
-	"github.com/mediocregopher/radix/v3/resp"
+	"github.com/mediocregopher/radix/v4/internal/bytesutil"
+	"github.com/mediocregopher/radix/v4/resp"
 )
 
 var delim = []byte{'\r', '\n'}
