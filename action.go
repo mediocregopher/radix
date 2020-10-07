@@ -391,33 +391,61 @@ var (
 
 type evalAction struct {
 	EvalScript
-	args []string
-	rcv  interface{}
+	keys, args []string
+	rcv        interface{}
+
+	flat     bool
+	flatArgs []interface{}
 
 	eval bool
 }
 
 // Cmd is like the top-level Cmd but it uses the the EvalScript to perform an
-// EVALSHA command (and will automatically fallback to EVAL as necessary). args
-// must be at least as long as the numKeys argument of NewEvalScript.
-func (es EvalScript) Cmd(rcv interface{}, args ...string) Action {
-	if len(args) < es.numKeys {
+// EVALSHA command (and will automatically fallback to EVAL as necessary).
+// keysAndArgs must be at least as long as the numKeys argument of
+// NewEvalScript.
+func (es EvalScript) Cmd(rcv interface{}, keysAndArgs ...string) Action {
+	if len(keysAndArgs) < es.numKeys {
 		panic("not enough arguments passed into EvalScript.Cmd")
 	}
 	return &evalAction{
 		EvalScript: es,
-		args:       args,
+		keys:       keysAndArgs[:es.numKeys],
+		args:       keysAndArgs[es.numKeys:],
+		rcv:        rcv,
+	}
+}
+
+// FlatCmd is like the top level FlatCmd except it uses the EvalScript to
+// perform an EVALSHA command (and will automatically fallback to EVAL as
+// necessary). keys must be as long as the numKeys argument of NewEvalScript.
+func (es EvalScript) FlatCmd(rcv interface{}, keys []string, args ...interface{}) Action {
+	if len(keys) != es.numKeys {
+		panic("incorrect number of keys passed into EvalScript.FlatCmd")
+	}
+	return &evalAction{
+		EvalScript: es,
+		keys:       keys,
+		flatArgs:   args,
+		flat:       true,
 		rcv:        rcv,
 	}
 }
 
 func (ec *evalAction) Keys() []string {
-	return ec.args[:ec.numKeys]
+	return ec.keys
 }
 
 func (ec *evalAction) MarshalRESP(w io.Writer) error {
-	// EVAL(SHA) script/sum numkeys args...
-	if err := (resp2.ArrayHeader{N: 3 + len(ec.args)}).MarshalRESP(w); err != nil {
+	// EVAL(SHA) script/sum numkeys keys... args...
+	ah := resp2.ArrayHeader{N: 3 + len(ec.keys)}
+	if ec.flat {
+		ah.N += (resp2.Any{I: ec.flatArgs}).NumElems()
+	} else {
+		ah.N += len(ec.args)
+	}
+
+	if err := ah.MarshalRESP(w); err != nil {
 		return err
 	}
 
@@ -431,8 +459,23 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 	}
 
 	err = marshalBulkString(err, w, strconv.Itoa(ec.numKeys))
-	for i := range ec.args {
-		err = marshalBulkString(err, w, ec.args[i])
+	for i := range ec.keys {
+		err = marshalBulkString(err, w, ec.keys[i])
+	}
+	if err != nil {
+		return err
+	}
+
+	if ec.flat {
+		err = (resp2.Any{
+			I:                     ec.flatArgs,
+			MarshalBulkString:     true,
+			MarshalNoArrayHeaders: true,
+		}).MarshalRESP(w)
+	} else {
+		for i := range ec.args {
+			err = marshalBulkString(err, w, ec.args[i])
+		}
 	}
 	return err
 }

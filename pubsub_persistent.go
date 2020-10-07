@@ -9,6 +9,7 @@ import (
 type persistentPubSubOpts struct {
 	connFn     ConnFunc
 	abortAfter int
+	errCh      chan<- error
 }
 
 // PersistentPubSubOpt is an optional parameter which can be passed into
@@ -34,6 +35,16 @@ func PersistentPubSubConnFunc(connFn ConnFunc) PersistentPubSubOpt {
 func PersistentPubSubAbortAfter(attempts int) PersistentPubSubOpt {
 	return func(opts *persistentPubSubOpts) {
 		opts.abortAfter = attempts
+	}
+}
+
+// PersistentPubSubErrCh takes a channel which asynchronous errors
+// encountered by the PersistentPubSub can be read off of. If the channel blocks
+// the error will be dropped. The channel will be closed when PersistentPubSub
+// is closed.
+func PersistentPubSubErrCh(errCh chan<- error) PersistentPubSubOpt {
+	return func(opts *persistentPubSubOpts) {
+		opts.errCh = errCh
 	}
 }
 
@@ -227,13 +238,21 @@ func (p *persistentPubSub) execCmd(cmd pubSubCmd) error {
 	return nil
 }
 
+func (p *persistentPubSub) err(err error) {
+	select {
+	case p.opts.errCh <- err:
+	default:
+	}
+}
+
 func (p *persistentPubSub) spin() {
 	for {
 		select {
-		case <-p.currErrCh:
-			// TODO if refresh fails here the user will never know the error. It
-			// would be good to make that error available somehow.
-			p.refresh()
+		case err := <-p.currErrCh:
+			p.err(err)
+			if err := p.refresh(); err != nil {
+				p.err(err)
+			}
 		case cmd := <-p.cmdCh:
 			cmd.resCh <- p.execCmd(cmd)
 			if cmd.close {
@@ -289,6 +308,9 @@ func (p *persistentPubSub) Close() error {
 	p.closeOnce.Do(func() {
 		p.closeErr = p.cmd(pubSubCmd{close: true})
 		close(p.closeCh)
+		if p.opts.errCh != nil {
+			close(p.opts.errCh)
+		}
 	})
 	return p.closeErr
 }

@@ -1,5 +1,29 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.6.0
+
+**New**
+
+* Add `Typle` type, which makes unmarshaling `EXEC` and `EVAL` results easier.
+
+* Add `PersistentPubSubErrCh`, so that asynchronous errors within
+  `PersistentPubSub` can be exposed to the user.
+
+* Add `FlatCmd` method to `EvalScript`.
+
+* Add `StreamEntries` unmarshaler to make unmarshaling `XREAD` and `XREADGROUP`
+  results easier.
+
+**Fixes and Improvements**
+
+* Fix wrapped errors not being handled correctly by `Cluster`. (PR #229)
+
+* Fix `PersistentPubSub` deadlocking when a method was called after `Close`.
+  (PR #230)
+
+* Fix `StreamReader` not correctly handling the case of reading from multiple
+  streams when one is empty. (PR #224)
+
 # v3.5.2
 
 * Improve docs for `WithConn` and `PubSubConn`.

@@ -181,7 +181,7 @@ func TestEvalAction(t *T) {
 
 	c := dial()
 	key := randStr()
-	val1, val2 := randStr(), randStr()
+	val1, val2, val3 := randStr(), randStr(), randStr()
 
 	{
 		var res string
@@ -195,6 +195,13 @@ func TestEvalAction(t *T) {
 		err := c.Do(getSet.Cmd(&res, key, val2))
 		require.Nil(t, err)
 		assert.Equal(t, val1, res)
+	}
+
+	{
+		var res string
+		err := c.Do(getSet.FlatCmd(&res, []string{key}, val3))
+		require.Nil(t, err)
+		assert.Equal(t, val2, res)
 	}
 }
 
