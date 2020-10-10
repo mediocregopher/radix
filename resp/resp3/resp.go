@@ -54,7 +54,7 @@ var (
 
 	// Aggregated type prefices.
 	ArrayHeaderPrefix     Prefix = '*'
-	MapPrefix             Prefix = '%'
+	MapHeaderPrefix       Prefix = '%'
 	SetHeaderPrefix       Prefix = '~'
 	AttributeHeaderPrefix Prefix = '|'
 	PushHeaderPrefix      Prefix = '>'
@@ -89,7 +89,7 @@ func (p Prefix) String() string {
 		return "big-number"
 	case string(ArrayHeaderPrefix):
 		return "array"
-	case string(MapPrefix):
+	case string(MapHeaderPrefix):
 		return "map"
 	case string(SetHeaderPrefix):
 		return "set"
@@ -252,6 +252,8 @@ func readAndAssertPrefix(br *bufio.Reader, prefix Prefix, discardAttr bool) erro
 // BlobStringBytes can also be used as the header message of a streamed string.
 // When used in that way it will be followed by one or more BlobStringChunk
 // messages, ending in a BlobStringChunk with a zero length.
+//
+// BlobStringBytes will unmarshal a nil RESP2 bulk string as an empty B value.
 type BlobStringBytes struct {
 	B []byte
 
@@ -297,7 +299,8 @@ func (b *BlobStringBytes) UnmarshalRESP(br *bufio.Reader) error {
 	if err != nil {
 		return err
 	} else if n == -1 {
-		return errors.New("BlobStringBytes does not support unmarshaling RESP2 null bulk string")
+		b.B = []byte{}
+		return nil
 	} else if n < 0 {
 		return fmt.Errorf("invalid blob string length: %d", n)
 	} else if n == 0 {
@@ -323,6 +326,8 @@ func (b *BlobStringBytes) UnmarshalRESP(br *bufio.Reader) error {
 // BlobString can also be used as the header message of a streamed string. When
 // used in that way it will be followed by one or more BlobStringChunk messages,
 // ending in a BlobStringChunk with a zero length.
+//
+// BlobStringBytes will unmarshal a nil RESP2 bulk string as an empty S value.
 type BlobString struct {
 	S string
 
@@ -368,7 +373,8 @@ func (b *BlobString) UnmarshalRESP(br *bufio.Reader) error {
 	if err != nil {
 		return err
 	} else if n == -1 {
-		return errors.New("BlobString does not support unmarshaling RESP2 null bulk string")
+		b.S = ""
+		return nil
 	} else if n < 0 {
 		return fmt.Errorf("invalid blob string length: %d", n)
 	} else if n == 0 {
@@ -894,30 +900,42 @@ func marshalAggHeader(w io.Writer, prefix Prefix, n int, streamHeader bool) erro
 	return err
 }
 
-func unmarshalAggHeader(br *bufio.Reader, prefix Prefix, n *int, streamHeader *bool, discardAttr bool) error {
-	if err := readAndAssertPrefix(br, prefix, discardAttr); err != nil {
+type unmarshalAggHeaderParams struct {
+	br           *bufio.Reader
+	prefix       Prefix
+	n            *int
+	streamHeader *bool
+
+	discardAttr      bool
+	allowNegativeOne bool
+}
+
+func unmarshalAggHeader(params unmarshalAggHeaderParams) error {
+	if err := readAndAssertPrefix(params.br, params.prefix, params.discardAttr); err != nil {
 		return err
 	}
 
-	b, err := bytesutil.ReadBytesDelim(br)
+	b, err := bytesutil.ReadBytesDelim(params.br)
 	if err != nil {
 		return err
-	} else if streamHeader != nil {
-		if *streamHeader = bytes.Equal(b, streamHeaderSize); *streamHeader {
-			*n = 0
+	} else if params.streamHeader != nil {
+		if *params.streamHeader = bytes.Equal(b, streamHeaderSize); *params.streamHeader {
+			*params.n = 0
 			return nil
 		}
-		*streamHeader = false
+		*params.streamHeader = false
 	}
 
 	n64, err := bytesutil.ParseInt(b)
 	if err != nil {
 		return err
+	} else if n64 == -1 && params.allowNegativeOne {
+		n64 = 0
 	} else if n64 < 0 {
 		return fmt.Errorf("invalid number of elements: %d", n64)
 	}
 
-	*n = int(n64)
+	*params.n = int(n64)
 	return nil
 }
 
@@ -929,6 +947,8 @@ func unmarshalAggHeader(br *bufio.Reader, prefix Prefix, n *int, streamHeader *b
 //
 // ArrayHeader can also be used as the header of a streamed array, whose size is
 // not known in advance, by setting StreamedArrayHeader instead of NumElems.
+//
+// ArrayHeader will unmarshal a RESP2 nil array as an array of length zero.
 type ArrayHeader struct {
 	NumElems int
 
@@ -944,7 +964,14 @@ func (h ArrayHeader) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
 func (h *ArrayHeader) UnmarshalRESP(br *bufio.Reader) error {
-	return unmarshalAggHeader(br, ArrayHeaderPrefix, &h.NumElems, &h.StreamedArrayHeader, true)
+	return unmarshalAggHeader(unmarshalAggHeaderParams{
+		br:               br,
+		prefix:           ArrayHeaderPrefix,
+		n:                &h.NumElems,
+		streamHeader:     &h.StreamedArrayHeader,
+		discardAttr:      true,
+		allowNegativeOne: true,
+	})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -964,12 +991,18 @@ type MapHeader struct {
 
 // MarshalRESP implements the method for resp.Marshaler.
 func (h MapHeader) MarshalRESP(w io.Writer) error {
-	return marshalAggHeader(w, MapPrefix, h.NumPairs, h.StreamedMapHeader)
+	return marshalAggHeader(w, MapHeaderPrefix, h.NumPairs, h.StreamedMapHeader)
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
 func (h *MapHeader) UnmarshalRESP(br *bufio.Reader) error {
-	return unmarshalAggHeader(br, MapPrefix, &h.NumPairs, &h.StreamedMapHeader, true)
+	return unmarshalAggHeader(unmarshalAggHeaderParams{
+		br:           br,
+		prefix:       MapHeaderPrefix,
+		n:            &h.NumPairs,
+		streamHeader: &h.StreamedMapHeader,
+		discardAttr:  true,
+	})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -994,7 +1027,13 @@ func (h SetHeader) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
 func (h *SetHeader) UnmarshalRESP(br *bufio.Reader) error {
-	return unmarshalAggHeader(br, SetHeaderPrefix, &h.NumElems, &h.StreamedSetHeader, true)
+	return unmarshalAggHeader(unmarshalAggHeaderParams{
+		br:           br,
+		prefix:       SetHeaderPrefix,
+		n:            &h.NumElems,
+		streamHeader: &h.StreamedSetHeader,
+		discardAttr:  true,
+	})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1013,7 +1052,11 @@ func (h AttributeHeader) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
 func (h *AttributeHeader) UnmarshalRESP(br *bufio.Reader) error {
-	return unmarshalAggHeader(br, AttributeHeaderPrefix, &h.NumPairs, nil, false)
+	return unmarshalAggHeader(unmarshalAggHeaderParams{
+		br:     br,
+		prefix: AttributeHeaderPrefix,
+		n:      &h.NumPairs,
+	})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1031,7 +1074,12 @@ func (h PushHeader) MarshalRESP(w io.Writer) error {
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
 func (h *PushHeader) UnmarshalRESP(br *bufio.Reader) error {
-	return unmarshalAggHeader(br, PushHeaderPrefix, &h.NumElems, nil, true)
+	return unmarshalAggHeader(unmarshalAggHeaderParams{
+		br:          br,
+		prefix:      PushHeaderPrefix,
+		n:           &h.NumElems,
+		discardAttr: true,
+	})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1624,7 +1672,7 @@ func saneDefault(prefix Prefix) (interface{}, error) {
 	case ArrayHeaderPrefix, PushHeaderPrefix:
 		ii := make([]interface{}, 8)
 		return &ii, nil
-	case MapPrefix:
+	case MapHeaderPrefix:
 		return &map[interface{}]interface{}{}, nil
 	case SetHeaderPrefix:
 		return &map[interface{}]struct{}{}, nil
@@ -1732,7 +1780,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 	case NullPrefix:
 		return a.unmarshalNil()
 
-	case ArrayHeaderPrefix, MapPrefix, SetHeaderPrefix, PushHeaderPrefix:
+	case ArrayHeaderPrefix, MapHeaderPrefix, SetHeaderPrefix, PushHeaderPrefix:
 		var l int64
 		if len(b) == 1 && b[0] == '?' {
 			l = -1
@@ -2001,7 +2049,7 @@ func keyableReceiver(prefix Prefix, kv reflect.Value) (reflect.Value, error) {
 }
 
 func (a Any) unmarshalAgg(prefix Prefix, br *bufio.Reader, l int64) error {
-	if prefix == MapPrefix {
+	if prefix == MapHeaderPrefix {
 		l *= 2
 	}
 
@@ -2323,7 +2371,7 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 
 	prefix := Prefix(b[0])
 	switch prefix {
-	case ArrayHeaderPrefix, SetHeaderPrefix, MapPrefix, PushHeaderPrefix, AttributeHeaderPrefix:
+	case ArrayHeaderPrefix, SetHeaderPrefix, MapHeaderPrefix, PushHeaderPrefix, AttributeHeaderPrefix:
 		if body[0] == '?' {
 			return nil
 		}
@@ -2336,7 +2384,7 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 		}
 
 		switch prefix {
-		case MapPrefix, AttributeHeaderPrefix:
+		case MapHeaderPrefix, AttributeHeaderPrefix:
 			l *= 2
 		}
 
@@ -2402,7 +2450,7 @@ func (rm RawMessage) IsEmpty() bool {
 		return false
 	}
 	switch Prefix(rm[0]) {
-	case ArrayHeaderPrefix, MapPrefix, SetHeaderPrefix, AttributeHeaderPrefix, PushHeaderPrefix:
+	case ArrayHeaderPrefix, MapHeaderPrefix, SetHeaderPrefix, AttributeHeaderPrefix, PushHeaderPrefix:
 		return bytes.Equal(rm[1:], emptyAggTail)
 	}
 	return false
@@ -2415,7 +2463,7 @@ func (rm RawMessage) IsStreamedHeader() bool {
 		return false
 	}
 	switch Prefix(rm[0]) {
-	case ArrayHeaderPrefix, MapPrefix, SetHeaderPrefix, AttributeHeaderPrefix, PushHeaderPrefix, BlobStringPrefix:
+	case ArrayHeaderPrefix, MapHeaderPrefix, SetHeaderPrefix, AttributeHeaderPrefix, PushHeaderPrefix, BlobStringPrefix:
 		return bytes.Equal(rm[1:], streamedHeaderTail)
 	}
 	return false
@@ -2478,7 +2526,7 @@ func (rm rawMsgs) numElems() (int, error) {
 			NumberPrefix, NullPrefix, DoublePrefix, BooleanPrefix,
 			BlobErrorPrefix, VerbatimStringPrefix, BigNumberPrefix:
 			n++
-		case ArrayHeaderPrefix, MapPrefix, SetHeaderPrefix,
+		case ArrayHeaderPrefix, MapHeaderPrefix, SetHeaderPrefix,
 			AttributeHeaderPrefix, PushHeaderPrefix:
 			// no increment
 		default:

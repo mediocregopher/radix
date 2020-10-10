@@ -420,7 +420,11 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 				msg:       "$-1\r\n",
 				flattened: []string{""},
 				mkCases: func() []kase {
-					return []kase{{ie: ie{nil, []byte(nil)}, r: false}}
+					return []kase{
+						{ie: ie{nil, []byte(nil)}, r: false},
+						{ie: ie{BlobStringBytes{}, BlobStringBytes{B: []byte{}}}, r: false},
+						{ie: ie{BlobString{}, BlobString{}}, r: false},
+					}
 				},
 			}},
 			mkCases: func(in in) []kase { return nullCases(in) },
@@ -775,7 +779,10 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 				msg:       "*-1\r\n",
 				flattened: []string{""},
 				mkCases: func() []kase {
-					return []kase{{ie: ie{nil, []interface{}(nil)}, r: false, flattenedEmpty: true}}
+					return []kase{
+						{ie: ie{nil, []interface{}(nil)}, r: false, flattenedEmpty: true},
+						{ie: ie{ArrayHeader{}, ArrayHeader{}}, r: false, flattenedEmpty: true},
+					}
 				},
 			}},
 			mkCases: func(in in) []kase { return nullCases(in) },
@@ -909,7 +916,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 				streamed := in.streamed()
 				isArray := prefix == ArrayHeaderPrefix
 				isSet := prefix == SetHeaderPrefix
-				isMap := prefix == MapPrefix
+				isMap := prefix == MapHeaderPrefix
 				return []kase{
 					{r: !streamed && isArray, ie: ie{[][]byte(nil), [][]byte{}}},
 					{r: !streamed && isArray, ie: ie{[][]byte{}, [][]byte{}}},
@@ -1116,9 +1123,9 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					{ie: ie{map[string]string(nil), map[string]string{"1": "666"}}},
 					{ie: ie{map[string]string{}, map[string]string{"1": "666"}}},
 					{ie: ie{map[string]string{"a": "b"}, map[string]string{"1": "666"}}},
-					{r: !streamed && prefix == MapPrefix, ie: ie{map[int]int(nil), map[int]int{1: 666}}},
-					{r: !streamed && prefix == MapPrefix, ie: ie{map[int]int{}, map[int]int{1: 666}}},
-					{r: !streamed && prefix == MapPrefix, ie: ie{map[int]int{5: 5}, map[int]int{1: 666}}},
+					{r: !streamed && prefix == MapHeaderPrefix, ie: ie{map[int]int(nil), map[int]int{1: 666}}},
+					{r: !streamed && prefix == MapHeaderPrefix, ie: ie{map[int]int{}, map[int]int{1: 666}}},
+					{r: !streamed && prefix == MapHeaderPrefix, ie: ie{map[int]int{5: 5}, map[int]int{1: 666}}},
 					{ie: ie{map[string]int(nil), map[string]int{"1": 666}}},
 					{ie: ie{map[string]int{}, map[string]int{"1": 666}}},
 					{ie: ie{map[string]int{"5": 5}, map[string]int{"1": 666}}},
@@ -1344,9 +1351,9 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					{ie: ie{map[string]map[string]string(nil), map[string]map[string]string{"10": {"1": "666"}}}},
 					{ie: ie{map[string]map[string]string{}, map[string]map[string]string{"10": {"1": "666"}}}},
 					{ie: ie{map[string]map[string]string{"foo": {"a": "b"}}, map[string]map[string]string{"10": {"1": "666"}}}},
-					{r: !streamed && prefix == MapPrefix, ie: ie{map[int]map[int]string(nil), map[int]map[int]string{10: {1: "666"}}}},
-					{r: !streamed && prefix == MapPrefix, ie: ie{map[int]map[int]string{}, map[int]map[int]string{10: {1: "666"}}}},
-					{r: !streamed && prefix == MapPrefix, ie: ie{map[int]map[int]string{777: {4: "2"}}, map[int]map[int]string{10: {1: "666"}}}},
+					{r: !streamed && prefix == MapHeaderPrefix, ie: ie{map[int]map[int]string(nil), map[int]map[int]string{10: {1: "666"}}}},
+					{r: !streamed && prefix == MapHeaderPrefix, ie: ie{map[int]map[int]string{}, map[int]map[int]string{10: {1: "666"}}}},
+					{r: !streamed && prefix == MapHeaderPrefix, ie: ie{map[int]map[int]string{777: {4: "2"}}, map[int]map[int]string{10: {1: "666"}}}},
 					{ie: ie{map[int]map[int]int(nil), map[int]map[int]int{10: {1: 666}}}},
 					{ie: ie{map[int]map[int]int{}, map[int]map[int]int{10: {1: 666}}}},
 					{ie: ie{map[int]map[int]int{5: {4: 2}}, map[int]map[int]int{10: {1: 666}}}},
