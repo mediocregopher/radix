@@ -18,7 +18,7 @@ import (
 
 func testStub() Conn {
 	m := map[string]string{}
-	return Stub("tcp", "127.0.0.1:6379", func(args []string) interface{} {
+	return NewStubConn("tcp", "127.0.0.1:6379", func(args []string) interface{} {
 		switch args[0] {
 		case "GET":
 			return m[args[1]]
@@ -112,12 +112,12 @@ func TestStubLockingTimeout(t *T) {
 	}
 }
 
-func ExampleStub() {
+func ExampleNewStubConn() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	m := map[string]string{}
-	stub := Stub("tcp", "127.0.0.1:6379", func(args []string) interface{} {
+	stub := NewStubConn("tcp", "127.0.0.1:6379", func(args []string) interface{} {
 		switch args[0] {
 		case "GET":
 			return m[args[1]]

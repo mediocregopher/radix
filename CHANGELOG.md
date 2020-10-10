@@ -36,6 +36,9 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 * `PubSub` and `PersistentPubSub` have been renamed to `NewPubSubConn` and
   `NewPersistentPubSubConn`, respectively.
 
+* `Stub` and `PubSubStub` have been renamed to `NewStubConn` and
+  `NewPubSubStubConn`, respectively.
+
 * Rename `MaybeNil` to just `Maybe`, and change its semantics a bit.
 
 [resp3]: https://github.com/antirez/RESP3

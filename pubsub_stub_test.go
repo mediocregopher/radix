@@ -13,7 +13,7 @@ import (
 
 func TestPubSubStub(t *T) {
 	ctx := testCtx(t)
-	conn, stubCh := PubSubStub("tcp", "127.0.0.1:6379", func(in []string) interface{} {
+	conn, stubCh := NewPubSubStubConn("tcp", "127.0.0.1:6379", func(in []string) interface{} {
 		return in
 	})
 	message := func(channel, val string) {
@@ -88,13 +88,13 @@ func TestPubSubStub(t *T) {
 	assert.NoError(t, conn.Close())
 }
 
-func ExamplePubSubStub() {
+func ExampleNewPubSubStubConn() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Make a pubsub stub conn which will return nil for everything except
 	// pubsub commands (which will be handled automatically)
-	stub, stubCh := PubSubStub("tcp", "127.0.0.1:6379", func([]string) interface{} {
+	stub, stubCh := NewPubSubStubConn("tcp", "127.0.0.1:6379", func([]string) interface{} {
 		return nil
 	})
 

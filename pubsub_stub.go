@@ -39,22 +39,21 @@ type pubSubStub struct {
 	mDoneCh chan struct{}
 }
 
-// PubSubStub returns a (fake) Conn, much like Stub does, which pretends it is a
-// Conn to a real redis instance, but is instead using the given callback to
-// service requests. It is primarily useful for writing tests.
+// NewPubSubStubConn returns a stubbed Conn, much like NewStubConn does, which
+// pretends it is a Conn to a real redis instance, but is instead using the
+// given callback to service requests. It is primarily useful for writing tests.
 //
-// PubSubStub differes from Stub in that Encode calls for (P)SUBSCRIBE,
-// (P)UNSUBSCRIBE, MESSAGE, and PING will be intercepted and handled as per
-// redis' expected pubsub functionality. A PubSubMessage may be written to the
-// returned channel at any time, and if the PubSubStub has had (P)SUBSCRIBE
-// called matching that PubSubMessage it will be written to the PubSubStub's
-// internal buffer as expected.
+// NewPubSubStubConn differes from NewStubConn in that Encode calls for
+// (P)SUBSCRIBE, (P)UNSUBSCRIBE, MESSAGE, and PING will be intercepted and
+// handled as per redis' expected pubsub functionality. A PubSubMessage may be
+// written to the returned channel at any time, and if the returned Conn has had
+// (P)SUBSCRIBE called matching that PubSubMessage then the PubSubMessage will
+// be written to the Conn's internal buffer.
 //
-// This is intended to be used so that it can mock services which can perform
-// both normal redis commands and pubsub (e.g. a real redis instance, redis
-// sentinel). Once created this stub can be passed into PubSub and treated like
-// a real connection.
-func PubSubStub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (Conn, chan<- PubSubMessage) {
+// This is intended to be used for mocking services which can perform both
+// normal redis commands and pubsub (e.g. a real redis instance, redis
+// sentinel). The returned Conn can be passed into NewPubSubConn.
+func NewPubSubStubConn(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (Conn, chan<- PubSubMessage) {
 	ch := make(chan PubSubMessage)
 	s := &pubSubStub{
 		proc:    proc.New(),
@@ -64,7 +63,7 @@ func PubSubStub(remoteNetwork, remoteAddr string, fn func([]string) interface{})
 		psubbed: map[string]bool{},
 		mDoneCh: make(chan struct{}, 1),
 	}
-	s.Conn = Stub(remoteNetwork, remoteAddr, s.innerFn)
+	s.Conn = NewStubConn(remoteNetwork, remoteAddr, s.innerFn)
 	s.proc.Run(s.spin)
 	return s, ch
 }

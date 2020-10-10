@@ -73,7 +73,7 @@ func (s *sentinelStub) newConn(ctx context.Context, network, addr string) (Conn,
 		return nil, fmt.Errorf("%q not in sentinel cluster", addr)
 	}
 
-	conn, stubCh := PubSubStub(network, addr, func(args []string) interface{} {
+	conn, stubCh := NewPubSubStubConn(network, addr, func(args []string) interface{} {
 		s.Lock()
 		defer s.Unlock()
 
@@ -435,7 +435,7 @@ func TestSentinelSecondaryRead(t *T) {
 	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
 	// don't tell anyone
 	poolFn := func(ctx context.Context, network, addr string) (Client, error) {
-		return Stub(network, addr, func(args []string) interface{} {
+		return NewStubConn(network, addr, func(args []string) interface{} {
 			return addr
 		}), nil
 	}

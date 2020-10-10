@@ -127,7 +127,7 @@ type stub struct {
 	fn func([]string) interface{}
 }
 
-// Stub returns a (fake) Conn which pretends it is a Conn to a real redis
+// NewStubConn returns a (fake) Conn which pretends it is a Conn to a real redis
 // instance, but is instead using the given callback to service requests. It is
 // primarily useful for writing tests.
 //
@@ -140,7 +140,7 @@ type stub struct {
 // remoteNetwork and remoteAddr can be empty, but if given will be used as the
 // return from the RemoteAddr method.
 //
-func Stub(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn {
+func NewStubConn(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn {
 	return &stub{
 		buffer: newBuffer(remoteNetwork, remoteAddr),
 		fn:     fn,
