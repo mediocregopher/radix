@@ -426,10 +426,7 @@ func (p *Pool) getExisting(ctx context.Context) (*ioErrConn, error) {
 	// is what we want
 	var tc <-chan time.Time
 	if p.opts.onEmptyWait > 0 {
-		t := getTimer(p.opts.onEmptyWait)
-		defer putTimer(t)
-
-		tc = t.C
+		tc = time.After(p.opts.onEmptyWait)
 	}
 
 	select {

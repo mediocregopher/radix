@@ -90,7 +90,6 @@ func TestPool(t *T) {
 	t.Run("withTrace", func(t *T) {
 		var connCreatedCount int
 		var connClosedCount int
-		var doCompletedCount uint32
 		var initializedAvailCount int
 		doWithTrace(t, trace.PoolTrace{
 			ConnCreated: func(done trace.PoolConnCreated) {
@@ -98,9 +97,6 @@ func TestPool(t *T) {
 			},
 			ConnClosed: func(closed trace.PoolConnClosed) {
 				connClosedCount++
-			},
-			DoCompleted: func(completed trace.PoolDoCompleted) {
-				atomic.AddUint32(&doCompletedCount, 1)
 			},
 			InitCompleted: func(completed trace.PoolInitCompleted) {
 				initializedAvailCount = completed.AvailCount
@@ -110,9 +106,6 @@ func TestPool(t *T) {
 			t.Fail()
 		}
 		if connCreatedCount != connClosedCount {
-			t.Fail()
-		}
-		if doCompletedCount == 0 {
 			t.Fail()
 		}
 	})

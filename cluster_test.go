@@ -126,6 +126,7 @@ func TestClusterDo(t *T) {
 			attempts: doAttempts,
 		}))
 		assert.Equal(t, v, vgot)
+		lastRedirect.Context = nil
 		assert.Equal(t, trace.ClusterRedirected{
 			Addr:          stub16k.addr,
 			Key:           k,
@@ -142,6 +143,7 @@ func TestClusterDo(t *T) {
 		var vgot string
 		require.Nil(t, c.Do(ctx, Cmd(&vgot, "GET", k)))
 		assert.Equal(t, v, vgot)
+		lastRedirect.Context = nil
 		assert.Equal(t, trace.ClusterRedirected{
 			Addr:          stub0.addr,
 			Key:           k,

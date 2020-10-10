@@ -70,8 +70,6 @@ type pipeliningConn struct {
 	encDecs  []pipeliningConnEncDec
 	pipeline *pipeline
 
-	batchTimer *timer
-
 	// this is only used in tests. If it's set it will be used for timerChs
 	// instead of an actual timer
 	testTimerCh chan time.Time
@@ -96,12 +94,11 @@ func NewPipeliningConn(conn Conn, opts ...PipeliningConnOpt) Conn {
 	}
 
 	pc := &pipeliningConn{
-		proc:       proc.New(),
-		conn:       conn,
-		opts:       pco,
-		encDecCh:   make(chan pipeliningConnEncDec, 16),
-		pipeline:   newPipeline(),
-		batchTimer: new(timer),
+		proc:     proc.New(),
+		conn:     conn,
+		opts:     pco,
+		encDecCh: make(chan pipeliningConnEncDec, 16),
+		pipeline: newPipeline(),
 	}
 	pc.proc.Run(pc.spin)
 	return pc
@@ -157,8 +154,7 @@ func (pc *pipeliningConn) resetTimer() <-chan time.Time {
 	if pc.testTimerCh != nil {
 		return pc.testTimerCh
 	} else if pc.opts.batchDur > 0 {
-		pc.batchTimer.Reset(pc.opts.batchDur)
-		return pc.batchTimer.Timer.C
+		return time.After(pc.opts.batchDur)
 	}
 	return nil
 }
