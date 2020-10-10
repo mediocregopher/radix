@@ -2,18 +2,17 @@ package radix
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
-var errPubSubMode = resp2.Error{
-	E: errors.New("ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context"),
+var errPubSubMode = resp3.SimpleError{
+	S: "ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context",
 }
 
 type multiMarshal []resp.Marshaler
@@ -76,7 +75,7 @@ func (s *pubSubStub) innerFn(ss []string) interface{} {
 		writeRes := func(mm multiMarshal, cmd, subj string) multiMarshal {
 			c := len(s.subbed) + len(s.psubbed)
 			s.pubsubMode = c > 0
-			return append(mm, resp2.Any{I: []interface{}{cmd, subj, c}})
+			return append(mm, resp3.Any{I: []interface{}{cmd, subj, c}})
 		}
 
 		switch strings.ToUpper(ss[0]) {

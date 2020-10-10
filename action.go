@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
@@ -90,7 +89,7 @@ func cmdString(m resp.Marshaler) string {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
 	var ss []string
-	err := resp2.RawMessage(buf.Bytes()).UnmarshalInto(resp2.Any{I: &ss})
+	err := resp3.RawMessage(buf.Bytes()).UnmarshalInto(&ss)
 	if err != nil {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
@@ -100,18 +99,18 @@ func cmdString(m resp.Marshaler) string {
 	return "[" + strings.Join(ss, " ") + "]"
 }
 
-func marshalBulkString(prevErr error, w io.Writer, str string) error {
+func marshalBlobString(prevErr error, w io.Writer, str string) error {
 	if prevErr != nil {
 		return prevErr
 	}
-	return resp2.BulkString{S: str}.MarshalRESP(w)
+	return resp3.BlobString{S: str}.MarshalRESP(w)
 }
 
-func marshalBulkStringBytes(prevErr error, w io.Writer, b []byte) error {
+func marshalBlobStringBytes(prevErr error, w io.Writer, b []byte) error {
 	if prevErr != nil {
 		return prevErr
 	}
-	return resp2.BulkStringBytes{B: b}.MarshalRESP(w)
+	return resp3.BlobStringBytes{B: b}.MarshalRESP(w)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -223,20 +222,18 @@ func (c *cmdAction) Keys() []string {
 }
 
 func (c *cmdAction) flatMarshalRESP(w io.Writer) error {
-	var err error
-	a := resp2.Any{
-		I:                     c.flatArgs,
-		MarshalBulkString:     true,
-		MarshalNoArrayHeaders: true,
-	}
-	arrL := 2 + a.NumElems()
-	err = resp2.ArrayHeader{N: arrL}.MarshalRESP(w)
-	err = marshalBulkString(err, w, c.cmd)
-	err = marshalBulkString(err, w, c.flatKey[0])
+	flattenedArgs, err := resp3.Flatten(c.flatArgs)
 	if err != nil {
-		return err
+		return resp.ErrConnUsable{Err: err}
 	}
-	return resp.ErrConnUnusable(a.MarshalRESP(w))
+
+	err = resp3.ArrayHeader{NumElems: 2 + len(flattenedArgs)}.MarshalRESP(w)
+	err = marshalBlobString(err, w, c.cmd)
+	err = marshalBlobString(err, w, c.flatKey[0])
+	for _, fArg := range flattenedArgs {
+		err = marshalBlobStringBytes(err, w, fArg)
+	}
+	return err
 }
 
 func (c *cmdAction) MarshalRESP(w io.Writer) error {
@@ -244,16 +241,16 @@ func (c *cmdAction) MarshalRESP(w io.Writer) error {
 		return c.flatMarshalRESP(w)
 	}
 
-	err := resp2.ArrayHeader{N: len(c.args) + 1}.MarshalRESP(w)
-	err = marshalBulkString(err, w, c.cmd)
+	err := resp3.ArrayHeader{NumElems: len(c.args) + 1}.MarshalRESP(w)
+	err = marshalBlobString(err, w, c.cmd)
 	for i := range c.args {
-		err = marshalBulkString(err, w, c.args[i])
+		err = marshalBlobString(err, w, c.args[i])
 	}
 	return err
 }
 
 func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
-	if err := (resp2.Any{I: c.rcv}).UnmarshalRESP(br); err != nil {
+	if err := (resp3.Any{I: c.rcv}).UnmarshalRESP(br); err != nil {
 		return err
 	}
 	cmdActionPool.Put(c)
@@ -315,23 +312,23 @@ type Tuple []interface{}
 
 // UnmarshalRESP implements the method for the resp.Unmarshaler interface.
 func (t Tuple) UnmarshalRESP(br *bufio.Reader) error {
-	var ah resp2.ArrayHeader
+	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	} else if ah.N != len(t) {
-		for i := 0; i < ah.N; i++ {
-			if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+	} else if ah.NumElems != len(t) {
+		for i := 0; i < ah.NumElems; i++ {
+			if err := (resp3.Any{}).UnmarshalRESP(br); err != nil {
 				return err
 			}
 		}
 		return resp.ErrConnUsable{
-			Err: fmt.Errorf("expected array of size %d but got array of size %d", len(t), ah.N),
+			Err: fmt.Errorf("expected array of size %d but got array of size %d", len(t), ah.NumElems),
 		}
 	}
 
 	var retErr error
-	for i := 0; i < ah.N; i++ {
-		if err := (resp2.Any{I: t[i]}).UnmarshalRESP(br); err != nil {
+	for i := 0; i < ah.NumElems; i++ {
+		if err := (resp3.Any{I: t[i]}).UnmarshalRESP(br); err != nil {
 			// if the message was discarded then we can just continue, this
 			// method will return the first error it sees
 			if !errors.As(err, new(resp.ErrConnUsable)) {
@@ -411,43 +408,46 @@ func (ec *evalAction) Keys() []string {
 
 func (ec *evalAction) MarshalRESP(w io.Writer) error {
 	// EVAL(SHA) script/sum numkeys keys... args...
-	ah := resp2.ArrayHeader{N: 3 + len(ec.keys)}
+	ah := resp3.ArrayHeader{NumElems: 3 + len(ec.keys)}
+
+	var flattenedArgs [][]byte
+	var err error
 	if ec.flat {
-		ah.N += (resp2.Any{I: ec.flatArgs}).NumElems()
+		if flattenedArgs, err = resp3.Flatten(ec.flatArgs); err != nil {
+			return resp.ErrConnUsable{Err: err}
+		}
+		ah.NumElems += len(flattenedArgs)
 	} else {
-		ah.N += len(ec.args)
+		ah.NumElems += len(ec.args)
 	}
 
 	if err := ah.MarshalRESP(w); err != nil {
 		return err
 	}
 
-	var err error
 	if ec.eval {
-		err = marshalBulkStringBytes(err, w, eval)
-		err = marshalBulkString(err, w, ec.script)
+		err = marshalBlobStringBytes(err, w, eval)
+		err = marshalBlobString(err, w, ec.script)
 	} else {
-		err = marshalBulkStringBytes(err, w, evalsha)
-		err = marshalBulkString(err, w, ec.sum)
+		err = marshalBlobStringBytes(err, w, evalsha)
+		err = marshalBlobString(err, w, ec.sum)
 	}
 
-	err = marshalBulkString(err, w, strconv.Itoa(len(ec.keys)))
+	err = marshalBlobString(err, w, strconv.Itoa(len(ec.keys)))
 	for i := range ec.keys {
-		err = marshalBulkString(err, w, ec.keys[i])
+		err = marshalBlobString(err, w, ec.keys[i])
 	}
 	if err != nil {
 		return err
 	}
 
 	if ec.flat {
-		err = (resp2.Any{
-			I:                     ec.flatArgs,
-			MarshalBulkString:     true,
-			MarshalNoArrayHeaders: true,
-		}).MarshalRESP(w)
+		for i := range flattenedArgs {
+			err = marshalBlobStringBytes(err, w, flattenedArgs[i])
+		}
 	} else {
 		for i := range ec.args {
-			err = marshalBulkString(err, w, ec.args[i])
+			err = marshalBlobString(err, w, ec.args[i])
 		}
 	}
 	return err
@@ -456,7 +456,7 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 func (ec *evalAction) Perform(ctx context.Context, conn Conn) error {
 	run := func(eval bool) error {
 		ec.eval = eval
-		return conn.EncodeDecode(ctx, ec, resp2.Any{I: ec.rcv})
+		return conn.EncodeDecode(ctx, ec, resp3.Any{I: ec.rcv})
 	}
 
 	err := run(false)

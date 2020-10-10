@@ -14,7 +14,7 @@ import (
 
 	"github.com/mediocregopher/radix/v4/internal/bytesutil"
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
 // StreamEntryID represents an ID used in a Redis stream with the format <time>-<seq>.
@@ -82,7 +82,7 @@ func (s *StreamEntryID) bytes() []byte {
 
 // MarshalRESP implements the resp.Marshaler interface.
 func (s *StreamEntryID) MarshalRESP(w io.Writer) error {
-	return resp2.BulkStringBytes{B: s.bytes()}.MarshalRESP(w)
+	return resp3.BlobStringBytes{B: s.bytes()}.MarshalRESP(w)
 }
 
 var errInvalidStreamID = errors.New("invalid stream entry id")
@@ -92,7 +92,7 @@ func (s *StreamEntryID) UnmarshalRESP(br *bufio.Reader) error {
 	buf := bytesutil.GetBytes()
 	defer bytesutil.PutBytes(buf)
 
-	bsb := resp2.BulkStringBytes{B: (*buf)[:0]}
+	bsb := resp3.BlobStringBytes{B: (*buf)[:0]}
 	if err := bsb.UnmarshalRESP(br); err != nil {
 		return err
 	}
@@ -142,31 +142,30 @@ var errInvalidStreamEntry = errors.New("invalid stream entry")
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
 func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
-	var ah resp2.ArrayHeader
+	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	} else if ah.N != 2 {
+	} else if ah.NumElems != 2 {
 		return errInvalidStreamEntry
 	} else if err := s.ID.UnmarshalRESP(br); err != nil {
 		return err
 	}
 
-	// put this here in case the array has size -1
-	s.Fields = s.Fields[:0]
-
-	// resp2.Any{I: &s.Fields}.UnmarshalRESP(br)
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	} else if ah.N == -1 {
+	} else if ah.NumElems == 0 {
+		// if NumElems is zero that means the Fields are actually nil, since
+		// it's not possible to submit a stream entry with zero fields.
+		s.Fields = s.Fields[:0]
 		return nil
-	} else if ah.N%2 != 0 {
+	} else if ah.NumElems%2 != 0 {
 		return errInvalidStreamEntry
 	} else if s.Fields == nil {
-		s.Fields = make([][2]string, 0, ah.N)
+		s.Fields = make([][2]string, 0, ah.NumElems)
 	}
 
-	var bs resp2.BulkString
-	for i := 0; i < ah.N; i += 2 {
+	var bs resp3.BlobString
+	for i := 0; i < ah.NumElems; i += 2 {
 		if err := bs.UnmarshalRESP(br); err != nil {
 			return err
 		}
@@ -189,14 +188,14 @@ type StreamEntries struct {
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
 func (s *StreamEntries) UnmarshalRESP(br *bufio.Reader) error {
-	var ah resp2.ArrayHeader
+	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	} else if ah.N != 2 {
+	} else if ah.NumElems != 2 {
 		return errors.New("invalid xread[group] response")
 	}
 
-	var stream resp2.BulkString
+	var stream resp3.BlobString
 	if err := stream.UnmarshalRESP(br); err != nil {
 		return err
 	}
@@ -206,7 +205,7 @@ func (s *StreamEntries) UnmarshalRESP(br *bufio.Reader) error {
 		return err
 	}
 
-	s.Entries = make([]StreamEntry, ah.N)
+	s.Entries = make([]StreamEntry, ah.NumElems)
 	for i := range s.Entries {
 		if err := s.Entries[i].UnmarshalRESP(br); err != nil {
 			return err

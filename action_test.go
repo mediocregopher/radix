@@ -473,13 +473,8 @@ func TestMaybe(t *T) {
 			mb := Maybe{Rcv: &rm}
 			assert.NoError(t, mb.UnmarshalRESP(bufio.NewReader(buf)))
 			assert.Equal(t, mbt.b, string(rm))
-			switch {
-			case mbt.isNull:
-				assert.True(t, mb.Null)
-			case mbt.isEmpty:
-				assert.True(t, mb.Empty)
-				assert.Equal(t, mbt.b, string(rm))
-			}
+			assert.Equal(t, mbt.isNull, mb.Null)
+			assert.Equal(t, mbt.isEmpty, mb.Empty)
 		})
 	}
 }

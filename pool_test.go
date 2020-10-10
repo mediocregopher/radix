@@ -14,7 +14,7 @@ import (
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/mediocregopher/radix/v4/trace"
 )
 
@@ -314,7 +314,7 @@ func TestIoErrConn(t *T) {
 		ioc := newIOErrConn(Stub("tcp", "127.0.0.1:6379", nil))
 		ioc.lastIOErr = dummyError
 
-		require.Equal(t, dummyError, ioc.EncodeDecode(ctx, &resp2.Any{}, &resp2.Any{}))
+		require.Equal(t, dummyError, ioc.EncodeDecode(ctx, &resp3.Any{}, &resp3.Any{}))
 		require.Nil(t, ioc.Close())
 	})
 
@@ -325,7 +325,7 @@ func TestIoErrConn(t *T) {
 
 		err1 := ioc.Do(ctx, Cmd(nil, "EVAL", "Z", "0"))
 		require.True(t, errors.As(err1, new(resp.ErrConnUsable)))
-		require.True(t, errors.As(err1, new(resp2.Error)))
+		require.True(t, errors.As(err1, new(resp3.SimpleError)))
 
 		err2 := ioc.Do(ctx, Cmd(nil, "GET", randStr()))
 		require.Nil(t, err2)

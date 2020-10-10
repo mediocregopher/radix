@@ -2,7 +2,6 @@ package radix
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -10,7 +9,7 @@ import (
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
 // PubSubMessage describes a message being published to a subscribed channel
@@ -31,17 +30,17 @@ func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 	}
 
 	if m.Type == "message" {
-		marshal(resp2.ArrayHeader{N: 3})
-		marshal(resp2.BulkString{S: m.Type})
+		marshal(resp3.ArrayHeader{NumElems: 3})
+		marshal(resp3.BlobString{S: m.Type})
 	} else if m.Type == "pmessage" {
-		marshal(resp2.ArrayHeader{N: 4})
-		marshal(resp2.BulkString{S: m.Type})
-		marshal(resp2.BulkString{S: m.Pattern})
+		marshal(resp3.ArrayHeader{NumElems: 4})
+		marshal(resp3.BlobString{S: m.Type})
+		marshal(resp3.BlobString{S: m.Pattern})
 	} else {
 		return errors.New("unknown message Type")
 	}
-	marshal(resp2.BulkString{S: m.Channel})
-	marshal(resp2.BulkStringBytes{B: m.Message})
+	marshal(resp3.BlobString{S: m.Channel})
+	marshal(resp3.BlobStringBytes{B: m.Message})
 	return err
 }
 
@@ -62,22 +61,22 @@ func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 	// needs to check for that.
 	if prefix, err := br.Peek(1); err != nil {
 		return err
-	} else if bytes.Equal(prefix, resp2.SimpleStringPrefix) {
+	} else if resp3.Prefix(prefix[0]) == resp3.SimpleStringPrefix {
 		// if it's a simple string, discard it (it's probably PONG) and error
-		if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+		if err := (resp3.Any{}).UnmarshalRESP(br); err != nil {
 			return err
 		}
 		return resp.ErrConnUsable{Err: errNotPubSubMessage}
 	}
 
-	var ah resp2.ArrayHeader
+	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	} else if ah.N < 2 {
+	} else if ah.NumElems < 2 {
 		return errors.New("message has too few elements")
 	}
 
-	var msgType resp2.BulkStringBytes
+	var msgType resp3.BlobStringBytes
 	if err := msgType.UnmarshalRESP(br); err != nil {
 		return err
 	}
@@ -85,37 +84,37 @@ func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 	switch string(msgType.B) {
 	case "message":
 		m.Type = "message"
-		if ah.N != 3 {
+		if ah.NumElems != 3 {
 			return errors.New("message has wrong number of elements")
 		}
 	case "pmessage":
 		m.Type = "pmessage"
-		if ah.N != 4 {
+		if ah.NumElems != 4 {
 			return errors.New("message has wrong number of elements")
 		}
 
-		var pattern resp2.BulkString
+		var pattern resp3.BlobString
 		if err := pattern.UnmarshalRESP(br); err != nil {
 			return err
 		}
 		m.Pattern = pattern.S
 	default:
 		// if it's not a PubSubMessage then discard the rest of the array
-		for i := 1; i < ah.N; i++ {
-			if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+		for i := 1; i < ah.NumElems; i++ {
+			if err := (resp3.Any{}).UnmarshalRESP(br); err != nil {
 				return err
 			}
 		}
 		return errNotPubSubMessage
 	}
 
-	var channel resp2.BulkString
+	var channel resp3.BlobString
 	if err := channel.UnmarshalRESP(br); err != nil {
 		return err
 	}
 	m.Channel = channel.S
 
-	var msg resp2.BulkStringBytes
+	var msg resp3.BlobStringBytes
 	if err := msg.UnmarshalRESP(br); err != nil {
 		return err
 	}

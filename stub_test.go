@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,7 +86,7 @@ func TestStubLockingTimeout(t *T) {
 		defer wg.Done()
 		for i := 0; i < c; i++ {
 			var j int
-			require.Nil(t, stub.EncodeDecode(ctx, nil, resp2.Any{I: &j}))
+			require.Nil(t, stub.EncodeDecode(ctx, nil, resp3.Any{I: &j}))
 			assert.Equal(t, i, j)
 		}
 	}()
@@ -98,7 +98,7 @@ func TestStubLockingTimeout(t *T) {
 	{
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		m := Cmd(nil, "ECHO", "1").(resp.Marshaler)
-		assert.NoError(t, stub.EncodeDecode(ctx, m, resp2.Any{}))
+		assert.NoError(t, stub.EncodeDecode(ctx, m, resp3.Any{}))
 		cancel()
 	}
 
@@ -106,7 +106,7 @@ func TestStubLockingTimeout(t *T) {
 	// timeout error
 	{
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		err := stub.EncodeDecode(ctx, nil, resp2.Any{})
+		err := stub.EncodeDecode(ctx, nil, resp3.Any{})
 		cancel()
 		assert.Equal(t, context.DeadlineExceeded, err)
 	}

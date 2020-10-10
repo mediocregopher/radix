@@ -8,7 +8,7 @@ import (
 
 	"errors"
 
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
 // Scanner is used to iterate through the results of a SCAN call (or HSCAN,
@@ -130,14 +130,14 @@ type scanResult struct {
 }
 
 func (s *scanResult) UnmarshalRESP(br *bufio.Reader) error {
-	var ah resp2.ArrayHeader
+	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	} else if ah.N != 2 {
+	} else if ah.NumElems != 2 {
 		return errors.New("not enough parts returned")
 	}
 
-	var c resp2.BulkString
+	var c resp3.BlobString
 	if err := c.UnmarshalRESP(br); err != nil {
 		return err
 	}
@@ -145,5 +145,5 @@ func (s *scanResult) UnmarshalRESP(br *bufio.Reader) error {
 	s.cur = c.S
 	s.keys = s.keys[:0]
 
-	return (resp2.Any{I: &s.keys}).UnmarshalRESP(br)
+	return (resp3.Any{I: &s.keys}).UnmarshalRESP(br)
 }

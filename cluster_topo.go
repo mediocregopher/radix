@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
 // ClusterNode describes a single node in the cluster at a moment in time.
@@ -51,7 +51,7 @@ func (tt ClusterTopo) MarshalRESP(w io.Writer) error {
 		return allTSS[i].slots[0] < allTSS[j].slots[0]
 	})
 
-	if err := (resp2.ArrayHeader{N: len(allTSS)}).MarshalRESP(w); err != nil {
+	if err := (resp3.ArrayHeader{NumElems: len(allTSS)}).MarshalRESP(w); err != nil {
 		return err
 	}
 	for _, tss := range allTSS {
@@ -66,11 +66,11 @@ func (tt ClusterTopo) MarshalRESP(w io.Writer) error {
 // unmarshaling the return from CLUSTER SLOTS. The unmarshaled nodes will be
 // sorted before they are returned
 func (tt *ClusterTopo) UnmarshalRESP(br *bufio.Reader) error {
-	var arrHead resp2.ArrayHeader
+	var arrHead resp3.ArrayHeader
 	if err := arrHead.UnmarshalRESP(br); err != nil {
 		return err
 	}
-	slotSets := make([]topoSlotSet, arrHead.N)
+	slotSets := make([]topoSlotSet, arrHead.NumElems)
 	for i := range slotSets {
 		if err := (&(slotSets[i])).UnmarshalRESP(br); err != nil {
 			return err
@@ -152,9 +152,9 @@ func (tss topoSlotSet) MarshalRESP(w io.Writer) error {
 		}
 	}
 
-	marshal(resp2.ArrayHeader{N: 2 + len(tss.nodes)})
-	marshal(resp2.Any{I: tss.slots[0]})
-	marshal(resp2.Any{I: tss.slots[1] - 1})
+	marshal(resp3.ArrayHeader{NumElems: 2 + len(tss.nodes)})
+	marshal(resp3.Any{I: tss.slots[0]})
+	marshal(resp3.Any{I: tss.slots[1] - 1})
 
 	for _, n := range tss.nodes {
 		host, port, _ := net.SplitHostPort(n.Addr)
@@ -162,14 +162,14 @@ func (tss topoSlotSet) MarshalRESP(w io.Writer) error {
 		if n.ID != "" {
 			node = append(node, n.ID)
 		}
-		marshal(resp2.Any{I: node})
+		marshal(resp3.Any{I: node})
 	}
 
 	return resp.ErrConnUnusable(err)
 }
 
 func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
-	var arrHead resp2.ArrayHeader
+	var arrHead resp3.ArrayHeader
 	if err := arrHead.UnmarshalRESP(br); err != nil {
 		return err
 	}
@@ -177,17 +177,17 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 	// first two array elements are the slot numbers. We increment the second to
 	// preserve inclusive start/exclusive end, which redis doesn't
 	for i := range tss.slots {
-		if err := (resp2.Any{I: &tss.slots[i]}).UnmarshalRESP(br); err != nil {
+		if err := (resp3.Any{I: &tss.slots[i]}).UnmarshalRESP(br); err != nil {
 			return err
 		}
 	}
 	tss.slots[1]++
-	arrHead.N -= len(tss.slots)
+	arrHead.NumElems -= len(tss.slots)
 
 	var primaryNode ClusterNode
-	for i := 0; i < arrHead.N; i++ {
+	for i := 0; i < arrHead.NumElems; i++ {
 		var nodeStrs []string
-		if err := (resp2.Any{I: &nodeStrs}).UnmarshalRESP(br); err != nil {
+		if err := (resp3.Any{I: &nodeStrs}).UnmarshalRESP(br); err != nil {
 			return err
 		} else if len(nodeStrs) < 2 {
 			return fmt.Errorf("malformed node array: %#v", nodeStrs)

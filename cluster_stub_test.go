@@ -9,9 +9,7 @@ import (
 	"sync"
 	. "testing"
 
-	"errors"
-
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -93,13 +91,13 @@ func (s *clusterNodeStub) withKeyLocked(key string, asking, readonly bool, fn fu
 	if !ok || (!readonly && s.secondaryOfAddr != "") {
 		movedStub := s.clusterStub.stubForSlotIfSet(slotI)
 		if movedStub == nil {
-			return resp2.Error{E: errors.New("CLUSTERDOWN Hash slot not served")}
+			return resp3.SimpleError{S: "CLUSTERDOWN Hash slot not served"}
 		}
-		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, movedStub.addr)}
+		return resp3.SimpleError{S: fmt.Sprintf("MOVED %d %s", slotI, movedStub.addr)}
 	} else if _, ok := slot.kv[key]; !ok && slot.migrating != "" {
-		return resp2.Error{E: fmt.Errorf("ASK %d %s", slotI, slot.migrating)}
+		return resp3.SimpleError{S: fmt.Sprintf("ASK %d %s", slotI, slot.migrating)}
 	} else if slot.importing != "" && !asking {
-		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, slot.importing)}
+		return resp3.SimpleError{S: fmt.Sprintf("MOVED %d %s", slotI, slot.importing)}
 	}
 
 	return fn(slot)
@@ -120,7 +118,7 @@ func (s *clusterNodeStub) withKeys(keys []string, asking, readonly bool, fn func
 		slotI := ClusterSlot([]byte(keys[0]))
 		slot := s.clusterDatasetStub.slots[slotI]
 		if slot.importing != "" {
-			return resp2.Error{E: errors.New("TRYAGAIN Multiple keys request during rehashing of slot")}
+			return resp3.SimpleError{S: "TRYAGAIN Multiple keys request during rehashing of slot"}
 		}
 	}
 
@@ -164,18 +162,18 @@ func (s *clusterNodeStub) newConn() Conn {
 			k := args[1]
 			return s.withKey(k, asking, readonly, func(slot clusterSlotStub) interface{} {
 				slot.kv[k] = args[2]
-				return resp2.SimpleString{S: "OK"}
+				return resp3.SimpleString{S: "OK"}
 			})
 		case "EVALSHA":
-			return resp2.Error{E: errors.New("NOSCRIPT: clusterNodeStub does not support EVALSHA")}
+			return resp3.SimpleError{S: "NOSCRIPT: clusterNodeStub does not support EVALSHA"}
 		case "EVAL":
 			// see if any keys were sent
 			if len(args) < 3 {
-				return resp2.Error{E: errors.New("malformed EVAL command")}
+				return resp3.SimpleError{S: "malformed EVAL command"}
 			}
 			numKeys, err := strconv.Atoi(args[2])
 			if err != nil {
-				return resp2.Error{E: err}
+				return resp3.SimpleError{S: err.Error()}
 			} else if numKeys == 0 {
 				return "EVAL: no keys"
 			}
@@ -183,7 +181,7 @@ func (s *clusterNodeStub) newConn() Conn {
 				return "EVAL: success!"
 			})
 		case "PING":
-			return resp2.SimpleString{S: "PONG"}
+			return resp3.SimpleString{S: "PONG"}
 		case "CLUSTER":
 			switch strings.ToUpper(args[1]) {
 			case "SLOTS":
@@ -191,7 +189,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			}
 		case "ASKING":
 			asking = true
-			return resp2.SimpleString{S: "OK"}
+			return resp3.SimpleString{S: "OK"}
 		case "ADDR":
 			return s.addr
 		case "SCAN":
@@ -209,13 +207,13 @@ func (s *clusterNodeStub) newConn() Conn {
 			return []interface{}{"0", []string{}}
 		case "READONLY":
 			readonly = true
-			return resp2.SimpleString{S: "OK"}
+			return resp3.SimpleString{S: "OK"}
 		case "READWRITE":
 			readonly = false
-			return resp2.SimpleString{S: "OK"}
+			return resp3.SimpleString{S: "OK"}
 		}
 
-		return resp2.Error{E: fmt.Errorf("unknown command %#v", args)}
+		return resp3.SimpleError{S: fmt.Sprintf("unknown command %#v", args)}
 	})
 }
 

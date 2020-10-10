@@ -15,7 +15,7 @@ import (
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/mediocregopher/radix/v4/trace"
 )
 
@@ -518,7 +518,7 @@ func (a prefixAsking) MarshalRESP(w io.Writer) error {
 }
 
 func (a prefixAsking) UnmarshalRESP(br *bufio.Reader) error {
-	if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+	if err := (resp3.Any{}).UnmarshalRESP(br); err != nil {
 		return err
 	}
 	return a.Unmarshaler.UnmarshalRESP(br)
@@ -715,7 +715,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 		return nil
 	}
 
-	var respErr resp2.Error
+	var respErr resp3.SimpleError
 	if !errors.As(err, &respErr) {
 		return err
 	}
