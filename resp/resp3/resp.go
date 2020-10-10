@@ -139,19 +139,6 @@ var (
 	respMarshalerT           = reflect.TypeOf(new(resp.Marshaler)).Elem()
 )
 
-var (
-	byteReaderPool = sync.Pool{
-		New: func() interface{} {
-			return bytes.NewReader(nil)
-		},
-	}
-	bufioReaderPool = sync.Pool{
-		New: func() interface{} {
-			return bufio.NewReader(nil)
-		},
-	}
-)
-
 ////////////////////////////////////////////////////////////////////////////////
 
 // l may be negative to indicate that elements should be discarded until a
@@ -1865,11 +1852,11 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		fallthrough
 
 	case SimpleStringPrefix, NumberPrefix, DoublePrefix, BigNumberPrefix:
-		reader := byteReaderPool.Get().(*bytes.Reader)
-		reader.Reset(b)
-		err := a.unmarshalSingle(reader, reader.Len())
-		byteReaderPool.Put(reader)
-		return err
+		// We used to have a pool for *bytes.Reader instances which was used
+		// here. This resulted in one fewer heap allocation than this does, but
+		// took longer per-op due to the locking around the Pool.
+		reader := bytesutil.SimpleByteReader(b)
+		return a.unmarshalSingle(reader, len(b))
 
 	default:
 		return fmt.Errorf("unknown type prefix %q", prefix)
@@ -2421,14 +2408,8 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 // and unmarshaling that into the given receiver (which will be wrapped in an
 // Any).
 func (rm RawMessage) UnmarshalInto(rcv interface{}) error {
-	r := byteReaderPool.Get().(*bytes.Reader)
-	defer byteReaderPool.Put(r)
-	r.Reset(rm)
-
-	br := bufioReaderPool.Get().(*bufio.Reader)
-	defer bufioReaderPool.Put(br)
-	br.Reset(r)
-
+	r := bytes.NewReader(rm)
+	br := bufio.NewReader(r)
 	return Any{I: rcv}.UnmarshalRESP(br)
 }
 

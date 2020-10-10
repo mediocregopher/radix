@@ -203,7 +203,11 @@ func ReadNDiscard(r io.Reader, n int) error {
 		}
 		nr, err := r.Read(buf)
 		n -= nr
-		if n == 0 || err != nil {
+		if n == 0 {
+			return nil
+		} else if err == io.EOF {
+			return io.ErrUnexpectedEOF
+		} else if err != nil {
 			return err
 		}
 	}

@@ -169,6 +169,8 @@ func Cmd(rcv interface{}, cmd string, args ...string) Action {
 // support resp.Marshaler.
 //
 // The receiver to FlatCmd follows the same rules as for Cmd.
+//
+// The Action returned by FlatCmd also implements resp.Marshaler.
 func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) Action {
 	c := getCmdAction()
 	*c = cmdAction{
