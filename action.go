@@ -15,6 +15,7 @@ import (
 
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
 // Action performs a task using a Conn.
@@ -273,33 +274,31 @@ func (c *cmdAction) ClusterCanRetry() bool {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// MaybeNil is a type which wraps a receiver. It will first detect if what's
-// being received is a nil RESP type (either bulk string or array), and if so
-// set Nil to true. If not the return value will be unmarshalled into Rcv
-// normally. If the response being received is an empty array then the EmptyArray
-// field will be set and Rcv unmarshalled into normally.
-type MaybeNil struct {
-	Nil        bool
-	EmptyArray bool
-	Rcv        interface{}
+// Maybe is a type which wraps a receiver being unmarshaled into. When
+// unmarshaling takes place Maybe will also populate its other fields
+// accordingly.
+type Maybe struct {
+	// Rcv is the receiver which will be unmarshaled into.
+	Rcv interface{}
+
+	// Null will be true if a null RESP value is unmarshaled.
+	Null bool
+
+	// Empty will be true if an empty aggregated RESP type (array, set, map,
+	// push, or attribute) is unmarshaled.
+	Empty bool
 }
 
 // UnmarshalRESP implements the method for the resp.Unmarshaler interface.
-func (mn *MaybeNil) UnmarshalRESP(br *bufio.Reader) error {
-	var rm resp2.RawMessage
-	err := rm.UnmarshalRESP(br)
-	switch {
-	case err != nil:
+func (mb *Maybe) UnmarshalRESP(br *bufio.Reader) error {
+	var rm resp3.RawMessage
+	if err := rm.UnmarshalRESP(br); err != nil {
 		return err
-	case rm.IsNil():
-		mn.Nil = true
-		return nil
-	case rm.IsEmptyArray():
-		mn.EmptyArray = true
-		fallthrough // to not break backwards compatibility
-	default:
-		return rm.UnmarshalInto(resp2.Any{I: mn.Rcv})
 	}
+
+	mb.Null = rm.IsNull()
+	mb.Empty = rm.IsEmpty()
+	return rm.UnmarshalInto(mb.Rcv)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

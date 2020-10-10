@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	. "testing"
 	"time"
@@ -14,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mediocregopher/radix/v4/resp"
-	"github.com/mediocregopher/radix/v4/resp/resp2"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
 func TestCmdAction(t *T) {
@@ -135,12 +136,12 @@ func TestFlatCmdActionNil(t *T) {
 	key := randStr()
 	hashKey := randStr()
 
-	require.Nil(t, c.Do(ctx, FlatCmd(nil, "HMSET", key, hashKey, nil)))
+	assert.NoError(t, c.Do(ctx, FlatCmd(nil, "HMSET", key, hashKey, nil)))
 
-	var nilVal MaybeNil
-	require.Nil(t, c.Do(ctx, Cmd(&nilVal, "HGET", key, hashKey)))
-	require.False(t, nilVal.Nil)
-	require.False(t, nilVal.EmptyArray)
+	var mb Maybe
+	assert.NoError(t, c.Do(ctx, Cmd(&mb, "HGET", key, hashKey)))
+	assert.False(t, mb.Null)
+	assert.False(t, mb.Empty)
 }
 
 func TestFlatCmdActionEmpty(t *T) {
@@ -150,10 +151,10 @@ func TestFlatCmdActionEmpty(t *T) {
 
 	key := randStr()
 
-	var nilVal MaybeNil
-	require.Nil(t, c.Do(ctx, Cmd(&nilVal, "HGETALL", key)))
-	require.False(t, nilVal.Nil)
-	require.True(t, nilVal.EmptyArray)
+	var mb Maybe
+	assert.NoError(t, c.Do(ctx, Cmd(&mb, "HGETALL", key)))
+	assert.False(t, mb.Null)
+	assert.True(t, mb.Empty)
 }
 
 func ExampleFlatCmd() {
@@ -442,14 +443,14 @@ func ExampleWithConn_transaction() {
 	fmt.Printf("the value of key %q was %q\n", key, prevVal)
 }
 
-func TestMaybeNil(t *T) {
-	mntests := []struct {
+func TestMaybe(t *T) {
+	mbtests := []struct {
 		b       string
-		isNil   bool
+		isNull  bool
 		isEmpty bool
 	}{
-		{b: "$-1\r\n", isNil: true},
-		{b: "*-1\r\n", isNil: true},
+		{b: "$-1\r\n", isNull: true},
+		{b: "*-1\r\n", isNull: true},
 		{b: "+foo\r\n"},
 		{b: "-\r\n"},
 		{b: "-foo\r\n"},
@@ -461,28 +462,29 @@ func TestMaybeNil(t *T) {
 		{b: "$8\r\nfoo\r\nbar\r\n"},
 		{b: "*2\r\n:1\r\n:2\r\n"},
 		{b: "*0\r\n", isEmpty: true},
+		{b: "~0\r\n", isEmpty: true},
+		{b: "%0\r\n", isEmpty: true},
 	}
 
-	for _, mnt := range mntests {
-		buf := bytes.NewBufferString(mnt.b)
-		{
-			var rm resp2.RawMessage
-			mn := MaybeNil{Rcv: &rm}
-			require.Nil(t, mn.UnmarshalRESP(bufio.NewReader(buf)))
+	for i, mbt := range mbtests {
+		t.Run(strconv.Itoa(i), func(t *T) {
+			buf := bytes.NewBufferString(mbt.b)
+			var rm resp3.RawMessage
+			mb := Maybe{Rcv: &rm}
+			assert.NoError(t, mb.UnmarshalRESP(bufio.NewReader(buf)))
+			assert.Equal(t, mbt.b, string(rm))
 			switch {
-			case mnt.isNil:
-				assert.True(t, mn.Nil)
-			case mnt.isEmpty:
-				assert.True(t, mn.EmptyArray)
-				assert.Equal(t, mnt.b, string(rm))
-			default:
-				assert.Equal(t, mnt.b, string(rm))
+			case mbt.isNull:
+				assert.True(t, mb.Null)
+			case mbt.isEmpty:
+				assert.True(t, mb.Empty)
+				assert.Equal(t, mbt.b, string(rm))
 			}
-		}
+		})
 	}
 }
 
-func ExampleMaybeNil() {
+func ExampleMaybe() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -492,11 +494,11 @@ func ExampleMaybeNil() {
 	}
 
 	var rcv int64
-	mn := MaybeNil{Rcv: &rcv}
-	if err := client.Do(ctx, Cmd(&mn, "GET", "foo")); err != nil {
+	mb := Maybe{Rcv: &rcv}
+	if err := client.Do(ctx, Cmd(&mb, "GET", "foo")); err != nil {
 		// handle error
-	} else if mn.Nil {
-		fmt.Println("rcv is nil")
+	} else if mb.Null {
+		fmt.Println("rcv is null")
 	} else {
 		fmt.Printf("rcv is %d\n", rcv)
 	}
