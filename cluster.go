@@ -689,6 +689,10 @@ type clusterDoInnerParams struct {
 }
 
 func (c *Cluster) doInner(params clusterDoInnerParams) error {
+	if params.attempts <= 0 {
+		return errors.New("cluster action redirected too many times")
+	}
+
 	if downSince := c.getClusterDownSince(); downSince > 0 && c.opts.clusterDownWait > 0 {
 		// only wait when the last command was not too long, because
 		// otherwise the chance is high that the cluster already healed
@@ -732,7 +736,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
 	clusterDownChanged := c.setClusterDown(clusterDown)
 	if clusterDown && c.opts.clusterDownWait > 0 && clusterDownChanged {
-		params.attempts++ // TODO should this be --?
+		params.attempts--
 		return c.doInner(params)
 	}
 
@@ -775,10 +779,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 		doAttempts-params.attempts+1,
 		params.attempts <= 1,
 	)
-	if params.attempts--; params.attempts <= 0 {
-		return errors.New("cluster action redirected too many times")
-	}
-
+	params.attempts--
 	return c.doInner(params)
 }
 
