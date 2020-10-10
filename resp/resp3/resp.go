@@ -2370,10 +2370,9 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 }
 
 // UnmarshalInto is a shortcut for wrapping this RawMessage in a *bufio.Reader
-// and passing that into the given Unmarshaler's UnmarshalRESP method. Any error
-// from calling UnmarshalRESP is returned, and the RawMessage is unaffected in
-// all cases.
-func (rm RawMessage) UnmarshalInto(u resp.Unmarshaler) error {
+// and unmarshaling that into the given receiver (which will be wrapped in an
+// Any).
+func (rm RawMessage) UnmarshalInto(rcv interface{}) error {
 	r := byteReaderPool.Get().(*bytes.Reader)
 	defer byteReaderPool.Put(r)
 	r.Reset(rm)
@@ -2382,7 +2381,7 @@ func (rm RawMessage) UnmarshalInto(u resp.Unmarshaler) error {
 	defer bufioReaderPool.Put(br)
 	br.Reset(r)
 
-	return u.UnmarshalRESP(br)
+	return Any{I: rcv}.UnmarshalRESP(br)
 }
 
 // IsNull returns true if the contents of the RawMessage is a null RESP3
