@@ -660,9 +660,16 @@ func (c *Cluster) setClusterDown(down bool) (changed bool) {
 	return changed
 }
 
-func (c *Cluster) traceRedirected(addr, key string, moved, ask bool, count int, final bool) {
+func (c *Cluster) traceRedirected(
+	ctx context.Context,
+	addr, key string,
+	moved, ask bool,
+	count int,
+	final bool,
+) {
 	if c.opts.ct.Redirected != nil {
 		c.opts.ct.Redirected(trace.ClusterRedirected{
+			Context:       ctx,
 			Addr:          addr,
 			Key:           key,
 			Moved:         moved,
@@ -762,7 +769,10 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 	params.addr = msgParts[2]
 
 	c.traceRedirected(
-		ogAddr, params.key, moved, params.ask, doAttempts-params.attempts+1,
+		params.ctx,
+		ogAddr, params.key,
+		moved, params.ask,
+		doAttempts-params.attempts+1,
 		params.attempts <= 1,
 	)
 	if params.attempts--; params.attempts <= 0 {

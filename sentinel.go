@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
+	"github.com/mediocregopher/radix/v4/trace"
 )
 
 type sentinelOpts struct {
 	cf    ConnFunc
 	pf    ClientFunc
+	st    trace.SentinelTrace
 	errCh chan<- error
 }
 
@@ -48,6 +50,15 @@ func SentinelPoolFunc(pf ClientFunc) SentinelOpt {
 func SentinelErrCh(errCh chan<- error) SentinelOpt {
 	return func(so *sentinelOpts) {
 		so.errCh = errCh
+	}
+}
+
+// SentinelWithTrace tells the Sentinel to trace itself with the given
+// SentinelTrace. Note that SentinelTrace will block at every point which is set
+// to trace.
+func SentinelWithTrace(st trace.SentinelTrace) SentinelOpt {
+	return func(so *sentinelOpts) {
+		so.st = st
 	}
 }
 
@@ -379,14 +390,22 @@ func (sc *Sentinel) setClients(ctx context.Context, newPrimAddr string, newClien
 	newClients[newPrimAddr] = nil
 	var toClose []Client
 	var stateChanged bool
-	err := sc.proc.WithRLock(func() error {
 
+	prevTraceNodes := map[string]trace.SentinelNodeInfo{}
+	newTraceNodes := map[string]trace.SentinelNodeInfo{}
+
+	err := sc.proc.WithRLock(func() error {
 		// stateChanged may be set to true in other ways later in the method
 		stateChanged = sc.primAddr != newPrimAddr
 
 		// for each actual Client instance in sc.client, either move it over to
 		// newClients (if the address is shared) or make sure it is closed
 		for addr, client := range sc.clients {
+			prevTraceNodes[addr] = trace.SentinelNodeInfo{
+				Addr:      addr,
+				IsPrimary: addr == sc.primAddr,
+			}
+
 			if client == nil {
 				// do nothing
 			} else if _, ok := newClients[addr]; ok {
@@ -407,6 +426,10 @@ func (sc *Sentinel) setClients(ctx context.Context, newPrimAddr string, newClien
 		for addr := range newClients {
 			if _, ok := sc.clients[addr]; !ok {
 				stateChanged = true
+			}
+			newTraceNodes[addr] = trace.SentinelNodeInfo{
+				Addr:      addr,
+				IsPrimary: addr == newPrimAddr,
 			}
 		}
 		return nil
@@ -438,6 +461,35 @@ func (sc *Sentinel) setClients(ctx context.Context, newPrimAddr string, newClien
 	}
 
 	return nil
+}
+
+func (sc *Sentinel) traceTopoChanged(prevTopo, newTopo map[string]trace.SentinelNodeInfo) {
+	if sc.opts.st.TopoChanged == nil {
+		return
+	}
+
+	var added, removed, changed []trace.SentinelNodeInfo
+	for addr, prevNodeInfo := range prevTopo {
+		if newNodeInfo, ok := newTopo[addr]; !ok {
+			removed = append(removed, prevNodeInfo)
+		} else if newNodeInfo != prevNodeInfo {
+			changed = append(changed, newNodeInfo)
+		}
+	}
+	for addr, newNodeInfo := range newTopo {
+		if _, ok := prevTopo[addr]; !ok {
+			added = append(added, newNodeInfo)
+		}
+	}
+
+	if len(added)+len(removed)+len(changed) == 0 {
+		return
+	}
+	sc.opts.st.TopoChanged(trace.SentinelTopoChanged{
+		Added:   added,
+		Removed: removed,
+		Changed: changed,
+	})
 }
 
 // annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_

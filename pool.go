@@ -211,9 +211,6 @@ type Pool struct {
 	network, addr string
 	size          int
 	pool          chan *ioErrConn
-
-	// TODO replace with tracing
-	initDone chan struct{} // used for tests
 }
 
 // NewPool creates a *Pool which will keep open at least the given number of
@@ -233,11 +230,10 @@ type Pool struct {
 //
 func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
 	p := &Pool{
-		proc:     proc.New(),
-		network:  network,
-		addr:     addr,
-		size:     size,
-		initDone: make(chan struct{}),
+		proc:    proc.New(),
+		network: network,
+		addr:    addr,
+		size:    size,
 	}
 
 	defaultPoolOpts := []PoolOpt{
@@ -282,7 +278,6 @@ func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOp
 				break
 			}
 		}
-		close(p.initDone)
 		p.traceInitCompleted(time.Since(startTime))
 
 	})
@@ -307,7 +302,6 @@ func (p *Pool) traceInitCompleted(elapsedTime time.Duration) {
 	if p.opts.pt.InitCompleted != nil {
 		p.opts.pt.InitCompleted(trace.PoolInitCompleted{
 			PoolCommon:  p.traceCommon(),
-			AvailCount:  len(p.pool),
 			ElapsedTime: elapsedTime,
 		})
 	}
@@ -323,14 +317,21 @@ func (p *Pool) err(err error) {
 func (p *Pool) traceCommon() trace.PoolCommon {
 	return trace.PoolCommon{
 		Network: p.network, Addr: p.addr,
-		PoolSize: p.size, BufferSize: p.opts.overflowSize,
+		PoolSize: p.size, OverflowBufferSize: p.opts.overflowSize,
+		AvailCount: len(p.pool),
 	}
 }
 
-func (p *Pool) traceConnCreated(connectTime time.Duration, reason trace.PoolConnCreatedReason, err error) {
+func (p *Pool) traceConnCreated(
+	ctx context.Context,
+	connectTime time.Duration,
+	reason trace.PoolConnCreatedReason,
+	err error,
+) {
 	if p.opts.pt.ConnCreated != nil {
 		p.opts.pt.ConnCreated(trace.PoolConnCreated{
 			PoolCommon:  p.traceCommon(),
+			Context:     ctx,
 			Reason:      reason,
 			ConnectTime: connectTime,
 			Err:         err,
@@ -342,7 +343,6 @@ func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
 	if p.opts.pt.ConnClosed != nil {
 		p.opts.pt.ConnClosed(trace.PoolConnClosed{
 			PoolCommon: p.traceCommon(),
-			AvailCount: len(p.pool),
 			Reason:     reason,
 		})
 	}
@@ -352,7 +352,7 @@ func (p *Pool) newConn(ctx context.Context, reason trace.PoolConnCreatedReason) 
 	start := time.Now()
 	c, err := p.opts.cf(ctx, p.network, p.addr)
 	elapsed := time.Since(start)
-	p.traceConnCreated(elapsed, reason, err)
+	p.traceConnCreated(ctx, elapsed, reason, err)
 	if err != nil {
 		return nil, err
 	}
@@ -484,7 +484,6 @@ func (p *Pool) put(ioc *ioErrConn) bool {
 // of the pool, calling Perform on the given Action with it, and returning the
 // Conn to the pool.
 func (p *Pool) Do(ctx context.Context, a Action) error {
-	startTime := time.Now()
 	c, err := p.get(ctx)
 	if err != nil {
 		return err
@@ -492,20 +491,8 @@ func (p *Pool) Do(ctx context.Context, a Action) error {
 
 	err = c.Do(ctx, a)
 	p.put(c)
-	p.traceDoCompleted(time.Since(startTime), err)
 
 	return err
-}
-
-func (p *Pool) traceDoCompleted(elapsedTime time.Duration, err error) {
-	if p.opts.pt.DoCompleted != nil {
-		p.opts.pt.DoCompleted(trace.PoolDoCompleted{
-			PoolCommon:  p.traceCommon(),
-			AvailCount:  len(p.pool),
-			ElapsedTime: elapsedTime,
-			Err:         err,
-		})
-	}
 }
 
 // NumAvailConns returns the number of connections currently available in the

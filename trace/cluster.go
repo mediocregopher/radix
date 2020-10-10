@@ -1,49 +1,69 @@
-// Package trace contains all the types provided for tracing within the radix
-// package. With tracing a user is able to pull out fine-grained runtime events
-// as they happen, which is useful for gathering metrics, logging, performance
-// analysis, etc...
-//
-// BIG LOUD DISCLAIMER DO NOT IGNORE THIS: while the main radix package is
-// stable and will always remain backwards compatible, trace is still under
-// active development and may undergo changes to its types and other features.
-// The methods in the main radix package which invoke trace types are guaranteed
-// to remain stable.
 package trace
 
-////////////////////////////////////////////////////////////////////////////////
+import "context"
 
+// ClusterTrace is passed into radix.NewCluster via radix.ClusterWithTrace, and
+// contains callbacks which can be triggered for specific events during the
+// Cluster's runtime.
+//
+// All callbacks are called synchronously.
 type ClusterTrace struct {
-	// StateChange is called when the cluster becomes down or becomes available again.
+	// StateChange is called when the Cluster becomes down or becomes available
+	// again.
 	StateChange func(ClusterStateChange)
-	// TopoChanged is called when the cluster's topology changed.
+
+	// TopoChanged is called when the Cluster's topology changes.
 	TopoChanged func(ClusterTopoChanged)
-	// Redirected is called when radix.Do responded 'MOVED' or 'ASKED'.
+
+	// Redirected is called when redis responds to an Action with a 'MOVED' or
+	// 'ASK' error.
 	Redirected func(ClusterRedirected)
 }
 
+// ClusterStateChange is passed into the ClusterTrace.StateChange callback
+// whenever the Cluster's state has changed.
 type ClusterStateChange struct {
 	IsDown bool
 }
 
+// ClusterNodeInfo describes the attributes of a node in a redis cluster's
+// topology.
 type ClusterNodeInfo struct {
 	Addr      string
 	Slots     [][2]uint16
 	IsPrimary bool
 }
 
+// ClusterTopoChanged is passed into the ClusterTrace.TopoChanged callback
+// whenever the Cluster's topology has changed.
 type ClusterTopoChanged struct {
 	Added   []ClusterNodeInfo
 	Removed []ClusterNodeInfo
 	Changed []ClusterNodeInfo
 }
 
+// ClusterRedirected is passed into the ClusterTrace.Redirected callback
+// whenever redis responds to an Action with a 'MOVED' or 'ASK' error.
 type ClusterRedirected struct {
-	Addr          string
-	Key           string
-	Moved, Ask    bool
+	// Context is the Context passed into the Do call which is performing the
+	// Action which received a MOVED/ASK error.
+	Context context.Context
+
+	// Addr is the address of the redis instance the Action was performed
+	// against.
+	Addr string
+
+	// Key is the key that the Action would operate on.
+	Key string
+
+	// Moved and Ask denote which kind of error was returned. One will be true.
+	Moved, Ask bool
+
+	// RedirectCount denotes how many times the Action has been redirected so
+	// far.
 	RedirectCount int
 
-	// If true, then the MOVED/ASK error which was received will not be honored,
-	// and the call to Do will be returning the MOVED/ASK error.
+	// Final indicates that the MOVED/ASK error which was received will not be
+	// honored, and the call to Do will be returning the MOVED/ASK error.
 	Final bool
 }

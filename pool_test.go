@@ -18,17 +18,31 @@ import (
 	"github.com/mediocregopher/radix/v4/trace"
 )
 
-func testPool(t *T, size int, opts ...PoolOpt) *Pool {
+func testPoolWithTrace(t *T, size int, poolTrace trace.PoolTrace, opts ...PoolOpt) *Pool {
+	initDoneCh := make(chan struct{})
+	prevInitCompleted := poolTrace.InitCompleted
+	poolTrace.InitCompleted = func(pic trace.PoolInitCompleted) {
+		if prevInitCompleted != nil {
+			prevInitCompleted(pic)
+		}
+		close(initDoneCh)
+	}
+	opts = append(opts, PoolWithTrace(poolTrace))
+
 	ctx := testCtx(t)
 	pool, err := NewPool(ctx, "tcp", "localhost:6379", size, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	<-pool.initDone
+	<-initDoneCh
 	t.Cleanup(func() {
 		pool.Close()
 	})
 	return pool
+}
+
+func testPool(t *T, size int, opts ...PoolOpt) *Pool {
+	return testPoolWithTrace(t, size, trace.PoolTrace{}, opts...)
 }
 
 func TestPool(t *T) {
@@ -41,11 +55,11 @@ func TestPool(t *T) {
 		return nil
 	}
 
-	do := func(t *T, opts ...PoolOpt) {
+	doWithTrace := func(t *T, poolTrace trace.PoolTrace, opts ...PoolOpt) {
 		ctx := testCtx(t)
 		opts = append(opts, PoolOnFullClose())
 		size := 10
-		pool := testPool(t, size, opts...)
+		pool := testPoolWithTrace(t, size, poolTrace, opts...)
 		var wg sync.WaitGroup
 		for i := 0; i < size*4; i++ {
 			wg.Add(1)
@@ -62,6 +76,10 @@ func TestPool(t *T) {
 		assert.Equal(t, 0, pool.NumAvailConns())
 	}
 
+	do := func(t *T, opts ...PoolOpt) {
+		doWithTrace(t, trace.PoolTrace{}, opts...)
+	}
+
 	t.Run("onEmptyWait", func(t *T) { do(t, PoolOnEmptyWait()) })
 	t.Run("onEmptyCreate", func(t *T) { do(t, PoolOnEmptyCreateAfter(0)) })
 	t.Run("onEmptyCreateAfter", func(t *T) { do(t, PoolOnEmptyCreateAfter(1*time.Second)) })
@@ -74,7 +92,7 @@ func TestPool(t *T) {
 		var connClosedCount int
 		var doCompletedCount uint32
 		var initializedAvailCount int
-		pt := trace.PoolTrace{
+		doWithTrace(t, trace.PoolTrace{
 			ConnCreated: func(done trace.PoolConnCreated) {
 				connCreatedCount++
 			},
@@ -87,8 +105,7 @@ func TestPool(t *T) {
 			InitCompleted: func(completed trace.PoolInitCompleted) {
 				initializedAvailCount = completed.AvailCount
 			},
-		}
-		do(t, PoolWithTrace(pt))
+		})
 		if initializedAvailCount != 10 {
 			t.Fail()
 		}
@@ -145,11 +162,11 @@ func TestPoolOnFull(t *T) {
 	t.Run("onFullClose", func(t *T) {
 		ctx := testCtx(t)
 		var reason trace.PoolConnClosedReason
-		pool := testPool(t, 1,
-			PoolOnFullClose(),
-			PoolWithTrace(trace.PoolTrace{ConnClosed: func(c trace.PoolConnClosed) {
+		pool := testPoolWithTrace(t, 1,
+			trace.PoolTrace{ConnClosed: func(c trace.PoolConnClosed) {
 				reason = c.Reason
-			}}),
+			}},
+			PoolOnFullClose(),
 		)
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
