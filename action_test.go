@@ -466,12 +466,13 @@ func TestMaybe(t *T) {
 		{b: "%0\r\n", isEmpty: true},
 	}
 
+	opts := resp.NewOpts()
 	for i, mbt := range mbtests {
 		t.Run(strconv.Itoa(i), func(t *T) {
 			buf := bytes.NewBufferString(mbt.b)
 			var rm resp3.RawMessage
 			mb := Maybe{Rcv: &rm}
-			assert.NoError(t, mb.UnmarshalRESP(bufio.NewReader(buf)))
+			assert.NoError(t, mb.UnmarshalRESP(bufio.NewReader(buf), opts))
 			assert.Equal(t, mbt.b, string(rm))
 			assert.Equal(t, mbt.isNull, mb.Null)
 			assert.Equal(t, mbt.isEmpty, mb.Empty)
@@ -542,6 +543,7 @@ func TestTuple(t *T) {
 		},
 	}
 
+	opts := resp.NewOpts()
 	for i, test := range tests {
 		t.Run(fmt.Sprint(i), func(t *T) {
 			t.Logf("in:%q", test.in)
@@ -550,7 +552,7 @@ func TestTuple(t *T) {
 			defer func() { assert.Empty(t, buf.Bytes()) }()
 			defer func() { assert.Zero(t, br.Buffered()) }()
 
-			err := test.into.UnmarshalRESP(br)
+			err := test.into.UnmarshalRESP(br, opts)
 			if test.expErr {
 				assert.Error(t, err)
 				assert.True(t, errors.As(err, new(resp.ErrConnUsable)))

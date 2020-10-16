@@ -33,7 +33,7 @@ func newIOErrConn(c Conn) *ioErrConn {
 	return &ioErrConn{Conn: c}
 }
 
-func (ioc *ioErrConn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
+func (ioc *ioErrConn) EncodeDecode(ctx context.Context, m, u interface{}) error {
 	if ioc.lastIOErr != nil {
 		return ioc.lastIOErr
 	}

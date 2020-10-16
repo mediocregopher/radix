@@ -506,29 +506,28 @@ func (c *Cluster) secondaryAddrForKey(key string) string {
 }
 
 type prefixAsking struct {
-	resp.Marshaler
-	resp.Unmarshaler
+	marshal, unmarshalInto interface{}
 }
 
-func (a prefixAsking) MarshalRESP(w io.Writer) error {
-	if err := Cmd(nil, "ASKING").(resp.Marshaler).MarshalRESP(w); err != nil {
+func (a prefixAsking) MarshalRESP(w io.Writer, o *resp.Opts) error {
+	if err := Cmd(nil, "ASKING").(resp.Marshaler).MarshalRESP(w, o); err != nil {
 		return err
 	}
-	return a.Marshaler.MarshalRESP(w)
+	return resp3.Marshal(w, a.marshal, o)
 }
 
-func (a prefixAsking) UnmarshalRESP(br *bufio.Reader) error {
-	if err := (resp3.Any{}).UnmarshalRESP(br); err != nil {
+func (a prefixAsking) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+	if err := resp3.Unmarshal(br, nil, o); err != nil {
 		return err
 	}
-	return a.Unmarshaler.UnmarshalRESP(br)
+	return resp3.Unmarshal(br, a.unmarshalInto, o)
 }
 
 type askConn struct {
 	Conn
 }
 
-func (ac askConn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
+func (ac askConn) EncodeDecode(ctx context.Context, m, u interface{}) error {
 	a := prefixAsking{m, u}
 	return ac.Conn.EncodeDecode(ctx, a, a)
 }

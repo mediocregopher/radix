@@ -21,11 +21,11 @@ type PubSubMessage struct {
 }
 
 // MarshalRESP implements the Marshaler interface.
-func (m PubSubMessage) MarshalRESP(w io.Writer) error {
+func (m PubSubMessage) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	var err error
 	marshal := func(m resp.Marshaler) {
 		if err == nil {
-			err = m.MarshalRESP(w)
+			err = m.MarshalRESP(w, o)
 		}
 	}
 
@@ -47,7 +47,7 @@ func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 var errNotPubSubMessage = errors.New("message is not a PubSubMessage")
 
 // UnmarshalRESP implements the Unmarshaler interface
-func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
+func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	// This method will fully consume the message on the wire, regardless of if
 	// it is a PubSubMessage or not. If it is not then errNotPubSubMessage is
 	// returned.
@@ -63,21 +63,21 @@ func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 		return err
 	} else if resp3.Prefix(prefix[0]) == resp3.SimpleStringPrefix {
 		// if it's a simple string, discard it (it's probably PONG) and error
-		if err := (resp3.Any{}).UnmarshalRESP(br); err != nil {
+		if err := resp3.Unmarshal(br, nil, o); err != nil {
 			return err
 		}
 		return resp.ErrConnUsable{Err: errNotPubSubMessage}
 	}
 
 	var ah resp3.ArrayHeader
-	if err := ah.UnmarshalRESP(br); err != nil {
+	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
 	} else if ah.NumElems < 2 {
 		return errors.New("message has too few elements")
 	}
 
 	var msgType resp3.BlobStringBytes
-	if err := msgType.UnmarshalRESP(br); err != nil {
+	if err := msgType.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 
@@ -94,14 +94,14 @@ func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 		}
 
 		var pattern resp3.BlobString
-		if err := pattern.UnmarshalRESP(br); err != nil {
+		if err := pattern.UnmarshalRESP(br, o); err != nil {
 			return err
 		}
 		m.Pattern = pattern.S
 	default:
 		// if it's not a PubSubMessage then discard the rest of the array
 		for i := 1; i < ah.NumElems; i++ {
-			if err := (resp3.Any{}).UnmarshalRESP(br); err != nil {
+			if err := resp3.Unmarshal(br, nil, o); err != nil {
 				return err
 			}
 		}
@@ -109,13 +109,13 @@ func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 	}
 
 	var channel resp3.BlobString
-	if err := channel.UnmarshalRESP(br); err != nil {
+	if err := channel.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 	m.Channel = channel.S
 
 	var msg resp3.BlobStringBytes
-	if err := msg.UnmarshalRESP(br); err != nil {
+	if err := msg.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 	m.Message = msg.B

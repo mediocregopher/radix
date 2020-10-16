@@ -97,18 +97,18 @@ type msgSeries []interface {
 	resp.Unmarshaler
 }
 
-func (s msgSeries) MarshalRESP(w io.Writer) error {
+func (s msgSeries) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	for i := range s {
-		if err := s[i].MarshalRESP(w); err != nil {
+		if err := s[i].MarshalRESP(w, o); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s msgSeries) UnmarshalRESP(br *bufio.Reader) error {
+func (s msgSeries) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	for i := range s {
-		if err := s[i].UnmarshalRESP(br); err != nil {
+		if err := s[i].UnmarshalRESP(br, o); err != nil {
 			return err
 		}
 	}
@@ -1585,6 +1585,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		},
 	}
 
+	opts := resp.NewOpts()
+	opts.MarshalDeterministic = true
 	for _, umt := range unmarshalMarshalTests {
 		t.Run(umt.descr, func(t *testing.T) {
 			for i, in := range umt.ins {
@@ -1593,10 +1595,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 				assertMarshals := func(t *testing.T, exp string, i interface{}) {
 					t.Logf("%#v -> %q", i, inMsg)
 					buf := new(bytes.Buffer)
-					assert.NoError(t, (Any{
-						I:                    i,
-						MarshalDeterministic: true,
-					}).MarshalRESP(buf))
+					assert.NoError(t, Marshal(buf, i, opts))
 					assert.Equal(t, exp, buf.String())
 				}
 
@@ -1620,7 +1619,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 				if umt.shouldErr != nil {
 					buf := bytes.NewBufferString(inMsg)
 					br := bufio.NewReader(buf)
-					err := Any{}.UnmarshalRESP(br)
+					err := Unmarshal(br, nil, opts)
 					assert.Equal(t, umt.shouldErr, err)
 					assert.Zero(t, br.Buffered())
 					assert.Empty(t, buf.Bytes())
@@ -1634,7 +1633,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 				t.Run("discard", func(t *testing.T) {
 					buf := bytes.NewBufferString(inMsg)
 					br := bufio.NewReader(buf)
-					err := Any{}.UnmarshalRESP(br)
+					err := Unmarshal(br, nil, opts)
 					assert.NoError(t, err)
 					assert.Zero(t, br.Buffered())
 					assert.Empty(t, buf.Bytes())
@@ -1657,7 +1656,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 						var rawMsgs []string
 						for range in.msgs {
 							var rm RawMessage
-							assert.NoError(t, rm.UnmarshalRESP(br))
+							assert.NoError(t, rm.UnmarshalRESP(br, opts))
 							rawMsgs = append(rawMsgs, string(rm))
 						}
 						assert.Equal(t, in.msgs, rawMsgs)
@@ -1675,11 +1674,11 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 
 									// test unmarshaling
 									if withAttr {
-										AttributeHeader{NumPairs: 2}.MarshalRESP(buf)
-										SimpleString{S: "foo"}.MarshalRESP(buf)
-										SimpleString{S: "1"}.MarshalRESP(buf)
-										SimpleString{S: "bar"}.MarshalRESP(buf)
-										SimpleString{S: "2"}.MarshalRESP(buf)
+										AttributeHeader{NumPairs: 2}.MarshalRESP(buf, opts)
+										SimpleString{S: "foo"}.MarshalRESP(buf, opts)
+										SimpleString{S: "1"}.MarshalRESP(buf, opts)
+										SimpleString{S: "bar"}.MarshalRESP(buf, opts)
+										SimpleString{S: "2"}.MarshalRESP(buf, opts)
 									}
 									buf.WriteString(inMsg)
 
@@ -1692,7 +1691,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 										intoPtrVal.Elem().Set(intoOrigVal)
 									}
 
-									err := Any{I: intoPtrVal.Interface()}.UnmarshalRESP(br)
+									err := Unmarshal(br, intoPtrVal.Interface(), opts)
 									assert.NoError(t, err)
 
 									into := intoPtrVal.Elem().Interface()

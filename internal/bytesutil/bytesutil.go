@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"sync"
 
 	"github.com/mediocregopher/radix/v4/resp"
 )
@@ -40,28 +39,6 @@ func AnyIntToInt64(m interface{}) int64 {
 		return int64(mt)
 	}
 	panic(fmt.Sprintf("anyIntToInt64 got bad arg: %#v", m))
-}
-
-var bytePool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 0, 64)
-		return &b
-	},
-}
-
-// GetBytes returns a non-nil pointer to a byte slice from a pool of byte slices.
-//
-// The returned byte slice should be put back into the pool using PutBytes after usage.
-func GetBytes() *[]byte {
-	return bytePool.Get().(*[]byte)
-}
-
-// PutBytes puts the given byte slice pointer into a pool that can be accessed via GetBytes.
-//
-// After calling PutBytes the given pointer and byte slice must not be accessed anymore.
-func PutBytes(b *[]byte) {
-	*b = (*b)[:0]
-	bytePool.Put(b)
 }
 
 // ParseInt is a specialized version of strconv.ParseInt that parses a base-10
@@ -171,7 +148,7 @@ func ReadNAppend(r io.Reader, b []byte, n int) ([]byte, error) {
 }
 
 // ReadNDiscard discards exactly n bytes from r.
-func ReadNDiscard(r io.Reader, n int) error {
+func ReadNDiscard(r io.Reader, n int, scratch *[]byte) error {
 	type discarder interface {
 		Discard(int) (int, error)
 	}
@@ -189,8 +166,6 @@ func ReadNDiscard(r io.Reader, n int) error {
 		return err
 	}
 
-	scratch := GetBytes()
-	defer PutBytes(scratch)
 	*scratch = (*scratch)[:cap(*scratch)]
 	if len(*scratch) < n {
 		*scratch = make([]byte, 8192)
@@ -214,10 +189,7 @@ func ReadNDiscard(r io.Reader, n int) error {
 }
 
 // ReadInt reads the next n bytes from r as a signed 64 bit integer.
-func ReadInt(r io.Reader, n int) (int64, error) {
-	scratch := GetBytes()
-	defer PutBytes(scratch)
-
+func ReadInt(r io.Reader, n int, scratch *[]byte) (int64, error) {
 	var err error
 	if *scratch, err = ReadNAppend(r, *scratch, n); err != nil {
 		return 0, err
@@ -230,10 +202,7 @@ func ReadInt(r io.Reader, n int) (int64, error) {
 }
 
 // ReadUint reads the next n bytes from r as an unsigned 64 bit integer.
-func ReadUint(r io.Reader, n int) (uint64, error) {
-	scratch := GetBytes()
-	defer PutBytes(scratch)
-
+func ReadUint(r io.Reader, n int, scratch *[]byte) (uint64, error) {
 	var err error
 	if *scratch, err = ReadNAppend(r, *scratch, n); err != nil {
 		return 0, err
@@ -246,10 +215,7 @@ func ReadUint(r io.Reader, n int) (uint64, error) {
 }
 
 // ReadFloat reads the next n bytes from r as a 64 bit floating point number with the given precision.
-func ReadFloat(r io.Reader, precision, n int) (float64, error) {
-	scratch := GetBytes()
-	defer PutBytes(scratch)
-
+func ReadFloat(r io.Reader, precision, n int, scratch *[]byte) (float64, error) {
 	var err error
 	if *scratch, err = ReadNAppend(r, *scratch, n); err != nil {
 		return 0, err

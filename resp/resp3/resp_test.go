@@ -36,10 +36,11 @@ func TestPeekAndAssertPrefix(t *testing.T) {
 		}}},
 	}
 
+	opts := resp.NewOpts()
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			br := bufio.NewReader(bytes.NewReader(test.in))
-			err := peekAndAssertPrefix(br, test.prefix, false)
+			err := peekAndAssertPrefix(br, test.prefix, false, opts)
 
 			assert.IsType(t, test.exp, err)
 			if expUsable, ok := test.exp.(resp.ErrConnUsable); ok {
@@ -53,51 +54,52 @@ func TestPeekAndAssertPrefix(t *testing.T) {
 	}
 }
 
-func TestAnyConsumedOnErr(t *testing.T) {
+func TestUnmarshalConsumedOnErr(t *testing.T) {
 	type foo struct {
 		Foo int
 		Bar int
 	}
 
 	type test struct {
-		in   resp.Marshaler
+		in   interface{}
 		into interface{}
 	}
 
 	type unknownType string
 
 	tests := []test{
-		{Any{I: errors.New("foo")}, new(unknownType)},
+		{errors.New("foo"), new(unknownType)},
 		{BlobString{S: "blobStr"}, new(unknownType)},
 		{SimpleString{S: "blobStr"}, new(unknownType)},
 		{Number{N: 1}, new(unknownType)},
-		{Any{I: []string{"one", "2", "three"}}, new([]int)},
-		{Any{I: []string{"1", "2", "three", "four"}}, new([]int)},
-		{Any{I: []string{"1", "2", "3", "four"}}, new([]int)},
-		{Any{I: []string{"1", "2", "three", "four", "five"}}, new(map[int]int)},
-		{Any{I: []string{"1", "2", "three", "four", "five", "six"}}, new(map[int]int)},
-		{Any{I: []string{"1", "2", "3", "four", "five", "six"}}, new(map[int]int)},
-		{Any{I: []interface{}{1, 2, "Bar", "two"}}, new(foo)},
-		{Any{I: []string{"Foo", "1", "Bar", "two"}}, new(foo)},
-		{Any{I: [][]string{{"one", "two"}, {"three", "four"}}}, new([][]int)},
-		{Any{I: [][]string{{"1", "two"}, {"three", "four"}}}, new([][]int)},
-		{Any{I: [][]string{{"1", "2"}, {"three", "four"}}}, new([][]int)},
-		{Any{I: [][]string{{"1", "2"}, {"3", "four"}}}, new([][]int)},
+		{[]string{"one", "2", "three"}, new([]int)},
+		{[]string{"1", "2", "three", "four"}, new([]int)},
+		{[]string{"1", "2", "3", "four"}, new([]int)},
+		{[]string{"1", "2", "three", "four", "five"}, new(map[int]int)},
+		{[]string{"1", "2", "three", "four", "five", "six"}, new(map[int]int)},
+		{[]string{"1", "2", "3", "four", "five", "six"}, new(map[int]int)},
+		{[]interface{}{1, 2, "Bar", "two"}, new(foo)},
+		{[]string{"Foo", "1", "Bar", "two"}, new(foo)},
+		{[][]string{{"one", "two"}, {"three", "four"}}, new([][]int)},
+		{[][]string{{"1", "two"}, {"three", "four"}}, new([][]int)},
+		{[][]string{{"1", "2"}, {"three", "four"}}, new([][]int)},
+		{[][]string{{"1", "2"}, {"3", "four"}}, new([][]int)},
 	}
 
+	opts := resp.NewOpts()
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			buf := new(bytes.Buffer)
-			require.Nil(t, test.in.MarshalRESP(buf))
-			require.Nil(t, SimpleString{S: "DISCARDED"}.MarshalRESP(buf))
+			require.Nil(t, Marshal(buf, test.in, opts))
+			require.Nil(t, SimpleString{S: "DISCARDED"}.MarshalRESP(buf, opts))
 			br := bufio.NewReader(buf)
 
-			err := Any{I: test.into}.UnmarshalRESP(br)
+			err := Unmarshal(br, test.into, opts)
 			assert.Error(t, err)
 			assert.True(t, errors.As(err, new(resp.ErrConnUsable)))
 
 			var ss SimpleString
-			assert.NoError(t, ss.UnmarshalRESP(br))
+			assert.NoError(t, ss.UnmarshalRESP(br, opts))
 			assert.Equal(t, "DISCARDED", ss.S)
 		})
 	}
@@ -197,14 +199,15 @@ func TestRawMessage(t *testing.T) {
 
 func Example_streamedAggregatedType() {
 	buf := new(bytes.Buffer)
+	opts := resp.NewOpts()
 
 	// First write a streamed array to the buffer. The array will have 3 number
 	// elements.
-	(ArrayHeader{StreamedArrayHeader: true}).MarshalRESP(buf)
-	(Number{N: 1}).MarshalRESP(buf)
-	(Number{N: 2}).MarshalRESP(buf)
-	(Number{N: 3}).MarshalRESP(buf)
-	(StreamedAggregatedTypeEnd{}).MarshalRESP(buf)
+	(ArrayHeader{StreamedArrayHeader: true}).MarshalRESP(buf, opts)
+	(Number{N: 1}).MarshalRESP(buf, opts)
+	(Number{N: 2}).MarshalRESP(buf, opts)
+	(Number{N: 3}).MarshalRESP(buf, opts)
+	(StreamedAggregatedTypeEnd{}).MarshalRESP(buf, opts)
 
 	// Now create a reader which will read from the buffer, and use it to read
 	// the streamed array.
@@ -216,7 +219,7 @@ func Example_streamedAggregatedType() {
 	}
 
 	var head ArrayHeader
-	head.UnmarshalRESP(br)
+	head.UnmarshalRESP(br, opts)
 	if !head.StreamedArrayHeader {
 		panic("expected streamed array header")
 	}
@@ -224,8 +227,8 @@ func Example_streamedAggregatedType() {
 
 	for {
 		var el Number
-		aggEl := StreamedAggregatedElement{Unmarshaler: &el}
-		aggEl.UnmarshalRESP(br)
+		aggEl := StreamedAggregatedElement{Receiver: &el}
+		aggEl.UnmarshalRESP(br, opts)
 		if aggEl.End {
 			fmt.Println("streamed array ended")
 			return

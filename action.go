@@ -85,11 +85,12 @@ func cmdString(m resp.Marshaler) string {
 	// we go way out of the way here to display the command as it would be sent
 	// to redis. This is pretty similar logic to what the stub does as well
 	buf := new(bytes.Buffer)
-	if err := m.MarshalRESP(buf); err != nil {
+	opts := resp.NewOpts()
+	if err := m.MarshalRESP(buf, opts); err != nil {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
 	var ss []string
-	err := resp3.RawMessage(buf.Bytes()).UnmarshalInto(&ss)
+	err := resp3.RawMessage(buf.Bytes()).UnmarshalInto(&ss, opts)
 	if err != nil {
 		return fmt.Sprintf("error creating string: %q", err.Error())
 	}
@@ -99,18 +100,18 @@ func cmdString(m resp.Marshaler) string {
 	return "[" + strings.Join(ss, " ") + "]"
 }
 
-func marshalBlobString(prevErr error, w io.Writer, str string) error {
+func marshalBlobString(prevErr error, w io.Writer, str string, o *resp.Opts) error {
 	if prevErr != nil {
 		return prevErr
 	}
-	return resp3.BlobString{S: str}.MarshalRESP(w)
+	return resp3.BlobString{S: str}.MarshalRESP(w, o)
 }
 
-func marshalBlobStringBytes(prevErr error, w io.Writer, b []byte) error {
+func marshalBlobStringBytes(prevErr error, w io.Writer, b []byte, o *resp.Opts) error {
 	if prevErr != nil {
 		return prevErr
 	}
-	return resp3.BlobStringBytes{B: b}.MarshalRESP(w)
+	return resp3.BlobStringBytes{B: b}.MarshalRESP(w, o)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -120,6 +121,7 @@ type cmdAction struct {
 	cmd  string
 	args []string
 
+	// TODO just flatten inside FlatCmd and use args, we don't need these fields
 	flat     bool
 	flatKey  [1]string // use array to avoid allocation in Keys
 	flatArgs []interface{}
@@ -223,36 +225,36 @@ func (c *cmdAction) Keys() []string {
 	return c.args[:1]
 }
 
-func (c *cmdAction) flatMarshalRESP(w io.Writer) error {
+func (c *cmdAction) flatMarshalRESP(w io.Writer, o *resp.Opts) error {
 	flattenedArgs, err := resp3.Flatten(c.flatArgs)
 	if err != nil {
 		return resp.ErrConnUsable{Err: err}
 	}
 
-	err = resp3.ArrayHeader{NumElems: 2 + len(flattenedArgs)}.MarshalRESP(w)
-	err = marshalBlobString(err, w, c.cmd)
-	err = marshalBlobString(err, w, c.flatKey[0])
+	err = resp3.ArrayHeader{NumElems: 2 + len(flattenedArgs)}.MarshalRESP(w, o)
+	err = marshalBlobString(err, w, c.cmd, o)
+	err = marshalBlobString(err, w, c.flatKey[0], o)
 	for _, fArg := range flattenedArgs {
-		err = marshalBlobStringBytes(err, w, fArg)
+		err = marshalBlobStringBytes(err, w, fArg, o)
 	}
 	return err
 }
 
-func (c *cmdAction) MarshalRESP(w io.Writer) error {
+func (c *cmdAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	if c.flat {
-		return c.flatMarshalRESP(w)
+		return c.flatMarshalRESP(w, o)
 	}
 
-	err := resp3.ArrayHeader{NumElems: len(c.args) + 1}.MarshalRESP(w)
-	err = marshalBlobString(err, w, c.cmd)
+	err := resp3.ArrayHeader{NumElems: len(c.args) + 1}.MarshalRESP(w, o)
+	err = marshalBlobString(err, w, c.cmd, o)
 	for i := range c.args {
-		err = marshalBlobString(err, w, c.args[i])
+		err = marshalBlobString(err, w, c.args[i], o)
 	}
 	return err
 }
 
-func (c *cmdAction) UnmarshalRESP(br *bufio.Reader) error {
-	if err := (resp3.Any{I: c.rcv}).UnmarshalRESP(br); err != nil {
+func (c *cmdAction) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+	if err := resp3.Unmarshal(br, c.rcv, o); err != nil {
 		return err
 	}
 	cmdActionPool.Put(c)
@@ -289,15 +291,15 @@ type Maybe struct {
 }
 
 // UnmarshalRESP implements the method for the resp.Unmarshaler interface.
-func (mb *Maybe) UnmarshalRESP(br *bufio.Reader) error {
+func (mb *Maybe) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	var rm resp3.RawMessage
-	if err := rm.UnmarshalRESP(br); err != nil {
+	if err := rm.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 
 	mb.Null = rm.IsNull()
 	mb.Empty = rm.IsEmpty()
-	return rm.UnmarshalInto(mb.Rcv)
+	return rm.UnmarshalInto(mb.Rcv, o)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -313,13 +315,13 @@ func (mb *Maybe) UnmarshalRESP(br *bufio.Reader) error {
 type Tuple []interface{}
 
 // UnmarshalRESP implements the method for the resp.Unmarshaler interface.
-func (t Tuple) UnmarshalRESP(br *bufio.Reader) error {
+func (t Tuple) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	var ah resp3.ArrayHeader
-	if err := ah.UnmarshalRESP(br); err != nil {
+	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
 	} else if ah.NumElems != len(t) {
 		for i := 0; i < ah.NumElems; i++ {
-			if err := (resp3.Any{}).UnmarshalRESP(br); err != nil {
+			if err := resp3.Unmarshal(br, nil, o); err != nil {
 				return err
 			}
 		}
@@ -330,7 +332,7 @@ func (t Tuple) UnmarshalRESP(br *bufio.Reader) error {
 
 	var retErr error
 	for i := 0; i < ah.NumElems; i++ {
-		if err := (resp3.Any{I: t[i]}).UnmarshalRESP(br); err != nil {
+		if err := resp3.Unmarshal(br, t[i], o); err != nil {
 			// if the message was discarded then we can just continue, this
 			// method will return the first error it sees
 			if !errors.As(err, new(resp.ErrConnUsable)) {
@@ -408,7 +410,7 @@ func (ec *evalAction) Keys() []string {
 	return ec.keys
 }
 
-func (ec *evalAction) MarshalRESP(w io.Writer) error {
+func (ec *evalAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	// EVAL(SHA) script/sum numkeys keys... args...
 	ah := resp3.ArrayHeader{NumElems: 3 + len(ec.keys)}
 
@@ -423,21 +425,21 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 		ah.NumElems += len(ec.args)
 	}
 
-	if err := ah.MarshalRESP(w); err != nil {
+	if err := ah.MarshalRESP(w, o); err != nil {
 		return err
 	}
 
 	if ec.eval {
-		err = marshalBlobStringBytes(err, w, eval)
-		err = marshalBlobString(err, w, ec.script)
+		err = marshalBlobStringBytes(err, w, eval, o)
+		err = marshalBlobString(err, w, ec.script, o)
 	} else {
-		err = marshalBlobStringBytes(err, w, evalsha)
-		err = marshalBlobString(err, w, ec.sum)
+		err = marshalBlobStringBytes(err, w, evalsha, o)
+		err = marshalBlobString(err, w, ec.sum, o)
 	}
 
-	err = marshalBlobString(err, w, strconv.Itoa(len(ec.keys)))
+	err = marshalBlobString(err, w, strconv.Itoa(len(ec.keys)), o)
 	for i := range ec.keys {
-		err = marshalBlobString(err, w, ec.keys[i])
+		err = marshalBlobString(err, w, ec.keys[i], o)
 	}
 	if err != nil {
 		return err
@@ -445,11 +447,11 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 
 	if ec.flat {
 		for i := range flattenedArgs {
-			err = marshalBlobStringBytes(err, w, flattenedArgs[i])
+			err = marshalBlobStringBytes(err, w, flattenedArgs[i], o)
 		}
 	} else {
 		for i := range ec.args {
-			err = marshalBlobString(err, w, ec.args[i])
+			err = marshalBlobString(err, w, ec.args[i], o)
 		}
 	}
 	return err
@@ -458,7 +460,7 @@ func (ec *evalAction) MarshalRESP(w io.Writer) error {
 func (ec *evalAction) Perform(ctx context.Context, conn Conn) error {
 	run := func(eval bool) error {
 		ec.eval = eval
-		return conn.EncodeDecode(ctx, ec, resp3.Any{I: ec.rcv})
+		return conn.EncodeDecode(ctx, ec, ec.rcv)
 	}
 
 	err := run(false)
@@ -475,10 +477,8 @@ func (ec *evalAction) ClusterCanRetry() bool {
 ////////////////////////////////////////////////////////////////////////////////
 
 type pipelineMarshalerUnmarshaler struct {
-	resp.Marshaler
-	resp.Unmarshaler
-
-	err error
+	marshal, unmarshalInto interface{}
+	err                    error
 }
 
 type pipeline struct {
@@ -537,10 +537,9 @@ func (p *pipeline) Keys() []string {
 	return keys
 }
 
-func (p *pipeline) EncodeDecode(_ context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
+func (p *pipeline) EncodeDecode(_ context.Context, m, u interface{}) error {
 	p.mm = append(p.mm, pipelineMarshalerUnmarshaler{
-		Marshaler:   m,
-		Unmarshaler: u,
+		marshal: m, unmarshalInto: u,
 	})
 	return nil
 }
@@ -551,11 +550,11 @@ func (p *pipeline) setErr(startingAt int, err error) {
 	}
 }
 
-func (p *pipeline) MarshalRESP(w io.Writer) error {
+func (p *pipeline) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	for i := range p.mm {
-		if p.mm[i].Marshaler == nil {
+		if p.mm[i].marshal == nil {
 			// skip
-		} else if err := p.mm[i].Marshaler.MarshalRESP(w); err == nil {
+		} else if err := resp3.Marshal(w, p.mm[i].marshal, o); err == nil {
 			// ok
 		} else if errors.As(err, new(resp.ErrConnUsable)) {
 			// if the connection is still usable then mark this
@@ -573,11 +572,11 @@ func (p *pipeline) MarshalRESP(w io.Writer) error {
 	return nil
 }
 
-func (p *pipeline) UnmarshalRESP(br *bufio.Reader) error {
+func (p *pipeline) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	for i := range p.mm {
-		if p.mm[i].Unmarshaler == nil || p.mm[i].err != nil {
+		if p.mm[i].unmarshalInto == nil || p.mm[i].err != nil {
 			// skip
-		} else if err := p.mm[i].Unmarshaler.UnmarshalRESP(br); err == nil {
+		} else if err := resp3.Unmarshal(br, p.mm[i].unmarshalInto, o); err == nil {
 			// ok
 		} else if errors.As(err, new(resp.ErrConnUsable)) {
 			p.mm[i].err = err

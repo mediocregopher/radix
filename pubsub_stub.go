@@ -15,11 +15,11 @@ var errPubSubMode = resp3.SimpleError{
 	S: "ERR only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT allowed in this context",
 }
 
-type multiMarshal []resp.Marshaler
+type multiMarshal []interface{}
 
-func (mm multiMarshal) MarshalRESP(w io.Writer) error {
+func (mm multiMarshal) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	for _, m := range mm {
-		if err := m.MarshalRESP(w); err != nil {
+		if err := resp3.Marshal(w, m, o); err != nil {
 			return err
 		}
 	}
@@ -74,7 +74,7 @@ func (s *pubSubStub) innerFn(ss []string) interface{} {
 		writeRes := func(mm multiMarshal, cmd, subj string) multiMarshal {
 			c := len(s.subbed) + len(s.psubbed)
 			s.pubsubMode = c > 0
-			return append(mm, resp3.Any{I: []interface{}{cmd, subj, c}})
+			return append(mm, []interface{}{cmd, subj, c})
 		}
 
 		switch strings.ToUpper(ss[0]) {

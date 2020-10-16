@@ -324,7 +324,7 @@ func TestIoErrConn(t *T) {
 		ioc := newIOErrConn(NewStubConn("tcp", "127.0.0.1:6379", nil))
 		ioc.lastIOErr = dummyError
 
-		require.Equal(t, dummyError, ioc.EncodeDecode(ctx, &resp3.Any{}, &resp3.Any{}))
+		require.Equal(t, dummyError, ioc.EncodeDecode(ctx, nil, new(int)))
 		require.Nil(t, ioc.Close())
 	})
 

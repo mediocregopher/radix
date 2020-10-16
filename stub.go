@@ -46,13 +46,13 @@ func newBuffer(remoteNetwork, remoteAddr string) *buffer {
 	}
 }
 
-func (b *buffer) Encode(m resp.Marshaler) error {
+func (b *buffer) Encode(m interface{}) error {
 	b.bufL.L.Lock()
 	var err error
 	if b.closed {
 		err = b.err("write", errClosed)
 	} else {
-		err = m.MarshalRESP(b.buf)
+		err = resp3.Marshal(b.buf, m, resp.NewOpts())
 	}
 	b.bufL.L.Unlock()
 	if err != nil {
@@ -63,7 +63,7 @@ func (b *buffer) Encode(m resp.Marshaler) error {
 	return nil
 }
 
-func (b *buffer) Decode(ctx context.Context, u resp.Unmarshaler) error {
+func (b *buffer) Decode(ctx context.Context, u interface{}) error {
 	b.bufL.L.Lock()
 	defer b.bufL.L.Unlock()
 
@@ -90,7 +90,7 @@ func (b *buffer) Decode(ctx context.Context, u resp.Unmarshaler) error {
 		b.bufL.Wait()
 	}
 
-	return u.UnmarshalRESP(b.bufbr)
+	return resp3.Unmarshal(b.bufbr, u, resp.NewOpts())
 }
 
 func (b *buffer) Close() error {
@@ -151,10 +151,10 @@ func (s *stub) Do(ctx context.Context, a Action) error {
 	return a.Perform(ctx, s)
 }
 
-func (s *stub) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
+func (s *stub) EncodeDecode(ctx context.Context, m, u interface{}) error {
 	if m != nil {
 		buf := new(bytes.Buffer)
-		if err := m.MarshalRESP(buf); err != nil {
+		if err := resp3.Marshal(buf, m, resp.NewOpts()); err != nil {
 			return err
 		}
 		br := bufio.NewReader(buf)
@@ -163,7 +163,7 @@ func (s *stub) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmars
 			var ss []string
 			if buf.Len() == 0 && br.Buffered() == 0 {
 				break
-			} else if err := (resp3.Any{I: &ss}).UnmarshalRESP(br); err != nil {
+			} else if err := resp3.Unmarshal(br, &ss, resp.NewOpts()); err != nil {
 				return err
 			}
 
@@ -178,7 +178,7 @@ func (s *stub) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmars
 				}
 			} else if err, _ := ret.(error); err != nil {
 				return err
-			} else if err = s.buffer.Encode(resp3.Any{I: ret}); err != nil {
+			} else if err = s.buffer.Encode(ret); err != nil {
 				return err
 			}
 		}

@@ -21,6 +21,10 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * `resp.LenReader` now uses `int` instead of `int64` to signify length.
 
+* `resp.Marshaler` and `resp.Unmarshaler` now take an `Opts` argument, to give
+  the caller more control over things like byte pools and potentially other
+  functionality in the future.
+
 * Brand new `resp/resp3` package which implements the [RESP3][resp3] protocol.
   The new package features more consistent type mappings between go and redis
   and support for streaming types.

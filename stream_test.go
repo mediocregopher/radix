@@ -10,11 +10,13 @@ import (
 	. "testing"
 	"time"
 
+	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStreamEntryID(t *T) {
+	opts := resp.NewOpts()
 	t.Run("Before", func(t *T) {
 		for _, test := range []struct {
 			S StreamEntryID
@@ -203,7 +205,7 @@ func TestStreamEntryID(t *T) {
 			},
 		} {
 			var buf bytes.Buffer
-			require.Nil(t, test.S.MarshalRESP(&buf))
+			require.Nil(t, test.S.MarshalRESP(&buf, opts))
 			assert.Equal(t, test.E, buf.String())
 		}
 	})
@@ -278,7 +280,7 @@ func TestStreamEntryID(t *T) {
 			br := bufio.NewReader(strings.NewReader(test.In))
 
 			var s StreamEntryID
-			err := s.UnmarshalRESP(br)
+			err := s.UnmarshalRESP(br, opts)
 
 			if test.Err == "" {
 				assert.NoErrorf(t, err, "failed to unmarshal %q", test.In)
@@ -295,6 +297,7 @@ var benchErr error
 var benchString string
 
 func BenchmarkStreamEntryID(b *B) {
+	opts := resp.NewOpts()
 	b.Run("String", func(b *B) {
 		s := &StreamEntryID{Time: 1234, Seq: 5678}
 
@@ -307,7 +310,7 @@ func BenchmarkStreamEntryID(b *B) {
 		s := &StreamEntryID{Time: 1234, Seq: 5678}
 
 		for i := 0; i < b.N; i++ {
-			benchErr = s.MarshalRESP(ioutil.Discard)
+			benchErr = s.MarshalRESP(ioutil.Discard, opts)
 		}
 	})
 
@@ -321,7 +324,7 @@ func BenchmarkStreamEntryID(b *B) {
 			buf.Reset("$9\r\n1234-5678\r\n")
 			br.Reset(buf)
 
-			benchErr = s.UnmarshalRESP(br)
+			benchErr = s.UnmarshalRESP(br, opts)
 		}
 	})
 }
@@ -364,9 +367,10 @@ func TestStreamEntry(t *T) {
 			},
 		} {
 			br := bufio.NewReader(strings.NewReader(test.In))
+			opts := resp.NewOpts()
 
 			var s StreamEntry
-			err := s.UnmarshalRESP(br)
+			err := s.UnmarshalRESP(br, opts)
 
 			if test.Err == "" {
 				assert.NoErrorf(t, err, "failed to unmarshal %q", test.In)

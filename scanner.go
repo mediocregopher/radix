@@ -8,6 +8,7 @@ import (
 
 	"errors"
 
+	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
@@ -129,21 +130,21 @@ type scanResult struct {
 	keys []string
 }
 
-func (s *scanResult) UnmarshalRESP(br *bufio.Reader) error {
+func (s *scanResult) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	var ah resp3.ArrayHeader
-	if err := ah.UnmarshalRESP(br); err != nil {
+	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
 	} else if ah.NumElems != 2 {
 		return errors.New("not enough parts returned")
 	}
 
 	var c resp3.BlobString
-	if err := c.UnmarshalRESP(br); err != nil {
+	if err := c.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 
 	s.cur = c.S
 	s.keys = s.keys[:0]
 
-	return (resp3.Any{I: &s.keys}).UnmarshalRESP(br)
+	return resp3.Unmarshal(br, &s.keys, o)
 }

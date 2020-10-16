@@ -8,7 +8,6 @@ import (
 	. "testing"
 	"time"
 
-	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -159,13 +158,13 @@ func TestConnConcurrentMarshalUnmarshal(t *T) {
 		defer wg.Done()
 		for i := range vv {
 			var got string
-			assert.NoError(t, conn.EncodeDecode(ctx, nil, resp3.Any{I: &got}))
+			assert.NoError(t, conn.EncodeDecode(ctx, nil, &got))
 			assert.Equal(t, vv[i], got)
 		}
 	}()
 
 	for i := range vv {
-		assert.NoError(t, conn.EncodeDecode(ctx, resp3.Any{I: []string{"ECHO", vv[i]}}, nil))
+		assert.NoError(t, conn.EncodeDecode(ctx, []string{"ECHO", vv[i]}, nil))
 	}
 	wg.Wait()
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
 // Conn is a Client wrapping a single network connection which synchronously
@@ -26,10 +27,10 @@ type Conn interface {
 	// the argument.
 	Client
 
-	// EncodeDecode will encode the given Marshaler onto the connection, then
-	// decode a response into the given Unmarshaler. If either parameter is nil
-	// then that step is skipped.
-	EncodeDecode(context.Context, resp.Marshaler, resp.Unmarshaler) error
+	// EncodeDecode will encode marshal onto the connection, then decode a
+	// response into unmarshalInto (see resp3.Marshal and resp3.Unmarshal,
+	// respectively). If either parameter is nil then that step is skipped.
+	EncodeDecode(ctx context.Context, marshal, unmarshalInto interface{}) error
 
 	// Returns the underlying network connection, as-is. Read, Write, and Close
 	// should not be called on the returned Conn.
@@ -59,10 +60,9 @@ func wrapDefaultConnFunc(addr string) ConnFunc {
 ////////////////////////////////////////////////////////////////////////////////
 
 type connMarshalerUnmarshaler struct {
-	ctx         context.Context
-	marshaler   resp.Marshaler
-	unmarshaler resp.Unmarshaler
-	errCh       chan error
+	ctx                    context.Context
+	marshal, unmarshalInto interface{}
+	errCh                  chan error
 }
 
 type conn struct {
@@ -98,14 +98,19 @@ func (c *conn) Close() error {
 	return c.proc.PrefixedClose(c.Conn.Close, nil)
 }
 
+func (c *conn) newRESPOpts() *resp.Opts {
+	return resp.NewOpts()
+}
+
 func (c *conn) writer(ctx context.Context) {
 	doneCh := ctx.Done()
+	opts := c.newRESPOpts()
 	for {
 		select {
 		case <-doneCh:
 			return
 		case mu := <-c.wCh:
-			if mu.marshaler != nil {
+			if mu.marshal != nil {
 				if err := mu.ctx.Err(); err != nil {
 					mu.errCh <- err
 					continue
@@ -119,7 +124,7 @@ func (c *conn) writer(ctx context.Context) {
 					continue
 				}
 
-				if err := mu.marshaler.MarshalRESP(c.brw.Writer); err != nil {
+				if err := resp3.Marshal(c.brw.Writer, mu.marshal, opts); err != nil {
 					mu.errCh <- err
 					continue
 				} else if err := c.brw.Writer.Flush(); err != nil {
@@ -129,7 +134,7 @@ func (c *conn) writer(ctx context.Context) {
 			}
 
 			// if there's no unmarshaler then don't forward to the reader
-			if mu.unmarshaler == nil {
+			if mu.unmarshalInto == nil {
 				mu.errCh <- nil
 				continue
 			}
@@ -145,15 +150,14 @@ func (c *conn) writer(ctx context.Context) {
 
 func (c *conn) reader(ctx context.Context) {
 	doneCh := ctx.Done()
+	opts := c.newRESPOpts()
 	for {
 		select {
 		case <-doneCh:
 			return
 		case mu := <-c.rCh:
 
-			if mu.unmarshaler == nil {
-				continue
-			} else if err := mu.ctx.Err(); err != nil {
+			if err := mu.ctx.Err(); err != nil {
 				mu.errCh <- err
 				continue
 			} else if deadline, ok := mu.ctx.Deadline(); ok {
@@ -166,7 +170,7 @@ func (c *conn) reader(ctx context.Context) {
 				continue
 			}
 
-			err := mu.unmarshaler.UnmarshalRESP(c.brw.Reader)
+			err := resp3.Unmarshal(c.brw.Reader, mu.unmarshalInto, opts)
 			if err != nil {
 				// simplify things for the caller by translating network
 				// timeouts into DeadlineExceeded, since that's actually what
@@ -198,12 +202,12 @@ func (c *conn) putErrCh(errCh chan error) {
 	}
 }
 
-func (c *conn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
+func (c *conn) EncodeDecode(ctx context.Context, m, u interface{}) error {
 	mu := connMarshalerUnmarshaler{
-		ctx:         ctx,
-		marshaler:   m,
-		unmarshaler: u,
-		errCh:       c.getErrCh(),
+		ctx:           ctx,
+		marshal:       m,
+		unmarshalInto: u,
+		errCh:         c.getErrCh(),
 	}
 	doneCh := ctx.Done()
 	closedCh := c.proc.ClosedCh()

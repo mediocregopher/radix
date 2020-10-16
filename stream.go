@@ -81,19 +81,19 @@ func (s *StreamEntryID) bytes() []byte {
 }
 
 // MarshalRESP implements the resp.Marshaler interface.
-func (s *StreamEntryID) MarshalRESP(w io.Writer) error {
-	return resp3.BlobStringBytes{B: s.bytes()}.MarshalRESP(w)
+func (s *StreamEntryID) MarshalRESP(w io.Writer, o *resp.Opts) error {
+	return resp3.BlobStringBytes{B: s.bytes()}.MarshalRESP(w, o)
 }
 
 var errInvalidStreamID = errors.New("invalid stream entry id")
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
-func (s *StreamEntryID) UnmarshalRESP(br *bufio.Reader) error {
-	buf := bytesutil.GetBytes()
-	defer bytesutil.PutBytes(buf)
+func (s *StreamEntryID) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+	buf := o.GetBytes()
+	defer o.PutBytes(buf)
 
 	bsb := resp3.BlobStringBytes{B: (*buf)[:0]}
-	if err := bsb.UnmarshalRESP(br); err != nil {
+	if err := bsb.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 
@@ -141,17 +141,17 @@ var _ resp.Unmarshaler = (*StreamEntry)(nil)
 var errInvalidStreamEntry = errors.New("invalid stream entry")
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
-func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
+func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	var ah resp3.ArrayHeader
-	if err := ah.UnmarshalRESP(br); err != nil {
+	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
 	} else if ah.NumElems != 2 {
 		return errInvalidStreamEntry
-	} else if err := s.ID.UnmarshalRESP(br); err != nil {
+	} else if err := s.ID.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 
-	if err := ah.UnmarshalRESP(br); err != nil {
+	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
 	} else if ah.NumElems == 0 {
 		// if NumElems is zero that means the Fields are actually nil, since
@@ -166,11 +166,11 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 
 	var bs resp3.BlobString
 	for i := 0; i < ah.NumElems; i += 2 {
-		if err := bs.UnmarshalRESP(br); err != nil {
+		if err := bs.UnmarshalRESP(br, o); err != nil {
 			return err
 		}
 		key := bs.S
-		if err := bs.UnmarshalRESP(br); err != nil {
+		if err := bs.UnmarshalRESP(br, o); err != nil {
 			return err
 		}
 		s.Fields = append(s.Fields, [2]string{key, bs.S})
@@ -187,27 +187,27 @@ type StreamEntries struct {
 }
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
-func (s *StreamEntries) UnmarshalRESP(br *bufio.Reader) error {
+func (s *StreamEntries) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	var ah resp3.ArrayHeader
-	if err := ah.UnmarshalRESP(br); err != nil {
+	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
 	} else if ah.NumElems != 2 {
 		return errors.New("invalid xread[group] response")
 	}
 
 	var stream resp3.BlobString
-	if err := stream.UnmarshalRESP(br); err != nil {
+	if err := stream.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 	s.Stream = stream.S
 
-	if err := ah.UnmarshalRESP(br); err != nil {
+	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
 
 	s.Entries = make([]StreamEntry, ah.NumElems)
 	for i := range s.Entries {
-		if err := s.Entries[i].UnmarshalRESP(br); err != nil {
+		if err := s.Entries[i].UnmarshalRESP(br, o); err != nil {
 			return err
 		}
 	}
@@ -217,6 +217,8 @@ func (s *StreamEntries) UnmarshalRESP(br *bufio.Reader) error {
 // StreamReaderOpts contains various options given for NewStreamReader that influence the behaviour.
 //
 // The only required field is Streams.
+//
+// TODO make this use the ...Opt pattern.
 type StreamReaderOpts struct {
 	// Streams must contain one or more stream names that will be read.
 	//

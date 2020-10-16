@@ -51,7 +51,8 @@ func TestReadNDiscard(t *T) {
 			r = d
 		}
 
-		if err := ReadNDiscard(r, test.n); err != nil {
+		var scratch []byte
+		if err := ReadNDiscard(r, test.n, &scratch); err != nil {
 			t.Fatalf("error calling readNDiscard: %s (%#v)", err, test)
 
 		} else if test.discarder && test.n > 0 && !d.didDiscard {

@@ -27,10 +27,12 @@ func BenchmarkReadFloat(b *testing.B) {
 
 		b.Run(fmt.Sprint(test.In), func(b *testing.B) {
 			var r strings.Reader
+			var scratch []byte
 
 			for i := 0; i < b.N; i++ {
 				r.Reset(input)
-				bfloat, _ = ReadFloat(&r, 64, n)
+				scratch = scratch[:0]
+				bfloat, _ = ReadFloat(&r, 64, n, &scratch)
 			}
 		})
 	}
@@ -56,10 +58,12 @@ func BenchmarkReadInt(b *testing.B) {
 
 		b.Run(fmt.Sprint(test.In), func(b *testing.B) {
 			var r strings.Reader
+			var scratch []byte
 
 			for i := 0; i < b.N; i++ {
 				r.Reset(input)
-				bint, _ = ReadInt(&r, n)
+				scratch = scratch[:0]
+				bint, _ = ReadInt(&r, n, &scratch)
 			}
 		})
 	}
@@ -81,10 +85,12 @@ func BenchmarkReadUint(b *testing.B) {
 
 		b.Run(fmt.Sprint(test.In), func(b *testing.B) {
 			var r strings.Reader
+			var scratch []byte
 
 			for i := 0; i < b.N; i++ {
 				r.Reset(input)
-				buint, _ = ReadUint(&r, n)
+				scratch = scratch[:0]
+				buint, _ = ReadUint(&r, n, &scratch)
 			}
 		})
 	}
@@ -100,12 +106,13 @@ func BenchmarkReadNAppend(b *testing.B) {
 	for _, n := range []int{0, 64, 512, 4096} {
 		b.Run("N="+strconv.Itoa(n), func(b *testing.B) {
 			var r nothingReader
-			buf := *GetBytes()
+			var scratch []byte
 
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				if _, err := ReadNAppend(&r, buf, n); err != nil {
+				scratch = scratch[:0]
+				if _, err := ReadNAppend(&r, scratch, n); err != nil {
 					b.Fatal(err)
 				}
 			}

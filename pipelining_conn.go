@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
-	"github.com/mediocregopher/radix/v4/resp"
 )
 
 type pipeliningConnOpts struct {
@@ -192,10 +191,10 @@ func (pc *pipeliningConn) Do(ctx context.Context, action Action) error {
 	return action.Perform(ctx, pc)
 }
 
-func (pc *pipeliningConn) EncodeDecode(ctx context.Context, m resp.Marshaler, u resp.Unmarshaler) error {
+func (pc *pipeliningConn) EncodeDecode(ctx context.Context, m, u interface{}) error {
 	encDec := pipeliningConnEncDec{
 		ctx,
-		pipelineMarshalerUnmarshaler{Marshaler: m, Unmarshaler: u},
+		pipelineMarshalerUnmarshaler{marshal: m, unmarshalInto: u},
 		make(chan error, 1),
 	}
 	doneCh := ctx.Done()

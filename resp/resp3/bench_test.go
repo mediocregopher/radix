@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/mediocregopher/radix/v4/resp"
 )
 
 func BenchmarkIntUnmarshalRESP(b *testing.B) {
@@ -25,13 +27,15 @@ func BenchmarkIntUnmarshalRESP(b *testing.B) {
 		b.Run(fmt.Sprint(test.In), func(b *testing.B) {
 			var sr strings.Reader
 			br := bufio.NewReader(&sr)
+			o := resp.NewOpts()
 
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				sr.Reset(input)
 				br.Reset(&sr)
 
 				var n Number
-				if err := n.UnmarshalRESP(br); err != nil {
+				if err := n.UnmarshalRESP(br, o); err != nil {
 					b.Fatalf("failed to unmarshal %q: %s", input, err)
 				}
 			}
@@ -39,7 +43,7 @@ func BenchmarkIntUnmarshalRESP(b *testing.B) {
 	}
 }
 
-func BenchmarkAnyUnmarshalRESP(b *testing.B) {
+func BenchmarkUnmarshal(b *testing.B) {
 	b.Run("Map", func(b *testing.B) {
 		b.ReportAllocs()
 
@@ -51,13 +55,15 @@ func BenchmarkAnyUnmarshalRESP(b *testing.B) {
 
 		var sr strings.Reader
 		br := bufio.NewReader(&sr)
+		o := resp.NewOpts()
 
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			sr.Reset(input)
 			br.Reset(&sr)
 
 			var m map[string]string
-			if err := (Any{I: &m}).UnmarshalRESP(br); err != nil {
+			if err := Unmarshal(br, &m, o); err != nil {
 				b.Fatalf("failed to unmarshal %q: %s", input, err)
 			}
 		}
@@ -74,13 +80,15 @@ func BenchmarkAnyUnmarshalRESP(b *testing.B) {
 
 		var sr strings.Reader
 		br := bufio.NewReader(&sr)
+		o := resp.NewOpts()
 
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			sr.Reset(input)
 			br.Reset(&sr)
 
 			var s testStructA
-			if err := (Any{I: &s}).UnmarshalRESP(br); err != nil {
+			if err := Unmarshal(br, &s, o); err != nil {
 				b.Fatalf("failed to unmarshal %q: %s", input, err)
 			}
 		}
