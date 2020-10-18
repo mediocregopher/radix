@@ -31,7 +31,7 @@ func TestCmdAction(t *T) {
 	// because BITOP is weird
 	require.Nil(t, c.Do(ctx, Cmd(nil, "SET", key, val)))
 	bitopCmd := Cmd(nil, "BITOP", "AND", key+key, key, key)
-	assert.Equal(t, []string{key + key, key, key}, bitopCmd.Keys())
+	assert.Equal(t, []string{key + key, key, key}, bitopCmd.Properties().Keys)
 	require.Nil(t, c.Do(ctx, bitopCmd))
 	var dstval string
 	require.Nil(t, c.Do(ctx, Cmd(&dstval, "GET", key+key)))
@@ -71,7 +71,7 @@ func TestCmdActionStreams(t *T) {
 			{"XGROUP", "SETID", skey, group, "$"},
 		} {
 			xCmd := Cmd(nil, args[0], args[1:]...)
-			assert.Equal(t, []string{skey}, xCmd.Keys())
+			assert.Equal(t, []string{skey}, xCmd.Properties().Keys)
 			require.NoError(t, c.Do(ctx, xCmd))
 		}
 	}
@@ -82,12 +82,12 @@ func TestCmdActionStreams(t *T) {
 		{"XREADGROUP", "GROUP", group, "test", "STREAMS", skeys[0], skeys[1], skeys[2], "0", ">", "0"},
 	} {
 		xCmd := Cmd(nil, args[0], args[1:]...)
-		assert.Equal(t, skeys[:3], xCmd.Keys())
+		assert.Equal(t, skeys[:3], xCmd.Properties().Keys)
 		require.NoError(t, c.Do(ctx, xCmd))
 	}
 
 	xCmd := Cmd(nil, "XINFO", "HELP")
-	assert.Equal(t, []string(nil), xCmd.Keys())
+	assert.Equal(t, []string(nil), xCmd.Properties().Keys)
 	require.NoError(t, c.Do(ctx, xCmd))
 }
 
@@ -568,18 +568,20 @@ var benchCmdActionKeys []string // global variable used to store the action keys
 
 func BenchmarkCmdActionKeys(b *B) {
 	for i := 0; i < b.N; i++ {
-		benchCmdActionKeys = Cmd(nil, "GET", "a").Keys()
+		benchCmdActionKeys = Cmd(nil, "GET", "a").Properties().Keys
 	}
 }
 
 func BenchmarkFlatCmdActionKeys(b *B) {
 	for i := 0; i < b.N; i++ {
-		benchCmdActionKeys = FlatCmd(nil, "GET", "a").Keys()
+		benchCmdActionKeys = FlatCmd(nil, "GET", "a").Properties().Keys
 	}
 }
 
 func BenchmarkWithConnKeys(b *B) {
 	for i := 0; i < b.N; i++ {
-		benchCmdActionKeys = WithConn("a", func(context.Context, Conn) error { return nil }).Keys()
+		benchCmdActionKeys = WithConn("a", func(context.Context, Conn) error {
+			return nil
+		}).Properties().Keys
 	}
 }

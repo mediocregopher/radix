@@ -46,21 +46,6 @@ func (d *dedupe) do(fn func()) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// ClusterCanRetryAction is an Action which is aware of Cluster's retry behavior
-// in the event of a slot migration. If an Action receives an error from a
-// Cluster node which is either MOVED or ASK, and that Action implements
-// ClusterCanRetryAction, and the ClusterCanRetry method returns true, then the
-// Action will be retried on the correct node.
-//
-// NOTE that the Actions which are returned by Cmd, FlatCmd, and EvalScript.Cmd
-// all implicitly implement this interface.
-type ClusterCanRetryAction interface {
-	Action
-	ClusterCanRetry() bool
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 type clusterOpts struct {
 	pf              ClientFunc
 	clusterDownWait time.Duration
@@ -541,11 +526,10 @@ const doAttempts = 5
 // Do performs an Action on a redis instance in the cluster, with the instance
 // being determeined by the key returned from the Action's Key() method.
 //
-// This method handles MOVED and ASK errors automatically in most cases, see
-// ClusterCanRetryAction's docs for more.
+// This method handles MOVED and ASK errors automatically in most cases.
 func (c *Cluster) Do(ctx context.Context, a Action) error {
 	var addr, key string
-	keys := a.Keys()
+	keys := a.Properties().Keys
 	if len(keys) == 0 {
 		// that's ok, key will then just be ""
 	} else if err := assertKeysSlot(keys); err != nil {
@@ -574,7 +558,7 @@ func (c *Cluster) Do(ctx context.Context, a Action) error {
 // If the Action can not be handled by a secondary the Action will be send to the primary instead.
 func (c *Cluster) DoSecondary(ctx context.Context, a Action) error {
 	var addr, key string
-	keys := a.Keys()
+	keys := a.Properties().Keys
 	if len(keys) == 0 {
 		// that's ok, key will then just be ""
 	} else if err := assertKeysSlot(keys); err != nil {
@@ -751,7 +735,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 	// we figure out what address to use based on the returned error so the sync
 	// isn't used _immediately_, but it still needs to happen.
 	//
-	// Also, even if the Action isn't a ClusterCanRetryAction we want a MOVED to
+	// Also, even if the Action isn't a retryable Action we want a MOVED to
 	// prompt a Sync
 	if moved {
 		if serr := c.Sync(params.ctx); serr != nil {
@@ -759,7 +743,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 		}
 	}
 
-	if ccra, ok := params.action.(ClusterCanRetryAction); !ok || !ccra.ClusterCanRetry() {
+	if !params.action.Properties().CanRetry {
 		return err
 	}
 

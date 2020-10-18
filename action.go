@@ -16,12 +16,24 @@ import (
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
+// ActionProperties describes various properties of an Action. It should be
+// expected that more fields will be added to this struct as time goes forward,
+// though the zero values of those new fields will have sane default behaviors.
+type ActionProperties struct {
+	// Keys describes which redis keys an Action will act on. An empty/nil slice
+	// maybe used if no keys are being acted on.
+	Keys []string
+
+	// CanRetry indicates, in the event of a cluster node returning a MOVED or
+	// ASK error, the Action can be retried on a different node.
+	CanRetry bool
+}
+
 // Action performs a task using a Conn.
 type Action interface {
-	// Keys returns the keys which will be acted on. Empty slice or nil may be
-	// returned if no keys are being acted on. The returned slice must not be
-	// modified.
-	Keys() []string
+	// Properties returns an ActionProperties value for the Action. Multiple
+	// calls to Properties should always yield the same ActionProperties value.
+	Properties() ActionProperties
 
 	// Perform actually performs the Action using an existing Conn.
 	Perform(ctx context.Context, c Conn) error
@@ -173,7 +185,14 @@ func findStreamsKeys(args []string) []string {
 	return nil
 }
 
-func (c *cmdAction) Keys() []string {
+func (c *cmdAction) Properties() ActionProperties {
+	return ActionProperties{
+		Keys:     c.keys(),
+		CanRetry: true,
+	}
+}
+
+func (c *cmdAction) keys() []string {
 	cmd := strings.ToUpper(c.cmd)
 	if cmd == "BITOP" && len(c.args) > 1 { // antirez why you do this
 		return c.args[1:]
@@ -225,10 +244,6 @@ func (c *cmdAction) String() string {
 		ss[i] = strconv.QuoteToASCII(ss[i])
 	}
 	return "[" + strings.Join(ss, " ") + "]"
-}
-
-func (c *cmdAction) ClusterCanRetry() bool {
-	return true
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -362,8 +377,11 @@ func (es EvalScript) FlatCmd(rcv interface{}, keys []string, args ...interface{}
 	return ec
 }
 
-func (ec *evalAction) Keys() []string {
-	return ec.keys
+func (ec *evalAction) Properties() ActionProperties {
+	return ActionProperties{
+		Keys:     ec.keys,
+		CanRetry: true,
+	}
 }
 
 func (ec *evalAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
@@ -404,10 +422,6 @@ func (ec *evalAction) Perform(ctx context.Context, conn Conn) error {
 		err = run(true)
 	}
 	return err
-}
-
-func (ec *evalAction) ClusterCanRetry() bool {
-	return true
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -459,18 +473,19 @@ func (p *pipeline) reset() {
 
 var _ Conn = new(pipeline)
 
-func (p *pipeline) Keys() []string {
-	m := map[string]bool{}
+func (p *pipeline) Properties() ActionProperties {
+	var ap ActionProperties
+	keySet := map[string]bool{}
 	for _, action := range p.actions {
-		for _, k := range action.Keys() {
-			m[k] = true
+		for _, k := range action.Properties().Keys {
+			keySet[k] = true
 		}
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+	ap.Keys = make([]string, 0, len(keySet))
+	for k := range keySet {
+		ap.Keys = append(ap.Keys, k)
 	}
-	return keys
+	return ap
 }
 
 func (p *pipeline) EncodeDecode(_ context.Context, m, u interface{}) error {
@@ -578,7 +593,7 @@ func (p *pipeline) Perform(ctx context.Context, c Conn) error {
 ////////////////////////////////////////////////////////////////////////////////
 
 type withConn struct {
-	key [1]string // use array to avoid allocation in Keys
+	key [1]string // use array to avoid allocation in Properties
 	fn  func(context.Context, Conn) error
 }
 
@@ -598,8 +613,10 @@ func WithConn(key string, fn func(context.Context, Conn) error) Action {
 	return &withConn{[1]string{key}, fn}
 }
 
-func (wc *withConn) Keys() []string {
-	return wc.key[:]
+func (wc *withConn) Properties() ActionProperties {
+	return ActionProperties{
+		Keys: wc.key[:],
+	}
 }
 
 func (wc *withConn) Perform(ctx context.Context, c Conn) error {
