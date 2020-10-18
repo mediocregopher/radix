@@ -1831,7 +1831,7 @@ func Unmarshal(br *bufio.Reader, rcv interface{}, o *resp.Opts) error {
 		// We used to have a pool for *bytes.Reader instances which was used
 		// here. This resulted in one fewer heap allocation than this does, but
 		// took longer per-op due to the locking around the Pool.
-		reader := bytesutil.SimpleByteReader(b)
+		reader := o.GetReader(b)
 		return unmarshalSingle(reader, len(b), rcv, o)
 
 	default:
@@ -2376,7 +2376,7 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 // and unmarshaling that into the given receiver (which will be wrapped in an
 // Any).
 func (rm RawMessage) UnmarshalInto(rcv interface{}, o *resp.Opts) error {
-	r := bytes.NewReader(rm)
+	r := o.GetReader(rm)
 	br := bufio.NewReader(r)
 	return Unmarshal(br, rcv, o)
 }

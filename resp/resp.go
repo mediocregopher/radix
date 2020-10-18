@@ -29,6 +29,11 @@ type Opts struct {
 	// This field may not be nil.
 	PutBytes func(*[]byte)
 
+	// GetReader returns an io.Reader which will read out the given bytes.
+	//
+	// This field may not be nil.
+	GetReader func([]byte) io.Reader
+
 	// MarshalDeterministic indicates that marshal operations should result in
 	// deterministic results. This is largely used for ensuring map key/values
 	// are marshaled in a deterministic order.
@@ -41,9 +46,11 @@ const defaultBytePoolThreshold = 10000000 // ~10MB
 // which may be modified if desired.
 func NewOpts() *Opts {
 	bp := newBytePool(defaultBytePoolThreshold)
+	brp := newByteReaderPool()
 	return &Opts{
-		GetBytes: bp.get,
-		PutBytes: bp.put,
+		GetBytes:  bp.get,
+		PutBytes:  bp.put,
+		GetReader: brp.get,
 	}
 }
 

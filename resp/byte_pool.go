@@ -1,5 +1,7 @@
 package resp
 
+import "io"
+
 // bytePool is a non-thread-safe pool of []byte instances which can help absorb
 // allocations.
 //
@@ -34,4 +36,48 @@ func (bp *bytePool) put(b *[]byte) {
 
 	*b = (*b)[:0]
 	bp.pool = append(bp.pool, b)
+}
+
+type byteReader struct {
+	b    []byte
+	pool *byteReaderPool
+}
+
+func (br *byteReader) Read(b []byte) (int, error) {
+	if len(br.b) == 0 {
+		return 0, io.EOF
+	} else if len(b) == 0 {
+		return 0, nil
+	}
+
+	n := copy(b, br.b)
+	br.b = br.b[n:]
+	if len(br.b) == 0 {
+		br.b = nil
+		br.pool.put(br)
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+type byteReaderPool struct {
+	pool []*byteReader
+}
+
+func newByteReaderPool() *byteReaderPool {
+	return new(byteReaderPool)
+}
+
+func (brp *byteReaderPool) get(b []byte) io.Reader {
+	if len(brp.pool) == 0 {
+		return &byteReader{b: b, pool: brp}
+	}
+	br := brp.pool[len(brp.pool)-1]
+	brp.pool = brp.pool[:len(brp.pool)-1]
+	br.b = b
+	return br
+}
+
+func (brp *byteReaderPool) put(br *byteReader) {
+	brp.pool = append(brp.pool, br)
 }
