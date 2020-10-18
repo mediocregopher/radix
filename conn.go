@@ -49,14 +49,6 @@ var DefaultConnFunc = func(ctx context.Context, network, addr string) (Conn, err
 	return Dial(ctx, network, addr)
 }
 
-// TODO what is this? is it needed?
-func wrapDefaultConnFunc(addr string) ConnFunc {
-	_, opts := parseRedisURL(addr)
-	return func(ctx context.Context, network, addr string) (Conn, error) {
-		return Dial(ctx, network, addr, opts...)
-	}
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 type connMarshalerUnmarshaler struct {

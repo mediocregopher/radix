@@ -11,6 +11,16 @@ import (
 	"github.com/mediocregopher/radix/v4/trace"
 )
 
+// wrapDefaultConnFunc is used to ensure that redis url options are
+// automatically applied to future sentinel connections whose address doesn't
+// have that information encoded.
+func wrapDefaultConnFunc(addr string) ConnFunc {
+	_, opts := parseRedisURL(addr)
+	return func(ctx context.Context, network, addr string) (Conn, error) {
+		return Dial(ctx, network, addr, opts...)
+	}
+}
+
 type sentinelOpts struct {
 	cf    ConnFunc
 	pf    ClientFunc
