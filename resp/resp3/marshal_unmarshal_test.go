@@ -1586,7 +1586,7 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 	}
 
 	opts := resp.NewOpts()
-	opts.MarshalDeterministic = true
+	opts.Deterministic = true
 	for _, umt := range unmarshalMarshalTests {
 		t.Run(umt.descr, func(t *testing.T) {
 			for i, in := range umt.ins {
@@ -1601,19 +1601,13 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 
 				assertMarshalsFlatStr := func(t *testing.T, exp []string, i interface{}) {
 					t.Logf("%#v (flattened to strings) -> %q", i, in.flattened)
-					f := flattener{deterministic: true}
-					assert.NoError(t, f.flatten(i))
-
+					outStrs, err := Flatten(i, opts)
+					assert.NoError(t, err)
 					if len(exp) == 0 {
-						assert.Empty(t, f.out)
-						return
+						assert.Empty(t, outStrs)
+					} else {
+						assert.Equal(t, exp, outStrs)
 					}
-
-					outStrs := make([]string, len(f.out))
-					for i := range outStrs {
-						outStrs[i] = string(f.out[i])
-					}
-					assert.Equal(t, exp, outStrs)
 				}
 
 				if umt.shouldErr != nil {

@@ -1,7 +1,6 @@
 package resp3
 
 import (
-	"bytes"
 	"encoding"
 	"fmt"
 	"io"
@@ -10,29 +9,24 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/mediocregopher/radix/v4/internal/bytesutil"
 	"github.com/mediocregopher/radix/v4/resp"
 )
 
-var boolStrs = [][]byte{
-	{'0'},
-	{'1'},
-}
-
 // cleanFloatStr is needed because go likes to marshal infinity values as
 // "+Inf" and "-Inf", but we need "inf" and "-inf".
-func cleanFloatStr(b []byte) []byte {
-	b = bytes.ToLower(b)
-	if b[0] == '+' { // "+inf"
-		b = b[1:]
+func cleanFloatStr(str string) string {
+	str = strings.ToLower(str)
+	if str[0] == '+' { // "+inf"
+		str = str[1:]
 	}
-	return b
+	return str
 }
 
-// Flatten accepts any type accepted by Any.MarshalRESP, except a
-// resp.Marshaler, and converts it into a flattened array of byte slices. For
-// example:
+// Flatten accepts any type accepted by Marshal, except a resp.Marshaler, and
+// converts it into a flattened array of strings. For example:
 //
 //	Flatten(5) -> {"5"}
 //	Flatten(nil) -> {""}
@@ -40,88 +34,86 @@ func cleanFloatStr(b []byte) []byte {
 //	Flatten(map[string]int{"a":5,"b":10}) -> {"a","5","b","10"}
 //	Flatten([]map[int]float64{{1:2, 3:4},{5:6},{}}) -> {"1","2","3","4","5","6"})
 //
-func Flatten(i interface{}) ([][]byte, error) {
+func Flatten(i interface{}, o *resp.Opts) ([]string, error) {
 	f := flattener{
-		out: make([][]byte, 0, 8),
+		opts: o,
+		out:  make([]string, 0, 8),
 	}
 	err := f.flatten(i)
 	return f.out, err
 }
 
 type flattener struct {
-	out           [][]byte
-	deterministic bool
+	// Opts is not really used and is mostly here for future compatibility. It
+	// is secretly allowed to be nil, but we don't tell the users that.
+	opts *resp.Opts
+	out  []string
 }
 
 // emit always returns nil for convenience
-func (f *flattener) emit(b []byte) error {
-	f.out = append(f.out, b)
+func (f *flattener) emit(str string) error {
+	f.out = append(f.out, str)
 	return nil
 }
 
 func (f *flattener) flatten(i interface{}) error {
 	switch i := i.(type) {
 	case []byte:
-		return f.emit(i)
+		return f.emit(string(i))
 	case string:
-		return f.emit([]byte(i))
+		return f.emit(i)
 	case []rune:
-		return f.emit([]byte(string(i)))
+		return f.emit(string(i))
 	case bool:
 		if i {
-			return f.emit(boolStrs[1])
+			return f.emit("1")
 		}
-		return f.emit(boolStrs[0])
+		return f.emit("0")
 	case float32:
-		b := strconv.AppendFloat([]byte(nil), float64(i), 'f', -1, 32)
-		return f.emit(cleanFloatStr(b))
+		s := strconv.FormatFloat(float64(i), 'f', -1, 32)
+		return f.emit(cleanFloatStr(s))
 	case float64:
-		b := strconv.AppendFloat([]byte(nil), i, 'f', -1, 64)
-		return f.emit(cleanFloatStr(b))
+		s := strconv.FormatFloat(float64(i), 'f', -1, 64)
+		return f.emit(cleanFloatStr(s))
 	case *big.Float:
 		return f.flatten(*i)
 	case big.Float:
-		b := i.Append([]byte(nil), 'f', -1)
-		return f.emit(cleanFloatStr(b))
+		return f.emit(cleanFloatStr(i.Text('f', -1)))
 	case nil:
-		return f.emit([]byte(nil))
+		return f.emit("")
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		i64 := bytesutil.AnyIntToInt64(i)
-		b := strconv.AppendInt([]byte(nil), i64, 10)
-		return f.emit(b)
+		return f.emit(strconv.FormatInt(i64, 10))
 	case *big.Int:
 		return f.flatten(*i)
 	case big.Int:
-		b := i.Append([]byte(nil), 10)
-		return f.emit(b)
+		return f.emit(i.Text(10))
 	case error:
-		b := append([]byte(nil), i.Error()...)
-		return f.emit(b)
+		return f.emit(i.Error())
 	case resp.LenReader:
-		b := bytesutil.Expand([]byte(nil), i.Len())
-		if _, err := io.ReadFull(i, b); err != nil {
-			return err
-		}
-		return f.emit(b)
-	case io.Reader:
-		// TODO use bytes pool here?
 		b, err := ioutil.ReadAll(i)
 		if err != nil {
 			return err
 		}
-		return f.emit(b)
+		return f.emit(string(b))
+	case io.Reader:
+		b, err := ioutil.ReadAll(i)
+		if err != nil {
+			return err
+		}
+		return f.emit(string(b))
 	case encoding.TextMarshaler:
 		b, err := i.MarshalText()
 		if err != nil {
 			return err
 		}
-		return f.emit(b)
+		return f.emit(string(b))
 	case encoding.BinaryMarshaler:
 		b, err := i.MarshalBinary()
 		if err != nil {
 			return err
 		}
-		return f.emit(b)
+		return f.emit(string(b))
 	}
 
 	vv := reflect.ValueOf(i)
@@ -134,7 +126,7 @@ func (f *flattener) flatten(i interface{}) error {
 			return nil
 		default:
 			// otherwise emit empty string
-			return f.emit([]byte(nil))
+			return f.emit("")
 		}
 	} else {
 		return f.flatten(vv.Elem().Interface())
@@ -152,7 +144,7 @@ func (f *flattener) flatten(i interface{}) error {
 
 	case reflect.Map:
 		kkv := vv.MapKeys()
-		if f.deterministic {
+		if f.opts != nil && f.opts.Deterministic {
 			// This is hacky af but basically works
 			sort.Slice(kkv, func(i, j int) bool {
 				return fmt.Sprint(kkv[i].Interface()) < fmt.Sprint(kkv[j].Interface())
@@ -189,7 +181,7 @@ func (f *flattener) flatten(i interface{}) error {
 			if tag != "" {
 				keyName = tag
 			}
-			f.emit([]byte(keyName))
+			f.emit(keyName)
 
 			if err := f.flatten(fv.Interface()); err != nil {
 				return err

@@ -34,10 +34,10 @@ type Opts struct {
 	// This field may not be nil.
 	GetReader func([]byte) io.Reader
 
-	// MarshalDeterministic indicates that marshal operations should result in
+	// Deterministic indicates that marshal operations should result in
 	// deterministic results. This is largely used for ensuring map key/values
-	// are marshaled in a deterministic order.
-	MarshalDeterministic bool
+	// are emitted in a deterministic order.
+	Deterministic bool
 }
 
 const defaultBytePoolThreshold = 10000000 // ~10MB

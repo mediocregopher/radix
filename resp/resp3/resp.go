@@ -1517,7 +1517,7 @@ func Marshal(w io.Writer, i interface{}, o *resp.Opts) error {
 			return Marshal(w, nil, o)
 		}
 		kkv := vv.MapKeys()
-		if o.MarshalDeterministic {
+		if o.Deterministic {
 			// This is hacky af but basically works
 			sort.Slice(kkv, func(i, j int) bool {
 				return fmt.Sprint(kkv[i].Interface()) < fmt.Sprint(kkv[j].Interface())

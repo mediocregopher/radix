@@ -2,7 +2,6 @@ package radix
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -81,25 +80,6 @@ var noKeyCmds = map[string]bool{
 	"WATCH":   true,
 }
 
-func cmdString(m resp.Marshaler) string {
-	// we go way out of the way here to display the command as it would be sent
-	// to redis. This is pretty similar logic to what the stub does as well
-	buf := new(bytes.Buffer)
-	opts := resp.NewOpts()
-	if err := m.MarshalRESP(buf, opts); err != nil {
-		return fmt.Sprintf("error creating string: %q", err.Error())
-	}
-	var ss []string
-	err := resp3.RawMessage(buf.Bytes()).UnmarshalInto(&ss, opts)
-	if err != nil {
-		return fmt.Sprintf("error creating string: %q", err.Error())
-	}
-	for i := range ss {
-		ss[i] = strconv.QuoteToASCII(ss[i])
-	}
-	return "[" + strings.Join(ss, " ") + "]"
-}
-
 func marshalBlobString(prevErr error, w io.Writer, str string, o *resp.Opts) error {
 	if prevErr != nil {
 		return prevErr
@@ -121,10 +101,7 @@ type cmdAction struct {
 	cmd  string
 	args []string
 
-	// TODO just flatten inside FlatCmd and use args, we don't need these fields
-	flat     bool
-	flatKey  [1]string // use array to avoid allocation in Keys
-	flatArgs []interface{}
+	flattenErr error
 }
 
 // BREAM: Benchmarks Rule Everything Around Me
@@ -160,28 +137,22 @@ func Cmd(rcv interface{}, cmd string, args ...string) Action {
 // will automatically flatten them into a single array of strings. Like Cmd, a
 // FlatCmd should not be passed into Do more than once.
 //
-// FlatCmd does _not_ work for commands whose first parameter isn't a key, or
-// (generally) for MSET. Use Cmd for those.
-//
 // FlatCmd supports using a resp.LenReader (an io.Reader with a Len() method) as
 // an argument. *bytes.Buffer is an example of a LenReader, and the resp package
 // has a NewLenReader function which can wrap an existing io.Reader.
 //
-// FlatCmd also supports encoding.Text/BinaryMarshalers. It does _not_ currently
-// support resp.Marshaler.
+// FlatCmd supports encoding.Text/BinaryMarshalers.
 //
 // The receiver to FlatCmd follows the same rules as for Cmd.
 //
-// The Action returned by FlatCmd also implements resp.Marshaler.
-func FlatCmd(rcv interface{}, cmd, key string, args ...interface{}) Action {
+// The Action returned by FlatCmd implements resp.Marshaler.
+func FlatCmd(rcv interface{}, cmd string, args ...interface{}) Action {
 	c := getCmdAction()
 	*c = cmdAction{
-		rcv:      rcv,
-		cmd:      cmd,
-		flat:     true,
-		flatKey:  [1]string{key},
-		flatArgs: args,
+		rcv: rcv,
+		cmd: cmd,
 	}
+	c.args, c.flattenErr = resp3.Flatten(args, nil)
 	return c
 }
 
@@ -203,10 +174,6 @@ func findStreamsKeys(args []string) []string {
 }
 
 func (c *cmdAction) Keys() []string {
-	if c.flat {
-		return c.flatKey[:]
-	}
-
 	cmd := strings.ToUpper(c.cmd)
 	if cmd == "BITOP" && len(c.args) > 1 { // antirez why you do this
 		return c.args[1:]
@@ -225,24 +192,9 @@ func (c *cmdAction) Keys() []string {
 	return c.args[:1]
 }
 
-func (c *cmdAction) flatMarshalRESP(w io.Writer, o *resp.Opts) error {
-	flattenedArgs, err := resp3.Flatten(c.flatArgs)
-	if err != nil {
-		return resp.ErrConnUsable{Err: err}
-	}
-
-	err = resp3.ArrayHeader{NumElems: 2 + len(flattenedArgs)}.MarshalRESP(w, o)
-	err = marshalBlobString(err, w, c.cmd, o)
-	err = marshalBlobString(err, w, c.flatKey[0], o)
-	for _, fArg := range flattenedArgs {
-		err = marshalBlobStringBytes(err, w, fArg, o)
-	}
-	return err
-}
-
 func (c *cmdAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
-	if c.flat {
-		return c.flatMarshalRESP(w, o)
+	if c.flattenErr != nil {
+		return c.flattenErr
 	}
 
 	err := resp3.ArrayHeader{NumElems: len(c.args) + 1}.MarshalRESP(w, o)
@@ -266,7 +218,13 @@ func (c *cmdAction) Perform(ctx context.Context, conn Conn) error {
 }
 
 func (c *cmdAction) String() string {
-	return cmdString(c)
+	ss := make([]string, 0, len(c.args)+1)
+	ss = append(ss, strings.ToUpper(c.cmd))
+	ss = append(ss, c.args...)
+	for i := range ss {
+		ss[i] = strconv.QuoteToASCII(ss[i])
+	}
+	return "[" + strings.Join(ss, " ") + "]"
 }
 
 func (c *cmdAction) ClusterCanRetry() bool {
@@ -374,10 +332,8 @@ type evalAction struct {
 	keys, args []string
 	rcv        interface{}
 
-	flat     bool
-	flatArgs []interface{}
-
-	eval bool
+	flattenErr error
+	eval       bool
 }
 
 // Cmd is like the top-level Cmd but it uses the the EvalScript to perform an
@@ -397,13 +353,13 @@ func (es EvalScript) Cmd(rcv interface{}, keys []string, args ...string) Action 
 // perform an EVALSHA command (and will automatically fallback to EVAL as
 // necessary). keys must be as long as the numKeys argument of NewEvalScript.
 func (es EvalScript) FlatCmd(rcv interface{}, keys []string, args ...interface{}) Action {
-	return &evalAction{
+	ec := &evalAction{
 		EvalScript: es,
 		keys:       keys,
-		flatArgs:   args,
-		flat:       true,
 		rcv:        rcv,
 	}
+	ec.args, ec.flattenErr = resp3.Flatten(args, nil)
+	return ec
 }
 
 func (ec *evalAction) Keys() []string {
@@ -411,23 +367,13 @@ func (ec *evalAction) Keys() []string {
 }
 
 func (ec *evalAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
+	if ec.flattenErr != nil {
+		return ec.flattenErr
+	}
+
 	// EVAL(SHA) script/sum numkeys keys... args...
-	ah := resp3.ArrayHeader{NumElems: 3 + len(ec.keys)}
-
-	var flattenedArgs [][]byte
-	var err error
-	if ec.flat {
-		if flattenedArgs, err = resp3.Flatten(ec.flatArgs); err != nil {
-			return resp.ErrConnUsable{Err: err}
-		}
-		ah.NumElems += len(flattenedArgs)
-	} else {
-		ah.NumElems += len(ec.args)
-	}
-
-	if err := ah.MarshalRESP(w, o); err != nil {
-		return err
-	}
+	ah := resp3.ArrayHeader{NumElems: 3 + len(ec.keys) + len(ec.args)}
+	err := ah.MarshalRESP(w, o)
 
 	if ec.eval {
 		err = marshalBlobStringBytes(err, w, eval, o)
@@ -441,18 +387,8 @@ func (ec *evalAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	for i := range ec.keys {
 		err = marshalBlobString(err, w, ec.keys[i], o)
 	}
-	if err != nil {
-		return err
-	}
-
-	if ec.flat {
-		for i := range flattenedArgs {
-			err = marshalBlobStringBytes(err, w, flattenedArgs[i], o)
-		}
-	} else {
-		for i := range ec.args {
-			err = marshalBlobString(err, w, ec.args[i], o)
-		}
+	for i := range ec.args {
+		err = marshalBlobString(err, w, ec.args[i], o)
 	}
 	return err
 }

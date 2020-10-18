@@ -4,6 +4,8 @@ import (
 	"io"
 )
 
+// TODO does LenReader serve a purpose anymore?
+
 // LenReader adds an additional method to io.Reader, returning how many bytes
 // are left till be read until an io.EOF is reached.
 type LenReader interface {
