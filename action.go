@@ -112,6 +112,7 @@ type cmdAction struct {
 	rcv  interface{}
 	cmd  string
 	args []string
+	keys []string // a sub-slice of args
 
 	flattenErr error
 }
@@ -142,6 +143,7 @@ func Cmd(rcv interface{}, cmd string, args ...string) Action {
 		cmd:  cmd,
 		args: args,
 	}
+	c.fillKeys()
 	return c
 }
 
@@ -165,6 +167,7 @@ func FlatCmd(rcv interface{}, cmd string, args ...interface{}) Action {
 		cmd: cmd,
 	}
 	c.args, c.flattenErr = resp3.Flatten(args, nil)
+	c.fillKeys()
 	return c
 }
 
@@ -187,28 +190,30 @@ func findStreamsKeys(args []string) []string {
 
 func (c *cmdAction) Properties() ActionProperties {
 	return ActionProperties{
-		Keys:     c.keys(),
+		Keys:     c.keys,
 		CanRetry: true,
 	}
 }
 
-func (c *cmdAction) keys() []string {
+func (c *cmdAction) fillKeys() {
 	cmd := strings.ToUpper(c.cmd)
-	if cmd == "BITOP" && len(c.args) > 1 { // antirez why you do this
-		return c.args[1:]
-	} else if cmd == "XINFO" {
+	switch {
+	case noKeyCmds[cmd] || len(c.args) == 0:
+		return
+	case cmd == "BITOP" && len(c.args) > 1:
+		c.keys = c.args[1:]
+	case cmd == "XINFO":
 		if len(c.args) < 2 {
-			return nil
+			return
 		}
-		return c.args[1:2]
-	} else if cmd == "XGROUP" && len(c.args) > 1 {
-		return c.args[1:2]
-	} else if cmd == "XREAD" || cmd == "XREADGROUP" { // antirez why you still do this
-		return findStreamsKeys(c.args)
-	} else if noKeyCmds[cmd] || len(c.args) == 0 {
-		return nil
+		c.keys = c.args[1:2]
+	case cmd == "XGROUP" && len(c.args) > 1:
+		c.keys = c.args[1:2]
+	case cmd == "XREAD" || cmd == "XREADGROUP":
+		c.keys = findStreamsKeys(c.args)
+	default:
+		c.keys = c.args[:1]
 	}
-	return c.args[:1]
 }
 
 func (c *cmdAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
