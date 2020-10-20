@@ -56,11 +56,11 @@ func TestStubPipeline(t *T) {
 	stub := testStub()
 
 	var out string
-	err := stub.Do(ctx, Pipeline(
-		Cmd(nil, "SET", "foo", "bar"),
-		Cmd(&out, "GET", "foo"),
-	))
+	p := NewPipeline()
+	p.Append(Cmd(nil, "SET", "foo", "bar"))
+	p.Append(Cmd(&out, "GET", "foo"))
 
+	err := stub.Do(ctx, p)
 	require.Nil(t, err)
 	assert.Equal(t, "bar", out)
 }

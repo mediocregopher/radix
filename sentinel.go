@@ -371,10 +371,10 @@ func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
 func (sc *Sentinel) ensureClients(ctx context.Context, conn Conn) error {
 	var primM map[string]string
 	var secMM []map[string]string
-	if err := conn.Do(ctx, Pipeline(
-		Cmd(&primM, "SENTINEL", "MASTER", sc.name),
-		Cmd(&secMM, "SENTINEL", "SLAVES", sc.name),
-	)); err != nil {
+	p := NewPipeline()
+	p.Append(Cmd(&primM, "SENTINEL", "MASTER", sc.name))
+	p.Append(Cmd(&secMM, "SENTINEL", "SLAVES", sc.name))
+	if err := conn.Do(ctx, p); err != nil {
 		return err
 	}
 

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	. "testing"
 	"time"
 
@@ -258,11 +257,11 @@ func TestPipelineAction(t *T) {
 				randStr(),
 			}
 			out := make([]string, len(ss))
-			var cmds []Action
+			p := NewPipeline()
 			for i := range ss {
-				cmds = append(cmds, Cmd(&out[i], "ECHO", ss[i]))
+				p.Append(Cmd(&out[i], "ECHO", ss[i]))
 			}
-			require.Nil(t, c.Do(ctx, Pipeline(cmds...)))
+			require.Nil(t, c.Do(ctx, p))
 
 			for i := range ss {
 				assert.Equal(t, ss[i], out[i])
@@ -288,11 +287,10 @@ func TestPipelineAction(t *T) {
 
 		var intRcv int
 		var strRcv string
-		pipeline := Pipeline(
-			Cmd(&intRcv, "GET", k1), // unmarshal error
-			Cmd(nil, "GET", k2),
-			Cmd(&strRcv, "GET", k2),
-		)
+		pipeline := NewPipeline()
+		pipeline.Append(Cmd(&intRcv, "GET", k1)) // unmarshal error
+		pipeline.Append(Cmd(nil, "GET", k2))
+		pipeline.Append(Cmd(&strRcv, "GET", k2))
 
 		err := c.Do(ctx, pipeline)
 		require.Error(t, err)
@@ -314,34 +312,30 @@ func ExamplePipeline() {
 	if err != nil {
 		// handle error
 	}
+
 	var fooVal string
-	p := Pipeline(
-		FlatCmd(nil, "SET", "foo", 1),
-		Cmd(&fooVal, "GET", "foo"),
-	)
+	p := NewPipeline()
+	p.Append(FlatCmd(nil, "SET", "foo", 1))
+	p.Append(Cmd(&fooVal, "GET", "foo"))
+
 	if err := client.Do(ctx, p); err != nil {
 		// handle error
 	}
 	fmt.Printf("fooVal: %q\n", fooVal)
+
+	// At this point the Pipeline cannot be used again, unless Reset is called.
+	var barVal string
+	p.Reset()
+	p.Append(FlatCmd(nil, "SET", "bar", 2))
+	p.Append(Cmd(&barVal, "GET", "bar"))
+
+	if err := client.Do(ctx, p); err != nil {
+		// handle error
+	}
+	fmt.Printf("barVal: %q\n", barVal)
+
 	// Output: fooVal: "1"
-}
-
-func TestPipelineEvalAction(t *T) {
-	ctx := testCtx(t)
-	str := randStr()
-	script := NewEvalScript(`return '` + str + `'`)
-
-	c := dial()
-	var got string
-	err := c.Do(ctx, Pipeline(
-		script.Cmd(&got, nil),
-	))
-
-	// TODO it'd be nice if this case was handled more gracefully, maybe by not
-	// allowing the user to do this in the first place.
-	require.Error(t, err)
-	assert.True(t, strings.HasPrefix(err.Error(), "NOSCRIPT "))
-	assert.Empty(t, got)
+	// barVal: "2"
 }
 
 func TestWithConnAction(t *T) {

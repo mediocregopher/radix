@@ -67,7 +67,7 @@ type pipeliningConn struct {
 
 	// encDecs corresponds 1:1 with the mm slice in the pipeline
 	encDecs  []pipeliningConnEncDec
-	pipeline *pipeline
+	pipeline *Pipeline
 
 	// this is only used in tests. If it's set it will be used for timerChs
 	// instead of an actual timer
@@ -97,7 +97,7 @@ func NewPipeliningConn(conn Conn, opts ...PipeliningConnOpt) Conn {
 		conn:     conn,
 		opts:     pco,
 		encDecCh: make(chan pipeliningConnEncDec, 16),
-		pipeline: newPipeline(),
+		pipeline: NewPipeline(),
 	}
 	pc.proc.Run(pc.spin)
 	return pc
@@ -146,7 +146,7 @@ func (pc *pipeliningConn) flush(ctx context.Context) {
 	}
 
 	pc.encDecs = pc.encDecs[:0]
-	pc.pipeline.reset()
+	pc.pipeline.Reset()
 }
 
 func (pc *pipeliningConn) resetTimer() <-chan time.Time {

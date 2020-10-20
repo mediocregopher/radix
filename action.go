@@ -21,12 +21,17 @@ import (
 // though the zero values of those new fields will have sane default behaviors.
 type ActionProperties struct {
 	// Keys describes which redis keys an Action will act on. An empty/nil slice
-	// maybe used if no keys are being acted on.
+	// maybe used if no keys are being acted on. The slice may contain duplicate
+	// values.
 	Keys []string
 
 	// CanRetry indicates, in the event of a cluster node returning a MOVED or
 	// ASK error, the Action can be retried on a different node.
 	CanRetry bool
+
+	// CanPipeline indicates that an Action can be pipelined alongside other
+	// Actions for which this property is true.
+	CanPipeline bool
 }
 
 // Action performs a task using a Conn.
@@ -92,6 +97,23 @@ var noKeyCmds = map[string]bool{
 	"WATCH":   true,
 }
 
+var blockingCmds = map[string]bool{
+	"WAIT": true,
+
+	// taken from https://github.com/joomcode/redispipe#limitations
+	"BLPOP":      true,
+	"BRPOP":      true,
+	"BRPOPLPUSH": true,
+
+	"BZPOPMIN": true,
+	"BZPOPMAX": true,
+
+	"XREAD":      true,
+	"XREADGROUP": true,
+
+	"SAVE": true,
+}
+
 func marshalBlobString(prevErr error, w io.Writer, str string, o *resp.Opts) error {
 	if prevErr != nil {
 		return prevErr
@@ -109,10 +131,10 @@ func marshalBlobStringBytes(prevErr error, w io.Writer, b []byte, o *resp.Opts) 
 ////////////////////////////////////////////////////////////////////////////////
 
 type cmdAction struct {
-	rcv  interface{}
-	cmd  string
-	args []string
-	keys []string // a sub-slice of args
+	rcv        interface{}
+	cmd        string
+	args       []string
+	properties ActionProperties
 
 	flattenErr error
 }
@@ -143,7 +165,7 @@ func Cmd(rcv interface{}, cmd string, args ...string) Action {
 		cmd:  cmd,
 		args: args,
 	}
-	c.fillKeys()
+	c.fillProperties()
 	return c
 }
 
@@ -167,7 +189,7 @@ func FlatCmd(rcv interface{}, cmd string, args ...interface{}) Action {
 		cmd: cmd,
 	}
 	c.args, c.flattenErr = resp3.Flatten(args, nil)
-	c.fillKeys()
+	c.fillProperties()
 	return c
 }
 
@@ -189,30 +211,31 @@ func findStreamsKeys(args []string) []string {
 }
 
 func (c *cmdAction) Properties() ActionProperties {
-	return ActionProperties{
-		Keys:     c.keys,
-		CanRetry: true,
-	}
+	return c.properties
 }
 
-func (c *cmdAction) fillKeys() {
+func (c *cmdAction) fillProperties() {
+	c.properties = ActionProperties{
+		CanRetry:    true,
+		CanPipeline: !blockingCmds[strings.ToUpper(c.cmd)],
+	}
 	cmd := strings.ToUpper(c.cmd)
 	switch {
 	case noKeyCmds[cmd] || len(c.args) == 0:
 		return
 	case cmd == "BITOP" && len(c.args) > 1:
-		c.keys = c.args[1:]
+		c.properties.Keys = c.args[1:]
 	case cmd == "XINFO":
 		if len(c.args) < 2 {
 			return
 		}
-		c.keys = c.args[1:2]
+		c.properties.Keys = c.args[1:2]
 	case cmd == "XGROUP" && len(c.args) > 1:
-		c.keys = c.args[1:2]
+		c.properties.Keys = c.args[1:2]
 	case cmd == "XREAD" || cmd == "XREADGROUP":
-		c.keys = findStreamsKeys(c.args)
+		c.properties.Keys = findStreamsKeys(c.args)
 	default:
-		c.keys = c.args[:1]
+		c.properties.Keys = c.args[:1]
 	}
 }
 
@@ -386,6 +409,12 @@ func (ec *evalAction) Properties() ActionProperties {
 	return ActionProperties{
 		Keys:     ec.keys,
 		CanRetry: true,
+
+		// EvalScript doesn't work within a Pipeline because the initial EVALSHA
+		// might return a NOSCRIPT, in which case a second EVAL must be
+		// performed. If done in a Pipeline there would be no opportunity to
+		// perform the second EVAL.
+		CanPipeline: false,
 	}
 }
 
@@ -436,9 +465,12 @@ type pipelineMarshalerUnmarshaler struct {
 	err                    error
 }
 
+// pipeline contains all the fields of Pipeline as well as some methods we'd
+// rather not expose to users.
 type pipeline struct {
-	actions []Action
-	mm      []pipelineMarshalerUnmarshaler
+	actions    []Action
+	mm         []pipelineMarshalerUnmarshaler
+	properties ActionProperties
 
 	// Conn is only set during the Perform method. It's primary purpose is to
 	// provide for the methods which aren't EncodeDecode during the inner
@@ -446,52 +478,7 @@ type pipeline struct {
 	Conn
 }
 
-func newPipeline(actions ...Action) *pipeline {
-	// TODO this could use a sync.Pool probably
-	return &pipeline{
-		actions: actions,
-		mm:      make([]pipelineMarshalerUnmarshaler, 0, len(actions)),
-	}
-}
-
-// Pipeline returns an Action which first writes multiple commands to a Conn in
-// a single write, then reads their responses in a single read. This reduces
-// network delay into a single round-trip.
-//
-// NOTE that, while a Pipeline performs all commands on a single Conn, it
-// shouldn't be used by itself for MULTI/EXEC transactions, because if there's
-// an error it won't discard the incomplete transaction. Use WithConn or
-// EvalScript for transactional functionality instead.
-func Pipeline(actions ...Action) Action {
-	return newPipeline(actions...)
-}
-
-// TODO making Pipeline a public type with Append and Reset methods might be a
-// good idea. For one it would allow for re-using the same Pipeline, negating
-// the need for an inner sync.Pool on it, and for another it could get rid of an
-// allocation because the user wouldn't need to allocate an []Action.
-
-func (p *pipeline) reset() {
-	p.actions = p.actions[:0]
-	p.mm = p.mm[:0]
-}
-
 var _ Conn = new(pipeline)
-
-func (p *pipeline) Properties() ActionProperties {
-	var ap ActionProperties
-	keySet := map[string]bool{}
-	for _, action := range p.actions {
-		for _, k := range action.Properties().Keys {
-			keySet[k] = true
-		}
-	}
-	ap.Keys = make([]string, 0, len(keySet))
-	for k := range keySet {
-		ap.Keys = append(ap.Keys, k)
-	}
-	return ap
-}
 
 func (p *pipeline) EncodeDecode(_ context.Context, m, u interface{}) error {
 	p.mm = append(p.mm, pipelineMarshalerUnmarshaler{
@@ -544,9 +531,61 @@ func (p *pipeline) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	return nil
 }
 
-func (p *pipeline) Perform(ctx context.Context, c Conn) error {
+// Pipeline is an Action which combines multiple commands into a single network
+// round-trip. Pipeline accumulates commands via its Append method. When
+// Pipeline is performed (i.e. passed into a Client's Do method) it will first
+// write all commands as a single write operation and then read all command
+// responses with a single read operation.
+//
+// Pipeline may be Reset in order to re-use an instance for multiple sets of
+// commands. A Pipeline may _not_ be performed multiple times without being
+// Reset in between.
+//
+// NOTE that, while a Pipeline performs all commands on a single Conn, it
+// shouldn't be used by itself for MULTI/EXEC transactions, because if there's
+// an error it won't discard the incomplete transaction. Use WithConn or
+// EvalScript for transactional functionality instead.
+type Pipeline struct {
+	pipeline
+}
+
+// NewPipeline returns a Pipeline instance to which Actions can be Appended.
+func NewPipeline() *Pipeline {
+	return &Pipeline{pipeline{
+		properties: ActionProperties{
+			CanPipeline: true, // obviously
+		},
+	}}
+}
+
+// Reset discards all Actions and resets all internal state. A Pipeline with
+// Reset called on it is equivalent to one returned by NewPipeline.
+func (p *Pipeline) Reset() {
+	p.actions = p.actions[:0]
+	p.mm = p.mm[:0]
+	p.properties.Keys = p.properties.Keys[:0]
+}
+
+// Append adds the Action to the end of the list of Actions to pipeline
+// together. This will panic if given an Action without the CanPipeline property
+// set to true.
+func (p *Pipeline) Append(a Action) {
+	props := a.Properties()
+	if !props.CanPipeline {
+		panic(fmt.Sprintf("can't pipeline Action of type %T: %+v", a, a))
+	}
+	p.properties.Keys = append(p.properties.Keys, props.Keys...)
+	p.actions = append(p.actions, a)
+}
+
+// Properties implements the method for the Action interface.
+func (p *Pipeline) Properties() ActionProperties {
+	return p.properties
+}
+
+// Perform implements the method for the Action interface.
+func (p *Pipeline) Perform(ctx context.Context, c Conn) error {
 	p.Conn = c
-	// TODO could this happen during reset?
 	defer func() { p.Conn = nil }()
 
 	for _, action := range p.actions {
