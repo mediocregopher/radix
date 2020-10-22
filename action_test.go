@@ -206,19 +206,15 @@ func TestEvalAction(t *T) {
 }
 
 func TestEvalActionWithInterfaceRcv(t *T)  {
-	getSet := NewEvalScript(1, `
-		local prev = redis.call("GET", KEYS[1])
-		redis.call("SET", KEYS[1], ARGV[1])
+	simpleScript := NewEvalScript(0, `
 		return 123
 		-- `+randStr() /* so there's an eval everytime */ +`
 	`)
 
 	c := dial()
-	key := randStr()
-	val := randStr()
 	{
 		var res interface{}
-		err := c.Do(getSet.Cmd(&res, key, val))
+		err := c.Do(simpleScript.Cmd(&res))
 		require.Nil(t, err)
 		assert.Equal(t, int64(123), res)
 	}
