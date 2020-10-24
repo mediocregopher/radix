@@ -30,8 +30,12 @@ type ActionProperties struct {
 	CanRetry bool
 
 	// CanPipeline indicates that an Action can be pipelined alongside other
-	// Actions for which this property is true.
+	// Actions for which this property is also true.
 	CanPipeline bool
+
+	// CanShareConn indicates that an Action can be Perform'd on a Conn
+	// concurrently with other Actions for which this property is also true.
+	CanShareConn bool
 }
 
 // Action performs a task using a Conn.
@@ -215,9 +219,11 @@ func (c *cmdAction) Properties() ActionProperties {
 }
 
 func (c *cmdAction) fillProperties() {
+	isBlocking := blockingCmds[strings.ToUpper(c.cmd)]
 	c.properties = ActionProperties{
-		CanRetry:    true,
-		CanPipeline: !blockingCmds[strings.ToUpper(c.cmd)],
+		CanRetry:     true,
+		CanPipeline:  !isBlocking,
+		CanShareConn: !isBlocking,
 	}
 	cmd := strings.ToUpper(c.cmd)
 	switch {
@@ -415,6 +421,8 @@ func (ec *evalAction) Properties() ActionProperties {
 		// performed. If done in a Pipeline there would be no opportunity to
 		// perform the second EVAL.
 		CanPipeline: false,
+
+		CanShareConn: true,
 	}
 }
 
@@ -553,7 +561,8 @@ type Pipeline struct {
 func NewPipeline() *Pipeline {
 	return &Pipeline{pipeline{
 		properties: ActionProperties{
-			CanPipeline: true, // obviously
+			CanPipeline:  true, // obviously
+			CanShareConn: true,
 		},
 	}}
 }
@@ -564,6 +573,7 @@ func (p *Pipeline) Reset() {
 	p.actions = p.actions[:0]
 	p.mm = p.mm[:0]
 	p.properties.Keys = p.properties.Keys[:0]
+	p.properties.CanShareConn = true
 }
 
 // Append adds the Action to the end of the list of Actions to pipeline
@@ -575,6 +585,7 @@ func (p *Pipeline) Append(a Action) {
 		panic(fmt.Sprintf("can't pipeline Action of type %T: %+v", a, a))
 	}
 	p.properties.Keys = append(p.properties.Keys, props.Keys...)
+	p.properties.CanShareConn = p.properties.CanShareConn && props.CanShareConn
 	p.actions = append(p.actions, a)
 }
 
