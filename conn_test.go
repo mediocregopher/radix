@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	. "testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +22,6 @@ func TestCloseBehavior(t *T) {
 
 	c.Close()
 	require.NotNil(t, c.Do(ctx, Cmd(&out, "ECHO", "foo")))
-	require.NotNil(t, c.NetConn().SetDeadline(time.Now()))
 }
 
 func TestDialURI(t *T) {

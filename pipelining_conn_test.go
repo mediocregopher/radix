@@ -1,12 +1,6 @@
 package radix
 
-import (
-	"context"
-	"testing"
-	"time"
-
-	"github.com/stretchr/testify/assert"
-)
+/*
 
 type pipeliningConnInner struct {
 	Conn
@@ -82,3 +76,5 @@ func TestPipeliningConn(t *testing.T) {
 	assert.Equal(t, 0, len(doneCh))
 	assert.Equal(t, 2, connInner.encDecCalls)
 }
+
+*/

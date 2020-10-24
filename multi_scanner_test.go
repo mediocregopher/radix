@@ -17,7 +17,7 @@ func TestClusterScanner(t *T) {
 		require.Nil(t, c.Do(ctx, Cmd(nil, "SET", k, "1")))
 	}
 
-	scanner := c.NewScanner(ScanAllKeys)
+	scanner := NewMultiScanner(c, ScanAllKeys)
 	var k string
 	got := map[string]bool{}
 	for scanner.Next(ctx, &k) {

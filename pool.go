@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"sync/atomic"
 	"time"
 
@@ -212,6 +213,8 @@ type Pool struct {
 	size          int
 	pool          chan *ioErrConn
 }
+
+var _ Client = new(Pool)
 
 // NewPool creates a *Pool which will keep open at least the given number of
 // connections to the redis instance at the given address.
@@ -511,7 +514,12 @@ func (p *Pool) drain() {
 	}
 }
 
-// Close implements the Close method of the Client
+// Addr implements the method for the Client interface.
+func (p *Pool) Addr() net.Addr {
+	return rawAddr{network: p.network, addr: p.addr}
+}
+
+// Close implements the method for the Client interface.
 func (p *Pool) Close() error {
 	return p.proc.Close(func() error {
 		p.drain()

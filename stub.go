@@ -13,22 +13,8 @@ import (
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
-type bufferAddr struct {
-	network, addr string
-}
-
-func (sa bufferAddr) Network() string {
-	return sa.network
-}
-
-func (sa bufferAddr) String() string {
-	return sa.addr
-}
-
-// in the end this is really just a complicated stub of net.Conn
 type buffer struct {
-	net.Conn   // always nil
-	remoteAddr bufferAddr
+	remoteAddr net.Addr
 
 	bufL   *sync.Cond
 	buf    *bytes.Buffer
@@ -39,7 +25,7 @@ type buffer struct {
 func newBuffer(remoteNetwork, remoteAddr string) *buffer {
 	buf := new(bytes.Buffer)
 	return &buffer{
-		remoteAddr: bufferAddr{network: remoteNetwork, addr: remoteAddr},
+		remoteAddr: rawAddr{network: remoteNetwork, addr: remoteAddr},
 		bufL:       sync.NewCond(new(sync.Mutex)),
 		buf:        buf,
 		bufbr:      bufio.NewReader(buf),
@@ -104,10 +90,6 @@ func (b *buffer) Close() error {
 	return nil
 }
 
-func (b *buffer) RemoteAddr() net.Addr {
-	return b.remoteAddr
-}
-
 func (b *buffer) err(op string, err error) error {
 	return &net.OpError{
 		Op:     op,
@@ -123,6 +105,7 @@ var errClosed = errors.New("use of closed network connection")
 ////////////////////////////////////////////////////////////////////////////////
 
 type stub struct {
+	network, addr string
 	*buffer
 	fn func([]string) interface{}
 }
@@ -142,6 +125,7 @@ type stub struct {
 //
 func NewStubConn(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn {
 	return &stub{
+		network: remoteNetwork, addr: remoteAddr,
 		buffer: newBuffer(remoteNetwork, remoteAddr),
 		fn:     fn,
 	}
@@ -193,6 +177,6 @@ func (s *stub) EncodeDecode(ctx context.Context, m, u interface{}) error {
 	return nil
 }
 
-func (s *stub) NetConn() net.Conn {
-	return s.buffer
+func (s *stub) Addr() net.Addr {
+	return rawAddr{network: s.network, addr: s.addr}
 }

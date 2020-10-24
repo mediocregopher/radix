@@ -31,10 +31,6 @@ type Conn interface {
 	// response into unmarshalInto (see resp3.Marshal and resp3.Unmarshal,
 	// respectively). If either parameter is nil then that step is skipped.
 	EncodeDecode(ctx context.Context, marshal, unmarshalInto interface{}) error
-
-	// Returns the underlying network connection, as-is. Read, Write, and Close
-	// should not be called on the returned Conn.
-	NetConn() net.Conn
 }
 
 // ConnFunc is a function which returns an initialized, ready-to-be-used Conn.
@@ -60,7 +56,7 @@ type connMarshalerUnmarshaler struct {
 type conn struct {
 	proc *proc.Proc
 
-	net.Conn
+	conn     net.Conn
 	brw      *bufio.ReadWriter
 	rCh, wCh chan connMarshalerUnmarshaler
 
@@ -69,13 +65,15 @@ type conn struct {
 	errChPool chan chan error
 }
 
+var _ Conn = new(conn)
+
 // NewConn takes an existing net.Conn and wraps it to support the Conn interface
 // of this package. The Read and Write methods on the original net.Conn should
 // not be used after calling this method.
 func NewConn(netConn net.Conn) Conn {
 	c := &conn{
 		proc:      proc.New(),
-		Conn:      netConn,
+		conn:      netConn,
 		brw:       bufio.NewReadWriter(bufio.NewReader(netConn), bufio.NewWriter(netConn)),
 		rCh:       make(chan connMarshalerUnmarshaler, 128),
 		wCh:       make(chan connMarshalerUnmarshaler, 128),
@@ -87,7 +85,7 @@ func NewConn(netConn net.Conn) Conn {
 }
 
 func (c *conn) Close() error {
-	return c.proc.PrefixedClose(c.Conn.Close, nil)
+	return c.proc.PrefixedClose(c.conn.Close, nil)
 }
 
 func (c *conn) newRESPOpts() *resp.Opts {
@@ -107,11 +105,11 @@ func (c *conn) writer(ctx context.Context) {
 					mu.errCh <- err
 					continue
 				} else if deadline, ok := mu.ctx.Deadline(); ok {
-					if err := c.Conn.SetWriteDeadline(deadline); err != nil {
+					if err := c.conn.SetWriteDeadline(deadline); err != nil {
 						mu.errCh <- fmt.Errorf("setting write deadline to %v: %w", deadline, err)
 						continue
 					}
-				} else if err := c.Conn.SetWriteDeadline(time.Time{}); err != nil {
+				} else if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
 					mu.errCh <- fmt.Errorf("unsetting write deadline: %w", err)
 					continue
 				}
@@ -153,11 +151,11 @@ func (c *conn) reader(ctx context.Context) {
 				mu.errCh <- err
 				continue
 			} else if deadline, ok := mu.ctx.Deadline(); ok {
-				if err := c.Conn.SetReadDeadline(deadline); err != nil {
+				if err := c.conn.SetReadDeadline(deadline); err != nil {
 					mu.errCh <- fmt.Errorf("setting read deadline to %v: %w", deadline, err)
 					continue
 				}
-			} else if err := c.Conn.SetReadDeadline(time.Time{}); err != nil {
+			} else if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
 				mu.errCh <- fmt.Errorf("unsetting read deadline: %w", err)
 				continue
 			}
@@ -230,8 +228,19 @@ func (c *conn) Do(ctx context.Context, a Action) error {
 	return a.Perform(ctx, c)
 }
 
-func (c *conn) NetConn() net.Conn {
-	return c.Conn
+func (c *conn) Addr() net.Addr {
+	return c.conn.RemoteAddr()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type connAddrWrap struct {
+	net.Conn
+	addr net.Addr
+}
+
+func (c connAddrWrap) RemoteAddr() net.Addr {
+	return c.addr
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -376,6 +385,14 @@ func Dial(ctx context.Context, network, addr string, opts ...DialOpt) (Conn, err
 	netConn, err := dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
+	}
+
+	// wrap the conn so that it will return exactly what was used for dialing
+	// when Addr is called. If Conn's RemoteAddr is used then it returns the
+	// fully resolved form of the host.
+	netConn = connAddrWrap{
+		Conn: netConn,
+		addr: rawAddr{network: network, addr: addr},
 	}
 
 	// If the netConn is a net.TCPConn (or some wrapper for it) and so can have

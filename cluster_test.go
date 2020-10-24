@@ -116,12 +116,16 @@ func TestClusterDo(t *T) {
 	// use doInner to hit the wrong node originally, Do should get a MOVED error
 	// and end up at the correct node
 	{
+		clients, err := c.Clients()
+		assert.NoError(t, err)
+
 		var vgot string
 		cmd := Cmd(&vgot, "GET", k)
 		require.Nil(t, c.doInner(clusterDoInnerParams{
 			ctx:      ctx,
 			action:   cmd,
 			addr:     stub16k.addr,
+			client:   clients[stub16k.addr].Primary,
 			key:      k,
 			attempts: doAttempts,
 		}))
@@ -276,13 +280,8 @@ func TestClusterDoSecondary(t *T) {
 	assert.Equal(t, value, res2)
 	assert.Equal(t, 1, redirects)
 
-	var secAddr string
-	for secAddr = range c.secondaries[c.addrForKey(key)] {
-		break
-	}
-	sec, err := c.Client(secAddr)
-	require.NoError(t, err)
-
+	sec, _, err := c.clientForKey(key, false, true)
+	assert.NoError(t, err)
 	assert.NoError(t, sec.Do(ctx, Cmd(nil, "READONLY")))
 	assert.Equal(t, 1, redirects)
 

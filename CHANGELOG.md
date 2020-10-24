@@ -45,6 +45,15 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * Rename `MaybeNil` to just `Maybe`, and change its semantics a bit.
 
+* Add `MultiClient` interface which is implemented by `Sentinel` and `Cluster`,
+  `Client` has been modified to be implemented only by clients which point at a
+  single redis instance (`Conn` and `Pool`). Multiple methods on all affected
+  client types have been modified to fit these new interfaces.
+
+* `Cluster.NewScanner` has been replaced by `NewMultiScanner`.
+
+* `Conn` no longer has a `NetConn` method.
+
 [resp3]: https://github.com/antirez/RESP3
 
 # v3.6.0

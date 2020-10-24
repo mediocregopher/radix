@@ -2,6 +2,7 @@ package radix
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -109,6 +110,8 @@ type Sentinel struct {
 	testSleepBeforeSwitch uint32
 }
 
+var _ MultiClient = new(Sentinel)
+
 // NewSentinel creates and returns a *Sentinel instance. NewSentinel takes in a
 // number of options which can overwrite its default behavior. The default
 // options NewSentinel uses are:
@@ -126,6 +129,7 @@ func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string
 		proc:          proc.New(),
 		initAddrs:     sentinelAddrs,
 		name:          primaryName,
+		clients:       map[string]Client{},
 		sentinelAddrs: addrs,
 		pconnCh:       make(chan PubSubMessage, 1),
 		testEventCh:   make(chan string, 1),
@@ -215,86 +219,61 @@ func (sc *Sentinel) dialSentinel(ctx context.Context) (conn Conn, err error) {
 	return
 }
 
-// Do implements the method for the Client interface. It will pass the given
-// action on to the current primary.
-//
-// NOTE it's possible that in between Do being called and the Action being
-// actually carried out that there could be a failover event. In that case, the
-// Action will likely fail and return an error.
+// Do implements the method for the Client interface. It will perform the given
+// Action on the current primary.
 func (sc *Sentinel) Do(ctx context.Context, a Action) error {
 	return sc.proc.WithRLock(func() error {
 		return sc.clients[sc.primAddr].Do(ctx, a)
 	})
 }
 
-// DoSecondary is like Do but executes the Action on a random replica if possible.
+// DoSecondary implements the method for the Client interface. It will perform
+// the given Action on a random secondary, or the primary if no secondary is
+// available.
 //
 // For DoSecondary to work, replicas must be configured with replica-read-only
 // enabled, otherwise calls to DoSecondary may by rejected by the replica.
-//
-// NOTE it's possible that in between DoSecondary being called and the Action being
-// actually carried out that there could be a failover event. In that case, the
-// Action will likely fail and return an error.
 func (sc *Sentinel) DoSecondary(ctx context.Context, a Action) error {
-	c, err := sc.clientInner(ctx, "")
+	c, err := sc.client(ctx, "")
 	if err != nil {
 		return err
 	}
 	return c.Do(ctx, a)
 }
 
-// Addrs returns the currently known network address of the current primary
-// instance and the addresses of the secondaries.
-func (sc *Sentinel) Addrs() (primAddr string, secAddrs []string) {
-	// if the proc is closed already then this method will merely return empty
-	// results.  We could have it return an error, but that doesn't seem worth
-	// the effort.
-	_ = sc.proc.WithRLock(func() error {
-		primAddr = sc.primAddr
-		secAddrs = make([]string, 0, len(sc.clients))
-		for addr := range sc.clients {
+// Clients implements the method for the MultiClient interface. The returned map
+// will only ever have one key/value pair.
+func (sc *Sentinel) Clients() (map[string]ReplicaSet, error) {
+	m := map[string]ReplicaSet{}
+	err := sc.proc.WithRLock(func() error {
+		var rs ReplicaSet
+		for addr, client := range sc.clients {
 			if addr == sc.primAddr {
-				continue
+				rs.Primary = client
+			} else {
+				rs.Secondaries = append(rs.Secondaries, client)
 			}
-			secAddrs = append(secAddrs, addr)
 		}
+		m[sc.primAddr] = rs
 		return nil
 	})
-	return
+	return m, err
 }
 
 // SentinelAddrs returns the addresses of all known sentinels.
-func (sc *Sentinel) SentinelAddrs() (sentAddrs []string) {
-	// if the proc is closed already then this method will merely return empty
-	// results.  We could have it return an error, but that doesn't seem worth
-	// the effort.
-	_ = sc.proc.WithRLock(func() error {
+func (sc *Sentinel) SentinelAddrs() ([]string, error) {
+	var sentAddrs []string
+	err := sc.proc.WithRLock(func() error {
 		sentAddrs = make([]string, 0, len(sc.sentinelAddrs))
 		for addr := range sc.sentinelAddrs {
 			sentAddrs = append(sentAddrs, addr)
 		}
 		return nil
 	})
-	return
+	return sentAddrs, err
 }
 
-// Client returns a Client for the given address, which could be either the
-// primary or one of the secondaries (see Addrs method for retrieving known
-// addresses).
-//
-// NOTE that if there is a failover while a Client returned by this method is
-// being used the Client may or may not continue to work as expected, depending
-// on the nature of the failover.
-//
-// NOTE the Client should _not_ be closed.
-func (sc *Sentinel) Client(ctx context.Context, addr string) (Client, error) {
-	if addr == "" {
-		return nil, errUnknownAddress
-	}
-	return sc.clientInner(ctx, addr)
-}
-
-func (sc *Sentinel) clientInner(ctx context.Context, addr string) (Client, error) {
+func (sc *Sentinel) client(ctx context.Context, addr string) (Client, error) {
 	var client Client
 	err := sc.proc.WithRLock(func() error {
 		if addr == "" {
@@ -303,11 +282,9 @@ func (sc *Sentinel) clientInner(ctx context.Context, addr string) (Client, error
 					break
 				}
 			}
-		} else {
-			var ok bool
-			if client, ok = sc.clients[addr]; !ok {
-				return errUnknownAddress
-			}
+		}
+		if client == nil {
+			client = sc.clients[sc.primAddr]
 		}
 		return nil
 	})
@@ -315,6 +292,8 @@ func (sc *Sentinel) clientInner(ctx context.Context, addr string) (Client, error
 		return nil, err
 	} else if client != nil {
 		return client, nil
+	} else if addr == "" {
+		return nil, errors.New("no Clients available")
 	}
 
 	// if client was nil but ok was true it means the address is a secondary but
@@ -392,21 +371,23 @@ func (sc *Sentinel) ensureClients(ctx context.Context, conn Conn) error {
 		newClients[newSecAddr] = nil
 	}
 
-	return sc.setClients(ctx, newPrimAddr, newClients)
-}
-
-// all values of newClients should be nil
-func (sc *Sentinel) setClients(ctx context.Context, newPrimAddr string, newClients map[string]Client) error {
-	newClients[newPrimAddr] = nil
-	var toClose []Client
-	var stateChanged bool
-
-	prevTraceNodes := map[string]trace.SentinelNodeInfo{}
+	// ensure all current clients exist
 	newTraceNodes := map[string]trace.SentinelNodeInfo{}
+	for addr := range newClients {
+		client, err := sc.client(ctx, addr)
+		if err != nil {
+			return fmt.Errorf("error creating client for %q: %w", addr, err)
+		}
+		newClients[addr] = client
+		newTraceNodes[addr] = trace.SentinelNodeInfo{
+			Addr:      addr,
+			IsPrimary: addr == newPrimAddr,
+		}
+	}
 
-	err := sc.proc.WithRLock(func() error {
-		// stateChanged may be set to true in other ways later in the method
-		stateChanged = sc.primAddr != newPrimAddr
+	var toClose []Client
+	prevTraceNodes := map[string]trace.SentinelNodeInfo{}
+	err = sc.proc.WithLock(func() error {
 
 		// for each actual Client instance in sc.client, either move it over to
 		// newClients (if the address is shared) or make sure it is closed
@@ -416,60 +397,26 @@ func (sc *Sentinel) setClients(ctx context.Context, newPrimAddr string, newClien
 				IsPrimary: addr == sc.primAddr,
 			}
 
-			if client == nil {
-				// do nothing
-			} else if _, ok := newClients[addr]; ok {
+			if _, ok := newClients[addr]; ok {
 				newClients[addr] = client
 			} else {
 				toClose = append(toClose, client)
 			}
-
-			// separately, if the newClients doesn't have the address it means
-			// the state has changed
-			if _, ok := newClients[addr]; !ok {
-				stateChanged = true
-			}
 		}
 
-		// this only checks if a client was added so we know the replica set
-		// state has changed later in the method.
-		for addr := range newClients {
-			if _, ok := sc.clients[addr]; !ok {
-				stateChanged = true
-			}
-			newTraceNodes[addr] = trace.SentinelNodeInfo{
-				Addr:      addr,
-				IsPrimary: addr == newPrimAddr,
-			}
-		}
-		return nil
-	})
-
-	if err != nil || !stateChanged {
-		return err
-	}
-
-	// if the primary doesn't have a client created, create it here outside the
-	// lock where it won't block everything else
-	if newClients[newPrimAddr] == nil {
-		var err error
-		if newClients[newPrimAddr], err = sc.opts.pf(ctx, "tcp", newPrimAddr); err != nil {
-			return err
-		}
-	}
-
-	if err = sc.proc.WithLock(func() error {
 		sc.primAddr = newPrimAddr
 		sc.clients = newClients
+
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
 	for _, client := range toClose {
 		client.Close()
 	}
-
+	sc.traceTopoChanged(prevTraceNodes, newTraceNodes)
 	return nil
 }
 
@@ -511,7 +458,7 @@ func (sc *Sentinel) ensureSentinelAddrs(ctx context.Context, conn Conn) error {
 		return err
 	}
 
-	addrs := map[string]bool{conn.NetConn().RemoteAddr().String(): true}
+	addrs := map[string]bool{conn.Addr().String(): true}
 	for _, m := range mm {
 		addrs[net.JoinHostPort(m["ip"], m["port"])] = true
 	}

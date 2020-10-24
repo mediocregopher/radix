@@ -1,12 +1,6 @@
 package radix
 
-import (
-	"context"
-	"net"
-	"time"
-
-	"github.com/mediocregopher/radix/v4/internal/proc"
-)
+/*
 
 type pipeliningConnOpts struct {
 	batchSize int
@@ -219,3 +213,5 @@ func (pc *pipeliningConn) EncodeDecode(ctx context.Context, m, u interface{}) er
 func (pc *pipeliningConn) NetConn() net.Conn {
 	return pc.conn.NetConn()
 }
+
+*/

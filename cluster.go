@@ -132,11 +132,14 @@ type Cluster struct {
 	secondaries    map[string]map[string]ClusterNode
 }
 
+var _ MultiClient = new(Cluster)
+
 // DefaultClusterConnFunc is a ConnFunc which will return a Conn for a node in a
-// redis cluster using sane defaults and which has READONLY mode enabled, allowing
-// read-only commands on the connection even if the connected instance is currently
-// a replica, either by explicitly sending commands on the connection or by using
-// the DoSecondary method on the Cluster that owns the connection.
+// redis cluster using sane defaults and which has READONLY mode enabled,
+// allowing read-only commands on the connection even if the connected instance
+// is currently a replica, either by explicitly sending commands on the
+// connection or by using the DoSecondary method on the Cluster that owns the
+// connection.
 var DefaultClusterConnFunc = func(ctx context.Context, network, addr string) (Conn, error) {
 	c, err := DefaultConnFunc(ctx, network, addr)
 	if err != nil {
@@ -236,7 +239,7 @@ func (c *Cluster) rpool(addr string) (client Client, err error) {
 			for _, client = range c.pools {
 				return nil
 			}
-			return errors.New("no pools available")
+			return errors.New("no Clients available")
 		}
 		client, _ = c.pools[addr]
 		return nil
@@ -311,6 +314,31 @@ func (c *Cluster) Topo() ClusterTopo {
 		return nil
 	})
 	return topo
+}
+
+// Clients implements the method for the MultiClient interface.
+func (c *Cluster) Clients() (map[string]ReplicaSet, error) {
+	m := map[string]ReplicaSet{}
+	err := c.proc.WithRLock(func() error {
+		for primAddr, secondaries := range c.secondaries {
+			primClient, ok := c.pools[primAddr]
+			if !ok {
+				return fmt.Errorf("no available Client for primary %q", primAddr)
+			}
+			rs := ReplicaSet{Primary: primClient}
+
+			for secAddr := range secondaries {
+				secClient, ok := c.pools[secAddr]
+				if !ok {
+					return fmt.Errorf("no available Client for secondary %q (secondary of %q)", secAddr, primAddr)
+				}
+				rs.Secondaries = append(rs.Secondaries, secClient)
+			}
+			m[primAddr] = rs
+		}
+		return nil
+	})
+	return m, err
 }
 
 func (c *Cluster) getTopo(ctx context.Context, p Client) (ClusterTopo, error) {
@@ -399,7 +427,7 @@ func (c *Cluster) sync(ctx context.Context, p Client) error {
 	for _, t := range tt {
 		// call pool just to ensure one exists for this addr
 		if _, err := c.pool(ctx, t.Addr); err != nil {
-			return fmt.Errorf("error connecting to %s: %w", t.Addr, err)
+			return fmt.Errorf("error creating client for %q: %w", t.Addr, err)
 		}
 	}
 
@@ -460,34 +488,49 @@ func (c *Cluster) syncEvery(ctx context.Context) {
 	}
 }
 
-func (c *Cluster) addrForKey(key string) string {
-	s := ClusterSlot([]byte(key))
+func (c *Cluster) clientForKey(key string, random, secondary bool) (Client, string, error) {
 	var addr string
-	_ = c.proc.WithRLock(func() error {
-		for _, t := range c.primTopo {
-			for _, slot := range t.Slots {
-				if s >= slot[0] && s < slot[1] {
-					addr = t.Addr
-					return nil
+	var client Client
+	err := c.proc.WithRLock(func() error {
+		var primAddr string
+		if random {
+			for _, primNode := range c.primTopo {
+				primAddr = primNode.Addr
+				break
+			}
+		} else {
+			s := ClusterSlot([]byte(key))
+		loop:
+			for _, t := range c.primTopo {
+				for _, slot := range t.Slots {
+					if s >= slot[0] && s < slot[1] {
+						primAddr = t.Addr
+						break loop
+					}
 				}
 			}
 		}
-		return nil
-	})
-	return addr
-}
 
-func (c *Cluster) secondaryAddrForKey(key string) string {
-	var addr string
-	_ = c.proc.WithRLock(func() error {
-		primAddr := c.addrForKey(key)
-		for addr = range c.secondaries[primAddr] {
-			return nil
+		if primAddr == "" {
+			return fmt.Errorf("could not find primary address for key %q", key)
+		} else if secondary {
+			for addr = range c.secondaries[primAddr] {
+				break
+			}
 		}
-		addr = primAddr
+		if addr == "" {
+			addr = primAddr
+		}
+
+		client = c.pools[addr]
 		return nil
 	})
-	return addr
+	if err != nil {
+		return nil, "", err
+	} else if client == nil {
+		return nil, "", fmt.Errorf("no Client available for key %q (address:%q)", key, addr)
+	}
+	return client, addr, nil
 }
 
 type prefixAsking struct {
@@ -528,49 +571,69 @@ const doAttempts = 5
 //
 // This method handles MOVED and ASK errors automatically in most cases.
 func (c *Cluster) Do(ctx context.Context, a Action) error {
+	var client Client
+	var err error
 	var addr, key string
 	keys := a.Properties().Keys
 	if len(keys) == 0 {
-		// that's ok, key will then just be ""
+		if client, addr, err = c.clientForKey("", true, false); err != nil {
+			return err
+		}
+		// key will be ""
 	} else if err := assertKeysSlot(keys); err != nil {
 		return err
 	} else {
 		key = keys[0]
-		addr = c.addrForKey(key)
+		if client, addr, err = c.clientForKey(key, false, false); err != nil {
+			return err
+		}
 	}
 
 	return c.doInner(clusterDoInnerParams{
 		ctx:      ctx,
 		action:   a,
+		client:   client,
 		addr:     addr,
 		key:      key,
 		attempts: doAttempts,
 	})
 }
 
-// DoSecondary is like Do but executes the Action on a random secondary for the affected keys.
+// DoSecondary implements the method for the Client interface. It will perform
+// the Action on a random secondary for the affected keys, or the primary if no
+// secondary is available.
 //
-// For DoSecondary to work, all connections must be created in read-only mode, by using a
-// custom ClusterPoolFunc that executes the READONLY command on each new connection.
+// For DoSecondary to work, all connections must be created in read-only mode,
+// by using a custom ClusterPoolFunc that executes the READONLY command on each
+// new connection.
 //
 // See ClusterPoolFunc for an example using the global DefaultClusterConnFunc.
 //
-// If the Action can not be handled by a secondary the Action will be send to the primary instead.
+// If the Action can not be handled by a secondary the Action will be send to
+// the primary instead.
 func (c *Cluster) DoSecondary(ctx context.Context, a Action) error {
+	var client Client
+	var err error
 	var addr, key string
 	keys := a.Properties().Keys
 	if len(keys) == 0 {
-		// that's ok, key will then just be ""
+		if client, addr, err = c.clientForKey("", true, true); err != nil {
+			return err
+		}
+		// key will be ""
 	} else if err := assertKeysSlot(keys); err != nil {
 		return err
 	} else {
 		key = keys[0]
-		addr = c.secondaryAddrForKey(key)
+		if client, addr, err = c.clientForKey(key, false, true); err != nil {
+			return err
+		}
 	}
 
 	return c.doInner(clusterDoInnerParams{
 		ctx:      ctx,
 		action:   a,
+		client:   client,
 		addr:     addr,
 		key:      key,
 		attempts: doAttempts,
@@ -667,6 +730,7 @@ type clusterDoInnerParams struct {
 	ctx       context.Context
 	action    Action
 	addr, key string
+	client    Client
 	ask       bool
 	attempts  int
 }
@@ -685,11 +749,6 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 		}
 	}
 
-	p, err := c.pool(params.ctx, params.addr)
-	if err != nil {
-		return err
-	}
-
 	// We only need to use WithConn if we want to send an ASKING command before
 	// our Action a. If ask is false we can thus skip the WithConn call, which
 	// avoids a few allocations, and execute our Action directly on p. This
@@ -703,7 +762,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 		})
 	}
 
-	err = p.Do(params.ctx, thisA)
+	err := params.client.Do(params.ctx, thisA)
 	if err == nil {
 		c.setClusterDown(false)
 		return nil
@@ -754,6 +813,9 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 
 	ogAddr := params.addr
 	params.addr = msgParts[2]
+	if params.client, err = c.pool(params.ctx, params.addr); err != nil {
+		return err
+	}
 
 	c.traceRedirected(
 		params.ctx,
