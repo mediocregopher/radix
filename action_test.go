@@ -220,6 +220,21 @@ func TestEvalAction(t *T) {
 	}
 }
 
+func TestEvalActionWithInterfaceRcv(t *T) {
+	simpleScript := NewEvalScript(`
+		return 123
+		-- ` + randStr() /* so there's an eval everytime */ + `
+	`)
+
+	c := dial()
+	{
+		var res interface{}
+		err := c.Do(testCtx(t), simpleScript.Cmd(&res, nil))
+		require.Nil(t, err)
+		assert.Equal(t, int64(123), res)
+	}
+}
+
 func ExampleEvalScript() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
