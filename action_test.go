@@ -205,6 +205,21 @@ func TestEvalAction(t *T) {
 	}
 }
 
+func TestEvalActionWithInterfaceRcv(t *T)  {
+	simpleScript := NewEvalScript(0, `
+		return 123
+		-- `+randStr() /* so there's an eval everytime */ +`
+	`)
+
+	c := dial()
+	{
+		var res interface{}
+		err := c.Do(simpleScript.Cmd(&res))
+		require.Nil(t, err)
+		assert.Equal(t, int64(123), res)
+	}
+}
+
 func ExampleEvalScript() {
 	// set as a global variable, this script is equivalent to the builtin GETSET
 	// redis command

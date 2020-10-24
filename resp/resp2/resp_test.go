@@ -459,6 +459,7 @@ func TestAnyUnmarshal(t *T) {
 			// Err
 			{in: "-ohey\r\n", out: "", shouldErr: "ohey"},
 			{in: "-ohey\r\n", out: nil, shouldErr: "ohey"},
+			{in: "-ohey\r\n", preloadEmpty: true, out: interface{}(nil), shouldErr: "ohey"},
 
 			// Int
 			{in: ":1024\r\n", out: "1024"},

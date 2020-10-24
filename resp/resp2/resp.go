@@ -824,7 +824,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 	// read from the reader. If an *interface{} is given we instead unmarshal
 	// into a default (created based on the type of th message), then set the
 	// *interface{} to that
-	if ai, ok := a.I.(*interface{}); ok {
+	if ai, ok := a.I.(*interface{}); ok && prefix != ErrorPrefix[0] {
 		innerA := Any{I: saneDefault(prefix)}
 		if err := innerA.UnmarshalRESP(br); err != nil {
 			return err
