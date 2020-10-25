@@ -73,7 +73,7 @@ func (f *flattener) flatten(i interface{}) error {
 		s := strconv.FormatFloat(float64(i), 'f', -1, 32)
 		return f.emit(cleanFloatStr(s))
 	case float64:
-		s := strconv.FormatFloat(float64(i), 'f', -1, 64)
+		s := strconv.FormatFloat(i, 'f', -1, 64)
 		return f.emit(cleanFloatStr(s))
 	case *big.Float:
 		return f.flatten(*i)

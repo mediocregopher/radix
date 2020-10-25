@@ -717,7 +717,7 @@ type VerbatimStringBytes struct {
 func (b VerbatimStringBytes) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	if len(b.Format) != 3 {
 		return resp.ErrConnUsable{
-			Err: errors.New("Format field must be exactly 3 characters"),
+			Err: errors.New("format must be exactly 3 characters"),
 		}
 	}
 	scratch := o.GetBytes()
@@ -775,7 +775,7 @@ type VerbatimString struct {
 func (b VerbatimString) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	if len(b.Format) != 3 {
 		return resp.ErrConnUsable{
-			Err: errors.New("Format field must be exactly 3 characters"),
+			Err: errors.New("format must be exactly 3 characters"),
 		}
 	}
 	scratch := o.GetBytes()
@@ -1872,7 +1872,6 @@ func unmarshalSingle(body io.Reader, n int, rcv interface{}, o *resp.Opts) error
 		var f float64
 		f, err = bytesutil.ReadFloat(body, 64, n, scratch)
 		*ai = f != 0
-		break
 	case *int:
 		i, err = bytesutil.ReadInt(body, n, scratch)
 		*ai = int(i)
@@ -2416,70 +2415,4 @@ func (rm RawMessage) IsStreamedHeader() bool {
 		return bytes.Equal(rm[1:], streamedHeaderTail)
 	}
 	return false
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-// rawMsgs is like RawMessage except that it can contain one or more individual
-// RESP messages.
-type rawMsgs []byte
-
-func (rm rawMsgs) next() (RawMessage, rawMsgs, error) {
-	if len(rm) == 0 {
-		return nil, nil, io.EOF
-	}
-
-	i := bytes.Index(rm, delim)
-	if i < 0 {
-		return nil, nil, fmt.Errorf("malformed RESP message %q", rm)
-	}
-
-	prefix := Prefix(rm[0])
-	switch prefix {
-	case BlobStringPrefix, BlobErrorPrefix, VerbatimStringPrefix,
-		StreamedStringChunkPrefix:
-		body := rm[1:i]
-		l, err := bytesutil.ParseInt(body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("could not parse %q as int64: %v", body, err)
-		} else if l >= 0 {
-			i += int(l) + len(delim)
-		}
-	}
-
-	return RawMessage(rm[:i+len(delim)]), rm[i+len(delim):], nil
-}
-
-func (rm rawMsgs) numElems() (int, error) {
-	var n int
-	for {
-		var body RawMessage
-		var err error
-		body, rm, err = rm.next()
-		if errors.Is(err, io.EOF) {
-			return n, nil
-		} else if err != nil {
-			return 0, err
-		}
-
-		prefix := Prefix(body[0])
-		if prefix == BlobErrorPrefix && body.IsStreamedHeader() {
-			return 0, errors.New("cannot determine number of elements of streamed blob string")
-		} else if body.IsNull() {
-			n++
-			continue
-		}
-
-		switch prefix {
-		case BlobStringPrefix, SimpleStringPrefix, SimpleErrorPrefix,
-			NumberPrefix, NullPrefix, DoublePrefix, BooleanPrefix,
-			BlobErrorPrefix, VerbatimStringPrefix, BigNumberPrefix:
-			n++
-		case ArrayHeaderPrefix, MapHeaderPrefix, SetHeaderPrefix,
-			AttributeHeaderPrefix, PushHeaderPrefix:
-			// no increment
-		default:
-			return 0, fmt.Errorf("cannot determine number of elements in RawMessage with prefix %v", prefix)
-		}
-	}
 }

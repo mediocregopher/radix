@@ -20,7 +20,6 @@ type Proc struct {
 	ctxDoneCh   <-chan struct{}
 
 	closeOnce sync.Once
-	closeErr  error
 	closed    bool
 	wg        sync.WaitGroup
 

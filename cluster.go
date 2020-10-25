@@ -241,7 +241,7 @@ func (c *Cluster) rpool(addr string) (client Client, err error) {
 			}
 			return errors.New("no Clients available")
 		}
-		client, _ = c.pools[addr]
+		client = c.pools[addr]
 		return nil
 	})
 	return

@@ -25,10 +25,6 @@ type TestStructInner struct {
 	Boz *int64
 }
 
-func intPtr(i int) *int {
-	return &i
-}
-
 type testStructA struct {
 	TestStructInner
 	Biz []byte
@@ -37,10 +33,6 @@ type testStructA struct {
 type testStructB struct {
 	*TestStructInner
 	Biz []byte
-}
-
-type testStructC struct {
-	Biz *string
 }
 
 type textCP []byte
@@ -258,8 +250,8 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 		kases := setReversable(prefix == DoublePrefix, []kase{
 			{ie: ie{float32(0), float32(f)}},
 			{ie: ie{float32(1), float32(f)}},
-			{ie: ie{float64(0), float64(f)}},
-			{ie: ie{float64(1), float64(f)}},
+			{ie: ie{float64(0), f}},
+			{ie: ie{float64(1), f}},
 			{ie: ie{(*float64)(nil), fltPtr(f)}},
 			{ie: ie{fltPtr(0), fltPtr(f)}},
 			{ie: ie{fltPtr(1), fltPtr(f)}},
@@ -294,12 +286,12 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 			{ie: ie{int8(0), int8(i)}},
 			{ie: ie{int16(0), int16(i)}},
 			{ie: ie{int32(0), int32(i)}},
-			{ie: ie{int64(0), int64(i)}},
+			{ie: ie{int64(0), i}},
 			{ie: ie{int(1), int(i)}},
 			{ie: ie{int8(1), int8(i)}},
 			{ie: ie{int16(1), int16(i)}},
 			{ie: ie{int32(1), int32(i)}},
-			{ie: ie{int64(1), int64(i)}},
+			{ie: ie{int64(1), i}},
 			{ie: ie{(*int64)(nil), intPtr(i)}},
 			{ie: ie{intPtr(0), intPtr(i)}},
 			{ie: ie{intPtr(1), intPtr(i)}},

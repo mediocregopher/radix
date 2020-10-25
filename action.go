@@ -476,7 +476,6 @@ type pipelineMarshalerUnmarshaler struct {
 // pipeline contains all the fields of Pipeline as well as some methods we'd
 // rather not expose to users.
 type pipeline struct {
-	actions    []Action
 	mm         []pipelineMarshalerUnmarshaler
 	properties ActionProperties
 
@@ -554,12 +553,13 @@ func (p *pipeline) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 // an error it won't discard the incomplete transaction. Use WithConn or
 // EvalScript for transactional functionality instead.
 type Pipeline struct {
+	actions []Action
 	pipeline
 }
 
 // NewPipeline returns a Pipeline instance to which Actions can be Appended.
 func NewPipeline() *Pipeline {
-	return &Pipeline{pipeline{
+	return &Pipeline{pipeline: pipeline{
 		properties: ActionProperties{
 			CanPipeline:  true, // obviously
 			CanShareConn: true,

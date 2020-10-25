@@ -230,17 +230,6 @@ func TestSentinel(t *T) {
 	require.NoError(t, scc.Close())
 }
 
-type stubSentinelPool struct {
-	Client // to inherit, but not use
-	addr   string
-	closed bool
-}
-
-func (ssp *stubSentinelPool) Close() error {
-	ssp.closed = true
-	return nil
-}
-
 func TestSentinelSecondaryRead(t *T) {
 	ctx := testCtx(t)
 	stub := newSentinelStub(
