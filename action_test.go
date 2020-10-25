@@ -205,7 +205,7 @@ func TestEvalAction(t *T) {
 	}
 }
 
-func TestEvalActionWithInterfaceRcv(t *T)  {
+func TestEvalActionWithInterfaceRcv(t *T) {
 	simpleScript := NewEvalScript(0, `
 		return 123
 		-- `+randStr() /* so there's an eval everytime */ +`

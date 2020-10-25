@@ -223,7 +223,7 @@ func TestClusterEval(t *T) {
 	assert.Equal(t, "EVAL: success!", rcv)
 }
 
-func TestClusterEvalRcvInterface(t *T)  {
+func TestClusterEvalRcvInterface(t *T) {
 	c, scl := newTestCluster()
 	defer c.Close()
 	key := clusterSlotKeys[0]
