@@ -18,19 +18,18 @@ import (
 	"github.com/mediocregopher/radix/v4/trace"
 )
 
-func testPoolWithTrace(t *T, size int, poolTrace trace.PoolTrace, opts ...PoolOpt) *Pool {
+func testPool(t *T, cfg PoolConfig) *Pool {
 	initDoneCh := make(chan struct{})
-	prevInitCompleted := poolTrace.InitCompleted
-	poolTrace.InitCompleted = func(pic trace.PoolInitCompleted) {
+	prevInitCompleted := cfg.Trace.InitCompleted
+	cfg.Trace.InitCompleted = func(pic trace.PoolInitCompleted) {
 		if prevInitCompleted != nil {
 			prevInitCompleted(pic)
 		}
 		close(initDoneCh)
 	}
-	opts = append(opts, PoolWithTrace(poolTrace))
 
 	ctx := testCtx(t)
-	pool, err := NewPool(ctx, "tcp", "localhost:6379", size, opts...)
+	pool, err := cfg.New(ctx, "tcp", "localhost:6379")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,10 +38,6 @@ func testPoolWithTrace(t *T, size int, poolTrace trace.PoolTrace, opts ...PoolOp
 		pool.Close()
 	})
 	return pool
-}
-
-func testPool(t *T, size int, opts ...PoolOpt) *Pool {
-	return testPoolWithTrace(t, size, trace.PoolTrace{}, opts...)
 }
 
 func TestPool(t *T) {
@@ -55,13 +50,13 @@ func TestPool(t *T) {
 		return nil
 	}
 
-	doWithTrace := func(t *T, poolTrace trace.PoolTrace, opts ...PoolOpt) {
+	do := func(t *T, cfg PoolConfig) {
 		ctx := testCtx(t)
-		opts = append(opts, PoolOnFullClose())
-		size := 10
-		pool := testPoolWithTrace(t, size, poolTrace, opts...)
+		cfg.OverflowBufferSize = -1
+		cfg.Size = 10
+		pool := testPool(t, cfg)
 		var wg sync.WaitGroup
-		for i := 0; i < size*4; i++ {
+		for i := 0; i < cfg.Size*4; i++ {
 			wg.Add(1)
 			go func() {
 				for i := 0; i < 100; i++ {
@@ -71,35 +66,36 @@ func TestPool(t *T) {
 			}()
 		}
 		wg.Wait()
-		assert.Equal(t, size, pool.NumAvailConns())
+		assert.Equal(t, cfg.Size, pool.NumAvailConns())
 		pool.Close()
 		assert.Equal(t, 0, pool.NumAvailConns())
 	}
 
-	do := func(t *T, opts ...PoolOpt) {
-		doWithTrace(t, trace.PoolTrace{}, opts...)
-	}
-
-	t.Run("onEmptyWait", func(t *T) { do(t, PoolOnEmptyWait()) })
-	t.Run("onEmptyCreate", func(t *T) { do(t, PoolOnEmptyCreateAfter(0)) })
-	t.Run("onEmptyCreateAfter", func(t *T) { do(t, PoolOnEmptyCreateAfter(1*time.Second)) })
-	// This one is expected to error, since this test empties the pool by design
-	//t.Run("onEmptyErr", func(t *T) { do(PoolOnEmptyErrAfter(0)) })
-	t.Run("onEmptyErrAfter", func(t *T) { do(t, PoolOnEmptyErrAfter(1*time.Second)) })
+	t.Run("onEmptyWaitIndefinitely", func(t *T) {
+		do(t, PoolConfig{OnEmptyCreateAfter: -1})
+	})
+	t.Run("onEmptyCreateImmediately", func(t *T) {
+		do(t, PoolConfig{OnEmptyCreateImmediately: true})
+	})
+	t.Run("onEmptyCreateAfter", func(t *T) {
+		do(t, PoolConfig{OnEmptyCreateAfter: 1 * time.Second})
+	})
 
 	t.Run("withTrace", func(t *T) {
 		var connCreatedCount int
 		var connClosedCount int
 		var initializedAvailCount int
-		doWithTrace(t, trace.PoolTrace{
-			ConnCreated: func(done trace.PoolConnCreated) {
-				connCreatedCount++
-			},
-			ConnClosed: func(closed trace.PoolConnClosed) {
-				connClosedCount++
-			},
-			InitCompleted: func(completed trace.PoolInitCompleted) {
-				initializedAvailCount = completed.AvailCount
+		do(t, PoolConfig{
+			Trace: trace.PoolTrace{
+				ConnCreated: func(done trace.PoolConnCreated) {
+					connCreatedCount++
+				},
+				ConnClosed: func(closed trace.PoolConnClosed) {
+					connClosedCount++
+				},
+				InitCompleted: func(completed trace.PoolInitCompleted) {
+					initializedAvailCount = completed.AvailCount
+				},
 			},
 		})
 		if initializedAvailCount != 10 {
@@ -121,8 +117,11 @@ func TestPoolGet(t *T) {
 	}
 
 	// this one is a bit weird, cause it would block infinitely if we let it
-	t.Run("onEmptyWait", func(t *T) {
-		pool := testPool(t, 1, PoolOnEmptyWait())
+	t.Run("onEmptyWaitIndefinitely", func(t *T) {
+		pool := testPool(t, PoolConfig{
+			Size:               1,
+			OnEmptyCreateAfter: -1,
+		})
 		conn, err := pool.get(ctx)
 		assert.NoError(t, err)
 
@@ -136,31 +135,32 @@ func TestPoolGet(t *T) {
 	})
 
 	// the rest are pretty straightforward
-	gen := func(mkOpt func(time.Duration) PoolOpt, d time.Duration, expErr error) func(*T) {
+	gen := func(cfg PoolConfig, d time.Duration, expErr error) func(*T) {
 		return func(t *T) {
-			pool := testPool(t, 0, PoolOnFullClose(), mkOpt(d))
+			cfg.OverflowBufferSize = -1
+			cfg.Size = -1
+			pool := testPool(t, cfg)
 			took, err := getBlock(pool)
 			assert.Equal(t, expErr, err)
 			assert.True(t, took-d < 20*time.Millisecond)
 		}
 	}
 
-	t.Run("onEmptyCreate", gen(PoolOnEmptyCreateAfter, 0, nil))
-	t.Run("onEmptyCreateAfter", gen(PoolOnEmptyCreateAfter, 1*time.Second, nil))
-	t.Run("onEmptyErr", gen(PoolOnEmptyErrAfter, 0, ErrPoolEmpty))
-	t.Run("onEmptyErrAfter", gen(PoolOnEmptyErrAfter, 1*time.Second, ErrPoolEmpty))
+	t.Run("onEmptyCreateImmediately", gen(PoolConfig{OnEmptyCreateImmediately: true}, 0, nil))
+	t.Run("onEmptyCreateAfter", gen(PoolConfig{OnEmptyCreateAfter: 1 * time.Second}, 1*time.Second, nil))
 }
 
 func TestPoolOnFull(t *T) {
 	t.Run("onFullClose", func(t *T) {
 		ctx := testCtx(t)
 		var reason trace.PoolConnClosedReason
-		pool := testPoolWithTrace(t, 1,
-			trace.PoolTrace{ConnClosed: func(c trace.PoolConnClosed) {
+		pool := testPool(t, PoolConfig{
+			Size:               1,
+			OverflowBufferSize: -1,
+			Trace: trace.PoolTrace{ConnClosed: func(c trace.PoolConnClosed) {
 				reason = c.Reason
 			}},
-			PoolOnFullClose(),
-		)
+		})
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
 
@@ -173,7 +173,11 @@ func TestPoolOnFull(t *T) {
 
 	t.Run("onFullBuffer", func(t *T) {
 		ctx := testCtx(t)
-		pool := testPool(t, 1, PoolOnFullBuffer(1, 1*time.Second))
+		pool := testPool(t, PoolConfig{
+			Size:                        1,
+			OverflowBufferSize:          1,
+			OverflowBufferDrainInterval: 1 * time.Second,
+		})
 		defer pool.Close()
 		assert.Equal(t, 1, len(pool.pool))
 
@@ -209,7 +213,9 @@ func TestPoolOnFull(t *T) {
 func TestPoolPut(t *T) {
 	ctx := testCtx(t)
 	size := 10
-	pool := testPool(t, size)
+	pool := testPool(t, PoolConfig{
+		Size: size,
+	})
 
 	assertPoolConns := func(exp int) {
 		assert.Equal(t, exp, pool.NumAvailConns())
@@ -267,13 +273,15 @@ func TestPoolDoDoesNotBlock(t *T) {
 	requestTimeout := 200 * time.Millisecond
 	redialInterval := 100 * time.Millisecond
 
-	connFunc := PoolConnFunc(func(context.Context, string, string) (Conn, error) {
-		return dial(), nil
+	pool := testPool(t, PoolConfig{
+		Dialer: Dialer{
+			CustomDialer: func(context.Context, string, string) (Conn, error) {
+				return dial(), nil
+			},
+		},
+		Size:               size,
+		OnEmptyCreateAfter: redialInterval,
 	})
-	pool := testPool(t, size,
-		PoolOnEmptyCreateAfter(redialInterval),
-		connFunc,
-	)
 
 	assertPoolConns := func(exp int) {
 		assert.Equal(t, exp, pool.NumAvailConns())
@@ -310,7 +318,7 @@ func TestPoolDoDoesNotBlock(t *T) {
 
 func TestPoolClose(t *T) {
 	ctx := testCtx(t)
-	pool := testPool(t, 1)
+	pool := testPool(t, PoolConfig{Size: 1})
 	assert.NoError(t, pool.Do(ctx, Cmd(nil, "PING")))
 	assert.NoError(t, pool.Close())
 	assert.Error(t, proc.ErrClosed, pool.Do(ctx, Cmd(nil, "PING")))

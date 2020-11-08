@@ -300,14 +300,16 @@ func (scl *clusterStub) topo() ClusterTopo {
 	return tt
 }
 
-func (scl *clusterStub) clientFunc() ClientFunc {
-	return func(ctx context.Context, network, addr string) (Client, error) {
-		for _, s := range scl.stubs {
-			if s.addr == addr {
-				return s.newConn(), nil
+func (scl *clusterStub) poolConfig() PoolConfig {
+	return PoolConfig{
+		CustomPool: func(ctx context.Context, network, addr string) (Client, error) {
+			for _, s := range scl.stubs {
+				if s.addr == addr {
+					return s.newConn(), nil
+				}
 			}
-		}
-		return nil, fmt.Errorf("unknown addr: %q", addr)
+			return nil, fmt.Errorf("unknown addr: %q", addr)
+		},
 	}
 }
 
@@ -319,9 +321,9 @@ func (scl *clusterStub) addrs() []string {
 	return res
 }
 
-func (scl *clusterStub) newCluster(ctx context.Context, opts ...ClusterOpt) *Cluster {
-	opts = append([]ClusterOpt{ClusterPoolFunc(scl.clientFunc())}, opts...)
-	c, err := NewCluster(ctx, scl.addrs(), opts...)
+func (scl *clusterStub) newCluster(ctx context.Context, cfg ClusterConfig) *Cluster {
+	cfg.PoolConfig = scl.poolConfig()
+	c, err := cfg.New(ctx, scl.addrs())
 	if err != nil {
 		panic(err)
 	}

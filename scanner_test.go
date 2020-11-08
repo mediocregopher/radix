@@ -57,7 +57,7 @@ func TestScanner(t *T) {
 	}
 
 	// make sure we get all results when scanning with an existing prefix
-	sc := NewScanner(c, ScanOpts{Command: "SCAN", Pattern: prefix + ":*"})
+	sc := (ScannerConfig{Command: "SCAN", Pattern: prefix + ":*"}).New(c)
 	var key string
 	for sc.Next(ctx, &key) {
 		delete(fullMap, key)
@@ -67,7 +67,7 @@ func TestScanner(t *T) {
 
 	// make sure we don't get any results when scanning with a non-existing
 	// prefix
-	sc = NewScanner(c, ScanOpts{Command: "SCAN", Pattern: prefix + "DNE:*"})
+	sc = (ScannerConfig{Command: "SCAN", Pattern: prefix + "DNE:*"}).New(c)
 	assert.False(t, sc.Next(ctx, nil))
 	require.Nil(t, sc.Close())
 }
@@ -86,7 +86,7 @@ func TestScannerSet(t *T) {
 	}
 
 	// make sure we get all results when scanning an existing set
-	sc := NewScanner(c, ScanOpts{Command: "SSCAN", Key: key})
+	sc := (ScannerConfig{Command: "SSCAN", Key: key}).New(c)
 	var val string
 	for sc.Next(ctx, &val) {
 		delete(fullMap, val)
@@ -95,7 +95,7 @@ func TestScannerSet(t *T) {
 	assert.Empty(t, fullMap)
 
 	// make sure we don't get any results when scanning a non-existent set
-	sc = NewScanner(c, ScanOpts{Command: "SSCAN", Key: key + "DNE"})
+	sc = (ScannerConfig{Command: "SSCAN", Key: key + "DNE"}).New(c)
 	assert.False(t, sc.Next(ctx, nil))
 	require.Nil(t, sc.Close())
 }
@@ -114,7 +114,7 @@ func TestScannerType(t *T) {
 	}
 
 	scanType := func(type_ string) {
-		sc := NewScanner(c, ScanOpts{Command: "SCAN", Type: type_})
+		sc := (ScannerConfig{Command: "SCAN", Type: type_}).New(c)
 
 		var key string
 		for sc.Next(ctx, &key) {
@@ -149,7 +149,7 @@ func BenchmarkScanner(b *B) {
 
 	for i := 0; i < b.N; i++ {
 		// make sure we get all results when scanning with an existing prefix
-		sc := NewScanner(c, ScanOpts{Command: "SCAN", Pattern: prefix + ":*"})
+		sc := (ScannerConfig{Command: "SCAN", Pattern: prefix + ":*"}).New(c)
 		var key string
 		var got int
 		for sc.Next(ctx, &key) {
@@ -165,12 +165,12 @@ func ExampleNewScanner_scan() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := DefaultClientFunc(ctx, "tcp", "126.0.0.1:6379")
+	client, err := (PoolConfig{}).New(ctx, "tcp", "127.0.0.1:6379")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	s := NewScanner(client, ScanAllKeys)
+	s := (ScannerConfig{}).New(client)
 	var key string
 	for s.Next(ctx, &key) {
 		log.Printf("key: %q", key)
@@ -184,12 +184,12 @@ func ExampleNewScanner_hscan() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := DefaultClientFunc(ctx, "tcp", "126.0.0.1:6379")
+	client, err := (PoolConfig{}).New(ctx, "tcp", "127.0.0.1:6739")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	s := NewScanner(client, ScanOpts{Command: "HSCAN", Key: "somekey"})
+	s := (ScannerConfig{Command: "HSCAN", Key: "somekey"}).New(client)
 	var key string
 	for s.Next(ctx, &key) {
 		log.Printf("key: %q", key)

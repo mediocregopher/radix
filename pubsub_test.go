@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"strconv"
 	"sync"
 	. "testing"
@@ -402,28 +401,29 @@ func ExampleNewPubSubConn() {
 	}
 }
 
-func ExampleNewPersistentPubSubConn_cluster() {
-	// Example of how to use PersistentPubSub with a Cluster instance.
+func ExamplePersistentPubSubConfig_cluster() {
+	// Example of how to use a persistent PubSubConn with a Cluster.
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Initialize the cluster in any way you see fit
-	cluster, err := NewCluster(ctx, []string{"127.0.0.1:6379"})
+	cluster, err := (ClusterConfig{}).New(ctx, []string{"127.0.0.1:6379"})
 	if err != nil {
 		panic(err)
 	}
 
-	// Have PersistentPubSub pick a random cluster node everytime it wants to
-	// make a new connection. If the node fails PersistentPubSub will
+	// Have PersistentPubSubConfig pick a random cluster node everytime it wants
+	// to make a new connection. If the node fails PersistentPubSubConfig will
 	// automatically pick a new node to connect to.
-	ps, err := NewPersistentPubSubConn(ctx, "", "",
-		PersistentPubSubConnFunc(func(ctx context.Context, _ string, _ string) (Conn, error) {
-			topo := cluster.Topo()
-			node := topo[rand.Intn(len(topo))]
-			return Dial(ctx, "tcp", node.Addr)
-		},
-		))
+	ps, err := (PersistentPubSubConfig{}).New(ctx, func() (string, string) {
+		clients, _ := cluster.Clients()
+		for addr := range clients {
+			return "tcp", addr
+		}
+		// TODO should the callback return an error?
+		panic("unexpected empty result from Clients")
+	})
 	if err != nil {
 		panic(err)
 	}

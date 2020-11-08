@@ -24,10 +24,12 @@ type Scanner interface {
 	Close() error
 }
 
-// ScanOpts are various parameters which can be passed into ScanWithOpts. Some
-// fields are required depending on which type of scan is being done.
-type ScanOpts struct {
+// ScannerConfig is used to create Scanner instances with particular settings. All
+// fields are optional, all methods are thread-safe.
+type ScannerConfig struct {
 	// The scan command to do, e.g. "SCAN", "HSCAN", etc...
+	//
+	// Defaults to "SCAN".
 	Command string
 
 	// The key to perform the scan on. Only necessary when Command isn't "SCAN"
@@ -49,49 +51,48 @@ type ScanOpts struct {
 	Type string
 }
 
-func (o ScanOpts) cmd(rcv interface{}, cursor string) Action {
-	cmdStr := strings.ToUpper(o.Command)
+func (cfg ScannerConfig) withDefaults() ScannerConfig {
+	if cfg.Command == "" {
+		cfg.Command = "SCAN"
+	}
+	return cfg
+}
+
+func (cfg ScannerConfig) cmd(rcv interface{}, cursor string) Action {
+	cmdStr := strings.ToUpper(cfg.Command)
 	args := make([]string, 0, 8)
 	if cmdStr != "SCAN" {
-		args = append(args, o.Key)
+		args = append(args, cfg.Key)
 	}
 
 	args = append(args, cursor)
-	if o.Pattern != "" {
-		args = append(args, "MATCH", o.Pattern)
+	if cfg.Pattern != "" {
+		args = append(args, "MATCH", cfg.Pattern)
 	}
-	if o.Count > 0 {
-		args = append(args, "COUNT", strconv.Itoa(o.Count))
+	if cfg.Count > 0 {
+		args = append(args, "COUNT", strconv.Itoa(cfg.Count))
 	}
-	if o.Type != "" {
-		args = append(args, "TYPE", o.Type)
+	if cfg.Type != "" {
+		args = append(args, "TYPE", cfg.Type)
 	}
 
 	return Cmd(rcv, cmdStr, args...)
 }
 
-// ScanAllKeys is a shortcut ScanOpts which can be used to scan all keys
-var ScanAllKeys = ScanOpts{
-	Command: "SCAN",
-}
-
 type scanner struct {
 	Client
-	ScanOpts
+	cfg    ScannerConfig
 	res    scanResult
 	resIdx int
 	err    error
 }
 
-// NewScanner creates a new Scanner instance which will iterate over the redis
-// instance's Client using the ScanOpts.
-//
-// NOTE if Client is a *Cluster this will not work correctly, use the NewScanner
-// method on Cluster instead.
-func NewScanner(c Client, o ScanOpts) Scanner {
+// New creates a new Scanner instance which will iterate over the redis
+// instance's Client using the ScannerConfig.
+func (cfg ScannerConfig) New(c Client) Scanner {
 	return &scanner{
-		Client:   c,
-		ScanOpts: o,
+		Client: c,
+		cfg:    cfg.withDefaults(),
 		res: scanResult{
 			cur: "0",
 		},
@@ -116,7 +117,7 @@ func (s *scanner) Next(ctx context.Context, res *string) bool {
 			return false
 		}
 
-		s.err = s.Client.Do(ctx, s.cmd(&s.res, s.res.cur))
+		s.err = s.Client.Do(ctx, s.cfg.cmd(&s.res, s.res.cur))
 		s.resIdx = 0
 	}
 }

@@ -168,9 +168,12 @@ Baas4jyR6hQ0qRSe4PmQrA==
 	}()
 
 	// Connect to the proxy, passing in an insecure flag as we are self-signed
-	c, err := Dial(ctx, "tcp", "127.0.0.1:63790", DialUseTLS(&tls.Config{
-		InsecureSkipVerify: true,
-	}))
+	dialer := Dialer{
+		NetDialer: &tls.Dialer{
+			Config: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	c, err := dialer.Dial(ctx, "tcp", "127.0.0.1:63790")
 	if err != nil {
 		t.Fatal(err)
 	} else if err := c.Do(ctx, Cmd(nil, "PING")); err != nil {
@@ -178,6 +181,7 @@ Baas4jyR6hQ0qRSe4PmQrA==
 	}
 
 	// Confirm that the connection fails if verifying certificate
-	_, err = Dial(ctx, "tcp", "127.0.0.1:63790", DialUseTLS(nil))
+	dialer = Dialer{NetDialer: new(tls.Dialer)}
+	_, err = dialer.Dial(ctx, "tcp", "127.0.0.1:63790")
 	assert.Error(t, err)
 }

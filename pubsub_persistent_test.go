@@ -13,15 +13,22 @@ import (
 func closablePersistentPubSub(t *T) (PubSubConn, func()) {
 	ctx := testCtx(t)
 	closeCh := make(chan chan bool)
-	p, err := NewPersistentPubSubConn(ctx, "", "", PersistentPubSubConnFunc(func(_ context.Context, _, _ string) (Conn, error) {
-		c := dial()
-		go func() {
-			closeRetCh := <-closeCh
-			c.Close()
-			closeRetCh <- true
-		}()
-		return c, nil
-	}))
+
+	cfg := PersistentPubSubConfig{
+		Dialer: Dialer{
+			CustomDialer: func(context.Context, string, string) (Conn, error) {
+				c := dial()
+				go func() {
+					closeRetCh := <-closeCh
+					c.Close()
+					closeRetCh <- true
+				}()
+				return c, nil
+			},
+		},
+	}
+
+	p, err := cfg.New(ctx, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -67,15 +74,16 @@ func TestPersistentPubSubAbortAfter(t *T) {
 		return dial(), nil
 	}
 
-	_, err := NewPersistentPubSubConn(ctx, "", "",
-		PersistentPubSubConnFunc(connFn),
-		PersistentPubSubAbortAfter(2))
+	cfg := PersistentPubSubConfig{
+		Dialer:     Dialer{CustomDialer: connFn},
+		AbortAfter: 2,
+	}
+	_, err := cfg.New(ctx, nil)
 	assert.Equal(t, errNope, err)
 
 	attempts = 0
-	p, err := NewPersistentPubSubConn(ctx, "", "",
-		PersistentPubSubConnFunc(connFn),
-		PersistentPubSubAbortAfter(3))
+	cfg.AbortAfter = 3
+	p, err := cfg.New(ctx, nil)
 	assert.NoError(t, err)
 	assert.NoError(t, p.Ping(ctx))
 	assert.NoError(t, p.Close())
@@ -107,9 +115,9 @@ func TestPersistentPubSubClose(t *T) {
 	}()
 
 	for i := 0; i < 1000; i++ {
-		p, err := NewPersistentPubSubConn(ctx, "", "", PersistentPubSubConnFunc(func(_ context.Context, _, _ string) (Conn, error) {
-			return dial(), nil
-		}))
+		cfg := PersistentPubSubConfig{Dialer: dialer}
+
+		p, err := cfg.New(ctx, nil)
 		if err != nil {
 			panic(err)
 		}
@@ -129,8 +137,8 @@ func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
 	ctx := testCtx(t)
 	channel := "TestPersistentPubSubUseAfterCloseDeadlock:" + randStr()
 
-	connFn := func(_ context.Context, _, _ string) (Conn, error) { return dial(), nil }
-	p, err := NewPersistentPubSubConn(ctx, "", "", PersistentPubSubConnFunc(connFn))
+	cfg := PersistentPubSubConfig{Dialer: dialer}
+	p, err := cfg.New(ctx, nil)
 	if err != nil {
 		panic(err)
 	}

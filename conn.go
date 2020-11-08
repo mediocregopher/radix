@@ -3,12 +3,10 @@ package radix
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -31,18 +29,6 @@ type Conn interface {
 	// response into unmarshalInto (see resp3.Marshal and resp3.Unmarshal,
 	// respectively). If either parameter is nil then that step is skipped.
 	EncodeDecode(ctx context.Context, marshal, unmarshalInto interface{}) error
-}
-
-// ConnFunc is a function which returns an initialized, ready-to-be-used Conn.
-// Functions like NewPool or NewCluster take in a ConnFunc in order to allow for
-// things like calls to AUTH on each new connection, setting timeouts, custom
-// Conn implementations, etc... See the package docs for more details.
-type ConnFunc func(ctx context.Context, network, addr string) (Conn, error)
-
-// DefaultConnFunc is a ConnFunc which will return a Conn for a redis instance
-// using sane defaults.
-var DefaultConnFunc = func(ctx context.Context, network, addr string) (Conn, error) {
-	return Dial(ctx, network, addr)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -245,144 +231,96 @@ func (c connAddrWrap) RemoteAddr() net.Addr {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type dialOpts struct {
-	authUser, authPass string
-	selectDB           string
-	useTLSConfig       bool
-	tlsConfig          *tls.Config
-}
+// Dialer is used to create Conns with particular settings. All fields are
+// optional, all methods are thread-safe.
+type Dialer struct {
+	// CustomDialer indicates that this callback should be used in place of Dial
+	// when Dial is called. All behavior of Dialer/Dial is superceded when this
+	// is set.
+	CustomDialer func(ctx context.Context, network, addr string) (Conn, error)
 
-// DialOpt is an optional behavior which can be applied to the Dial function to
-// effect its behavior, or the behavior of the Conn it creates.
-type DialOpt func(*dialOpts)
+	// AuthPass will cause Dial to perform an AUTH command once the connection
+	// is created, using AuthUser (if given) and AuthPass.
+	//
+	// If this is set and a redis URI is passed to Dial which also has a password
+	// set, this takes precedence.
+	AuthUser, AuthPass string
 
-const defaultAuthUser = "default"
+	// SelectDB will cause Dial to perform a SELECT command once the connection
+	// is created, using the given database index.
+	//
+	// If this is set and a redis URI is passed to Dial which also has a
+	// database index set, this takes precedence.
+	SelectDB string
 
-// DialAuthPass will cause Dial to perform an AUTH command once the connection
-// is created, using the given pass.
-//
-// If this is set and a redis URI is passed to Dial which also has a password
-// set, this takes precedence.
-//
-// Using DialAuthPass is equivalent to calling DialAuthUser with user "default"
-// and is kept for compatibility with older package versions.
-func DialAuthPass(pass string) DialOpt {
-	return DialAuthUser(defaultAuthUser, pass)
-}
-
-// DialAuthUser will cause Dial to perform an AUTH command once the connection
-// is created, using the given user and pass.
-//
-// If this is set and a redis URI is passed to Dial which also has a username
-// and password set, this takes precedence.
-func DialAuthUser(user, pass string) DialOpt {
-	return func(do *dialOpts) {
-		do.authUser = user
-		do.authPass = pass
+	// NetDialer is used to create the underlying network connection.
+	//
+	// Defaults to net.Dialer.
+	NetDialer interface {
+		DialContext(context.Context, string, string) (net.Conn, error)
 	}
 }
 
-// DialSelectDB will cause Dial to perform a SELECT command once the connection
-// is created, using the given database index.
-//
-// If this is set and a redis URI is passed to Dial which also has a database
-// index set, this takes precedence.
-func DialSelectDB(db int) DialOpt {
-	return func(do *dialOpts) {
-		do.selectDB = strconv.Itoa(db)
+func (d Dialer) withDefaults() Dialer {
+	if d.NetDialer == nil {
+		d.NetDialer = new(net.Dialer)
 	}
+	return d
 }
 
-// DialUseTLS will cause Dial to perform a TLS handshake using the provided
-// config. If config is nil the config is interpreted as equivalent to the zero
-// configuration. See https://golang.org/pkg/crypto/tls/#Config
-func DialUseTLS(config *tls.Config) DialOpt {
-	return func(do *dialOpts) {
-		do.tlsConfig = config
-		do.useTLSConfig = true
-	}
-}
-
-func parseRedisURL(urlStr string) (string, []DialOpt) {
+func parseRedisURL(urlStr string, d Dialer) (string, Dialer) {
 	// do a quick check before we bust out url.Parse, in case that is very
 	// unperformant
 	if !strings.HasPrefix(urlStr, "redis://") {
-		return urlStr, nil
+		return urlStr, d
 	}
 
 	u, err := url.Parse(urlStr)
 	if err != nil {
-		return urlStr, nil
+		return urlStr, d
 	}
 
 	q := u.Query()
 
-	username := defaultAuthUser
-	if n := u.User.Username(); n != "" {
-		username = n
-	} else if n := q.Get("username"); n != "" {
-		username = n
+	if d.AuthUser == "" {
+		d.AuthUser = q.Get("username")
+		if n := u.User.Username(); n != "" {
+			d.AuthUser = n
+		}
 	}
 
-	password := q.Get("password")
-	if p, ok := u.User.Password(); ok {
-		password = p
+	if d.AuthPass == "" {
+		d.AuthPass = q.Get("password")
+		if p, ok := u.User.Password(); ok {
+			d.AuthPass = p
+		}
 	}
 
-	opts := []DialOpt{
-		DialAuthUser(username, password),
+	if d.SelectDB == "" {
+		d.SelectDB = q.Get("db")
+		if u.Path != "" && u.Path != "/" {
+			d.SelectDB = u.Path[1:]
+		}
 	}
 
-	dbStr := q.Get("db")
-	if u.Path != "" && u.Path != "/" {
-		dbStr = u.Path[1:]
-	}
-
-	if dbStr, err := strconv.Atoi(dbStr); err == nil {
-		opts = append(opts, DialSelectDB(dbStr))
-	}
-
-	return u.Host, opts
+	return u.Host, d
 }
 
-// Dial is a ConnFunc which creates a Conn using net.Dial and NewConn. It takes
-// in a number of options which can overwrite its default behavior as well.
+// Dial creates a Conn using the Dialer configuration.
 //
 // In place of a host:port address, Dial also accepts a URI, as per:
 // 	https://www.iana.org/assignments/uri-schemes/prov/redis
 // If the URI has an AUTH password or db specified Dial will attempt to perform
 // the AUTH and/or SELECT as well.
-//
-// If either DialAuthPass or DialSelectDB is used it overwrites the associated
-// value passed in by the URI.
-//
-// The default options Dial uses are:
-//
-//	DialTimeout(10 * time.Second)
-//
-func Dial(ctx context.Context, network, addr string, opts ...DialOpt) (Conn, error) {
-	var do dialOpts
-	addr, addrOpts := parseRedisURL(addr)
-	for _, opt := range addrOpts {
-		opt(&do)
-	}
-	for _, opt := range opts {
-		opt(&do)
+func (d Dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
+	if d.CustomDialer != nil {
+		return d.CustomDialer(ctx, network, addr)
 	}
 
-	var dialer interface {
-		DialContext(context.Context, string, string) (net.Conn, error)
-	}
+	d = d.withDefaults()
+	addr, d = parseRedisURL(addr, d)
 
-	if do.useTLSConfig {
-		dialer = &tls.Dialer{
-			Config: do.tlsConfig,
-		}
-	} else {
-		dialer = &net.Dialer{}
-	}
-
-	netConn, err := dialer.DialContext(ctx, network, addr)
+	netConn, err := d.NetDialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -417,24 +355,29 @@ func Dial(ctx context.Context, network, addr string, opts ...DialOpt) (Conn, err
 
 	conn := NewConn(netConn)
 
-	if do.authUser != "" && do.authUser != defaultAuthUser {
-		if err := conn.Do(ctx, Cmd(nil, "AUTH", do.authUser, do.authPass)); err != nil {
+	if d.AuthUser != "" {
+		if err := conn.Do(ctx, Cmd(nil, "AUTH", d.AuthUser, d.AuthPass)); err != nil {
 			conn.Close()
 			return nil, err
 		}
-	} else if do.authPass != "" {
-		if err := conn.Do(ctx, Cmd(nil, "AUTH", do.authPass)); err != nil {
+	} else if d.AuthPass != "" {
+		if err := conn.Do(ctx, Cmd(nil, "AUTH", d.AuthPass)); err != nil {
 			conn.Close()
 			return nil, err
 		}
 	}
 
-	if do.selectDB != "" {
-		if err := conn.Do(ctx, Cmd(nil, "SELECT", do.selectDB)); err != nil {
+	if d.SelectDB != "" {
+		if err := conn.Do(ctx, Cmd(nil, "SELECT", d.SelectDB)); err != nil {
 			conn.Close()
 			return nil, err
 		}
 	}
 
 	return conn, nil
+}
+
+// Dial is a shortcut for calling Dial on a zero-value Dialer.
+func Dial(ctx context.Context, network, addr string) (Conn, error) {
+	return (Dialer{}).Dial(ctx, network, addr)
 }

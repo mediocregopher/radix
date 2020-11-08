@@ -35,14 +35,14 @@ var clusterSlotKeys = func() [numSlots]string {
 	return a
 }()
 
-func newTestCluster(ctx context.Context, opts ...ClusterOpt) (*Cluster, *clusterStub) {
+func newTestCluster(ctx context.Context, cfg ClusterConfig) (*Cluster, *clusterStub) {
 	scl := newStubCluster(testTopo)
-	return scl.newCluster(ctx, opts...), scl
+	return scl.newCluster(ctx, cfg), scl
 }
 
 func TestClusterSync(t *T) {
 	ctx := testCtx(t)
-	c, scl := newTestCluster(ctx)
+	c, scl := newTestCluster(ctx, ClusterConfig{})
 	defer c.Close()
 	assertClusterState := func() {
 		require.Nil(t, c.Sync(ctx))
@@ -83,7 +83,7 @@ func TestClusterSync(t *T) {
 
 func TestClusterGet(t *T) {
 	ctx := testCtx(t)
-	c, _ := newTestCluster(ctx)
+	c, _ := newTestCluster(ctx, ClusterConfig{})
 	defer c.Close()
 	for s := uint16(0); s < numSlots; s++ {
 		require.Nil(t, c.Do(ctx, Cmd(nil, "GET", clusterSlotKeys[s])))
@@ -93,9 +93,11 @@ func TestClusterGet(t *T) {
 func TestClusterDo(t *T) {
 	ctx := testCtx(t)
 	var lastRedirect trace.ClusterRedirected
-	c, scl := newTestCluster(ctx, ClusterWithTrace(trace.ClusterTrace{
-		Redirected: func(r trace.ClusterRedirected) { lastRedirect = r },
-	}))
+	c, scl := newTestCluster(ctx, ClusterConfig{
+		Trace: trace.ClusterTrace{
+			Redirected: func(r trace.ClusterRedirected) { lastRedirect = r },
+		},
+	})
 	defer c.Close()
 	stub0 := scl.stubForSlot(0)
 	stub16k := scl.stubForSlot(16000)
@@ -173,9 +175,9 @@ func TestClusterDoWhenDown(t *T) {
 	ctx := testCtx(t)
 	var stub *clusterNodeStub
 	var isDown bool
-	c, scl := newTestCluster(ctx,
-		ClusterOnDownDelayActionsBy(50*time.Millisecond),
-		ClusterWithTrace(trace.ClusterTrace{
+	c, scl := newTestCluster(ctx, ClusterConfig{
+		OnDownDelayActionsBy: 50 * time.Millisecond,
+		Trace: trace.ClusterTrace{
 			StateChange: func(d trace.ClusterStateChange) {
 				isDown = d.IsDown
 
@@ -185,8 +187,8 @@ func TestClusterDoWhenDown(t *T) {
 					})
 				}
 			},
-		}),
-	)
+		},
+	})
 	defer c.Close()
 
 	stub = scl.stubForSlot(0)
@@ -205,7 +207,7 @@ func TestClusterDoWhenDown(t *T) {
 
 func BenchmarkClusterDo(b *B) {
 	ctx := testCtx(b)
-	c, _ := newTestCluster(ctx)
+	c, _ := newTestCluster(ctx, ClusterConfig{})
 	defer c.Close()
 
 	k, v := clusterSlotKeys[0], randStr()
@@ -220,7 +222,7 @@ func BenchmarkClusterDo(b *B) {
 
 func TestClusterEval(t *T) {
 	ctx := testCtx(t)
-	c, scl := newTestCluster(ctx)
+	c, scl := newTestCluster(ctx, ClusterConfig{})
 	defer c.Close()
 	key := clusterSlotKeys[0]
 	dst := scl.stubForSlot(10000)
@@ -237,7 +239,7 @@ func TestClusterEval(t *T) {
 
 func TestClusterEvalRcvInterface(t *T) {
 	ctx := testCtx(t)
-	c, scl := newTestCluster(ctx)
+	c, scl := newTestCluster(ctx, ClusterConfig{})
 	defer c.Close()
 	key := clusterSlotKeys[0]
 	dst := scl.stubForSlot(10000)
@@ -255,13 +257,13 @@ func TestClusterEvalRcvInterface(t *T) {
 func TestClusterDoSecondary(t *T) {
 	ctx := testCtx(t)
 	var redirects int
-	c, _ := newTestCluster(ctx,
-		ClusterWithTrace(trace.ClusterTrace{
+	c, _ := newTestCluster(ctx, ClusterConfig{
+		Trace: trace.ClusterTrace{
 			Redirected: func(trace.ClusterRedirected) {
 				redirects++
 			},
-		}),
-	)
+		},
+	})
 	defer c.Close()
 
 	key := clusterSlotKeys[0]
@@ -297,15 +299,4 @@ func TestClusterDoSecondary(t *T) {
 	assert.NoError(t, c.DoSecondary(ctx, Cmd(&res4, "GET", key)))
 	assert.Equal(t, value, res4)
 	assert.Equal(t, 2, redirects)
-}
-
-var clusterAddrs []string
-
-func ExampleClusterPoolFunc_defaultClusterConnFunc() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	NewCluster(ctx, clusterAddrs, ClusterPoolFunc(func(ctx context.Context, network, addr string) (Client, error) {
-		return NewPool(ctx, network, addr, 4, PoolConnFunc(DefaultClusterConnFunc))
-	}))
 }

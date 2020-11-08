@@ -146,17 +146,18 @@ func TestSentinel(t *T) {
 		[]string{"127.0.0.1:26379", "127.0.0.2:26379", "[0:0:0:0:0:ffff:7f00:3]:26379"}, // sentAddrs
 	)
 
-	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
-	// don't tell anyone
-	poolFn := func(ctx context.Context, network, addr string) (Client, error) {
-		c, err := NewPool(ctx, "tcp", "127.0.0.1:6379", 1)
-		return clientWrapAddr{Client: c, addr: rawAddr{network, addr}}, err
+	cfg := SentinelConfig{
+		// our PoolConfig will always _actually_ connect to 127.0.0.1, we just
+		// don't tell anyone
+		PoolConfig: PoolConfig{
+			CustomPool: func(ctx context.Context, network, addr string) (Client, error) {
+				c, err := (PoolConfig{Size: 1}).New(ctx, "tcp", "127.0.0.1:6379")
+				return clientWrapAddr{Client: c, addr: rawAddr{network, addr}}, err
+			},
+		},
+		SentinelDialer: Dialer{CustomDialer: stub.newConn},
 	}
-
-	scc, err := NewSentinel(
-		ctx, "stub", stub.sentAddrs,
-		SentinelConnFunc(stub.newConn), SentinelPoolFunc(poolFn),
-	)
+	scc, err := cfg.New(ctx, "stub", stub.sentAddrs)
 	require.Nil(t, err)
 
 	assertState := func(primAddr string, secAddrs, sentAddrs []string) {
@@ -238,20 +239,17 @@ func TestSentinelSecondaryRead(t *T) {
 		[]string{"127.0.0.1:29736", "127.0.0.2:9736", "127.0.0.3:9736"}, // sentAddrs
 	)
 
-	// our fake poolFn will always _actually_ connect to 127.0.0.1, we just
-	// don't tell anyone
-	poolFn := func(ctx context.Context, network, addr string) (Client, error) {
-		return NewStubConn(network, addr, func(args []string) interface{} {
-			return addr
-		}), nil
+	cfg := SentinelConfig{
+		PoolConfig: PoolConfig{
+			CustomPool: func(ctx context.Context, network, addr string) (Client, error) {
+				return NewStubConn(network, addr, func(args []string) interface{} {
+					return addr
+				}), nil
+			},
+		},
+		SentinelDialer: Dialer{CustomDialer: stub.newConn},
 	}
-
-	scc, err := NewSentinel(
-		ctx, "stub",
-		stub.sentAddrs,
-		SentinelConnFunc(stub.newConn),
-		SentinelPoolFunc(poolFn),
-	)
+	scc, err := cfg.New(ctx, "stub", stub.sentAddrs)
 	require.Nil(t, err)
 
 	runTest := func(n int) {

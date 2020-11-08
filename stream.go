@@ -214,18 +214,9 @@ func (s *StreamEntries) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 	return nil
 }
 
-// StreamReaderOpts contains various options given for NewStreamReader that influence the behaviour.
-//
-// The only required field is Streams.
-//
-// TODO make this use the ...Opt pattern.
-type StreamReaderOpts struct {
-	// Streams must contain one or more stream names that will be read.
-	//
-	// The value for each stream can either be nil or an existing ID.
-	// If a value is non-nil, only newer stream entries will be returned.
-	Streams map[string]*StreamEntryID
-
+// StreamReaderConfig is used to create StreamReader instances with particular
+// settings. All fields are optional, all methods are thread-safe.
+type StreamReaderConfig struct {
 	// Group is an optional consumer group name.
 	//
 	// If Group is not empty reads will use XREADGROUP with the Group as consumer group instead of XREAD.
@@ -276,42 +267,44 @@ type StreamReader interface {
 	Next(context.Context) (stream string, entries []StreamEntry, ok bool)
 }
 
-// NewStreamReader returns a new StreamReader for the given client.
+// New returns a new StreamReader for the given Client.
 //
-// Any changes on opts after calling NewStreamReader will have no effect.
-func NewStreamReader(c Client, opts StreamReaderOpts) StreamReader {
-	sr := &streamReader{c: c, opts: opts}
+// streams must contain one or more stream names that will be read. The value
+// for each stream can either be nil or an existing ID. If a value is non-nil,
+// only newer stream entries will be returned.
+func (cfg StreamReaderConfig) New(c Client, streams map[string]*StreamEntryID) StreamReader {
+	sr := &streamReader{c: c, cfg: cfg}
 
-	if sr.opts.Group != "" {
+	if sr.cfg.Group != "" {
 		sr.cmd = "XREADGROUP"
-		sr.fixedArgs = []string{"GROUP", sr.opts.Group, sr.opts.Consumer}
+		sr.fixedArgs = []string{"GROUP", sr.cfg.Group, sr.cfg.Consumer}
 	} else {
 		sr.cmd = "XREAD"
 		sr.fixedArgs = nil
 	}
 
-	if sr.opts.Count > 0 {
-		sr.fixedArgs = append(sr.fixedArgs, "COUNT", strconv.Itoa(sr.opts.Count))
+	if sr.cfg.Count > 0 {
+		sr.fixedArgs = append(sr.fixedArgs, "COUNT", strconv.Itoa(sr.cfg.Count))
 	}
 
-	if !sr.opts.NoBlock {
+	if !sr.cfg.NoBlock {
 		dur := 5 * time.Second
-		if sr.opts.Block < 0 {
+		if sr.cfg.Block < 0 {
 			dur = 0
-		} else if sr.opts.Block > 0 {
-			dur = sr.opts.Block
+		} else if sr.cfg.Block > 0 {
+			dur = sr.cfg.Block
 		}
 		msec := int(dur / time.Millisecond)
 		sr.fixedArgs = append(sr.fixedArgs, "BLOCK", strconv.Itoa(msec))
 	}
 
-	if sr.opts.Group != "" && sr.opts.NoAck {
+	if sr.cfg.Group != "" && sr.cfg.NoAck {
 		sr.fixedArgs = append(sr.fixedArgs, "NOACK")
 	}
 
-	sr.streams = make([]string, 0, len(sr.opts.Streams))
-	sr.ids = make(map[string]string, len(sr.opts.Streams))
-	for stream, id := range sr.opts.Streams {
+	sr.streams = make([]string, 0, len(streams))
+	sr.ids = make(map[string]string, len(streams))
+	for stream, id := range streams {
 		sr.streams = append(sr.streams, stream)
 
 		if id != nil {
@@ -322,10 +315,6 @@ func NewStreamReader(c Client, opts StreamReaderOpts) StreamReader {
 			sr.ids[stream] = ">"
 		}
 	}
-
-	// set to nil so we don't accidentally use it later, since the user could have changed
-	// the map after using the reader.
-	sr.opts.Streams = nil
 
 	sr.fixedArgs = append(sr.fixedArgs, "STREAMS")
 	sr.fixedArgs = append(sr.fixedArgs, sr.streams...)
@@ -338,8 +327,8 @@ func NewStreamReader(c Client, opts StreamReaderOpts) StreamReader {
 
 // streamReader implements the StreamReader interface.
 type streamReader struct {
-	c    Client
-	opts StreamReaderOpts // copy of the options given to NewStreamReader with Streams == nil
+	c   Client
+	cfg StreamReaderConfig
 
 	streams []string
 	ids     map[string]string

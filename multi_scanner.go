@@ -7,7 +7,7 @@ import (
 
 type multiScanner struct {
 	multiClient MultiClient
-	opts        ScanOpts
+	cfg         ScannerConfig
 
 	clients     []Client
 	currScanner Scanner
@@ -18,11 +18,12 @@ type multiScanner struct {
 // in the MultiClient. This will panic if the ScanOpt's Command isn't "SCAN".
 //
 // NOTE this is primarily useful for scanning over all keys in a Cluster. It is
-// necessary to use this otherwise, unless you have implemented your own
+// not necessary to use this otherwise, unless you have implemented your own
 // MultiClient which holds multiple primary Clients.
-func NewMultiScanner(mc MultiClient, o ScanOpts) Scanner {
-	if strings.ToUpper(o.Command) != "SCAN" {
-		panic("NewClusterScanner can only perform SCAN operations")
+func (cfg ScannerConfig) NewMulti(mc MultiClient) Scanner {
+	cfg = cfg.withDefaults()
+	if strings.ToUpper(cfg.Command) != "SCAN" {
+		panic("NewMulti can only perform SCAN operations")
 	}
 
 	clientsM, err := mc.Clients()
@@ -36,7 +37,7 @@ func NewMultiScanner(mc MultiClient, o ScanOpts) Scanner {
 
 	cs := &multiScanner{
 		multiClient: mc,
-		opts:        o,
+		cfg:         cfg,
 		clients:     clients,
 	}
 	cs.nextScanner()
@@ -60,7 +61,7 @@ func (cs *multiScanner) nextScanner() {
 	}
 	client := cs.clients[0]
 	cs.clients = cs.clients[1:]
-	cs.currScanner = NewScanner(client, cs.opts)
+	cs.currScanner = cs.cfg.New(client)
 }
 
 func (cs *multiScanner) Next(ctx context.Context, res *string) bool {

@@ -412,14 +412,13 @@ func TestStreamReader(t *T) {
 			consumer, group := randStr(), randStr()
 			stream1, stream2 := randStr(), randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream1: {Time: 0, Seq: 0},
-					stream2: {Time: 0, Seq: 0},
-				},
+			r := (StreamReaderConfig{
 				Group:    group,
 				Consumer: consumer,
 				NoBlock:  true,
+			}).New(c, map[string]*StreamEntryID{
+				stream1: {Time: 0, Seq: 0},
+				stream2: {Time: 0, Seq: 0},
 			})
 
 			addStreamGroup(t, c, stream1, group, "0-0")
@@ -434,13 +433,12 @@ func TestStreamReader(t *T) {
 
 			stream1, stream2 := randStr(), randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream1: {Time: 0, Seq: 0},
-					stream2: {Time: 0, Seq: 0},
-				},
+			r := (StreamReaderConfig{
 				Group:   randStr(),
 				NoBlock: true,
+			}).New(c, map[string]*StreamEntryID{
+				stream1: {Time: 0, Seq: 0},
+				stream2: {Time: 0, Seq: 0},
 			})
 
 			_, _, ok := r.Next(ctx)
@@ -456,14 +454,13 @@ func TestStreamReader(t *T) {
 			consumer, group := randStr(), randStr()
 			stream1, stream2 := randStr(), randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream1: nil,
-					stream2: nil,
-				},
+			r := (StreamReaderConfig{
 				Group:    group,
 				Consumer: consumer,
 				NoBlock:  true,
+			}).New(c, map[string]*StreamEntryID{
+				stream1: nil,
+				stream2: nil,
 			})
 
 			addStreamGroup(t, c, stream1, group, "0-0")
@@ -487,15 +484,14 @@ func TestStreamReader(t *T) {
 			consumer, group := randStr(), randStr()
 			stream1, stream2 := randStr(), randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream1: nil,
-					stream2: nil,
-				},
+			r := (StreamReaderConfig{
 				Group:    group,
 				Consumer: consumer,
 				Count:    2,
 				NoBlock:  true,
+			}).New(c, map[string]*StreamEntryID{
+				stream1: nil,
+				stream2: nil,
 			})
 
 			addStreamGroup(t, c, stream1, group, "0-0")
@@ -532,12 +528,11 @@ func TestStreamReader(t *T) {
 
 			require.NoError(t, c.Do(ctx, Cmd(nil, "SET", stream1, "1")))
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream1: nil,
-				},
+			r := (StreamReaderConfig{
 				Group:    randStr(),
 				Consumer: randStr(),
+			}).New(c, map[string]*StreamEntryID{
+				stream1: nil,
 			})
 
 			_, _, ok := r.Next(ctx)
@@ -558,14 +553,13 @@ func TestStreamReader(t *T) {
 			consumer, group := randStr(), randStr()
 			stream := randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: nil,
-				},
+			r := (StreamReaderConfig{
 				Group:    group,
 				Consumer: consumer,
 				Block:    0,
 				Count:    10,
+			}).New(c, map[string]*StreamEntryID{
+				stream: nil,
 			})
 
 			addStreamGroup(t, c, stream, group, "0-0")
@@ -596,13 +590,12 @@ func TestStreamReader(t *T) {
 			consumer, group := randStr(), randStr()
 			stream := randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: nil,
-				},
+			r := (StreamReaderConfig{
 				Group:    group,
 				Consumer: consumer,
 				Block:    500 * time.Millisecond,
+			}).New(c, map[string]*StreamEntryID{
+				stream: nil,
 			})
 
 			addStreamGroup(t, c, stream, group, "0-0")
@@ -628,14 +621,13 @@ func TestStreamReader(t *T) {
 			consumer, group := randStr(), randStr()
 			stream := randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: nil,
-				},
+			r := (StreamReaderConfig{
 				Group:    group,
 				Consumer: consumer,
 				NoBlock:  true,
 				NoAck:    true,
+			}).New(c, map[string]*StreamEntryID{
+				stream: nil,
 			})
 
 			addStreamGroup(t, c, stream, group, "0-0")
@@ -653,13 +645,12 @@ func TestStreamReader(t *T) {
 			consumer, group := randStr(), randStr()
 			stream := randStr()
 
-			r1 := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: nil,
-				},
+			r1 := (StreamReaderConfig{
 				Group:    group,
 				Consumer: consumer,
 				NoBlock:  true,
+			}).New(c, map[string]*StreamEntryID{
+				stream: nil,
 			})
 
 			addStreamGroup(t, c, stream, group, "0-0")
@@ -669,13 +660,12 @@ func TestStreamReader(t *T) {
 			assertStreamReaderEntries(t, r1, map[string][]StreamEntryID{stream: {id1}})
 			id2 := addStreamEntry(t, c, stream)
 
-			r2 := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: {Time: 0, Seq: 0},
-				},
+			r2 := (StreamReaderConfig{
 				Group:    group,
 				Consumer: consumer,
 				NoBlock:  true,
+			}).New(c, map[string]*StreamEntryID{
+				stream: {Time: 0, Seq: 0},
 			})
 
 			assertStreamReaderEntries(t, r2, map[string][]StreamEntryID{stream: {id1}})
@@ -707,14 +697,13 @@ func TestStreamReader(t *T) {
 
 			// read all entries once to make them unacknowledged
 			{
-				r := NewStreamReader(c, StreamReaderOpts{
-					Streams: map[string]*StreamEntryID{
-						stream1: nil,
-						stream2: nil,
-					},
+				r := (StreamReaderConfig{
 					NoBlock:  true,
 					Group:    group,
 					Consumer: consumer,
+				}).New(c, map[string]*StreamEntryID{
+					stream1: nil,
+					stream2: nil,
 				})
 				for {
 					if stream, entries, ok := r.Next(ctx); stream == "" || entries == nil || !ok {
@@ -723,15 +712,14 @@ func TestStreamReader(t *T) {
 				}
 			}
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream2: {},
-					stream1: {},
-				},
+			r := (StreamReaderConfig{
 				NoBlock:  true,
 				Group:    group,
 				Consumer: consumer,
 				Count:    1,
+			}).New(c, map[string]*StreamEntryID{
+				stream2: {},
+				stream1: {},
 			})
 
 			assertStreamReaderEntries(t, r, map[string][]StreamEntryID{
@@ -754,12 +742,11 @@ func TestStreamReader(t *T) {
 
 			stream1, stream2 := randStr(), randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream1: {Time: 0, Seq: 0},
-					stream2: {Time: 0, Seq: 0},
-				},
+			r := (StreamReaderConfig{
 				NoBlock: true,
+			}).New(c, map[string]*StreamEntryID{
+				stream1: {Time: 0, Seq: 0},
+				stream2: {Time: 0, Seq: 0},
 			})
 
 			assertNoStreamReaderEntries(t, r)
@@ -771,12 +758,11 @@ func TestStreamReader(t *T) {
 
 			stream1, stream2 := randStr(), randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream1: {Time: 0, Seq: 0},
-					stream2: {Time: 0, Seq: 0},
-				},
+			r := (StreamReaderConfig{
 				NoBlock: true,
+			}).New(c, map[string]*StreamEntryID{
+				stream1: {Time: 0, Seq: 0},
+				stream2: {Time: 0, Seq: 0},
 			})
 
 			id1 := addStreamEntry(t, c, stream1)
@@ -794,13 +780,12 @@ func TestStreamReader(t *T) {
 
 			stream1, stream2 := randStr(), randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream1: {Time: 0, Seq: 0},
-					stream2: {Time: 0, Seq: 0},
-				},
+			r := (StreamReaderConfig{
 				Count:   2,
 				NoBlock: true,
+			}).New(c, map[string]*StreamEntryID{
+				stream1: {Time: 0, Seq: 0},
+				stream2: {Time: 0, Seq: 0},
 			})
 
 			ids1 := addNStreamEntries(t, c, stream1, 5)
@@ -832,10 +817,8 @@ func TestStreamReader(t *T) {
 
 			require.NoError(t, c.Do(ctx, Cmd(nil, "SET", stream, "1")))
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: nil,
-				},
+			r := (StreamReaderConfig{}).New(c, map[string]*StreamEntryID{
+				stream: nil,
 			})
 
 			_, _, ok := r.Next(ctx)
@@ -855,12 +838,11 @@ func TestStreamReader(t *T) {
 
 			stream := randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: nil,
-				},
+			r := (StreamReaderConfig{
 				Block: 0,
 				Count: 10,
+			}).New(c, map[string]*StreamEntryID{
+				stream: nil,
 			})
 
 			for i := 0; i < 2; i++ {
@@ -886,11 +868,10 @@ func TestStreamReader(t *T) {
 
 			stream := randStr()
 
-			r := NewStreamReader(c, StreamReaderOpts{
-				Streams: map[string]*StreamEntryID{
-					stream: {Time: 0, Seq: 0},
-				},
+			r := (StreamReaderConfig{
 				Block: 500 * time.Millisecond,
+			}).New(c, map[string]*StreamEntryID{
+				stream: {Time: 0, Seq: 0},
 			})
 
 			assertNoStreamReaderEntries(t, r)
@@ -923,11 +904,7 @@ func BenchmarkStreamReader(b *B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		r := NewStreamReader(c, StreamReaderOpts{
-			Streams: streams,
-			NoBlock: true,
-		})
-
+		r := (StreamReaderConfig{NoBlock: true}).New(c, streams)
 		for _, entries, ok := r.Next(ctx); ok && len(entries) > 0; _, entries, ok = r.Next(ctx) {
 			benchErr = r.Err()
 		}

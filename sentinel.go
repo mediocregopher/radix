@@ -12,82 +12,36 @@ import (
 	"github.com/mediocregopher/radix/v4/trace"
 )
 
-// wrapDefaultConnFunc is used to ensure that redis url options are
-// automatically applied to future sentinel connections whose address doesn't
-// have that information encoded.
-func wrapDefaultConnFunc(addr string) ConnFunc {
-	_, opts := parseRedisURL(addr)
-	return func(ctx context.Context, network, addr string) (Conn, error) {
-		return Dial(ctx, network, addr, opts...)
-	}
+// SentinelConfig is used to create Sentinel instances with particular settings.
+// All fields are optional, all methods are thread-safe.
+type SentinelConfig struct {
+	// PoolConfig is used by Sentinel to create Clients for redis instances in
+	// the replica set.
+	//
+	// Sentinel will only call NewClient on the PoolConfig, so that custom
+	// Client implementations may be used via CustomPool.
+	PoolConfig PoolConfig
+
+	// SentinelDialer is the Dialer instance used to create Conns to sentinels.
+	SentinelDialer Dialer
+
+	// ErrCh takes a channel which asynchronous errors encountered by the
+	// Sentinel can be read off of. If the channel blocks the error will be
+	// dropped. The channel will be closed when the Sentinel is closed.
+	ErrCh chan<- error
+
+	// Trace contains callbacks that a Sentinel can use to trace itself.
+	//
+	// All callbacks are blocking.
+	Trace trace.SentinelTrace
 }
 
-type sentinelOpts struct {
-	cf    ConnFunc
-	pf    ClientFunc
-	st    trace.SentinelTrace
-	errCh chan<- error
-}
-
-// SentinelOpt is an optional behavior which can be applied to the NewSentinel
-// function to effect a Sentinel's behavior.
-type SentinelOpt func(*sentinelOpts)
-
-// SentinelConnFunc tells the Sentinel to use the given ConnFunc when connecting
-// to sentinel instances.
-//
-// NOTE that if SentinelConnFunc is not used then Sentinel will attempt to
-// retrieve AUTH and SELECT information from the address provided to
-// NewSentinel, and use that for dialing all Sentinels. If SentinelConnFunc is
-// provided, however, those options must be given through
-// DialAuthPass/DialSelectDB within the ConnFunc.
-func SentinelConnFunc(cf ConnFunc) SentinelOpt {
-	return func(so *sentinelOpts) {
-		so.cf = cf
-	}
-}
-
-// SentinelPoolFunc tells the Sentinel to use the given ClientFunc when creating
-// a pool of connections to the sentinel's primary.
-func SentinelPoolFunc(pf ClientFunc) SentinelOpt {
-	return func(so *sentinelOpts) {
-		so.pf = pf
-	}
-}
-
-// SentinelErrCh takes a channel which asynchronous errors encountered by the
-// Sentinel can be read off of. If the channel blocks the error will be dropped.
-// The channel will be closed when the Sentinel is closed.
-func SentinelErrCh(errCh chan<- error) SentinelOpt {
-	return func(so *sentinelOpts) {
-		so.errCh = errCh
-	}
-}
-
-// SentinelWithTrace tells the Sentinel to trace itself with the given
-// SentinelTrace. Note that SentinelTrace will block at every point which is set
-// to trace.
-func SentinelWithTrace(st trace.SentinelTrace) SentinelOpt {
-	return func(so *sentinelOpts) {
-		so.st = st
-	}
-}
-
-// Sentinel is a Client which, in the background, connects to an available
-// sentinel node and handles all of the following:
-//
-// * Creates a pool to the current primary instance, as advertised by the
-// sentinel
-//
-// * Listens for events indicating the primary has changed, and automatically
-// creates a new Client to the new primary
-//
-// * Keeps track of other sentinels in the cluster, and uses them if the
-// currently connected one becomes unreachable
-//
+// Sentinel is a MultiClient which contains all information needed to interact
+// with a redis replica set managed by redis sentinel, including a set of pools
+// to each of its instances. All methods on Sentinel are thread-safe.
 type Sentinel struct {
 	proc      *proc.Proc
-	opts      sentinelOpts
+	cfg       SentinelConfig
 	initAddrs []string
 	name      string
 
@@ -112,14 +66,8 @@ type Sentinel struct {
 
 var _ MultiClient = new(Sentinel)
 
-// NewSentinel creates and returns a *Sentinel instance. NewSentinel takes in a
-// number of options which can overwrite its default behavior. The default
-// options NewSentinel uses are:
-//
-//	SentinelConnFunc(DefaultConnFunc)
-//	SentinelPoolFunc(DefaultClientFunc)
-//
-func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string, opts ...SentinelOpt) (*Sentinel, error) {
+// New creates and returns a *Sentinel instance using the SentinelConfig.
+func (cfg SentinelConfig) New(ctx context.Context, primaryName string, sentinelAddrs []string) (*Sentinel, error) {
 	addrs := map[string]bool{}
 	for _, addr := range sentinelAddrs {
 		addrs[addr] = true
@@ -127,6 +75,7 @@ func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string
 
 	sc := &Sentinel{
 		proc:          proc.New(),
+		cfg:           cfg,
 		initAddrs:     sentinelAddrs,
 		name:          primaryName,
 		clients:       map[string]Client{},
@@ -135,22 +84,7 @@ func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string
 		testEventCh:   make(chan string, 1),
 	}
 
-	// If the given sentinelAddrs have AUTH/SELECT info encoded into them then
-	// use that for all sentinel connections going forward (unless overwritten
-	// by a SentinelConnFunc in opts).
-	sc.opts.cf = wrapDefaultConnFunc(sentinelAddrs[0])
-	defaultSentinelOpts := []SentinelOpt{
-		SentinelPoolFunc(DefaultClientFunc),
-	}
-
-	for _, opt := range append(defaultSentinelOpts, opts...) {
-		// the other args to NewSentinel used to be a ConnFunc and a ClientFunc,
-		// which someone might have left as nil, in which case this now gives a
-		// weird panic. Just handle it
-		if opt != nil {
-			opt(&(sc.opts))
-		}
-	}
+	_, sc.cfg.SentinelDialer = parseRedisURL(sentinelAddrs[0], sc.cfg.SentinelDialer)
 
 	// first thing is to retrieve the state and create a pool using the first
 	// connectable connection. This connection is only used during
@@ -169,11 +103,17 @@ func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string
 		}
 	}
 
+	pconnCfg := PersistentPubSubConfig{
+		Dialer: Dialer{
+			CustomDialer: func(ctx context.Context, _, _ string) (Conn, error) {
+				return sc.dialSentinel(ctx)
+			},
+		},
+	}
+
 	// because we're using persistent these can't _really_ fail
 	var err error
-	sc.pconn, err = NewPersistentPubSubConn(ctx, "", "", PersistentPubSubConnFunc(func(ctx context.Context, _, _ string) (Conn, error) {
-		return sc.dialSentinel(ctx)
-	}))
+	sc.pconn, err = pconnCfg.New(ctx, nil)
 	if err != nil {
 		sc.Close()
 		return nil, err
@@ -186,7 +126,7 @@ func NewSentinel(ctx context.Context, primaryName string, sentinelAddrs []string
 
 func (sc *Sentinel) err(err error) {
 	select {
-	case sc.opts.errCh <- err:
+	case sc.cfg.ErrCh <- err:
 	default:
 	}
 }
@@ -201,7 +141,7 @@ func (sc *Sentinel) testEvent(event string) {
 func (sc *Sentinel) dialSentinel(ctx context.Context) (conn Conn, err error) {
 	err = sc.proc.WithRLock(func() error {
 		for addr := range sc.sentinelAddrs {
-			if conn, err = sc.opts.cf(ctx, "tcp", addr); err == nil {
+			if conn, err = sc.cfg.SentinelDialer.Dial(ctx, "tcp", addr); err == nil {
 				return nil
 			}
 		}
@@ -210,7 +150,7 @@ func (sc *Sentinel) dialSentinel(ctx context.Context) (conn Conn, err error) {
 		// this doesn't work
 		for _, addr := range sc.initAddrs {
 			var initErr error
-			if conn, initErr = sc.opts.cf(ctx, "tcp", addr); initErr == nil {
+			if conn, initErr = sc.cfg.SentinelDialer.Dial(ctx, "tcp", addr); initErr == nil {
 				return nil
 			}
 		}
@@ -299,7 +239,7 @@ func (sc *Sentinel) client(ctx context.Context, addr string) (Client, error) {
 	// if client was nil but ok was true it means the address is a secondary but
 	// a Client for it has never been created. Create one now and store it into
 	// clients.
-	newClient, err := sc.opts.pf(ctx, "tcp", addr)
+	newClient, err := sc.cfg.PoolConfig.NewClient(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -330,8 +270,8 @@ func (sc *Sentinel) Close() error {
 				client.Close()
 			}
 		}
-		if sc.opts.errCh != nil {
-			close(sc.opts.errCh)
+		if sc.cfg.ErrCh != nil {
+			close(sc.cfg.ErrCh)
 		}
 		return nil
 	})
@@ -421,7 +361,7 @@ func (sc *Sentinel) ensureClients(ctx context.Context, conn Conn) error {
 }
 
 func (sc *Sentinel) traceTopoChanged(prevTopo, newTopo map[string]trace.SentinelNodeInfo) {
-	if sc.opts.st.TopoChanged == nil {
+	if sc.cfg.Trace.TopoChanged == nil {
 		return
 	}
 
@@ -442,7 +382,7 @@ func (sc *Sentinel) traceTopoChanged(prevTopo, newTopo map[string]trace.Sentinel
 	if len(added)+len(removed)+len(changed) == 0 {
 		return
 	}
-	sc.opts.st.TopoChanged(trace.SentinelTopoChanged{
+	sc.cfg.Trace.TopoChanged(trace.SentinelTopoChanged{
 		Added:   added,
 		Removed: removed,
 		Changed: changed,

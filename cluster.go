@@ -46,74 +46,86 @@ func (d *dedupe) do(fn func()) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type clusterOpts struct {
-	pf              ClientFunc
-	clusterDownWait time.Duration
-	syncEvery       time.Duration
-	ct              trace.ClusterTrace
-	errCh           chan<- error
+// ClusterConfig is used to create Cluster instances with particular settings.
+// All fields are optional, all methods are thread-safe.
+type ClusterConfig struct {
+	// PoolConfig is used by Cluster to create Clients for redis instances in
+	// the cluster set.
+	//
+	// Cluster will only call NewClient on the PoolConfig, so that custom Client
+	// implementations may be used via CustomPool.
+	//
+	// If PoolConfig.CustomPool and PoolConfig.Dialer.CustomDialer are unset
+	// then all Conns created by Cluster will have the READONLY command
+	// performed on them upon creation. For Conns to primary instances this will
+	// have no effect, but for secondaries this will allow DoSecondary to
+	// function properly. If CustomPool or CustomDialer are set then READONLY
+	// must be called on each Conn inside whichever is set in order for
+	// DoSecondary to work.
+	PoolConfig PoolConfig
+
+	// SyncEvery tells the Cluster to synchronize itself with the cluster's
+	// topology at the given interval. On every synchronization Cluster will ask
+	// the cluster for its topology and make/destroy its connections as
+	// necessary.
+	//
+	// Defaults to 5 * time.Second. Set to -1 to disable.
+	SyncEvery time.Duration
+
+	// OnDownDelayActionsBy tells the Cluster to delay all commands by the given
+	// duration while the cluster is seen to be in the CLUSTERDOWN state. This
+	// allows fewer Actions to be affected by brief outages, e.g. during a
+	// failover.
+	//
+	// Calls to Sync will not be delayed regardless of this option.
+	//
+	// Defaults to 100 * time.Millisecond. Set to -1 to disable.
+	OnDownDelayActionsBy time.Duration
+
+	// Trace contains callbacks that a Cluster can use to trace itself.
+	//
+	// All callbacks are blocking.
+	Trace trace.ClusterTrace
+
+	// ErrCh is a channel which asynchronous errors encountered by the Cluster
+	// will be written to. If the channel blocks the error will be dropped.  The
+	// channel will be closed when the Cluster is closed.
+	ErrCh chan<- error
 }
 
-// ClusterOpt is an optional behavior which can be applied to the NewCluster
-// function to effect a Cluster's behavior
-type ClusterOpt func(*clusterOpts)
-
-// ClusterPoolFunc tells the Cluster to use the given ClientFunc when creating
-// pools of connections to cluster members.
-//
-// This can be used to allow for secondary reads via the Cluster.DoSecondary
-// method by specifying a ClientFunc that internally creates connections using
-// DefaultClusterConnFunc or a custom ConnFunc that enables READONLY mode on each
-// connection.
-func ClusterPoolFunc(pf ClientFunc) ClusterOpt {
-	return func(co *clusterOpts) {
-		co.pf = pf
+func (cfg ClusterConfig) withDefaults() ClusterConfig {
+	if cfg.SyncEvery < 0 {
+		cfg.SyncEvery = 0
+	} else if cfg.SyncEvery == 0 {
+		cfg.SyncEvery = 5 * time.Second
 	}
-}
-
-// ClusterSyncEvery tells the Cluster to synchronize itself with the cluster's
-// topology at the given interval. On every synchronization Cluster will ask the
-// cluster for its topology and make/destroy its connections as necessary.
-func ClusterSyncEvery(d time.Duration) ClusterOpt {
-	return func(co *clusterOpts) {
-		co.syncEvery = d
+	if cfg.OnDownDelayActionsBy < 0 {
+		cfg.OnDownDelayActionsBy = 0
+	} else if cfg.OnDownDelayActionsBy == 0 {
+		cfg.OnDownDelayActionsBy = 100 * time.Millisecond
 	}
-}
 
-// ClusterOnDownDelayActionsBy tells the Cluster to delay all commands by the given
-// duration while the cluster is seen to be in the CLUSTERDOWN state. This
-// allows fewer actions to be affected by brief outages, e.g. during a failover.
-//
-// If the given duration is 0 then Cluster will not delay actions during the
-// CLUSTERDOWN state. Note that calls to Sync will not be delayed regardless
-// of this option.
-func ClusterOnDownDelayActionsBy(d time.Duration) ClusterOpt {
-	return func(co *clusterOpts) {
-		co.clusterDownWait = d
+	if cfg.PoolConfig.CustomPool == nil &&
+		cfg.PoolConfig.Dialer.CustomDialer == nil {
+		dialer := cfg.PoolConfig.Dialer
+		cfg.PoolConfig.Dialer.CustomDialer = func(ctx context.Context, network, addr string) (Conn, error) {
+			conn, err := dialer.Dial(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			} else if err := conn.Do(ctx, Cmd(nil, "READONLY")); err != nil {
+				conn.Close()
+				return nil, err
+			}
+			return conn, nil
+		}
 	}
+
+	return cfg
 }
 
-// ClusterWithTrace tells the Cluster to trace itself with the given
-// ClusterTrace. Note that ClusterTrace will block every point that you set to
-// trace.
-func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
-	return func(co *clusterOpts) {
-		co.ct = ct
-	}
-}
-
-// ClusterErrCh takes a channel which asynchronous errors encountered by the
-// Cluster can be read off of. If the channel blocks the error will be dropped.
-// The channel will be closed when the Cluster is closed.
-func ClusterErrCh(errCh chan<- error) ClusterOpt {
-	return func(co *clusterOpts) {
-		co.errCh = errCh
-	}
-}
-
-// Cluster contains all information about a redis cluster needed to interact
-// with it, including a set of pools to each of its instances. All methods on
-// Cluster are thread-safe
+// Cluster is a MultiClient which contains all information about a redis cluster
+// needed to interact with it, including a set of pools to each of its
+// instances. All methods on Cluster are thread-safe
 type Cluster struct {
 	// Atomic fields must be at the beginning of the struct since they must be
 	// correctly aligned or else access may cause panics on 32-bit architectures
@@ -121,7 +133,7 @@ type Cluster struct {
 	lastClusterdown int64 // unix timestamp in milliseconds, atomic
 
 	proc *proc.Proc
-	opts clusterOpts
+	cfg  ClusterConfig
 
 	// used to deduplicate calls to sync
 	syncDedupe *dedupe
@@ -134,65 +146,25 @@ type Cluster struct {
 
 var _ MultiClient = new(Cluster)
 
-// DefaultClusterConnFunc is a ConnFunc which will return a Conn for a node in a
-// redis cluster using sane defaults and which has READONLY mode enabled,
-// allowing read-only commands on the connection even if the connected instance
-// is currently a replica, either by explicitly sending commands on the
-// connection or by using the DoSecondary method on the Cluster that owns the
-// connection.
-var DefaultClusterConnFunc = func(ctx context.Context, network, addr string) (Conn, error) {
-	c, err := DefaultConnFunc(ctx, network, addr)
-	if err != nil {
-		return nil, err
-	} else if err := c.Do(ctx, Cmd(nil, "READONLY")); err != nil {
-		c.Close()
-		return nil, err
-	}
-	return c, nil
-}
-
-// NewCluster initializes and returns a Cluster instance. It will try every
-// address given until it finds a usable one. From there it uses CLUSTER SLOTS
-// to discover the cluster topology and make all the necessary connections.
-//
-// NewCluster takes in a number of options which can overwrite its default
-// behavior. The default options NewCluster uses are:
-//
-//     ClusterPoolFunc(DefaultClientFunc)
-//     ClusterSyncEvery(5 * time.Second)
-//     ClusterOnDownDelayActionsBy(100 * time.Millisecond)
-//
-func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
+// New initializes and returns a Cluster instance using the ClusterConfig. It
+// will try every address given until it finds a usable one.  From there it uses
+// CLUSTER SLOTS to discover the cluster topology and make all the necessary
+// connections.
+func (cfg ClusterConfig) New(ctx context.Context, clusterAddrs []string) (*Cluster, error) {
 	c := &Cluster{
 		proc:       proc.New(),
+		cfg:        cfg.withDefaults(),
 		syncDedupe: newDedupe(),
 		pools:      map[string]Client{},
 	}
 
-	defaultClusterOpts := []ClusterOpt{
-		ClusterPoolFunc(func(ctx context.Context, network, addr string) (Client, error) {
-			return NewPool(ctx, network, addr, 4, PoolConnFunc(DefaultConnFunc))
-		}),
-		ClusterSyncEvery(5 * time.Second),
-		ClusterOnDownDelayActionsBy(100 * time.Millisecond),
-	}
-
-	for _, opt := range append(defaultClusterOpts, opts...) {
-		// the other args to NewCluster used to be a ClientFunc, which someone
-		// might have left as nil, in which case this now gives a weird panic.
-		// Just handle it
-		if opt != nil {
-			opt(&(c.opts))
-		}
-	}
-
 	// make a pool to base the cluster on
 	for _, addr := range clusterAddrs {
-		p, err := c.opts.pf(ctx, "tcp", addr)
+		client, err := c.newClient(ctx, addr)
 		if err != nil {
 			continue
 		}
-		c.pools[addr] = p
+		c.pools[addr] = client
 		break
 	}
 
@@ -203,14 +175,20 @@ func NewCluster(ctx context.Context, clusterAddrs []string, opts ...ClusterOpt) 
 		return nil, err
 	}
 
-	c.proc.Run(c.syncEvery)
+	if c.cfg.SyncEvery > 0 {
+		c.proc.Run(func(ctx context.Context) { c.syncEvery(ctx, c.cfg.SyncEvery) })
+	}
 
 	return c, nil
 }
 
+func (c *Cluster) newClient(ctx context.Context, addr string) (Client, error) {
+	return c.cfg.PoolConfig.NewClient(ctx, "tcp", addr)
+}
+
 func (c *Cluster) err(err error) {
 	select {
-	case c.opts.errCh <- err:
+	case c.cfg.ErrCh <- err:
 	default:
 	}
 }
@@ -286,7 +264,7 @@ func (c *Cluster) pool(ctx context.Context, addr string) (Client, error) {
 
 	// it's important that the cluster pool set isn't locked while this is
 	// happening, because this could block for a while
-	if p, err = c.opts.pf(ctx, "tcp", addr); err != nil {
+	if p, err = c.newClient(ctx, addr); err != nil {
 		return nil, err
 	}
 
@@ -376,43 +354,45 @@ func nodeInfoFromNode(node ClusterNode) trace.ClusterNodeInfo {
 }
 
 func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
-	if c.opts.ct.TopoChanged != nil {
-		var addedNodes []trace.ClusterNodeInfo
-		var removedNodes []trace.ClusterNodeInfo
-		var changedNodes []trace.ClusterNodeInfo
+	if c.cfg.Trace.TopoChanged == nil {
+		return
+	}
 
-		prevTopoMap := prevTopo.Map()
-		newTopoMap := newTopo.Map()
+	var addedNodes []trace.ClusterNodeInfo
+	var removedNodes []trace.ClusterNodeInfo
+	var changedNodes []trace.ClusterNodeInfo
 
-		for addr, newNode := range newTopoMap {
-			if prevNode, ok := prevTopoMap[addr]; ok {
-				// Check whether two nodes which have the same address changed its value or not
-				if !reflect.DeepEqual(prevNode, newNode) {
-					changedNodes = append(changedNodes, nodeInfoFromNode(newNode))
-				}
-				// No need to handle this address for finding removed nodes
-				delete(prevTopoMap, addr)
-			} else {
-				// The node's address not found from prevTopo is newly added node
-				addedNodes = append(addedNodes, nodeInfoFromNode(newNode))
+	prevTopoMap := prevTopo.Map()
+	newTopoMap := newTopo.Map()
+
+	for addr, newNode := range newTopoMap {
+		if prevNode, ok := prevTopoMap[addr]; ok {
+			// Check whether two nodes which have the same address changed its value or not
+			if !reflect.DeepEqual(prevNode, newNode) {
+				changedNodes = append(changedNodes, nodeInfoFromNode(newNode))
 			}
+			// No need to handle this address for finding removed nodes
+			delete(prevTopoMap, addr)
+		} else {
+			// The node's address not found from prevTopo is newly added node
+			addedNodes = append(addedNodes, nodeInfoFromNode(newNode))
 		}
+	}
 
-		// Find removed nodes, prevTopoMap has reduced
-		for addr, prevNode := range prevTopoMap {
-			if _, ok := newTopoMap[addr]; !ok {
-				removedNodes = append(removedNodes, nodeInfoFromNode(prevNode))
-			}
+	// Find removed nodes, prevTopoMap has reduced
+	for addr, prevNode := range prevTopoMap {
+		if _, ok := newTopoMap[addr]; !ok {
+			removedNodes = append(removedNodes, nodeInfoFromNode(prevNode))
 		}
+	}
 
-		// Callback when any changes detected
-		if len(addedNodes) != 0 || len(removedNodes) != 0 || len(changedNodes) != 0 {
-			c.opts.ct.TopoChanged(trace.ClusterTopoChanged{
-				Added:   addedNodes,
-				Removed: removedNodes,
-				Changed: changedNodes,
-			})
-		}
+	// Callback when any changes detected
+	if len(addedNodes) != 0 || len(removedNodes) != 0 || len(changedNodes) != 0 {
+		c.cfg.Trace.TopoChanged(trace.ClusterTopoChanged{
+			Added:   addedNodes,
+			Removed: removedNodes,
+			Changed: changedNodes,
+		})
 	}
 }
 
@@ -469,14 +449,14 @@ func (c *Cluster) sync(ctx context.Context, p Client) error {
 	return nil
 }
 
-func (c *Cluster) syncEvery(ctx context.Context) {
-	t := time.NewTicker(c.opts.syncEvery)
+func (c *Cluster) syncEvery(ctx context.Context, d time.Duration) {
+	t := time.NewTicker(d)
 	defer t.Stop()
 
 	for {
 		select {
 		case <-t.C:
-			ctx, cancel := context.WithTimeout(ctx, c.opts.syncEvery)
+			ctx, cancel := context.WithTimeout(ctx, d)
 			err := c.Sync(ctx)
 			cancel()
 			if err != nil {
@@ -699,8 +679,8 @@ func (c *Cluster) setClusterDown(down bool) (changed bool) {
 
 	changed = (prevVal == 0 && newVal != 0) || (prevVal != 0 && newVal == 0)
 
-	if changed && c.opts.ct.StateChange != nil {
-		c.opts.ct.StateChange(trace.ClusterStateChange{IsDown: down})
+	if changed && c.cfg.Trace.StateChange != nil {
+		c.cfg.Trace.StateChange(trace.ClusterStateChange{IsDown: down})
 	}
 
 	return changed
@@ -713,8 +693,8 @@ func (c *Cluster) traceRedirected(
 	count int,
 	final bool,
 ) {
-	if c.opts.ct.Redirected != nil {
-		c.opts.ct.Redirected(trace.ClusterRedirected{
+	if c.cfg.Trace.Redirected != nil {
+		c.cfg.Trace.Redirected(trace.ClusterRedirected{
 			Context:       ctx,
 			Addr:          addr,
 			Key:           key,
@@ -740,12 +720,12 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 		return errors.New("cluster action redirected too many times")
 	}
 
-	if downSince := c.getClusterDownSince(); downSince > 0 && c.opts.clusterDownWait > 0 {
+	if downSince := c.getClusterDownSince(); downSince > 0 && c.cfg.OnDownDelayActionsBy > 0 {
 		// only wait when the last command was not too long, because
 		// otherwise the chance is high that the cluster already healed
 		elapsed := (time.Now().UnixNano() / 1000 / 1000) - downSince
-		if elapsed < int64(c.opts.clusterDownWait/time.Millisecond) {
-			time.Sleep(c.opts.clusterDownWait)
+		if elapsed < int64(c.cfg.OnDownDelayActionsBy/time.Millisecond) {
+			time.Sleep(c.cfg.OnDownDelayActionsBy)
 		}
 	}
 
@@ -777,7 +757,7 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 
 	clusterDown := strings.HasPrefix(msg, "CLUSTERDOWN ")
 	clusterDownChanged := c.setClusterDown(clusterDown)
-	if clusterDown && c.opts.clusterDownWait > 0 && clusterDownChanged {
+	if clusterDown && c.cfg.OnDownDelayActionsBy > 0 && clusterDownChanged {
 		params.attempts--
 		return c.doInner(params)
 	}
@@ -832,8 +812,8 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 // Pools.
 func (c *Cluster) Close() error {
 	return c.proc.Close(func() error {
-		if c.opts.errCh != nil {
-			close(c.opts.errCh)
+		if c.cfg.ErrCh != nil {
+			close(c.cfg.ErrCh)
 		}
 
 		var pErr error

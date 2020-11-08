@@ -17,14 +17,20 @@ func randStr() string {
 	return hex.EncodeToString(b)
 }
 
-func dial(opts ...DialOpt) Conn {
+func dial() Conn {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, err := Dial(ctx, "tcp", "127.0.0.1:6379", opts...)
+	c, err := Dial(ctx, "tcp", "127.0.0.1:6379")
 	if err != nil {
 		panic(err)
 	}
 	return c
+}
+
+var dialer = Dialer{
+	CustomDialer: func(context.Context, string, string) (Conn, error) {
+		return dial(), nil
+	},
 }
 
 var (

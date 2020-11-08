@@ -37,8 +37,7 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 * `Dial` options related to timeout have been removed in favor of context
   deadlines.
 
-* `PubSub` and `PersistentPubSub` have been renamed to `NewPubSubConn` and
-  `NewPersistentPubSubConn`, respectively.
+* `PubSub` has been renamed to `NewPubSubConn`.
 
 * `Stub` and `PubSubStub` have been renamed to `NewStubConn` and
   `NewPubSubStubConn`, respectively.
@@ -50,9 +49,12 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
   single redis instance (`Conn` and `Pool`). Multiple methods on all affected
   client types have been modified to fit these new interfaces.
 
-* `Cluster.NewScanner` has been replaced by `NewMultiScanner`.
+* `Cluster.NewScanner` has been replaced by `ScannerConfig.NewMulti`.
 
 * `Conn` no longer has a `NetConn` method.
+
+* Stop using `...opts` pattern for optional parameters across all types, and
+  switch instead to a `(Config{}).New` kind of pattern.
 
 [resp3]: https://github.com/antirez/RESP3
 

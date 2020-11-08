@@ -7,46 +7,27 @@ import (
 	"github.com/mediocregopher/radix/v4/internal/proc"
 )
 
-type persistentPubSubOpts struct {
-	connFn     ConnFunc
-	abortAfter int
-	errCh      chan<- error
-}
+// PersistentPubSubConfig is used to create a persistent PubSubConn with
+// particular settings. All fields are optional, all methods are thread-safe.
+type PersistentPubSubConfig struct {
+	// Dialer is used to create new Conns.
+	Dialer Dialer
 
-// PersistentPubSubOpt is an optional parameter which can be passed into
-// PersistentPubSub in order to affect its behavior.
-type PersistentPubSubOpt func(*persistentPubSubOpts)
+	// AbortAfter changes the reconnect behavior of the persistent PubSubConn.
+	// Usually a persistent PubSubConn will try to reconnect forever upon a
+	// disconnect, blocking any methods which have been called until reconnect
+	// is successful.
+	//
+	// When AbortAfter is used, it will give up after that many attempts and
+	// return the error to the method being called. In this case another method
+	// must be called in order for reconnection to be tried again.
+	AbortAfter int
 
-// PersistentPubSubConnFunc causes PersistentPubSub to use the given ConnFunc
-// when connecting to its destination.
-func PersistentPubSubConnFunc(connFn ConnFunc) PersistentPubSubOpt {
-	return func(opts *persistentPubSubOpts) {
-		opts.connFn = connFn
-	}
-}
-
-// PersistentPubSubAbortAfter changes PersistentPubSub's reconnect behavior.
-// Usually PersistentPubSub will try to reconnect forever upon a disconnect,
-// blocking any methods which have been called until reconnect is successful.
-//
-// When PersistentPubSubAbortAfter is used, it will give up after that many
-// attempts and return the error to the method which has been blocked the
-// longest. Another method will need to be called in order for PersistentPubSub
-// to resume trying to reconnect.
-func PersistentPubSubAbortAfter(attempts int) PersistentPubSubOpt {
-	return func(opts *persistentPubSubOpts) {
-		opts.abortAfter = attempts
-	}
-}
-
-// PersistentPubSubErrCh takes a channel which asynchronous errors
-// encountered by the PersistentPubSub can be read off of. If the channel blocks
-// the error will be dropped. The channel will be closed when PersistentPubSub
-// is closed.
-func PersistentPubSubErrCh(errCh chan<- error) PersistentPubSubOpt {
-	return func(opts *persistentPubSubOpts) {
-		opts.errCh = errCh
-	}
+	// ErrCh is a channel which asynchronous errors encountered by the
+	// persistent PubSubConn will be written to. If the channel blocks the error
+	// will be dropped. The channel will be closed when the PubSubConn is
+	// closed.
+	ErrCh chan<- error
 }
 
 type pubSubCmd struct {
@@ -65,8 +46,8 @@ type pubSubCmd struct {
 
 type persistentPubSub struct {
 	proc *proc.Proc
+	cfg  PersistentPubSubConfig
 	dial func(context.Context) (Conn, error)
-	opts persistentPubSubOpts
 
 	subs, psubs chanSet
 
@@ -76,43 +57,27 @@ type persistentPubSub struct {
 	cmdCh chan pubSubCmd
 }
 
-// NewPersistentPubSubConn is like NewPubSubConn, but instead of taking in an
-// existing Conn to wrap it will create one on the fly. If the connection is
-// ever terminated then a new one will be created and will be reset to the
-// previous connection's state.
+// New is like NewPubSubConn, but instead of taking in an existing Conn to wrap
+// it will create its own using the network/address returned from the given
+// callback.
+//
+// If the Conn is ever severed then the callback will be re-called, a new Conn
+// will be created, and that Conn will be reset to the previous Conn's state.
 //
 // This is effectively a way to have a permanent PubSubConn established which
 // supports subscribing/unsubscribing but without the hassle of implementing
 // reconnect/re-subscribe logic.
-//
-// With default options, neither this function nor any of the methods on the
-// returned PubSubConn will ever return an error, they will instead block until
-// a connection can be successfully reinstated.
-//
-// PersistentPubSubWithOpts takes in a number of options which can overwrite its
-// default behavior. The default options PersistentPubSubWithOpts uses are:
-//
-//	PersistentPubSubConnFunc(DefaultConnFunc)
-//
-func NewPersistentPubSubConn(
-	ctx context.Context,
-	network, addr string, options ...PersistentPubSubOpt,
-) (
-	PubSubConn, error,
-) {
-	opts := persistentPubSubOpts{
-		connFn: DefaultConnFunc,
-	}
-	for _, opt := range options {
-		opt(&opts)
-	}
-
+func (cfg PersistentPubSubConfig) New(ctx context.Context, cb func() (network, addr string)) (PubSubConn, error) {
 	p := &persistentPubSub{
 		proc: proc.New(),
 		dial: func(ctx context.Context) (Conn, error) {
-			return opts.connFn(ctx, network, addr)
+			var network, addr string
+			if cb != nil {
+				network, addr = cb()
+			}
+			return cfg.Dialer.Dial(ctx, network, addr)
 		},
-		opts:  opts,
+		cfg:   cfg,
 		subs:  chanSet{},
 		psubs: chanSet{},
 		cmdCh: make(chan pubSubCmd),
@@ -166,7 +131,7 @@ func (p *persistentPubSub) refresh(ctx context.Context) error {
 			return ctxErr
 		}
 		attempts++
-		if p.opts.abortAfter > 0 && attempts >= p.opts.abortAfter {
+		if p.cfg.AbortAfter > 0 && attempts >= p.cfg.AbortAfter {
 			return err
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -224,7 +189,7 @@ func (p *persistentPubSub) execCmd(cmd pubSubCmd) error {
 
 func (p *persistentPubSub) err(err error) {
 	select {
-	case p.opts.errCh <- err:
+	case p.cfg.ErrCh <- err:
 	default:
 	}
 }
@@ -302,8 +267,8 @@ func (p *persistentPubSub) Close() error {
 			closeErr = p.curr.Close()
 			<-p.currErrCh
 		}
-		if p.opts.errCh != nil {
-			close(p.opts.errCh)
+		if p.cfg.ErrCh != nil {
+			close(p.cfg.ErrCh)
 		}
 		return closeErr
 	})

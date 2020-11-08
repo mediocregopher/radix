@@ -13,9 +13,6 @@ import (
 	"github.com/mediocregopher/radix/v4/trace"
 )
 
-// ErrPoolEmpty is used by Pools created using the PoolOnEmptyErrAfter option
-var ErrPoolEmpty = errors.New("connection pool is empty")
-
 var errPoolFull = errors.New("connection pool is full")
 
 // ioErrConn is a Conn which tracks the last net.Error which was seen either
@@ -56,141 +53,131 @@ func (ioc *ioErrConn) Close() error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type poolOpts struct {
-	cf                    ConnFunc
-	pingInterval          time.Duration
-	refillInterval        time.Duration
-	overflowDrainInterval time.Duration
-	overflowSize          int
-	onEmptyWait           time.Duration
-	errOnEmpty            error
-	pt                    trace.PoolTrace
-	errCh                 chan<- error
+// PoolConfig is used to create Pool instances with particular settings. All
+// fields are optional, all methods are thread-safe.
+type PoolConfig struct {
+	// CustomPool indicates that this callback should be used in place of
+	// NewClient when NewClient is called. All behavior of NewClient is
+	// superceded when this is set.
+	CustomPool func(ctx context.Context, network, addr string) (Client, error)
+
+	// Dialer is used by Pool to create new Conns to the Pool's redis instance.
+	Dialer Dialer
+
+	// Size indicates the minimum number of Conns the Pool will attempt to
+	// maintain.
+	//
+	// If -1 then the Pool will not maintain any open Conns and all Actions will
+	// result in the creation and closing of a fresh Conn (except for where the
+	// overflow buffer is used, see OverflowBufferSize).
+	//
+	// Defaults to 4.
+	Size int
+
+	// PingInterval specifies the interval at which a ping event happens. On
+	// each ping event the Pool calls the PING redis command one one of its
+	// available connections.
+	//
+	// Since connections are used in LIFO order, the ping interval * pool size
+	// is the duration of time it takes to ping every connection once when the
+	// pool is idle.
+	//
+	// If not given then the default value is calculated to be roughly 5 seconds
+	// to check every connection in the Pool.
+	PingInterval time.Duration
+
+	// RefillInterval specifies the interval at which a refill event happens. On
+	// each refill event the Pool checks to see if it is full, and if it's not a
+	// single connection is created and added to it.
+	//
+	// Defaults to 1 second.
+	RefillInterval time.Duration
+
+	// OnEmptyCreateImmediately effects the Pool's behavior when there are no
+	// available connections in the Pool. The effect is to cause a new Conn to
+	// be created immediately and used.
+	//
+	// OnEmptyCreateImmediately is mutually exclusive with OnEmptyCreateAfter.
+	OnEmptyCreateImmediately bool
+
+	// OnEmptyCreateAfter effects the Pool's behavior when there are no
+	// available connections in the Pool. The effect is to cause actions to
+	// block until a Conn becomes available or until the duration has passed. If
+	// the duration is passed a new connection is created and used.
+	//
+	// If -1 then the Pool will block indefinitely (or until the passed in
+	// Context is cancelled).
+	//
+	// Defaults to 1 second.
+	OnEmptyCreateAfter time.Duration
+
+	// OverflowBufferSize indicates how big the overflow buffer should be. The
+	// overflow buffer is used when a Conn is being put back into a full Pool;
+	// the Conn will instead be put into the buffer, making it available for
+	// use. If the overflow buffer is full then the Conn is closed.
+	//
+	// See OverflowBufferDrainInterval for details on how the overflow is
+	// drained.
+	//
+	// If OnEmptyCreateAfter is -1 this won't have any effect, because there
+	// won't be any occasion where more connections than the pool size will be
+	// created.
+	//
+	// If -1 then no overflow buffer will be used.
+	//
+	// If not given the default value is calculated to be roughly 1/3 of the
+	// size of the Pool.
+	OverflowBufferSize int
+
+	// OverflowBufferDrainInterval indicates the interval at which a drain event
+	// happens. On each drain event a Conn will be removed from the overflow
+	// buffer (if any are present in it), closed, and discarded.
+	//
+	// Defaults to 1 second.
+	OverflowBufferDrainInterval time.Duration
+
+	// Trace contains callbacks that a Pool can use to trace itself.
+	//
+	// All callbacks are blocking.
+	Trace trace.PoolTrace
+
+	// ErrCh is a channel which asynchronous errors encountered by the Pool will
+	// be written to. If the channel blocks the error will be dropped. The
+	// channel will be closed when the Pool is closed.
+	ErrCh chan<- error
 }
 
-// PoolOpt is an optional behavior which can be applied to the NewPool function
-// to effect a Pool's behavior
-type PoolOpt func(*poolOpts)
-
-// PoolConnFunc tells the Pool to use the given ConnFunc when creating new
-// Conns to its redis instance. The ConnFunc can be used to set timeouts,
-// perform AUTH, or even use custom Conn implementations.
-func PoolConnFunc(cf ConnFunc) PoolOpt {
-	return func(po *poolOpts) {
-		po.cf = cf
+func (cfg PoolConfig) withDefaults() PoolConfig {
+	if cfg.Size == -1 {
+		cfg.Size = 0
+	} else if cfg.Size == 0 {
+		cfg.Size = 4
 	}
-}
-
-// PoolPingInterval specifies the interval at which a ping event happens. On
-// each ping event the Pool calls the PING redis command over one of it's
-// available connections.
-//
-// Since connections are used in LIFO order, the ping interval * pool size is
-// the duration of time it takes to ping every connection once when the pool is
-// idle.
-//
-// A shorter interval means connections are pinged more frequently, but also
-// means more traffic with the server.
-func PoolPingInterval(d time.Duration) PoolOpt {
-	return func(po *poolOpts) {
-		po.pingInterval = d
+	if cfg.PingInterval == 0 {
+		cfg.PingInterval = 5 * time.Second / time.Duration(cfg.Size+1)
 	}
-}
-
-// PoolRefillInterval specifies the interval at which a refill event happens. On
-// each refill event the Pool checks to see if it is full, and if it's not a
-// single connection is created and added to it.
-func PoolRefillInterval(d time.Duration) PoolOpt {
-	return func(po *poolOpts) {
-		po.refillInterval = d
+	if cfg.RefillInterval == 0 {
+		cfg.RefillInterval = 1 * time.Second
 	}
-}
-
-// PoolOnEmptyWait effects the Pool's behavior when there are no available
-// connections in the Pool. The effect is to cause actions to block as long as
-// it takes until a connection becomes available.
-func PoolOnEmptyWait() PoolOpt {
-	return func(po *poolOpts) {
-		po.onEmptyWait = -1
+	if cfg.OnEmptyCreateAfter == -1 {
+		cfg.OnEmptyCreateAfter = 0
+	} else if cfg.OnEmptyCreateAfter == 0 {
+		cfg.OnEmptyCreateAfter = 1 * time.Second
 	}
-}
-
-// PoolOnEmptyCreateAfter effects the Pool's behavior when there are no
-// available connections in the Pool. The effect is to cause actions to block
-// until a connection becomes available or until the duration has passed. If the
-// duration is passed a new connection is created and used.
-//
-// If wait is 0 then a new connection is created immediately upon an empty Pool.
-func PoolOnEmptyCreateAfter(wait time.Duration) PoolOpt {
-	return func(po *poolOpts) {
-		po.onEmptyWait = wait
-		po.errOnEmpty = nil
+	if cfg.OverflowBufferSize == -1 {
+		cfg.OverflowBufferSize = 0
+	} else if cfg.OverflowBufferSize == 0 {
+		cfg.OverflowBufferSize = (cfg.Size / 3) + 1
 	}
-}
-
-// PoolOnEmptyErrAfter effects the Pool's behavior when there are no
-// available connections in the Pool. The effect is to cause actions to block
-// until a connection becomes available or until the duration has passed. If the
-// duration is passed then ErrEmptyPool is returned.
-//
-// If wait is 0 then ErrEmptyPool is returned immediately upon an empty Pool.
-func PoolOnEmptyErrAfter(wait time.Duration) PoolOpt {
-	return func(po *poolOpts) {
-		po.onEmptyWait = wait
-		po.errOnEmpty = ErrPoolEmpty
+	if cfg.OverflowBufferDrainInterval == 0 {
+		cfg.OverflowBufferDrainInterval = 1 * time.Second
 	}
+	return cfg
 }
 
-// PoolOnFullClose effects the Pool's behavior when it is full. The effect is to
-// cause any connection which is being put back into a full pool to be closed
-// and discarded.
-func PoolOnFullClose() PoolOpt {
-	return func(po *poolOpts) {
-		po.overflowSize = 0
-		po.overflowDrainInterval = 0
-	}
-}
-
-// PoolOnFullBuffer effects the Pool's behavior when it is full. The effect is
-// to give the pool an additional buffer for connections, called the overflow.
-// If a connection is being put back into a full pool it will be put into the
-// overflow. If the overflow is also full then the connection will be closed and
-// discarded.
-//
-// drainInterval specifies the interval at which a drain event happens. On each
-// drain event a connection will be removed from the overflow buffer (if any are
-// present in it), closed, and discarded.
-//
-// If drainInterval is zero then drain events will never occur.
-//
-// NOTE that if used with PoolOnEmptyWait or PoolOnEmptyErrAfter this won't have
-// any effect, because there won't be any occasion where more connections than
-// the pool size will be created.
-func PoolOnFullBuffer(size int, drainInterval time.Duration) PoolOpt {
-	return func(po *poolOpts) {
-		po.overflowSize = size
-		po.overflowDrainInterval = drainInterval
-	}
-}
-
-// PoolWithTrace tells the Pool to trace itself with the given PoolTrace
-// Note that PoolTrace will block every point that you set to trace.
-func PoolWithTrace(pt trace.PoolTrace) PoolOpt {
-	return func(po *poolOpts) {
-		po.pt = pt
-	}
-}
-
-// PoolErrCh takes a channel which asynchronous errors encountered by the Pool
-// can be read off of. If the channel blocks the error will be dropped.  The
-// channel will be closed when the Pool is closed.
-func PoolErrCh(errCh chan<- error) PoolOpt {
-	return func(po *poolOpts) {
-		po.errCh = errCh
-	}
-}
-
-////////////////////////////////////////////////////////////////////////////////
+// TODO allow for setting a hard upper limit on number of connections while also
+// allowing for overflow buffer. See
+// https://github.com/mediocregopher/radix/issues/219.
 
 // Pool is a dynamic connection pool which implements the Client interface. It
 // takes in a number of options which can effect its specific behavior; see the
@@ -208,50 +195,38 @@ type Pool struct {
 	totalConns int64 // atomic, must only be access using functions from sync/atomic
 
 	proc          *proc.Proc
-	opts          poolOpts
+	cfg           PoolConfig
 	network, addr string
-	size          int
 	pool          chan *ioErrConn
 }
 
 var _ Client = new(Pool)
 
-// NewPool creates a *Pool which will keep open at least the given number of
-// connections to the redis instance at the given address.
-//
-// NewPool takes in a number of options which can overwrite its default
-// behavior. The default options NewPool uses are:
-//
-//	PoolConnFunc(DefaultConnFunc)
-//	PoolOnEmptyCreateAfter(1 * time.Second)
-//	PoolRefillInterval(1 * time.Second)
-//	PoolOnFullBuffer((size / 3)+1, 1 * time.Second)
-//	PoolPingInterval(5 * time.Second / (size+1))
-//
-// The recommended size of the pool depends on many factors, such as the number
-// of concurrent goroutines that will use the pool.
-//
-func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOpt) (*Pool, error) {
+// NewClient calls New and returns the Pool as a Client. If CustomPool is set in
+// the PoolConfig then that is called instead.
+func (cfg PoolConfig) NewClient(ctx context.Context, network, addr string) (Client, error) {
+	if cfg.CustomPool != nil {
+		return cfg.CustomPool(ctx, network, addr)
+	}
+	p, err := cfg.New(ctx, network, addr)
+	return p, err
+}
+
+// New initializes and returns a Pool instance using the PoolConfig. This will
+// panic if CustomPool is set in the PoolConfig.
+func (cfg PoolConfig) New(ctx context.Context, network, addr string) (*Pool, error) {
+	if cfg.CustomPool != nil {
+		panic("Cannot use PoolConfig.New with CustomPool")
+	}
+
 	p := &Pool{
 		proc:    proc.New(),
+		cfg:     cfg.withDefaults(),
 		network: network,
 		addr:    addr,
-		size:    size,
 	}
 
-	defaultPoolOpts := []PoolOpt{
-		PoolConnFunc(DefaultConnFunc),
-		PoolOnEmptyCreateAfter(1 * time.Second),
-		PoolRefillInterval(1 * time.Second),
-		PoolOnFullBuffer((size/3)+1, 1*time.Second),
-		PoolPingInterval(5 * time.Second / time.Duration(size+1)),
-	}
-
-	for _, opt := range append(defaultPoolOpts, opts...) {
-		opt(&(p.opts))
-	}
-
-	totalSize := size + p.opts.overflowSize
+	totalSize := p.cfg.Size + p.cfg.OverflowBufferSize
 	p.pool = make(chan *ioErrConn, totalSize)
 
 	// make one Conn synchronously to ensure there's actually a redis instance
@@ -264,7 +239,7 @@ func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOp
 
 	p.proc.Run(func(ctx context.Context) {
 		startTime := time.Now()
-		for i := 0; i < size-1; i++ {
+		for i := 0; i < p.cfg.Size-1; i++ {
 			ioc, err := p.newConn(ctx, trace.PoolConnCreatedReasonInitialization)
 			if err != nil {
 				p.err(err)
@@ -285,25 +260,25 @@ func NewPool(ctx context.Context, network, addr string, size int, opts ...PoolOp
 
 	})
 
-	if p.opts.pingInterval > 0 && size > 0 {
-		p.atIntervalDo(p.opts.pingInterval, func(ctx context.Context) {
+	if p.cfg.PingInterval > 0 && p.cfg.Size > 0 {
+		p.atIntervalDo(p.cfg.PingInterval, func(ctx context.Context) {
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			p.Do(ctx, Cmd(nil, "PING"))
 		})
 	}
-	if p.opts.refillInterval > 0 && size > 0 {
-		p.atIntervalDo(p.opts.refillInterval, p.doRefill)
+	if p.cfg.RefillInterval > 0 && p.cfg.Size > 0 {
+		p.atIntervalDo(p.cfg.RefillInterval, p.doRefill)
 	}
-	if p.opts.overflowSize > 0 && p.opts.overflowDrainInterval > 0 {
-		p.atIntervalDo(p.opts.overflowDrainInterval, p.doOverflowDrain)
+	if p.cfg.OverflowBufferSize > 0 && p.cfg.OverflowBufferDrainInterval > 0 {
+		p.atIntervalDo(p.cfg.OverflowBufferDrainInterval, p.doOverflowDrain)
 	}
 	return p, nil
 }
 
 func (p *Pool) traceInitCompleted(elapsedTime time.Duration) {
-	if p.opts.pt.InitCompleted != nil {
-		p.opts.pt.InitCompleted(trace.PoolInitCompleted{
+	if p.cfg.Trace.InitCompleted != nil {
+		p.cfg.Trace.InitCompleted(trace.PoolInitCompleted{
 			PoolCommon:  p.traceCommon(),
 			ElapsedTime: elapsedTime,
 		})
@@ -312,7 +287,7 @@ func (p *Pool) traceInitCompleted(elapsedTime time.Duration) {
 
 func (p *Pool) err(err error) {
 	select {
-	case p.opts.errCh <- err:
+	case p.cfg.ErrCh <- err:
 	default:
 	}
 }
@@ -320,7 +295,7 @@ func (p *Pool) err(err error) {
 func (p *Pool) traceCommon() trace.PoolCommon {
 	return trace.PoolCommon{
 		Network: p.network, Addr: p.addr,
-		PoolSize: p.size, OverflowBufferSize: p.opts.overflowSize,
+		PoolSize: p.cfg.Size, OverflowBufferSize: p.cfg.OverflowBufferSize,
 		AvailCount: len(p.pool),
 	}
 }
@@ -331,8 +306,8 @@ func (p *Pool) traceConnCreated(
 	reason trace.PoolConnCreatedReason,
 	err error,
 ) {
-	if p.opts.pt.ConnCreated != nil {
-		p.opts.pt.ConnCreated(trace.PoolConnCreated{
+	if p.cfg.Trace.ConnCreated != nil {
+		p.cfg.Trace.ConnCreated(trace.PoolConnCreated{
 			PoolCommon:  p.traceCommon(),
 			Context:     ctx,
 			Reason:      reason,
@@ -343,8 +318,8 @@ func (p *Pool) traceConnCreated(
 }
 
 func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
-	if p.opts.pt.ConnClosed != nil {
-		p.opts.pt.ConnClosed(trace.PoolConnClosed{
+	if p.cfg.Trace.ConnClosed != nil {
+		p.cfg.Trace.ConnClosed(trace.PoolConnClosed{
 			PoolCommon: p.traceCommon(),
 			Reason:     reason,
 		})
@@ -353,7 +328,7 @@ func (p *Pool) traceConnClosed(reason trace.PoolConnClosedReason) {
 
 func (p *Pool) newConn(ctx context.Context, reason trace.PoolConnCreatedReason) (*ioErrConn, error) {
 	start := time.Now()
-	c, err := p.opts.cf(ctx, p.network, p.addr)
+	c, err := p.cfg.Dialer.Dial(ctx, p.network, p.addr)
 	elapsed := time.Since(start)
 	p.traceConnCreated(ctx, elapsed, reason, err)
 	if err != nil {
@@ -381,7 +356,7 @@ func (p *Pool) atIntervalDo(d time.Duration, do func(context.Context)) {
 }
 
 func (p *Pool) doRefill(ctx context.Context) {
-	if atomic.LoadInt64(&p.totalConns) >= int64(p.size) {
+	if atomic.LoadInt64(&p.totalConns) >= int64(p.cfg.Size) {
 		return
 	}
 	ioc, err := p.newConn(ctx, trace.PoolConnCreatedReasonRefill)
@@ -393,7 +368,7 @@ func (p *Pool) doRefill(ctx context.Context) {
 }
 
 func (p *Pool) doOverflowDrain(context.Context) {
-	if len(p.pool) <= p.size {
+	if len(p.pool) <= p.cfg.Size {
 		return
 	}
 
@@ -403,6 +378,7 @@ func (p *Pool) doOverflowDrain(context.Context) {
 	case ioc = <-p.pool:
 	default:
 		// pool is empty, nothing to drain
+		return
 	}
 
 	ioc.Close()
@@ -413,34 +389,35 @@ func (p *Pool) doOverflowDrain(context.Context) {
 func (p *Pool) getExisting(ctx context.Context) (*ioErrConn, error) {
 	// Fast-path if the pool is not empty. Return error if pool has been closed.
 	select {
-	case <-p.proc.ClosedCh():
-		return nil, proc.ErrClosed
-	case ioc := <-p.pool:
+	case ioc, ok := <-p.pool:
+		if !ok {
+			return nil, proc.ErrClosed
+		}
 		return ioc, nil
 	default:
 	}
 
-	if p.opts.onEmptyWait == 0 {
-		// If we should not wait we return without allocating a timer.
-		return nil, p.opts.errOnEmpty
+	if p.cfg.OnEmptyCreateImmediately {
+		return nil, nil
 	}
 
 	// only set when we have a timeout, since a nil channel always blocks which
 	// is what we want
 	var tc <-chan time.Time
-	if p.opts.onEmptyWait > 0 {
-		tc = time.After(p.opts.onEmptyWait)
+	if p.cfg.OnEmptyCreateAfter > 0 {
+		tc = time.After(p.cfg.OnEmptyCreateAfter)
 	}
 
 	select {
-	case <-p.proc.ClosedCh():
-		return nil, proc.ErrClosed
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case ioc := <-p.pool:
+	case ioc, ok := <-p.pool:
+		if !ok {
+			return nil, proc.ErrClosed
+		}
 		return ioc, nil
 	case <-tc:
-		return nil, p.opts.errOnEmpty
+		return nil, nil
 	}
 }
 
@@ -524,8 +501,8 @@ func (p *Pool) Close() error {
 	return p.proc.Close(func() error {
 		p.drain()
 		close(p.pool)
-		if p.opts.errCh != nil {
-			close(p.opts.errCh)
+		if p.cfg.ErrCh != nil {
+			close(p.cfg.ErrCh)
 		}
 		return nil
 	})

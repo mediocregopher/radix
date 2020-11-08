@@ -3,6 +3,7 @@ package radix
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	. "testing"
@@ -42,13 +43,14 @@ func TestDialAuth(t *T) {
 	runTests := func(t *T, tests []testCase, allowedErrs []string) {
 		ctx := testCtx(t)
 		for _, test := range tests {
-			var opts []DialOpt
+			var dialer Dialer
 			if test.dialOptUser != "" {
-				opts = append(opts, DialAuthUser(test.dialOptUser, test.dialOptPass))
-			} else if test.dialOptPass != "" {
-				opts = append(opts, DialAuthPass(test.dialOptPass))
+				dialer.AuthUser = test.dialOptUser
 			}
-			_, err := Dial(ctx, "tcp", test.url, opts...)
+			if test.dialOptPass != "" {
+				dialer.AuthPass = test.dialOptPass
+			}
+			_, err := dialer.Dial(ctx, "tcp", test.url)
 
 			// It's difficult to test _which_ password is being sent, but it's easy
 			// enough to tell that one was sent because redis returns an error if one
@@ -124,11 +126,11 @@ func TestDialSelect(t *T) {
 	}
 
 	for _, test := range tests {
-		var opts []DialOpt
+		var dialer Dialer
 		if test.dialOptSelect > 0 {
-			opts = append(opts, DialSelectDB(test.dialOptSelect))
+			dialer.SelectDB = strconv.Itoa(test.dialOptSelect)
 		}
-		c, err := Dial(ctx, "tcp", test.url, opts...)
+		c, err := dialer.Dial(ctx, "tcp", test.url)
 		if err != nil {
 			t.Fatalf("got err connecting:%v (test:%#v)", err, test)
 		}
