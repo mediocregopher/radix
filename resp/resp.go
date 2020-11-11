@@ -40,6 +40,13 @@ type Opts struct {
 	// This field may not be nil.
 	GetBufferedReader func(r io.Reader) BufferedReader
 
+	// GetBufferedWriter returns a BufferedWriter which will buffer writes to
+	// the given io.Writer, such that calling Flush on it will ensure all
+	// previous writes have been written.
+	//
+	// This field may not be nil.
+	GetBufferedWriter func(w io.Writer) BufferedWriter
+
 	// Deterministic indicates that marshal operations should result in
 	// deterministic results. This is largely used for ensuring map key/values
 	// are emitted in a deterministic order.
@@ -58,6 +65,7 @@ func NewOpts() *Opts {
 		PutBytes:          bp.put,
 		GetReader:         brp.get,
 		GetBufferedReader: func(r io.Reader) BufferedReader { return bufio.NewReader(r) },
+		GetBufferedWriter: func(w io.Writer) BufferedWriter { return bufio.NewWriter(w) },
 	}
 }
 
@@ -77,6 +85,12 @@ type BufferedReader interface {
 	ReadSlice(delim byte) (line []byte, err error)
 	Peek(n int) ([]byte, error)
 	Discard(n int) (discarded int, err error)
+}
+
+// BufferedWriter wraps a bufio.Writer.
+type BufferedWriter interface {
+	io.Writer
+	Flush() error
 }
 
 // Unmarshaler is the interface implemented by types that can unmarshal a RESP
