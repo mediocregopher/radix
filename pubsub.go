@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"io"
@@ -47,7 +46,7 @@ func (m PubSubMessage) MarshalRESP(w io.Writer, o *resp.Opts) error {
 var errNotPubSubMessage = errors.New("message is not a PubSubMessage")
 
 // UnmarshalRESP implements the Unmarshaler interface
-func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	// This method will fully consume the message on the wire, regardless of if
 	// it is a PubSubMessage or not. If it is not then errNotPubSubMessage is
 	// returned.

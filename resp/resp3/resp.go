@@ -133,7 +133,7 @@ var (
 
 // l may be negative to indicate that elements should be discarded until a
 // streamed aggregated end type message is encountered.
-func discardMulti(br *bufio.Reader, l int, o *resp.Opts) error {
+func discardMulti(br resp.BufferedReader, l int, o *resp.Opts) error {
 	for i := 0; i < l || l < 0; i++ {
 		if more, err := maybeUnmarshalRESP(br, l < 0, nil, o); err != nil {
 			return err
@@ -144,7 +144,7 @@ func discardMulti(br *bufio.Reader, l int, o *resp.Opts) error {
 	return nil
 }
 
-func discardAttribute(br *bufio.Reader, o *resp.Opts) error {
+func discardAttribute(br resp.BufferedReader, o *resp.Opts) error {
 	var attrHead AttributeHeader
 	b, err := br.Peek(1)
 	if err != nil {
@@ -178,7 +178,7 @@ func (e errUnexpectedPrefix) Error() string {
 //
 // peekAndAssertPrefix will discard any preceding attribute message when called
 // with discardAttr set
-func peekAndAssertPrefix(br *bufio.Reader, expectedPrefix Prefix, discardAttr bool, o *resp.Opts) error {
+func peekAndAssertPrefix(br resp.BufferedReader, expectedPrefix Prefix, discardAttr bool, o *resp.Opts) error {
 	if discardAttr {
 		if err := discardAttribute(br, o); err != nil {
 			return err
@@ -213,7 +213,7 @@ func peekAndAssertPrefix(br *bufio.Reader, expectedPrefix Prefix, discardAttr bo
 
 // like peekAndAssertPrefix, but will consume the prefix if it is the correct
 // one as well.
-func readAndAssertPrefix(br *bufio.Reader, prefix Prefix, discardAttr bool, o *resp.Opts) error {
+func readAndAssertPrefix(br resp.BufferedReader, prefix Prefix, discardAttr bool, o *resp.Opts) error {
 	if err := peekAndAssertPrefix(br, prefix, discardAttr, o); err != nil {
 		return err
 	}
@@ -258,7 +258,7 @@ func (b BlobStringBytes) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (b *BlobStringBytes) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (b *BlobStringBytes) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, BlobStringPrefix, true, o); err != nil {
 		return err
 	}
@@ -332,7 +332,7 @@ func (b BlobString) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (b *BlobString) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (b *BlobString) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, BlobStringPrefix, true, o); err != nil {
 		return err
 	}
@@ -426,7 +426,7 @@ func (ss SimpleString) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (ss *SimpleString) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (ss *SimpleString) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, SimpleStringPrefix, true, o); err != nil {
 		return err
 	}
@@ -466,7 +466,7 @@ func (e SimpleError) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (e *SimpleError) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (e *SimpleError) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, SimpleErrorPrefix, true, o); err != nil {
 		return err
 	}
@@ -495,7 +495,7 @@ func (n Number) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (n *Number) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (n *Number) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, NumberPrefix, true, o); err != nil {
 		return err
 	}
@@ -519,7 +519,7 @@ func (Null) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (*Null) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (*Null) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := discardAttribute(br, o); err != nil {
 		return err
 	}
@@ -596,7 +596,7 @@ func (d Double) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (d *Double) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (d *Double) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, DoublePrefix, true, o); err != nil {
 		return err
 	}
@@ -630,7 +630,7 @@ func (b Boolean) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (b *Boolean) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (b *Boolean) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, BooleanPrefix, true, o); err != nil {
 		return err
 	}
@@ -678,7 +678,7 @@ func (e BlobError) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (e *BlobError) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (e *BlobError) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, BlobErrorPrefix, true, o); err != nil {
 		return err
 	}
@@ -735,7 +735,7 @@ func (b VerbatimStringBytes) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (b *VerbatimStringBytes) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (b *VerbatimStringBytes) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, VerbatimStringPrefix, true, o); err != nil {
 		return err
 	}
@@ -793,7 +793,7 @@ func (b VerbatimString) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (b *VerbatimString) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (b *VerbatimString) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, VerbatimStringPrefix, true, o); err != nil {
 		return err
 	}
@@ -841,7 +841,7 @@ func (b BigNumber) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (b *BigNumber) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (b *BigNumber) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, BigNumberPrefix, true, o); err != nil {
 		return err
 	}
@@ -878,7 +878,7 @@ func marshalAggHeader(w io.Writer, prefix Prefix, n int, streamHeader bool, o *r
 }
 
 type unmarshalAggHeaderParams struct {
-	br           *bufio.Reader
+	br           resp.BufferedReader
 	prefix       Prefix
 	n            *int
 	streamHeader *bool
@@ -941,7 +941,7 @@ func (h ArrayHeader) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (h *ArrayHeader) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (h *ArrayHeader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	return unmarshalAggHeader(unmarshalAggHeaderParams{
 		br:               br,
 		prefix:           ArrayHeaderPrefix,
@@ -974,7 +974,7 @@ func (h MapHeader) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (h *MapHeader) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (h *MapHeader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	return unmarshalAggHeader(unmarshalAggHeaderParams{
 		br:           br,
 		prefix:       MapHeaderPrefix,
@@ -1006,7 +1006,7 @@ func (h SetHeader) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (h *SetHeader) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (h *SetHeader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	return unmarshalAggHeader(unmarshalAggHeaderParams{
 		br:           br,
 		prefix:       SetHeaderPrefix,
@@ -1032,7 +1032,7 @@ func (h AttributeHeader) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (h *AttributeHeader) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (h *AttributeHeader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	return unmarshalAggHeader(unmarshalAggHeaderParams{
 		br:     br,
 		prefix: AttributeHeaderPrefix,
@@ -1055,7 +1055,7 @@ func (h PushHeader) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (h *PushHeader) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (h *PushHeader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	return unmarshalAggHeader(unmarshalAggHeaderParams{
 		br:          br,
 		prefix:      PushHeaderPrefix,
@@ -1092,7 +1092,7 @@ func (b StreamedStringChunkBytes) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (b *StreamedStringChunkBytes) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (b *StreamedStringChunkBytes) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, StreamedStringChunkPrefix, true, o); err != nil {
 		return err
 	}
@@ -1143,7 +1143,7 @@ func (b StreamedStringChunk) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (b *StreamedStringChunk) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (b *StreamedStringChunk) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, StreamedStringChunkPrefix, true, o); err != nil {
 		return err
 	}
@@ -1194,7 +1194,7 @@ type StreamedStringReader struct {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (r *StreamedStringReader) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (r *StreamedStringReader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := peekAndAssertPrefix(br, StreamedStringChunkPrefix, true, o); errors.As(err, new(errUnexpectedPrefix)) {
 		// the first message in a stream will be a blob string with a size of
 		// "?". Discard that message if it comes up.
@@ -1291,7 +1291,7 @@ type StreamedAggregatedElement struct {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (s *StreamedAggregatedElement) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (s *StreamedAggregatedElement) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	b, err := br.Peek(len(streamAggEnd))
 	if err != nil {
 		return err
@@ -1313,7 +1313,7 @@ func (s StreamedAggregatedTypeEnd) MarshalRESP(w io.Writer, o *resp.Opts) error 
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (s *StreamedAggregatedTypeEnd) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (s *StreamedAggregatedTypeEnd) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := readAndAssertPrefix(br, StreamedAggregatedTypeEndPrefix, true, o); err != nil {
 		return err
 	}
@@ -1325,7 +1325,7 @@ func (s *StreamedAggregatedTypeEnd) UnmarshalRESP(br *bufio.Reader, o *resp.Opts
 
 // left may be negative to indicate that elements should be discarded until a
 // streamed aggregated end type message is encountered.
-func discardMultiAfterErr(br *bufio.Reader, left int, lastErr error, o *resp.Opts) error {
+func discardMultiAfterErr(br resp.BufferedReader, left int, lastErr error, o *resp.Opts) error {
 	// if the last error which occurred didn't discard the message it was on, we
 	// can't do anything
 	if !errors.As(lastErr, new(resp.ErrConnUsable)) {
@@ -1675,7 +1675,7 @@ func saneDefault(prefix Prefix) (interface{}, error) {
 // Streamed aggregated RESP messages will be treated as if they were their
 // non-streamed counterpart, e.g. streamed arrays will be treated as arrays.
 //
-func Unmarshal(br *bufio.Reader, rcv interface{}, o *resp.Opts) error {
+func Unmarshal(br resp.BufferedReader, rcv interface{}, o *resp.Opts) error {
 	// if I is itself an Unmarshaler just hit that directly
 	if u, ok := rcv.(resp.Unmarshaler); ok {
 		return u.UnmarshalRESP(br, o)
@@ -1926,7 +1926,10 @@ func unmarshalSingle(body io.Reader, n int, rcv interface{}, o *resp.Opts) error
 			if *scratch, err = bytesutil.ReadNAppend(body, *scratch, n); err != nil {
 				return
 			}
-			err = fmt.Errorf(fmtStr+", message body was %q", append(args, *scratch)...)
+			err = fmt.Errorf(
+				"message body %q, "+fmtStr,
+				append([]interface{}{*scratch}, args...)...,
+			)
 			err = resp.ErrConnUsable{Err: err}
 		}
 
@@ -1945,7 +1948,7 @@ func unmarshalSingle(body io.Reader, n int, rcv interface{}, o *resp.Opts) error
 			}
 		}
 
-		discardAndErr("can't unmarshal into non-pointer %T", rcv)
+		discardAndErr("can't unmarshal into %T", rcv)
 	}
 
 	return err
@@ -1964,7 +1967,7 @@ func unmarshalNil(rcv interface{}) error {
 	return nil
 }
 
-func maybeUnmarshalRESP(br *bufio.Reader, stream bool, rcv interface{}, o *resp.Opts) (bool, error) {
+func maybeUnmarshalRESP(br resp.BufferedReader, stream bool, rcv interface{}, o *resp.Opts) (bool, error) {
 	if !stream {
 		return true, Unmarshal(br, rcv, o)
 	}
@@ -2002,7 +2005,7 @@ func keyableReceiver(prefix Prefix, kv reflect.Value) (reflect.Value, error) {
 	return intoV, nil
 }
 
-func unmarshalAgg(prefix Prefix, br *bufio.Reader, l int64, rcv interface{}, o *resp.Opts) error {
+func unmarshalAgg(prefix Prefix, br resp.BufferedReader, l int64, rcv interface{}, o *resp.Opts) error {
 	if prefix == MapHeaderPrefix {
 		l *= 2
 	}
@@ -2306,12 +2309,12 @@ func (rm RawMessage) MarshalRESP(w io.Writer, o *resp.Opts) error {
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
-func (rm *RawMessage) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (rm *RawMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	*rm = (*rm)[:0]
 	return rm.unmarshal(br)
 }
 
-func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
+func (rm *RawMessage) unmarshal(br resp.BufferedReader) error {
 	b, err := br.ReadSlice('\n')
 	if err != nil {
 		return err
@@ -2371,9 +2374,9 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 	}
 }
 
-// UnmarshalInto is a shortcut for wrapping this RawMessage in a *bufio.Reader
-// and unmarshaling that into the given receiver (which will be wrapped in an
-// Any).
+// UnmarshalInto is a shortcut for wrapping this RawMessage in a
+// resp.BufferedReader and unmarshaling that into the given receiver (which will
+// be wrapped in an Any).
 func (rm RawMessage) UnmarshalInto(rcv interface{}, o *resp.Opts) error {
 	r := o.GetReader(rm)
 	br := bufio.NewReader(r)

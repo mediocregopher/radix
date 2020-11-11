@@ -3,7 +3,6 @@
 package bytesutil
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -116,7 +115,7 @@ func Expand(b []byte, n int) []byte {
 
 // ReadBytesDelim reads a line from br and checks that the line ends with
 // \r\n, returning the line without \r\n.
-func ReadBytesDelim(br *bufio.Reader) ([]byte, error) {
+func ReadBytesDelim(br resp.BufferedReader) ([]byte, error) {
 	b, err := br.ReadSlice('\n')
 	if err != nil {
 		return nil, err
@@ -128,7 +127,7 @@ func ReadBytesDelim(br *bufio.Reader) ([]byte, error) {
 
 // ReadIntDelim reads the current line from br as an integer, checks that the
 // line ends with \r\n, and returns the integer.
-func ReadIntDelim(br *bufio.Reader) (int64, error) {
+func ReadIntDelim(br resp.BufferedReader) (int64, error) {
 	b, err := ReadBytesDelim(br)
 	if err != nil {
 		return 0, err

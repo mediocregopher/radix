@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"bufio"
 	"context"
 	"strconv"
 	"strings"
@@ -131,7 +130,7 @@ type scanResult struct {
 	keys []string
 }
 
-func (s *scanResult) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (s *scanResult) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err

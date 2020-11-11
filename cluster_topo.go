@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net"
@@ -65,7 +64,7 @@ func (tt ClusterTopo) MarshalRESP(w io.Writer, o *resp.Opts) error {
 // UnmarshalRESP implements the resp.Unmarshaler interface, but only supports
 // unmarshaling the return from CLUSTER SLOTS. The unmarshaled nodes will be
 // sorted before they are returned
-func (tt *ClusterTopo) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (tt *ClusterTopo) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	var arrHead resp3.ArrayHeader
 	if err := arrHead.UnmarshalRESP(br, o); err != nil {
 		return err
@@ -168,7 +167,7 @@ func (tss topoSlotSet) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	return resp.ErrConnUnusable(err)
 }
 
-func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (tss *topoSlotSet) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	var arrHead resp3.ArrayHeader
 	if err := arrHead.UnmarshalRESP(br, o); err != nil {
 		return err

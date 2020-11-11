@@ -34,6 +34,12 @@ type Opts struct {
 	// This field may not be nil.
 	GetReader func([]byte) io.Reader
 
+	// GetBufferedReader returns a BufferedReader which will read out the
+	// contents of the given io.Reader.
+	//
+	// This field may not be nil.
+	GetBufferedReader func(r io.Reader) BufferedReader
+
 	// Deterministic indicates that marshal operations should result in
 	// deterministic results. This is largely used for ensuring map key/values
 	// are emitted in a deterministic order.
@@ -48,9 +54,10 @@ func NewOpts() *Opts {
 	bp := newBytePool(defaultBytePoolThreshold)
 	brp := newByteReaderPool()
 	return &Opts{
-		GetBytes:  bp.get,
-		PutBytes:  bp.put,
-		GetReader: brp.get,
+		GetBytes:          bp.get,
+		PutBytes:          bp.put,
+		GetReader:         brp.get,
+		GetBufferedReader: func(r io.Reader) BufferedReader { return bufio.NewReader(r) },
 	}
 }
 
@@ -64,6 +71,14 @@ type Marshaler interface {
 	MarshalRESP(io.Writer, *Opts) error
 }
 
+// BufferedReader wraps a bufio.Reader.
+type BufferedReader interface {
+	io.Reader
+	ReadSlice(delim byte) (line []byte, err error)
+	Peek(n int) ([]byte, error)
+	Discard(n int) (discarded int, err error)
+}
+
 // Unmarshaler is the interface implemented by types that can unmarshal a RESP
 // description of themselves. Opts may not be nil.
 //
@@ -71,7 +86,7 @@ type Marshaler interface {
 // unless there is an error returned from the reader itself. Use ErrConnUsable
 // when applicable.
 type Unmarshaler interface {
-	UnmarshalRESP(*bufio.Reader, *Opts) error
+	UnmarshalRESP(BufferedReader, *Opts) error
 }
 
 // ErrConnUsable is used to wrap an error encountered while marshaling or

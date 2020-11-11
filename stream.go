@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -88,7 +87,7 @@ func (s *StreamEntryID) MarshalRESP(w io.Writer, o *resp.Opts) error {
 var errInvalidStreamID = errors.New("invalid stream entry id")
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
-func (s *StreamEntryID) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (s *StreamEntryID) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	buf := o.GetBytes()
 	defer o.PutBytes(buf)
 
@@ -141,7 +140,7 @@ var _ resp.Unmarshaler = (*StreamEntry)(nil)
 var errInvalidStreamEntry = errors.New("invalid stream entry")
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
-func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (s *StreamEntry) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
@@ -187,7 +186,7 @@ type StreamEntries struct {
 }
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
-func (s *StreamEntries) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (s *StreamEntries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err

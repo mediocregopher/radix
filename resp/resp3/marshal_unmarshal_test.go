@@ -98,7 +98,7 @@ func (s msgSeries) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	return nil
 }
 
-func (s msgSeries) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (s msgSeries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	for i := range s {
 		if err := s[i].UnmarshalRESP(br, o); err != nil {
 			return err

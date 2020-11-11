@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -524,7 +523,7 @@ func (a prefixAsking) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	return resp3.Marshal(w, a.marshal, o)
 }
 
-func (a prefixAsking) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (a prefixAsking) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := resp3.Unmarshal(br, nil, o); err != nil {
 		return err
 	}

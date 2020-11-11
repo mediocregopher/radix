@@ -43,7 +43,8 @@ type conn struct {
 	proc *proc.Proc
 
 	conn     net.Conn
-	brw      *bufio.ReadWriter
+	br       *bufio.Reader
+	w        *bufio.Writer
 	rCh, wCh chan connMarshalerUnmarshaler
 
 	// errChPool is a buffered channel used as a makeshift pool of chan errors,s
@@ -60,7 +61,8 @@ func NewConn(netConn net.Conn) Conn {
 	c := &conn{
 		proc:      proc.New(),
 		conn:      netConn,
-		brw:       bufio.NewReadWriter(bufio.NewReader(netConn), bufio.NewWriter(netConn)),
+		br:        bufio.NewReader(netConn),
+		w:         bufio.NewWriter(netConn),
 		rCh:       make(chan connMarshalerUnmarshaler, 128),
 		wCh:       make(chan connMarshalerUnmarshaler, 128),
 		errChPool: make(chan chan error, 16),
@@ -100,10 +102,10 @@ func (c *conn) writer(ctx context.Context) {
 					continue
 				}
 
-				if err := resp3.Marshal(c.brw.Writer, mu.marshal, opts); err != nil {
+				if err := resp3.Marshal(c.w, mu.marshal, opts); err != nil {
 					mu.errCh <- err
 					continue
-				} else if err := c.brw.Writer.Flush(); err != nil {
+				} else if err := c.w.Flush(); err != nil {
 					mu.errCh <- err
 					continue
 				}
@@ -146,7 +148,7 @@ func (c *conn) reader(ctx context.Context) {
 				continue
 			}
 
-			err := resp3.Unmarshal(c.brw.Reader, mu.unmarshalInto, opts)
+			err := resp3.Unmarshal(c.br, mu.unmarshalInto, opts)
 			if err != nil {
 				// simplify things for the caller by translating network
 				// timeouts into DeadlineExceeded, since that's actually what

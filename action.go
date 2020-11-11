@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -258,7 +257,7 @@ func (c *cmdAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	return err
 }
 
-func (c *cmdAction) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (c *cmdAction) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	if err := resp3.Unmarshal(br, c.rcv, o); err != nil {
 		return err
 	}
@@ -298,7 +297,7 @@ type Maybe struct {
 }
 
 // UnmarshalRESP implements the method for the resp.Unmarshaler interface.
-func (mb *Maybe) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (mb *Maybe) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	var rm resp3.RawMessage
 	if err := rm.UnmarshalRESP(br, o); err != nil {
 		return err
@@ -322,7 +321,7 @@ func (mb *Maybe) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
 type Tuple []interface{}
 
 // UnmarshalRESP implements the method for the resp.Unmarshaler interface.
-func (t Tuple) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (t Tuple) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
@@ -522,7 +521,7 @@ func (p *pipeline) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	return nil
 }
 
-func (p *pipeline) UnmarshalRESP(br *bufio.Reader, o *resp.Opts) error {
+func (p *pipeline) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	for i := range p.mm {
 		if p.mm[i].unmarshalInto == nil || p.mm[i].err != nil {
 			// skip

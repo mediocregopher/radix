@@ -14,8 +14,8 @@ type multiScanner struct {
 	lastErr     error
 }
 
-// NewMultiScanner returns a Scanner which will scan over every primary instance
-// in the MultiClient. This will panic if the ScanOpt's Command isn't "SCAN".
+// NewMulti returns a Scanner which will scan over every primary instance in the
+// MultiClient. This will panic if the ScanOpt's Command isn't "SCAN".
 //
 // NOTE this is primarily useful for scanning over all keys in a Cluster. It is
 // not necessary to use this otherwise, unless you have implemented your own
