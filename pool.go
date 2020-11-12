@@ -177,6 +177,10 @@ func PoolOnFullClose() PoolOpt {
 // present in it), closed, and discarded.
 //
 // If drainInterval is zero then drain events will never occur.
+//
+// NOTE that if used with PoolOnEmptyWait or PoolOnEmptyErrAfter this won't have
+// any effect, because there won't be any occasion where more connections than
+// the pool size will be created.
 func PoolOnFullBuffer(size int, drainInterval time.Duration) PoolOpt {
 	return func(po *poolOpts) {
 		po.overflowSize = size

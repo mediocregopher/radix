@@ -117,14 +117,16 @@ func (s *StreamEntryID) UnmarshalRESP(br *bufio.Reader) error {
 
 var _ fmt.Stringer = (*StreamEntryID)(nil)
 
-// String returns the ID in the format <time>-<seq> (the same format used by Redis).
+// String returns the ID in the format <time>-<seq> (the same format used by
+// Redis).
 //
 // String implements the fmt.Stringer interface.
 func (s StreamEntryID) String() string {
 	return string(s.bytes())
 }
 
-// StreamEntry is an entry in a Redis stream as returned by XRANGE, XREAD and XREADGROUP.
+// StreamEntry is an entry in a stream as returned by XRANGE, XREAD and
+// XREADGROUP.
 type StreamEntry struct {
 	// ID is the ID of the entry in a stream.
 	ID StreamEntryID
@@ -142,31 +144,25 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 	var ah resp2.ArrayHeader
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	}
-	if ah.N != 2 {
+	} else if ah.N != 2 {
 		return errInvalidStreamEntry
+	} else if err := s.ID.UnmarshalRESP(br); err != nil {
+		return err
 	}
 
-	if err := s.ID.UnmarshalRESP(br); err != nil {
-		return err
+	// put this here in case the array has size -1
+	for k := range s.Fields {
+		delete(s.Fields, k)
 	}
 
 	// resp2.Any{I: &s.Fields}.UnmarshalRESP(br)
 	if err := ah.UnmarshalRESP(br); err != nil {
 		return err
-	}
-
-	for k := range s.Fields {
-		delete(s.Fields, k)
-	}
-
-	if ah.N == -1 {
+	} else if ah.N == -1 {
 		return nil
 	} else if ah.N%2 != 0 {
 		return errInvalidStreamEntry
-	}
-
-	if s.Fields == nil {
+	} else if s.Fields == nil {
 		s.Fields = make(map[string]string, ah.N/2)
 	}
 
@@ -180,6 +176,42 @@ func (s *StreamEntry) UnmarshalRESP(br *bufio.Reader) error {
 			return err
 		}
 		s.Fields[key] = bs.S
+	}
+	return nil
+}
+
+// StreamEntries is a stream name and set of entries as returned by XREAD and
+// XREADGROUP. The results from a call to XREAD(GROUP) can be unmarshaled into a
+// []StreamEntries.
+type StreamEntries struct {
+	Stream  string
+	Entries []StreamEntry
+}
+
+// UnmarshalRESP implements the resp.Unmarshaler interface.
+func (s *StreamEntries) UnmarshalRESP(br *bufio.Reader) error {
+	var ah resp2.ArrayHeader
+	if err := ah.UnmarshalRESP(br); err != nil {
+		return err
+	} else if ah.N != 2 {
+		return errors.New("invalid xread[group] response")
+	}
+
+	var stream resp2.BulkString
+	if err := stream.UnmarshalRESP(br); err != nil {
+		return err
+	}
+	s.Stream = stream.S
+
+	if err := ah.UnmarshalRESP(br); err != nil {
+		return err
+	}
+
+	s.Entries = make([]StreamEntry, ah.N)
+	for i := range s.Entries {
+		if err := s.Entries[i].UnmarshalRESP(br); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -316,7 +348,7 @@ type streamReader struct {
 	fixedArgs []string // fixed arguments that always come directly after the command
 	args      []string // arguments passed to Cmd. reused between calls to Next to avoid allocations.
 
-	unread []streamReaderEntry
+	unread []StreamEntries
 	err    error
 }
 
@@ -339,57 +371,46 @@ func (sr *streamReader) Err() error {
 	return sr.err
 }
 
+func (sr *streamReader) nextFromBuffer() (stream string, entries []StreamEntry) {
+	for len(sr.unread) > 0 {
+		sre := sr.unread[len(sr.unread)-1]
+		sr.unread = sr.unread[:len(sr.unread)-1]
+
+		// entries can be empty if we are using XREADGROUP and reading unacknowledged entries.
+		if len(sre.Entries) == 0 {
+			continue
+		}
+
+		stream = sre.Stream
+
+		// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
+		if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {
+			sr.ids[stream] = sre.Entries[len(sre.Entries)-1].ID.String()
+		}
+
+		return stream, sre.Entries
+	}
+
+	return "", nil
+}
+
 // Next implements the StreamReader interface.
 func (sr *streamReader) Next() (stream string, entries []StreamEntry, ok bool) {
 	if sr.err != nil {
 		return "", nil, false
 	}
 
-	if len(sr.unread) == 0 && !sr.backfill() {
+	if stream, entries = sr.nextFromBuffer(); stream != "" {
+		return stream, entries, true
+	}
+
+	if !sr.backfill() {
 		return "", nil, false
 	}
 
-	for len(sr.unread) > 0 {
-		sre := sr.unread[len(sr.unread)-1]
-		sr.unread = sr.unread[:len(sr.unread)-1]
-
-		// entries can be empty if we are using XREADGROUP and reading unacknowledged entries.
-		if len(sre.entries) == 0 {
-			continue
-		}
-
-		stream = sre.stream
-
-		// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
-		if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {
-			sr.ids[stream] = sre.entries[len(sre.entries)-1].ID.String()
-		}
-
-		return stream, sre.entries, true
+	if stream, entries = sr.nextFromBuffer(); stream != "" {
+		return stream, entries, true
 	}
 
 	return "", nil, true
-}
-
-type streamReaderEntry struct {
-	stream  string
-	entries []StreamEntry
-}
-
-func (s *streamReaderEntry) UnmarshalRESP(br *bufio.Reader) error {
-	var ah resp2.ArrayHeader
-	if err := ah.UnmarshalRESP(br); err != nil {
-		return err
-	}
-	if ah.N != 2 {
-		return errors.New("invalid xread[group] response")
-	}
-
-	var stream resp2.BulkString
-	if err := stream.UnmarshalRESP(br); err != nil {
-		return err
-	}
-	s.stream = stream.S
-
-	return (resp2.Any{I: &s.entries}).UnmarshalRESP(br)
 }

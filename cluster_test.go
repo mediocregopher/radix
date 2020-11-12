@@ -223,6 +223,22 @@ func TestClusterEval(t *T) {
 	assert.Equal(t, "EVAL: success!", rcv)
 }
 
+func TestClusterEvalRcvInterface(t *T) {
+	c, scl := newTestCluster()
+	defer c.Close()
+	key := clusterSlotKeys[0]
+	dst := scl.stubForSlot(10000)
+	scl.migrateInit(dst.addr, 0)
+	// now, when interacting with key, the stub should return an ASK error
+
+	eval := NewEvalScript(1, `return nil`)
+	var rcv interface{}
+	err := c.Do(eval.Cmd(&rcv, key, "foo"))
+
+	assert.Nil(t, err)
+	assert.Equal(t, []byte("EVAL: success!"), rcv)
+}
+
 func TestClusterDoSecondary(t *T) {
 	var redirects int
 	c, _ := newTestCluster(
