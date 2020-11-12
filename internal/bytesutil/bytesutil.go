@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/larryzhu2018/radix/v3/resp"
+	"github.com/mediocregopher/radix/v3/resp"
 	errors "golang.org/x/xerrors"
 )
 

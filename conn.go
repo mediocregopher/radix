@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/larryzhu2018/radix/v3/resp"
+	"github.com/mediocregopher/radix/v3/resp"
 )
 
 // Conn is a Client wrapping a single network connection which synchronously
