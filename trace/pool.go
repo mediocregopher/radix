@@ -29,13 +29,8 @@ type PoolCommon struct {
 	// (useful for differentiating different redis instances in a Cluster).
 	Network, Addr string
 
-	// PoolSize and OverflowBufferSize indicate the Pool size and overflow
-	// buffer size that the Pool was initialized with.
-	PoolSize, OverflowBufferSize int
-
-	// AvailCount indicates the total number of Conns the Pool is holding on to
-	// which are available for usage at the moment the trace occurs.
-	AvailCount int
+	// PoolSize indicates the PoolSize that the Pool was initialized with.
+	PoolSize int
 }
 
 // PoolConnCreatedReason enumerates all the different reasons a Conn might be
@@ -48,13 +43,9 @@ const (
 	// initialization of the Pool (i.e. within NewPool).
 	PoolConnCreatedReasonInitialization PoolConnCreatedReason = "initialization"
 
-	// PoolConnCreatedReasonRefill indicates a Conn was being created during a
-	// refill event (see radix.PoolRefillInterval).
-	PoolConnCreatedReasonRefill PoolConnCreatedReason = "refill"
-
-	// PoolConnCreatedReasonPoolEmpty indicates a Conn was created because
-	// the Pool was empty when Do was called. See the radix.PoolOnEmpty options.
-	PoolConnCreatedReasonPoolEmpty PoolConnCreatedReason = "pool empty"
+	// PoolConnCreatedReasonReconnect indicates a Conn was being created during a
+	// reconnect event.
+	PoolConnCreatedReasonReconnect PoolConnCreatedReason = "refill"
 )
 
 // PoolConnCreated is passed into the PoolTrace.ConnCreated callback whenever
@@ -85,13 +76,9 @@ const (
 	// Close method was called on Pool.
 	PoolConnClosedReasonPoolClosed PoolConnClosedReason = "pool closed"
 
-	// PoolConnClosedReasonBufferDrain indicates a Conn was closed due to a
-	// buffer drain event. See radix.PoolOnFullBuffer.
-	PoolConnClosedReasonBufferDrain PoolConnClosedReason = "buffer drained"
-
-	// PoolConnClosedReasonPoolFull indicates a Conn was closed due to the Pool
-	// already being full. See The radix.PoolOnFullClose options.
-	PoolConnClosedReasonPoolFull PoolConnClosedReason = "pool full"
+	// PoolConnClosedReasonError indicates a Conn was closed due to having
+	// received some kind of unrecoverable error on it.
+	PoolConnClosedReasonError PoolConnClosedReason = "pool full"
 )
 
 // PoolConnClosed is passed into the PoolTrace.ConnClosed callback whenever the

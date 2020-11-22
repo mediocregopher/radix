@@ -17,9 +17,6 @@ import (
 type SentinelConfig struct {
 	// PoolConfig is used by Sentinel to create Clients for redis instances in
 	// the replica set.
-	//
-	// Sentinel will only call NewClient on the PoolConfig, so that custom
-	// Client implementations may be used via CustomPool.
 	PoolConfig PoolConfig
 
 	// SentinelDialer is the Dialer instance used to create Conns to sentinels.
@@ -105,7 +102,7 @@ func (cfg SentinelConfig) New(ctx context.Context, primaryName string, sentinelA
 
 	pconnCfg := PersistentPubSubConfig{
 		Dialer: Dialer{
-			CustomDialer: func(ctx context.Context, _, _ string) (Conn, error) {
+			CustomConn: func(ctx context.Context, _, _ string) (Conn, error) {
 				return sc.dialSentinel(ctx)
 			},
 		},
@@ -239,7 +236,7 @@ func (sc *Sentinel) client(ctx context.Context, addr string) (Client, error) {
 	// if client was nil but ok was true it means the address is a secondary but
 	// a Client for it has never been created. Create one now and store it into
 	// clients.
-	newClient, err := sc.cfg.PoolConfig.NewClient(ctx, "tcp", addr)
+	newClient, err := sc.cfg.PoolConfig.New(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}

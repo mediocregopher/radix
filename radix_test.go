@@ -28,7 +28,7 @@ func dial() Conn {
 }
 
 var dialer = Dialer{
-	CustomDialer: func(context.Context, string, string) (Conn, error) {
+	CustomConn: func(context.Context, string, string) (Conn, error) {
 		return dial(), nil
 	},
 }

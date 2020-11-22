@@ -17,7 +17,7 @@ import (
 
 func testStub() Conn {
 	m := map[string]string{}
-	return NewStubConn("tcp", "127.0.0.1:6379", func(args []string) interface{} {
+	return NewStubConn("tcp", "127.0.0.1:6379", func(_ context.Context, args []string) interface{} {
 		switch args[0] {
 		case "GET":
 			return m[args[1]]
@@ -116,7 +116,7 @@ func ExampleNewStubConn() {
 	defer cancel()
 
 	m := map[string]string{}
-	stub := NewStubConn("tcp", "127.0.0.1:6379", func(args []string) interface{} {
+	stub := NewStubConn("tcp", "127.0.0.1:6379", func(_ context.Context, args []string) interface{} {
 		switch args[0] {
 		case "GET":
 			return m[args[1]]

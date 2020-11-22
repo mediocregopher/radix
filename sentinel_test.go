@@ -73,7 +73,7 @@ func (s *sentinelStub) newConn(ctx context.Context, network, addr string) (Conn,
 		return nil, fmt.Errorf("%q not in sentinel cluster", addr)
 	}
 
-	conn, stubCh := NewPubSubStubConn(network, addr, func(args []string) interface{} {
+	conn, stubCh := NewPubSubStubConn(network, addr, func(_ context.Context, args []string) interface{} {
 		s.Lock()
 		defer s.Unlock()
 
@@ -155,7 +155,7 @@ func TestSentinel(t *T) {
 				return clientWrapAddr{Client: c, addr: rawAddr{network, addr}}, err
 			},
 		},
-		SentinelDialer: Dialer{CustomDialer: stub.newConn},
+		SentinelDialer: Dialer{CustomConn: stub.newConn},
 	}
 	scc, err := cfg.New(ctx, "stub", stub.sentAddrs)
 	require.Nil(t, err)
@@ -242,12 +242,12 @@ func TestSentinelSecondaryRead(t *T) {
 	cfg := SentinelConfig{
 		PoolConfig: PoolConfig{
 			CustomPool: func(ctx context.Context, network, addr string) (Client, error) {
-				return NewStubConn(network, addr, func(args []string) interface{} {
+				return NewStubConn(network, addr, func(_ context.Context, args []string) interface{} {
 					return addr
 				}), nil
 			},
 		},
-		SentinelDialer: Dialer{CustomDialer: stub.newConn},
+		SentinelDialer: Dialer{CustomConn: stub.newConn},
 	}
 	scc, err := cfg.New(ctx, "stub", stub.sentAddrs)
 	require.Nil(t, err)

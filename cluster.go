@@ -51,14 +51,11 @@ type ClusterConfig struct {
 	// PoolConfig is used by Cluster to create Clients for redis instances in
 	// the cluster set.
 	//
-	// Cluster will only call NewClient on the PoolConfig, so that custom Client
-	// implementations may be used via CustomPool.
-	//
-	// If PoolConfig.CustomPool and PoolConfig.Dialer.CustomDialer are unset
+	// If PoolConfig.CustomPool and PoolConfig.Dialer.CustomConn are unset
 	// then all Conns created by Cluster will have the READONLY command
 	// performed on them upon creation. For Conns to primary instances this will
 	// have no effect, but for secondaries this will allow DoSecondary to
-	// function properly. If CustomPool or CustomDialer are set then READONLY
+	// function properly. If CustomPool or CustomConn are set then READONLY
 	// must be called on each Conn inside whichever is set in order for
 	// DoSecondary to work.
 	PoolConfig PoolConfig
@@ -105,9 +102,9 @@ func (cfg ClusterConfig) withDefaults() ClusterConfig {
 	}
 
 	if cfg.PoolConfig.CustomPool == nil &&
-		cfg.PoolConfig.Dialer.CustomDialer == nil {
+		cfg.PoolConfig.Dialer.CustomConn == nil {
 		dialer := cfg.PoolConfig.Dialer
-		cfg.PoolConfig.Dialer.CustomDialer = func(ctx context.Context, network, addr string) (Conn, error) {
+		cfg.PoolConfig.Dialer.CustomConn = func(ctx context.Context, network, addr string) (Conn, error) {
 			conn, err := dialer.Dial(ctx, network, addr)
 			if err != nil {
 				return nil, err
@@ -182,7 +179,7 @@ func (cfg ClusterConfig) New(ctx context.Context, clusterAddrs []string) (*Clust
 }
 
 func (c *Cluster) newClient(ctx context.Context, addr string) (Client, error) {
-	return c.cfg.PoolConfig.NewClient(ctx, "tcp", addr)
+	return c.cfg.PoolConfig.New(ctx, "tcp", addr)
 }
 
 func (c *Cluster) err(err error) {
@@ -728,14 +725,11 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 		}
 	}
 
-	// We only need to use WithConn if we want to send an ASKING command before
-	// our Action a. If ask is false we can thus skip the WithConn call, which
-	// avoids a few allocations, and execute our Action directly on p. This
-	// helps with most calls since ask will only be true when a key gets
-	// migrated between nodes.
 	thisA := params.action
 	if params.ask {
-		// TODO is this still necessary?
+		// the reason for doing this in such a round-about way, rather than just
+		// pipelining an ASKING command with the action, is that this better
+		// handles actions which can't be pipelined like EvalScript.
 		thisA = WithConn(params.key, func(ctx context.Context, conn Conn) error {
 			return askConn{conn}.Do(params.ctx, params.action)
 		})

@@ -3,22 +3,85 @@ package radix
 import (
 	"context"
 	"errors"
-	"io"
+	"fmt"
+	"strings"
 	"sync"
-	"sync/atomic"
 	. "testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/tilinna/clock"
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
-	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/mediocregopher/radix/v4/trace"
 )
 
-func testPool(t *T, cfg PoolConfig) *Pool {
+type testPoolCtxKey int
+
+const (
+	testPoolCtxKeyNextRand   testPoolCtxKey = 0
+	testPoolCtxKeyCmdBlockCh testPoolCtxKey = 1
+)
+
+type mockPoolRander struct{}
+
+func (r *mockPoolRander) Intn(ctx context.Context, _ int) int {
+	i, _ := ctx.Value(testPoolCtxKeyNextRand).(int)
+	return i
+}
+
+var errTestPoolFailCmd = errors.New("FAIL called")
+
+type testPoolHarness struct {
+	t               *T
+	ctx             context.Context
+	clock           *clock.Mock
+	rander          *mockPoolRander
+	pingSyncCh      chan struct{}
+	reconnectSyncCh chan struct{}
+	canConnect      bool
+
+	pool *pool
+}
+
+func newPoolTestHarness(t *T, cfg PoolConfig) *testPoolHarness {
+	h := &testPoolHarness{
+		t:               t,
+		ctx:             context.Background(),
+		clock:           clock.NewMock(time.Now().Truncate(1 * time.Hour).UTC()),
+		rander:          new(mockPoolRander),
+		pingSyncCh:      make(chan struct{}),
+		reconnectSyncCh: make(chan struct{}),
+		canConnect:      true,
+	}
+
+	cfg.Dialer = Dialer{
+		CustomConn: func(ctx context.Context, network, addr string) (Conn, error) {
+			if !h.canConnect {
+				return nil, errors.New("can't connect")
+			}
+			return NewStubConn(network, addr, func(ctx context.Context, args []string) interface{} {
+				cmd := strings.ToUpper(args[0])
+
+				if blockCh, _ := ctx.Value(testPoolCtxKeyCmdBlockCh).(chan struct{}); blockCh != nil {
+					<-blockCh
+				}
+
+				switch cmd {
+				case "ECHO":
+					return args[1]
+				case "PING":
+					return resp3.SimpleString{S: "PONG"}
+				case "FAIL":
+					return errTestPoolFailCmd
+				default:
+					panic(fmt.Sprintf("invalid command to stub: %#v", args))
+				}
+			}), nil
+		},
+	}
+
 	initDoneCh := make(chan struct{})
 	prevInitCompleted := cfg.Trace.InitCompleted
 	cfg.Trace.InitCompleted = func(pic trace.PoolInitCompleted) {
@@ -28,324 +91,419 @@ func testPool(t *T, cfg PoolConfig) *Pool {
 		close(initDoneCh)
 	}
 
-	ctx := testCtx(t)
-	pool, err := cfg.New(ctx, "tcp", "localhost:6379")
-	if err != nil {
+	poolCfg := poolConfig{
+		PoolConfig:      cfg,
+		clock:           h.clock,
+		rand:            h.rander,
+		pingSyncCh:      h.pingSyncCh,
+		reconnectSyncCh: h.reconnectSyncCh,
+	}
+
+	var err error
+	if h.pool, err = poolCfg.new(h.ctx, "tcp", "bogus-addr"); err != nil {
 		t.Fatal(err)
 	}
+
 	<-initDoneCh
-	t.Cleanup(func() {
-		pool.Close()
-	})
-	return pool
+
+notifyDrain:
+	for {
+		select {
+		case <-h.pool.notifyCh:
+		default:
+			break notifyDrain
+		}
+	}
+
+	t.Cleanup(func() { h.pool.Close() })
+
+	return h
 }
 
 func TestPool(t *T) {
+	const (
+		poolCfgSize                 = 2
+		poolCfgMinReconnectInterval = 1 * time.Second
+		poolCfgMaxReconnectInterval = 4 * time.Second
+	)
 
-	testEcho := func(ctx context.Context, c Conn) error {
-		exp := randStr()
-		var out string
-		assert.Nil(t, c.Do(ctx, Cmd(&out, "ECHO", exp)))
-		assert.Equal(t, exp, out)
-		return nil
+	i := func(i int) *int { return &i }
+
+	type cmd struct {
+		cmd []string
+
+		// index of conn to perform command on in a shared manner. -1 indictes
+		// the command should not be shared.
+		i                 int
+		dontWaitForQueued bool
+
+		expRes string
 	}
 
-	do := func(t *T, cfg PoolConfig) {
-		ctx := testCtx(t)
-		cfg.OverflowBufferSize = -1
-		cfg.Size = 10
-		pool := testPool(t, cfg)
-		var wg sync.WaitGroup
-		for i := 0; i < cfg.Size*4; i++ {
-			wg.Add(1)
-			go func() {
-				for i := 0; i < 100; i++ {
-					assert.NoError(t, pool.Do(ctx, WithConn("", testEcho)))
-				}
-				wg.Done()
-			}()
-		}
-		wg.Wait()
-		assert.Equal(t, cfg.Size, pool.NumAvailConns())
-		pool.Close()
-		assert.Equal(t, 0, pool.NumAvailConns())
-	}
-
-	t.Run("onEmptyWaitIndefinitely", func(t *T) {
-		do(t, PoolConfig{OnEmptyCreateAfter: -1})
-	})
-	t.Run("onEmptyCreateImmediately", func(t *T) {
-		do(t, PoolConfig{OnEmptyCreateImmediately: true})
-	})
-	t.Run("onEmptyCreateAfter", func(t *T) {
-		do(t, PoolConfig{OnEmptyCreateAfter: 1 * time.Second})
-	})
-
-	t.Run("withTrace", func(t *T) {
-		var connCreatedCount int
-		var connClosedCount int
-		var initializedAvailCount int
-		do(t, PoolConfig{
-			Trace: trace.PoolTrace{
-				ConnCreated: func(done trace.PoolConnCreated) {
-					connCreatedCount++
-				},
-				ConnClosed: func(closed trace.PoolConnClosed) {
-					connClosedCount++
-				},
-				InitCompleted: func(completed trace.PoolInitCompleted) {
-					initializedAvailCount = completed.AvailCount
-				},
-			},
-		})
-		if initializedAvailCount != 10 {
-			t.Fail()
-		}
-		if connCreatedCount != connClosedCount {
-			t.Fail()
-		}
-	})
-}
-
-// Test all the different OnEmpty behaviors
-func TestPoolGet(t *T) {
-	ctx := testCtx(t)
-	getBlock := func(p *Pool) (time.Duration, error) {
-		start := time.Now()
-		_, err := p.get(ctx)
-		return time.Since(start), err
-	}
-
-	// this one is a bit weird, cause it would block infinitely if we let it
-	t.Run("onEmptyWaitIndefinitely", func(t *T) {
-		pool := testPool(t, PoolConfig{
-			Size:               1,
-			OnEmptyCreateAfter: -1,
-		})
-		conn, err := pool.get(ctx)
-		assert.NoError(t, err)
-
-		go func() {
-			time.Sleep(2 * time.Second)
-			pool.put(conn)
-		}()
-		took, err := getBlock(pool)
-		assert.NoError(t, err)
-		assert.True(t, took-2*time.Second < 20*time.Millisecond)
-	})
-
-	// the rest are pretty straightforward
-	gen := func(cfg PoolConfig, d time.Duration, expErr error) func(*T) {
-		return func(t *T) {
-			cfg.OverflowBufferSize = -1
-			cfg.Size = -1
-			pool := testPool(t, cfg)
-			took, err := getBlock(pool)
-			assert.Equal(t, expErr, err)
-			assert.True(t, took-d < 20*time.Millisecond)
+	echo := func(i int, str string, dontWaitForQueued bool) *cmd {
+		return &cmd{
+			cmd: []string{"ECHO", str},
+			i:   i, dontWaitForQueued: dontWaitForQueued,
+			expRes: str,
 		}
 	}
 
-	t.Run("onEmptyCreateImmediately", gen(PoolConfig{OnEmptyCreateImmediately: true}, 0, nil))
-	t.Run("onEmptyCreateAfter", gen(PoolConfig{OnEmptyCreateAfter: 1 * time.Second}, 1*time.Second, nil))
-}
-
-func TestPoolOnFull(t *T) {
-	t.Run("onFullClose", func(t *T) {
-		ctx := testCtx(t)
-		var reason trace.PoolConnClosedReason
-		pool := testPool(t, PoolConfig{
-			Size:               1,
-			OverflowBufferSize: -1,
-			Trace: trace.PoolTrace{ConnClosed: func(c trace.PoolConnClosed) {
-				reason = c.Reason
-			}},
-		})
-		defer pool.Close()
-		assert.Equal(t, 1, len(pool.pool))
-
-		spc, err := pool.newConn(ctx, "TEST")
-		assert.NoError(t, err)
-		pool.put(spc)
-		assert.Equal(t, 1, len(pool.pool))
-		assert.Equal(t, trace.PoolConnClosedReasonPoolFull, reason)
-	})
-
-	t.Run("onFullBuffer", func(t *T) {
-		ctx := testCtx(t)
-		pool := testPool(t, PoolConfig{
-			Size:                        1,
-			OverflowBufferSize:          1,
-			OverflowBufferDrainInterval: 1 * time.Second,
-		})
-		defer pool.Close()
-		assert.Equal(t, 1, len(pool.pool))
-
-		// putting a conn should overflow
-		spc, err := pool.newConn(ctx, "TEST")
-		assert.NoError(t, err)
-		pool.put(spc)
-		assert.Equal(t, 2, len(pool.pool))
-
-		// another shouldn't, overflow is full
-		spc, err = pool.newConn(ctx, "TEST")
-		assert.NoError(t, err)
-		pool.put(spc)
-		assert.Equal(t, 2, len(pool.pool))
-
-		// retrieve from the pool, drain shouldn't do anything because the
-		// overflow is empty now
-		<-pool.pool
-		assert.Equal(t, 1, len(pool.pool))
-		time.Sleep(2 * time.Second)
-		assert.Equal(t, 1, len(pool.pool))
-
-		// if both are full then drain should remove the overflow one
-		spc, err = pool.newConn(ctx, "TEST")
-		assert.NoError(t, err)
-		pool.put(spc)
-		assert.Equal(t, 2, len(pool.pool))
-		time.Sleep(2 * time.Second)
-		assert.Equal(t, 1, len(pool.pool))
-	})
-}
-
-func TestPoolPut(t *T) {
-	ctx := testCtx(t)
-	size := 10
-	pool := testPool(t, PoolConfig{
-		Size: size,
-	})
-
-	assertPoolConns := func(exp int) {
-		assert.Equal(t, exp, pool.NumAvailConns())
+	type assertDone struct {
+		i      int // index of previously called command to assert being done
+		expErr error
 	}
-	assertPoolConns(10)
 
-	// Make sure that put does not accept a connection which has had a critical
-	// network error
-	pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
-		assertPoolConns(9)
-		conn.(*ioErrConn).lastIOErr = io.EOF
-		return nil
-	}))
-	assertPoolConns(9)
+	type step struct {
+		goCmd                         *cmd
+		unblock                       *int
+		assertDone                    *assertDone
+		expPing                       bool
+		incrTime                      time.Duration
+		assertNumConns                *int
+		syncReconnect                 bool
+		setCanConnect, setCantConnect bool
+	}
 
-	// Make sure that a put _does_ accept a connection which had an unmarshal
-	// error
-	pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
-		var i int
-		assert.NotNil(t, conn.Do(ctx, Cmd(&i, "ECHO", "foo")))
-		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
-		return nil
-	}))
-	assertPoolConns(9)
+	type test struct {
+		name  string
+		cfg   PoolConfig // default size is 2
+		steps []step
+	}
 
-	// Make sure that a put _does_ accept a connection which had an app level
-	// resp error
-	pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
-		assert.NotNil(t, Cmd(nil, "CMDDNE"))
-		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
-		return nil
-	}))
-	assertPoolConns(9)
-
-	// Make sure that closing the pool closes outstanding connections as well
-	closeCh := make(chan bool)
-	go func() {
-		<-closeCh
-		assert.Nil(t, pool.Close())
-		closeCh <- true
-	}()
-	pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
-		closeCh <- true
-		<-closeCh
-		return nil
-	}))
-	assertPoolConns(0)
-}
-
-// TestPoolDoDoesNotBlock checks that with a positive onEmptyWait Pool.Do()
-// does not block longer than the timeout period given by user
-func TestPoolDoDoesNotBlock(t *T) {
-	ctx := testCtx(t)
-	size := 10
-	requestTimeout := 200 * time.Millisecond
-	redialInterval := 100 * time.Millisecond
-
-	pool := testPool(t, PoolConfig{
-		Dialer: Dialer{
-			CustomDialer: func(context.Context, string, string) (Conn, error) {
-				return dial(), nil
+	tests := []test{
+		{
+			name: "single echo",
+			steps: []step{
+				{goCmd: echo(0, "a", false)},
+				{unblock: i(0)},
+				{assertDone: &assertDone{i: 0}},
 			},
 		},
-		Size:               size,
-		OnEmptyCreateAfter: redialInterval,
-	})
+		{
+			name: "multi echo same conn",
+			steps: []step{
+				{goCmd: echo(0, "a", false)},
+				{goCmd: echo(0, "b", false)},
+				{unblock: i(0)},
+				{assertDone: &assertDone{i: 0}},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 1}},
+			},
+		},
+		{
+			name: "multi echo diff conns",
+			steps: []step{
+				{goCmd: echo(0, "a", false)},
+				{goCmd: echo(1, "b", false)},
+				{unblock: i(0)},
+				{assertDone: &assertDone{i: 0}},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 1}},
+			},
+		},
+		{
+			name: "multi echo same conn empty pool",
+			steps: []step{
+				{goCmd: &cmd{i: 0, cmd: []string{"FAIL"}}},
+				{goCmd: &cmd{i: 1, cmd: []string{"FAIL"}}},
+				{unblock: i(0)},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 0, expErr: errTestPoolFailCmd}},
+				{assertDone: &assertDone{i: 1, expErr: errTestPoolFailCmd}},
+				{assertNumConns: i(poolCfgSize - 2)},
 
-	assertPoolConns := func(exp int) {
-		assert.Equal(t, exp, pool.NumAvailConns())
+				{goCmd: echo(0, "a", true)},
+				{goCmd: echo(0, "b", true)},
+				{unblock: i(2)},
+				{unblock: i(3)},
+
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+
+				{assertDone: &assertDone{i: 2}},
+				{assertDone: &assertDone{i: 3}},
+			},
+		},
+		{
+			name: "single no-share echo",
+			steps: []step{
+				{goCmd: echo(-1, "a", false)},
+				{unblock: i(0)},
+				{assertDone: &assertDone{i: 0}},
+
+				{goCmd: echo(-1, "b", false)},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 1}},
+			},
+		},
+		{
+			name: "multi no-share echo diff conns",
+			steps: []step{
+				{goCmd: echo(-1, "a", false)},
+				{goCmd: echo(-1, "b", false)},
+				{unblock: i(0)},
+				{assertDone: &assertDone{i: 0}},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 1}},
+
+				{goCmd: echo(-1, "c", false)},
+				{unblock: i(2)},
+				{assertDone: &assertDone{i: 2}},
+			},
+		},
+		{
+			name: "multi no-share echo diff conns rev order",
+			steps: []step{
+				{goCmd: echo(-1, "a", false)},
+				{goCmd: echo(-1, "b", false)},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 1}},
+				{unblock: i(0)},
+				{assertDone: &assertDone{i: 0}},
+
+				// 0 was unblocked first so it should be the first available
+				// again
+				{goCmd: echo(-1, "c", false)},
+				{unblock: i(2)},
+				{assertDone: &assertDone{i: 2}},
+			},
+		},
+		{
+			name: "multi no-share echo empty pool",
+			steps: []step{
+				{goCmd: echo(-1, "a", false)},
+				{goCmd: echo(-1, "b", false)},
+				{assertNumConns: i(poolCfgSize - 2)},
+				{goCmd: echo(-1, "c", true)},
+				{goCmd: echo(-1, "d", true)},
+				{unblock: i(0)},
+				{assertDone: &assertDone{i: 0}},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 1}},
+				{unblock: i(2)},
+				{assertDone: &assertDone{i: 2}},
+				{unblock: i(3)},
+				{assertDone: &assertDone{i: 3}},
+			},
+		},
+		{
+			name: "ping",
+			steps: []step{
+				{incrTime: poolDefaultPingInterval(poolCfgSize)},
+				{expPing: true},
+				{incrTime: poolDefaultPingInterval(poolCfgSize)},
+				{expPing: true},
+			},
+		},
+		{
+			name: "single fail and reconnect",
+			steps: []step{
+				{goCmd: &cmd{i: 0, cmd: []string{"FAIL"}}},
+				{unblock: i(0)},
+				{assertDone: &assertDone{i: 0, expErr: errTestPoolFailCmd}},
+				{assertNumConns: i(poolCfgSize - 1)},
+
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize)},
+
+				// doing it again should work fine, there should not have been a
+				// backoff
+				{goCmd: &cmd{i: 0, cmd: []string{"FAIL"}}},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 1, expErr: errTestPoolFailCmd}},
+				{assertNumConns: i(poolCfgSize - 1)},
+
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize)},
+			},
+		},
+		{
+			name: "multi fail",
+			steps: []step{
+				{goCmd: &cmd{i: 0, cmd: []string{"FAIL"}}},
+				{goCmd: echo(0, "a", false)},
+				{unblock: i(0)},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 0, expErr: errTestPoolFailCmd}},
+				{assertDone: &assertDone{i: 1}},
+				{assertNumConns: i(poolCfgSize - 1)},
+			},
+		},
+		{
+			name: "multi fail and multi reconnect",
+			steps: []step{
+				{goCmd: &cmd{i: 0, cmd: []string{"FAIL"}}},
+				{goCmd: &cmd{i: 1, cmd: []string{"FAIL"}}},
+				{unblock: i(0)},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 0, expErr: errTestPoolFailCmd}},
+				{assertDone: &assertDone{i: 1, expErr: errTestPoolFailCmd}},
+				{assertNumConns: i(poolCfgSize - 2)},
+
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize - 1)},
+
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize)},
+			},
+		},
+		{
+			name: "reconnect backoff",
+			cfg:  PoolConfig{PingInterval: -1},
+			steps: []step{
+				{setCantConnect: true},
+				{goCmd: &cmd{i: 0, cmd: []string{"FAIL"}}},
+				{goCmd: &cmd{i: 1, cmd: []string{"FAIL"}}},
+				{unblock: i(0)},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 0, expErr: errTestPoolFailCmd}},
+				{assertDone: &assertDone{i: 1, expErr: errTestPoolFailCmd}},
+				{assertNumConns: i(poolCfgSize - 2)},
+
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize - 2)},
+
+				{incrTime: poolCfgMinReconnectInterval * 2},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize - 2)},
+
+				{incrTime: poolCfgMinReconnectInterval * 4},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize - 2)},
+
+				{incrTime: poolCfgMinReconnectInterval * 4},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize - 2)},
+
+				{setCanConnect: true},
+
+				{incrTime: poolCfgMinReconnectInterval * 4},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize - 1)},
+
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize)},
+			},
+		},
 	}
-	assertPoolConns(size)
 
-	var wg sync.WaitGroup
-	var timeExceeded uint32
+	for _, test := range tests {
+		t.Run(test.name, func(t *T) {
+			test.cfg.Size = poolCfgSize
+			test.cfg.MinReconnectInterval = poolCfgMinReconnectInterval
+			test.cfg.MaxReconnectInterval = poolCfgMaxReconnectInterval
 
-	// here we try to imitate external requests which come one at a time
-	// and exceed the number of connections in pool
-	for i := 0; i < 5*size; i++ {
-		wg.Add(1)
-		go func(i int) {
-			time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+			h := newPoolTestHarness(t, test.cfg)
+			wg := new(sync.WaitGroup)
+			defer wg.Wait()
 
-			timeStart := time.Now()
-			pool.Do(ctx, WithConn("", func(ctx context.Context, conn Conn) error {
-				time.Sleep(requestTimeout)
-				conn.(*ioErrConn).lastIOErr = errors.New("i/o timeout")
-				return nil
-			}))
+			var cmdDoneChs []chan error
+			var cmdBlockChs []chan struct{}
+			echoCtr := 0
 
-			if time.Since(timeStart)-requestTimeout-redialInterval > 20*time.Millisecond {
-				atomic.AddUint32(&timeExceeded, 1)
+			for i, step := range test.steps {
+				logf := func(str string, args ...interface{}) {
+					args = append([]interface{}{i}, args...)
+					t.Logf("step[%d]: "+str, args...)
+				}
+
+				switch {
+				case step.goCmd != nil:
+					logf("goCmd(%+v)", *step.goCmd)
+
+					var cmdQueuedCh chan struct{}
+					if !step.goCmd.dontWaitForQueued {
+						cmdQueuedCh = make(chan struct{})
+					}
+
+					blockCh := make(chan struct{}, 1)
+					cmdBlockChs = append(cmdBlockChs, blockCh)
+
+					doneCh := make(chan error)
+					cmdDoneChs = append(cmdDoneChs, doneCh)
+
+					wg.Add(1)
+					go func(c cmd, echoCtr int) {
+						defer wg.Done()
+
+						ctx := context.WithValue(h.ctx, stubEncDecCtxKeyQueuedCh, cmdQueuedCh)
+						ctx = context.WithValue(ctx, testPoolCtxKeyCmdBlockCh, blockCh)
+
+						var res string
+						cmd := Cmd(&res, c.cmd[0], c.cmd[1:]...)
+
+						if c.i < 0 {
+							cmdProps := cmd.Properties()
+							cmdProps.CanShareConn = false
+							cmd = testActionWithProps{Action: cmd, props: cmdProps}
+						} else {
+							ctx = context.WithValue(ctx, testPoolCtxKeyNextRand, c.i)
+						}
+
+						err := h.pool.Do(ctx, cmd)
+						if err == nil {
+							assert.Equal(t, res, c.expRes)
+						}
+						doneCh <- err
+					}(*step.goCmd, echoCtr)
+
+					if !step.goCmd.dontWaitForQueued {
+						<-cmdQueuedCh
+					}
+
+					echoCtr++
+
+				case step.unblock != nil:
+					logf("unblock(%+v)", *step.unblock)
+					cmdBlockChs[*step.unblock] <- struct{}{}
+
+				case step.assertDone != nil:
+					logf("assertDone(%+v)", *step.assertDone)
+					err := <-cmdDoneChs[step.assertDone.i]
+					assert.Equal(t, step.assertDone.expErr, err)
+
+				case step.expPing:
+					logf("expPing")
+					h.pingSyncCh <- struct{}{}
+
+				case step.incrTime > 0:
+					logf("incrTime(%v)", step.incrTime)
+					h.clock.Add(step.incrTime)
+
+				case step.assertNumConns != nil:
+					logf("assertNumConns(%d)", *step.assertNumConns)
+					assert.Equal(t, *step.assertNumConns, h.pool.conns.len())
+
+				case step.syncReconnect:
+					logf("syncReconnect")
+					h.reconnectSyncCh <- struct{}{}
+
+				case step.setCanConnect:
+					logf("setCanConnect")
+					h.canConnect = true
+
+				case step.setCantConnect:
+					logf("setCantConnect")
+					h.canConnect = false
+
+				default:
+					panic(fmt.Sprintf("unknown step %#v", step))
+				}
 			}
-			wg.Done()
-		}(i)
+		})
 	}
-
-	wg.Wait()
-	assert.True(t, timeExceeded == 0)
 }
 
 func TestPoolClose(t *T) {
-	ctx := testCtx(t)
-	pool := testPool(t, PoolConfig{Size: 1})
-	assert.NoError(t, pool.Do(ctx, Cmd(nil, "PING")))
-	assert.NoError(t, pool.Close())
-	assert.Error(t, proc.ErrClosed, pool.Do(ctx, Cmd(nil, "PING")))
-}
-
-func TestIoErrConn(t *T) {
-	t.Run("NotReusableAfterError", func(t *T) {
-		ctx := testCtx(t)
-		dummyError := errors.New("i am error")
-
-		ioc := newIOErrConn(NewStubConn("tcp", "127.0.0.1:6379", nil))
-		ioc.lastIOErr = dummyError
-
-		require.Equal(t, dummyError, ioc.EncodeDecode(ctx, nil, new(int)))
-		require.Nil(t, ioc.Close())
-	})
-
-	t.Run("ReusableAfterRESPError", func(t *T) {
-		ctx := testCtx(t)
-		ioc := newIOErrConn(dial())
-		defer ioc.Close()
-
-		err1 := ioc.Do(ctx, Cmd(nil, "EVAL", "Z", "0"))
-		require.True(t, errors.As(err1, new(resp.ErrConnUsable)))
-		require.True(t, errors.As(err1, new(resp3.SimpleError)))
-
-		err2 := ioc.Do(ctx, Cmd(nil, "GET", randStr()))
-		require.Nil(t, err2)
-	})
+	h := newPoolTestHarness(t, PoolConfig{})
+	assert.NoError(t, h.pool.Close())
+	assert.Error(t, proc.ErrClosed, h.pool.Do(h.ctx, Cmd(nil, "PING")))
 }

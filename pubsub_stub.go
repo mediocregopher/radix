@@ -29,7 +29,7 @@ func (mm multiMarshal) MarshalRESP(w io.Writer, o *resp.Opts) error {
 type pubSubStub struct {
 	proc *proc.Proc
 	Conn
-	fn   func([]string) interface{}
+	fn   func(context.Context, []string) interface{}
 	inCh <-chan PubSubMessage
 
 	pubsubMode      bool
@@ -53,7 +53,7 @@ type pubSubStub struct {
 // This is intended to be used for mocking services which can perform both
 // normal redis commands and pubsub (e.g. a real redis instance, redis
 // sentinel). The returned Conn can be passed into NewPubSubConn.
-func NewPubSubStubConn(remoteNetwork, remoteAddr string, fn func([]string) interface{}) (Conn, chan<- PubSubMessage) {
+func NewPubSubStubConn(remoteNetwork, remoteAddr string, fn func(context.Context, []string) interface{}) (Conn, chan<- PubSubMessage) {
 	ch := make(chan PubSubMessage)
 	s := &pubSubStub{
 		proc:    proc.New(),
@@ -68,7 +68,7 @@ func NewPubSubStubConn(remoteNetwork, remoteAddr string, fn func([]string) inter
 	return s, ch
 }
 
-func (s *pubSubStub) innerFn(ss []string) interface{} {
+func (s *pubSubStub) innerFn(ctx context.Context, ss []string) interface{} {
 	var res interface{}
 	err := s.proc.WithLock(func() error {
 		writeRes := func(mm multiMarshal, cmd, subj string) multiMarshal {
@@ -80,7 +80,7 @@ func (s *pubSubStub) innerFn(ss []string) interface{} {
 		switch strings.ToUpper(ss[0]) {
 		case "PING":
 			if !s.pubsubMode {
-				res = s.fn(ss)
+				res = s.fn(ctx, ss)
 			} else {
 				res = []string{"pong", ""}
 			}
@@ -141,7 +141,7 @@ func (s *pubSubStub) innerFn(ss []string) interface{} {
 			if s.pubsubMode {
 				return errPubSubMode
 			}
-			res = s.fn(ss)
+			res = s.fn(ctx, ss)
 		}
 		return nil
 	})

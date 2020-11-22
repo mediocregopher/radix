@@ -16,7 +16,7 @@ func closablePersistentPubSub(t *T) (PubSubConn, func()) {
 
 	cfg := PersistentPubSubConfig{
 		Dialer: Dialer{
-			CustomDialer: func(context.Context, string, string) (Conn, error) {
+			CustomConn: func(context.Context, string, string) (Conn, error) {
 				c := dial()
 				go func() {
 					closeRetCh := <-closeCh
@@ -75,7 +75,7 @@ func TestPersistentPubSubAbortAfter(t *T) {
 	}
 
 	cfg := PersistentPubSubConfig{
-		Dialer:     Dialer{CustomDialer: connFn},
+		Dialer:     Dialer{CustomConn: connFn},
 		AbortAfter: 2,
 	}
 	_, err := cfg.New(ctx, nil)

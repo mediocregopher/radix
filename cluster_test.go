@@ -105,7 +105,7 @@ func TestClusterDo(t *T) {
 	// sanity check before we start, these shouldn't have the same address
 	require.NotEqual(t, stub0.addr, stub16k.addr)
 
-	// basic Cmd
+	//// basic Cmd
 	k, v := clusterSlotKeys[0], randStr()
 	require.Nil(t, c.Do(ctx, Cmd(nil, "SET", k, v)))
 	{
@@ -122,10 +122,9 @@ func TestClusterDo(t *T) {
 		assert.NoError(t, err)
 
 		var vgot string
-		cmd := Cmd(&vgot, "GET", k)
 		require.Nil(t, c.doInner(clusterDoInnerParams{
 			ctx:      ctx,
-			action:   cmd,
+			action:   Cmd(&vgot, "GET", k),
 			addr:     stub16k.addr,
 			client:   clients[stub16k.addr].Primary,
 			key:      k,

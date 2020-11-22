@@ -17,6 +17,15 @@ import (
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
+type testActionWithProps struct {
+	Action
+	props ActionProperties
+}
+
+func (a testActionWithProps) Properties() ActionProperties {
+	return a.props
+}
+
 func TestCmdAction(t *T) {
 	ctx := testCtx(t)
 	c := dial()

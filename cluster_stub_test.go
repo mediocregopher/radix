@@ -128,7 +128,7 @@ func (s *clusterNodeStub) withKeys(keys []string, asking, readonly bool, fn func
 func (s *clusterNodeStub) newConn() Conn {
 	asking := false // flag we hold onto in between commands
 	readonly := false
-	return NewStubConn("tcp", s.addr, func(args []string) interface{} {
+	return NewStubConn("tcp", s.addr, func(_ context.Context, args []string) interface{} {
 		cmd := strings.ToUpper(args[0])
 
 		// If the cmd is not ASKING we need to unset the flag at the _end_ of

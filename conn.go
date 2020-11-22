@@ -167,10 +167,10 @@ func (c connAddrWrap) RemoteAddr() net.Addr {
 // Dialer is used to create Conns with particular settings. All fields are
 // optional, all methods are thread-safe.
 type Dialer struct {
-	// CustomDialer indicates that this callback should be used in place of Dial
+	// CustomConn indicates that this callback should be used in place of Dial
 	// when Dial is called. All behavior of Dialer/Dial is superceded when this
 	// is set.
-	CustomDialer func(ctx context.Context, network, addr string) (Conn, error)
+	CustomConn func(ctx context.Context, network, addr string) (Conn, error)
 
 	// AuthPass will cause Dial to perform an AUTH command once the connection
 	// is created, using AuthUser (if given) and AuthPass.
@@ -208,7 +208,7 @@ type Dialer struct {
 	// allows Conns to behave well during both low and high activity periods.
 	//
 	// Defaults to 0, indicating Flush will be called upon each EncodeDecode
-	// call without delay.
+	// call without delay. -1 may be used as an equivalent to 0.
 	WriteFlushInterval time.Duration
 
 	// NewRespOpts returns a fresh instance of a *resp.Opts to be used by the
@@ -273,8 +273,8 @@ func parseRedisURL(urlStr string, d Dialer) (string, Dialer) {
 // If the URI has an AUTH password or db specified Dial will attempt to perform
 // the AUTH and/or SELECT as well.
 func (d Dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
-	if d.CustomDialer != nil {
-		return d.CustomDialer(ctx, network, addr)
+	if d.CustomConn != nil {
+		return d.CustomConn(ctx, network, addr)
 	}
 
 	d = d.withDefaults()
@@ -327,7 +327,13 @@ func (d Dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
 	conn.bw = conn.wOpts.GetBufferedWriter(netConn)
 
 	conn.proc.Run(conn.reader)
-	conn.proc.Run(func(ctx context.Context) { conn.writer(ctx, d.WriteFlushInterval) })
+	conn.proc.Run(func(ctx context.Context) {
+		i := d.WriteFlushInterval
+		if i < 0 {
+			i = 0
+		}
+		conn.writer(ctx, i)
+	})
 
 	if d.AuthUser != "" {
 		if err := conn.Do(ctx, Cmd(nil, "AUTH", d.AuthUser, d.AuthPass)); err != nil {

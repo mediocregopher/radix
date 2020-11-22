@@ -3,111 +3,32 @@ package radix
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"context"
-	"errors"
+	"fmt"
 	"net"
-	"sync"
-	"time"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
-type buffer struct {
-	remoteAddr net.Addr
-
-	bufL   *sync.Cond
-	buf    *bytes.Buffer
-	bufbr  *bufio.Reader
-	closed bool
+type stubUnmarshaler struct {
+	unmarshalInto interface{}
+	errCh         chan error
 }
 
-func newBuffer(remoteNetwork, remoteAddr string) *buffer {
-	buf := new(bytes.Buffer)
-	return &buffer{
-		remoteAddr: rawAddr{network: remoteNetwork, addr: remoteAddr},
-		bufL:       sync.NewCond(new(sync.Mutex)),
-		buf:        buf,
-		bufbr:      bufio.NewReader(buf),
-	}
+type stubCmdUnmarshaler struct {
+	ctx         context.Context
+	cmds        [][]string
+	unmarshaler *stubUnmarshaler
 }
-
-func (b *buffer) Encode(m interface{}) error {
-	b.bufL.L.Lock()
-	var err error
-	if b.closed {
-		err = b.err("write", errClosed)
-	} else {
-		err = resp3.Marshal(b.buf, m, resp.NewOpts())
-	}
-	b.bufL.L.Unlock()
-	if err != nil {
-		return err
-	}
-
-	b.bufL.Broadcast()
-	return nil
-}
-
-func (b *buffer) Decode(ctx context.Context, u interface{}) error {
-	b.bufL.L.Lock()
-	defer b.bufL.L.Unlock()
-
-	wakeupTicker := time.NewTicker(250 * time.Millisecond)
-	defer wakeupTicker.Stop()
-
-	for b.buf.Len() == 0 && b.bufbr.Buffered() == 0 {
-		if b.closed {
-			return b.err("read", errClosed)
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		// we have to periodically wakeup to check if the context is done
-		go func() {
-			<-wakeupTicker.C
-			b.bufL.Broadcast()
-		}()
-
-		b.bufL.Wait()
-	}
-
-	return resp3.Unmarshal(b.bufbr, u, resp.NewOpts())
-}
-
-func (b *buffer) Close() error {
-	b.bufL.L.Lock()
-	defer b.bufL.L.Unlock()
-	if b.closed {
-		return b.err("close", errClosed)
-	}
-	b.closed = true
-	b.bufL.Broadcast()
-	return nil
-}
-
-func (b *buffer) err(op string, err error) error {
-	return &net.OpError{
-		Op:     op,
-		Net:    "tcp",
-		Source: nil,
-		Addr:   b.remoteAddr,
-		Err:    err,
-	}
-}
-
-var errClosed = errors.New("use of closed network connection")
-
-////////////////////////////////////////////////////////////////////////////////
 
 type stub struct {
+	proc          *proc.Proc
 	network, addr string
-	*buffer
-	fn func([]string) interface{}
+	fn            func(context.Context, []string) interface{}
+	ch            chan stubCmdUnmarshaler
 }
 
 // NewStubConn returns a (fake) Conn which pretends it is a Conn to a real redis
@@ -123,11 +44,137 @@ type stub struct {
 // remoteNetwork and remoteAddr can be empty, but if given will be used as the
 // return from the RemoteAddr method.
 //
-func NewStubConn(remoteNetwork, remoteAddr string, fn func([]string) interface{}) Conn {
-	return &stub{
+func NewStubConn(remoteNetwork, remoteAddr string, fn func(context.Context, []string) interface{}) Conn {
+	s := &stub{
+		proc:    proc.New(),
 		network: remoteNetwork, addr: remoteAddr,
-		buffer: newBuffer(remoteNetwork, remoteAddr),
-		fn:     fn,
+		fn: fn,
+		ch: make(chan stubCmdUnmarshaler, 128),
+	}
+	s.proc.Run(s.responder)
+	return s
+}
+
+func (s *stub) responder(ctx context.Context) {
+	doneCh := ctx.Done()
+	opts := resp.NewOpts()
+
+	retBuf := new(bytes.Buffer)
+	retBr := bufio.NewReader(retBuf)
+	errList, unmarshalerList := list.New(), list.New()
+	popFront := func(l *list.List) interface{} {
+		e := l.Front()
+		l.Remove(e)
+		return e.Value
+	}
+
+	asErr := func(i interface{}) (error, bool) {
+		err, ok := i.(error)
+		if !ok {
+			return nil, false
+		}
+		_, ok = err.(resp.Marshaler)
+		return err, !ok
+	}
+
+	for {
+		select {
+		case <-doneCh:
+			return
+		case cu := <-s.ch:
+			for _, cmd := range cu.cmds {
+				ret := s.fn(cu.ctx, cmd)
+				if err, ok := asErr(ret); ok {
+					errList.PushBack(err)
+				} else if err := resp3.Marshal(retBuf, ret, opts); err != nil {
+					panic(fmt.Sprintf("return from stub callback could not be marshaled: %v", err))
+				}
+			}
+			if cu.unmarshaler != nil {
+				unmarshalerList.PushBack(cu.unmarshaler)
+			}
+			for {
+				if (retBuf.Len() == 0 && retBr.Buffered() == 0 && errList.Len() == 0) ||
+					unmarshalerList.Len() == 0 {
+					break
+				}
+
+				unmarshaler := popFront(unmarshalerList).(*stubUnmarshaler)
+
+				if errList.Len() > 0 {
+					err := popFront(errList).(error)
+					unmarshaler.errCh <- err
+					continue
+				}
+
+				err := resp3.Unmarshal(retBr, unmarshaler.unmarshalInto, opts)
+				unmarshaler.errCh <- err
+			}
+		}
+	}
+}
+
+type stubEncDecCtxKey int
+
+const stubEncDecCtxKeyQueuedCh stubEncDecCtxKey = 0
+
+func (s *stub) EncodeDecode(ctx context.Context, m, u interface{}) error {
+	opts := resp.NewOpts()
+	cu := stubCmdUnmarshaler{ctx: ctx}
+
+	if m != nil {
+		buf := new(bytes.Buffer)
+		br := bufio.NewReader(buf)
+		if err := resp3.Marshal(buf, m, opts); err != nil {
+			return err
+		}
+
+		for buf.Len() > 0 || br.Buffered() > 0 {
+			var cmd []string
+			if err := resp3.Unmarshal(br, &cmd, opts); err != nil {
+				panic(fmt.Sprintf("could not convert resp.Marshaler to []string: %v", err))
+			}
+			cu.cmds = append(cu.cmds, cmd)
+		}
+	}
+
+	var errCh chan error
+	if u != nil {
+		errCh = make(chan error, 1)
+		cu.unmarshaler = &stubUnmarshaler{
+			unmarshalInto: u,
+			errCh:         errCh,
+		}
+	}
+
+	closedCh := s.proc.ClosedCh()
+
+	select {
+	case s.ch <- cu:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-closedCh:
+		return proc.ErrClosed
+	}
+
+	// This is a hack, but it lets the Pool tests have deterministic behavior
+	// when it comes to performing concurrent commands against a single conn.
+	// TODO should this be exposed publicly somehow?
+	if ch, _ := ctx.Value(stubEncDecCtxKeyQueuedCh).(chan struct{}); ch != nil {
+		close(ch)
+	}
+
+	if errCh == nil {
+		return nil
+	}
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-closedCh:
+		return proc.ErrClosed
 	}
 }
 
@@ -135,48 +182,10 @@ func (s *stub) Do(ctx context.Context, a Action) error {
 	return a.Perform(ctx, s)
 }
 
-func (s *stub) EncodeDecode(ctx context.Context, m, u interface{}) error {
-	if m != nil {
-		buf := new(bytes.Buffer)
-		if err := resp3.Marshal(buf, m, resp.NewOpts()); err != nil {
-			return err
-		}
-		br := bufio.NewReader(buf)
-
-		for {
-			var ss []string
-			if buf.Len() == 0 && br.Buffered() == 0 {
-				break
-			} else if err := resp3.Unmarshal(br, &ss, resp.NewOpts()); err != nil {
-				return err
-			}
-
-			// get return from callback. Results implementing resp.Marshaler are
-			// assumed to be wanting to be written in all cases, otherwise if
-			// the result is an error it is assumed to want to be returned
-			// directly.
-			ret := s.fn(ss)
-			if m, ok := ret.(resp.Marshaler); ok {
-				if err := s.buffer.Encode(m); err != nil {
-					return err
-				}
-			} else if err, _ := ret.(error); err != nil {
-				return err
-			} else if err = s.buffer.Encode(ret); err != nil {
-				return err
-			}
-		}
-	}
-
-	if u != nil {
-		if err := s.buffer.Decode(ctx, u); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (s *stub) Addr() net.Addr {
 	return rawAddr{network: s.network, addr: s.addr}
+}
+
+func (s *stub) Close() error {
+	return s.proc.Close(nil)
 }
