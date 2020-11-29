@@ -216,6 +216,13 @@ func (s *StreamEntries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 // StreamReaderConfig is used to create StreamReader instances with particular
 // settings. All fields are optional, all methods are thread-safe.
 type StreamReaderConfig struct {
+
+	// SwitchToNewMessages allows to read unacknowledged messages first and then switch to new ones.
+	//
+	// If SwitchToNewMessages is true and reads uses XREADGROUP, reads will switch to the special > id
+	// in case of no messages available by an exact one (it should be 0-0 initially).
+	SwitchToNewMessages bool
+
 	// Group is an optional consumer group name.
 	//
 	// If Group is not empty reads will use XREADGROUP with the Group as consumer group instead of XREAD.
@@ -264,6 +271,22 @@ type StreamReader interface {
 	//
 	// If there was an error, all future calls to Next will return ok == false.
 	Next(context.Context) (stream string, entries []StreamEntry, ok bool)
+}
+
+// streamReader implements the StreamReader interface.
+type streamReader struct {
+	c   Client
+	cfg StreamReaderConfig
+
+	streams []string
+	ids     map[string]string
+
+	cmd       string   // command. either XREAD or XREADGROUP
+	fixedArgs []string // fixed arguments that always come directly after the command
+	args      []string // arguments passed to Cmd. reused between calls to Next to avoid allocations.
+
+	unread []StreamEntries
+	err    error
 }
 
 // New returns a new StreamReader for the given Client.
@@ -324,22 +347,6 @@ func (cfg StreamReaderConfig) New(c Client, streams map[string]*StreamEntryID) S
 	return sr
 }
 
-// streamReader implements the StreamReader interface.
-type streamReader struct {
-	c   Client
-	cfg StreamReaderConfig
-
-	streams []string
-	ids     map[string]string
-
-	cmd       string   // command. either XREAD or XREADGROUP
-	fixedArgs []string // fixed arguments that always come directly after the command
-	args      []string // arguments passed to Cmd. reused between calls to Next to avoid allocations.
-
-	unread []StreamEntries
-	err    error
-}
-
 func (sr *streamReader) backfill(ctx context.Context) bool {
 	sr.args = append(sr.args[:0], sr.fixedArgs...)
 
@@ -364,12 +371,15 @@ func (sr *streamReader) nextFromBuffer() (stream string, entries []StreamEntry) 
 		sre := sr.unread[len(sr.unread)-1]
 		sr.unread = sr.unread[:len(sr.unread)-1]
 
+		stream = sre.Stream
+
 		// entries can be empty if we are using XREADGROUP and reading unacknowledged entries.
 		if len(sre.Entries) == 0 {
+			if sr.cfg.SwitchToNewMessages && sr.cmd == "XREADGROUP" && sr.ids[stream] != ">" {
+				sr.ids[stream] = ">"
+			}
 			continue
 		}
-
-		stream = sre.Stream
 
 		// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
 		if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {
