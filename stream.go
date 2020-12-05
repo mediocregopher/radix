@@ -226,11 +226,11 @@ type StreamReaderOpts struct {
 	// If a value is non-nil, only newer stream entries will be returned.
 	Streams map[string]*StreamEntryID
 
-	// SwitchToNewMessages allows to read unacknowledged messages first and then switch to new ones.
-	//
-	// If SwitchToNewMessages is true and reads uses XREADGROUP, reads will switch to the special > id
-	// in case of no messages available by an exact one (it should be 0-0 initially).
-	SwitchToNewMessages bool
+	// FallbackToUndelivered will cause any streams in with a non-nil value in Streams to fallback
+	// to delivering messages not-yet-delivered to other consumers (as if the value in the Streams map was nil),
+	// once the reader has read all its pending messages in the stream.
+	// This must be used in conjunction with Group.
+	FallbackToUndelivered bool
 
 	// Group is an optional consumer group name.
 	//
@@ -291,7 +291,7 @@ func NewStreamReader(c Client, opts StreamReaderOpts) StreamReader {
 	if sr.opts.Group != "" {
 		sr.cmd = "XREADGROUP"
 		sr.fixedArgs = []string{"GROUP", sr.opts.Group, sr.opts.Consumer}
-		sr.switchToNewMessages = opts.SwitchToNewMessages
+		sr.fallbackToUndelivered = opts.FallbackToUndelivered
 	} else {
 		sr.cmd = "XREAD"
 		sr.fixedArgs = nil
@@ -348,9 +348,9 @@ type streamReader struct {
 	c    Client
 	opts StreamReaderOpts // copy of the options given to NewStreamReader with Streams == nil
 
-	streams             []string
-	ids                 map[string]string
-	switchToNewMessages bool
+	streams               []string
+	ids                   map[string]string
+	fallbackToUndelivered bool
 
 	cmd       string   // command. either XREAD or XREADGROUP
 	fixedArgs []string // fixed arguments that always come directly after the command
@@ -388,7 +388,7 @@ func (sr *streamReader) nextFromBuffer() (stream string, entries []StreamEntry) 
 
 		// entries can be empty if we are using XREADGROUP and reading unacknowledged entries.
 		if len(sre.Entries) == 0 {
-			if sr.switchToNewMessages && sr.cmd == "XREADGROUP" && sr.ids[stream] != ">" {
+			if sr.fallbackToUndelivered && sr.cmd == "XREADGROUP" && sr.ids[stream] != ">" {
 				sr.ids[stream] = ">"
 			}
 			continue
