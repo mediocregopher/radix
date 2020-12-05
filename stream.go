@@ -217,11 +217,11 @@ func (s *StreamEntries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 // settings. All fields are optional, all methods are thread-safe.
 type StreamReaderConfig struct {
 
-	// SwitchToNewMessages allows to read unacknowledged messages first and then switch to new ones.
-	//
-	// If SwitchToNewMessages is true and reads uses XREADGROUP, reads will switch to the special > id
-	// in case of no messages available by an exact one (it should be 0-0 initially).
-	SwitchToNewMessages bool
+	// FallbackToUndelivered will cause any streams in with a non-nil value in Streams to fallback
+	// to delivering messages not-yet-delivered to other consumers (as if the value in the Streams map was nil),
+	// once the reader has read all its pending messages in the stream.
+	// This must be used in conjunction with Group.
+	FallbackToUndelivered bool
 
 	// Group is an optional consumer group name.
 	//
@@ -375,7 +375,7 @@ func (sr *streamReader) nextFromBuffer() (stream string, entries []StreamEntry) 
 
 		// entries can be empty if we are using XREADGROUP and reading unacknowledged entries.
 		if len(sre.Entries) == 0 {
-			if sr.cfg.SwitchToNewMessages && sr.cmd == "XREADGROUP" && sr.ids[stream] != ">" {
+			if sr.cfg.FallbackToUndelivered && sr.cmd == "XREADGROUP" && sr.ids[stream] != ">" {
 				sr.ids[stream] = ">"
 			}
 			continue

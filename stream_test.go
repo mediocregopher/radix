@@ -734,7 +734,7 @@ func TestStreamReader(t *T) {
 			assertNoStreamReaderEntries(t, r)
 		})
 
-		t.Run("SwitchToNewMessages", func(t *T) {
+		t.Run("FallbackToUndelivered", func(t *T) {
 			c := dial()
 			defer c.Close()
 
@@ -757,10 +757,10 @@ func TestStreamReader(t *T) {
 			id2 := addStreamEntry(t, c, stream)
 
 			r2 := (StreamReaderConfig{
-				Group:               group,
-				Consumer:            consumer,
-				NoBlock:             true,
-				SwitchToNewMessages: true,
+				Group:                 group,
+				Consumer:              consumer,
+				NoBlock:               true,
+				FallbackToUndelivered: true,
 			}).New(c, map[string]*StreamEntryID{
 				stream: {Time: 0, Seq: 0},
 			})
