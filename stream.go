@@ -226,6 +226,12 @@ type StreamReaderOpts struct {
 	// If a value is non-nil, only newer stream entries will be returned.
 	Streams map[string]*StreamEntryID
 
+	// FallbackToUndelivered will cause any streams in with a non-nil value in Streams to fallback
+	// to delivering messages not-yet-delivered to other consumers (as if the value in the Streams map was nil),
+	// once the reader has read all its pending messages in the stream.
+	// This must be used in conjunction with Group.
+	FallbackToUndelivered bool
+
 	// Group is an optional consumer group name.
 	//
 	// If Group is not empty reads will use XREADGROUP with the Group as consumer group instead of XREAD.
@@ -285,6 +291,7 @@ func NewStreamReader(c Client, opts StreamReaderOpts) StreamReader {
 	if sr.opts.Group != "" {
 		sr.cmd = "XREADGROUP"
 		sr.fixedArgs = []string{"GROUP", sr.opts.Group, sr.opts.Consumer}
+		sr.fallbackToUndelivered = opts.FallbackToUndelivered
 	} else {
 		sr.cmd = "XREAD"
 		sr.fixedArgs = nil
@@ -341,8 +348,9 @@ type streamReader struct {
 	c    Client
 	opts StreamReaderOpts // copy of the options given to NewStreamReader with Streams == nil
 
-	streams []string
-	ids     map[string]string
+	streams               []string
+	ids                   map[string]string
+	fallbackToUndelivered bool
 
 	cmd       string   // command. either XREAD or XREADGROUP
 	fixedArgs []string // fixed arguments that always come directly after the command
@@ -376,12 +384,15 @@ func (sr *streamReader) nextFromBuffer() (stream string, entries []StreamEntry) 
 		sre := sr.unread[len(sr.unread)-1]
 		sr.unread = sr.unread[:len(sr.unread)-1]
 
+		stream = sre.Stream
+
 		// entries can be empty if we are using XREADGROUP and reading unacknowledged entries.
 		if len(sre.Entries) == 0 {
+			if sr.fallbackToUndelivered && sr.cmd == "XREADGROUP" && sr.ids[stream] != ">" {
+				sr.ids[stream] = ">"
+			}
 			continue
 		}
-
-		stream = sre.Stream
 
 		// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
 		if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {

@@ -736,6 +736,55 @@ func TestStreamReader(t *T) {
 
 			assertNoStreamReaderEntries(t, r)
 		})
+
+		t.Run("FallbackToUndelivered", func(t *T) {
+			c := dial()
+			defer c.Close()
+
+			consumer, group := randStr(), randStr()
+			stream := randStr()
+
+			r1 := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream: nil,
+				},
+				Group:    group,
+				Consumer: consumer,
+				NoBlock:  true,
+			})
+
+			addStreamGroup(t, c, stream, group, "0-0")
+
+			assertNoStreamReaderEntries(t, r1)
+			id1 := addStreamEntry(t, c, stream)
+			assertStreamReaderEntries(t, r1, map[string][]StreamEntryID{stream: {id1}})
+			id2 := addStreamEntry(t, c, stream)
+
+			r2 := NewStreamReader(c, StreamReaderOpts{
+				Streams: map[string]*StreamEntryID{
+					stream: {Time: 0, Seq: 0},
+				},
+				Group:                 group,
+				Consumer:              consumer,
+				NoBlock:               true,
+				FallbackToUndelivered: true,
+			})
+
+			assertStreamReaderEntries(t, r2, map[string][]StreamEntryID{stream: {id1}})
+			assertConsumer(t, c, stream, group, consumer, 1)
+
+			assertStreamReaderEntries(t, r1, map[string][]StreamEntryID{stream: {id2}})
+			assertNoStreamReaderEntries(t, r1)
+
+			assertStreamReaderEntries(t, r2, map[string][]StreamEntryID{stream: {id2}})
+			assertNoStreamReaderEntries(t, r2)
+			assertConsumer(t, c, stream, group, consumer, 2)
+
+			id3 := addStreamEntry(t, c, stream)
+			assertStreamReaderEntries(t, r2, map[string][]StreamEntryID{stream: {id3}})
+			assertNoStreamReaderEntries(t, r2)
+			assertConsumer(t, c, stream, group, consumer, 3)
+		})
 	})
 
 	t.Run("NoGroup", func(t *T) {
