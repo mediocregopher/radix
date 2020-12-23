@@ -13,8 +13,6 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * Remove `CmdAction`.
 
-* Implement `NewPipeliningConn`, remove implicit pipelining from `Pool`.
-
 * Rename `resp.ErrDiscarded` to `resp.ErrConnUsable`, and change some of the
   semantics around using the error. A `resp.ErrConnUnusable` convenience
   function has been added as well.
@@ -24,6 +22,10 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 * `resp.Marshaler` and `resp.Unmarshaler` now take an `Opts` argument, to give
   the caller more control over things like byte pools and potentially other
   functionality in the future.
+
+* `resp.Unmarshaler` now takes a `resp.BufferedReader`, rather than
+  `*bufio.Reader`. Generally `resp.BufferedReader` will be implemented by a
+  `*bufio.Reader`, but this gives move flexibility.
 
 * Brand new `resp/resp3` package which implements the [RESP3][resp3] protocol.
   The new package features more consistent type mappings between go and redis
@@ -55,6 +57,20 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 * Stop using `...opts` pattern for optional parameters across all types, and
   switch instead to a `(Config{}).New` kind of pattern.
+
+* `Conn` is now always thread-safe. When multiple `Action`s are performed
+  against a single `Conn` concurrently the `Conn` will automatically pipeline
+  the `Action`'s read/writes, as appropriate.
+
+* `Pool` has been completely rewritten to better take advantage of connection
+  sharing (previously called "implicit pipelining" in v3). `EvalScript` and
+  `Pipeline` now support connection sharing as well. Since most `Action`s can be
+  shared on the same `Conn` the `Pool` no longer runs the risk of being depleted
+  during too many concurrent `Action`s, and so no longer needs to dynamically
+  create/destroy `Conn`s.
+
+* The `trace` package has been significantly updated to reflect changes to
+  `Pool` and other `Client`s.
 
 [resp3]: https://github.com/antirez/RESP3
 
