@@ -68,13 +68,14 @@ func (s *stub) responder(ctx context.Context) {
 		return e.Value
 	}
 
-	asErr := func(i interface{}) (error, bool) {
+	asErr := func(i interface{}) error {
 		err, ok := i.(error)
 		if !ok {
-			return nil, false
+			return nil
+		} else if _, ok = err.(resp.Marshaler); ok {
+			return nil
 		}
-		_, ok = err.(resp.Marshaler)
-		return err, !ok
+		return err
 	}
 
 	for {
@@ -84,7 +85,7 @@ func (s *stub) responder(ctx context.Context) {
 		case cu := <-s.ch:
 			for _, cmd := range cu.cmds {
 				ret := s.fn(cu.ctx, cmd)
-				if err, ok := asErr(ret); ok {
+				if err := asErr(ret); err != nil {
 					errList.PushBack(err)
 				} else if err := resp3.Marshal(retBuf, ret, opts); err != nil {
 					panic(fmt.Sprintf("return from stub callback could not be marshaled: %v", err))
