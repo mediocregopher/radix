@@ -208,7 +208,7 @@ type Dialer struct {
 	// allows Conns to behave well during both low and high activity periods.
 	//
 	// Defaults to 0, indicating Flush will be called upon each EncodeDecode
-	// call without delay. -1 may be used as an equivalent to 0.
+	// call without delay.
 	WriteFlushInterval time.Duration
 
 	// NewRespOpts returns a fresh instance of a *resp.Opts to be used by the
@@ -328,11 +328,7 @@ func (d Dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
 
 	conn.proc.Run(conn.reader)
 	conn.proc.Run(func(ctx context.Context) {
-		i := d.WriteFlushInterval
-		if i < 0 {
-			i = 0
-		}
-		conn.writer(ctx, i)
+		conn.writer(ctx, d.WriteFlushInterval)
 	})
 
 	if d.AuthUser != "" {
