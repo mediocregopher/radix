@@ -46,6 +46,98 @@ func TestClusterClient(t *T) {
 	assert.Implements(t, new(Client), c)
 }
 
+func makeFailedFlagMap(addrs []string) map[string]bool {
+	failedAddrsFlag := make(map[string]bool)
+	for _, addr := range addrs {
+		failedAddrsFlag[addr] = true
+	}
+	return failedAddrsFlag
+}
+
+func TestClusterInitSync(t *T) {
+	scl := newStubCluster(testTopo)
+	serverAddrs := scl.addrs()
+	{
+		c := scl.newCluster()
+		err := c.Sync(true, false, true)
+		assert.NotNil(t, err)
+	}
+	//part of the addresses are unavailable during the initialization
+	//and recover after that, call Sync to test whether it can work
+	{
+		c, err := scl.newInitSyncErrorCluster(serverAddrs,
+			makeFailedFlagMap(serverAddrs[0:len(serverAddrs)/2]),
+			ClusterWithInitSyncSilent(true))
+		require.Nil(t, err)
+		defer c.Close()
+		//TestClusterSync
+		assertClusterState := func() {
+			require.Nil(t, c.Sync())
+			c.l.RLock()
+			defer c.l.RUnlock()
+			assert.Equal(t, c.topo, scl.topo())
+			assert.Len(t, c.pools, len(c.topo))
+			for _, node := range c.topo {
+				assert.Contains(t, c.pools, node.Addr)
+			}
+		}
+		assertClusterState()
+
+		// cluster is unstable af
+		for i := 0; i < 10; i++ {
+			// find a usabel src/dst
+			var srcStub, dstStub *clusterNodeStub
+			for {
+				srcStub = scl.randStub()
+				dstStub = scl.randStub()
+				if srcStub.addr == dstStub.addr {
+					continue
+				} else if slotRanges := srcStub.slotRanges(); len(slotRanges) == 0 {
+					continue
+				}
+				break
+			}
+
+			// move src's first slot range to dst
+			slotRange := srcStub.slotRanges()[0]
+			t.Logf("moving %d:%d from %s to %s", slotRange[0], slotRange[1], srcStub.addr, dstStub.addr)
+			scl.migrateSlotRange(dstStub.addr, slotRange[0], slotRange[1])
+			assertClusterState()
+		}
+	}
+
+	//part of the addresses are unavailable during the initialization
+	//and recover after that, try Set and Get cmd to test whether it can work
+	{
+		c, err := scl.newInitSyncErrorCluster(serverAddrs,
+			makeFailedFlagMap(serverAddrs[len(serverAddrs)/2:]),
+			ClusterWithInitSyncSilent(true))
+		require.Nil(t, err)
+		defer c.Close()
+		// find the address's slot
+		var targetStub *clusterNodeStub
+		for i := len(serverAddrs) / 2; i < len(serverAddrs); i++ {
+			targetStub = scl.stubs[serverAddrs[i]]
+			if slotRanges := targetStub.slotRanges(); len(slotRanges) != 0 {
+				break
+			}
+		}
+		require.NotNil(t, targetStub)
+		client, _ := c.rpool(targetStub.addr)
+		require.Nil(t, client)
+
+		slotRanges := targetStub.slotRanges()[0]
+		targetSlotNum := (slotRanges[1] + slotRanges[0]) / 2
+		t.Logf("the target addr for set and get is %s, slotnum= %d", targetStub.addr, targetSlotNum)
+		k, v := clusterSlotKeys[targetSlotNum], randStr()
+		t.Logf("call set, key=%s, v=%s", k, v)
+		require.Nil(t, c.Do(Cmd(nil, "SET", k, v)))
+		var vgot string
+		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
+		assert.Equal(t, v, vgot)
+	}
+}
+
 func TestClusterSync(t *T) {
 	c, scl := newTestCluster()
 	defer c.Close()

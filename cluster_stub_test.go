@@ -329,6 +329,28 @@ func (scl *clusterStub) newCluster(opts ...ClusterOpt) *Cluster {
 	return c
 }
 
+func (scl *clusterStub) clientInitSyncFailedFunc(failedAddrsMap map[string]bool) ClientFunc {
+	return func(network, addr string) (Client, error) {
+		for _, s := range scl.stubs {
+			if s.addr == addr {
+				for failedAddr, flag := range failedAddrsMap {
+					if s.addr == failedAddr && flag == true {
+						failedAddrsMap[s.addr] = false
+						return nil, errors.Errorf("timeout")
+					}
+				}
+				return s.newConn(), nil
+			}
+		}
+		return nil, errors.Errorf("unknown addr: %q", addr)
+	}
+}
+
+func (scl *clusterStub) newInitSyncErrorCluster(serverAddrs []string, failedAddrMap map[string]bool, opts ...ClusterOpt) (*Cluster, error) {
+	opts = append([]ClusterOpt{ClusterPoolFunc(scl.clientInitSyncFailedFunc(failedAddrMap))}, opts...)
+	return NewCluster(serverAddrs, opts...)
+}
+
 func (scl *clusterStub) randStub() *clusterNodeStub {
 	for _, s := range scl.stubs {
 		if s.secondaryOfAddr != "" {

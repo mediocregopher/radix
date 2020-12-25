@@ -61,6 +61,7 @@ type clusterOpts struct {
 	clusterDownWait time.Duration
 	syncEvery       time.Duration
 	ct              trace.ClusterTrace
+	initSyncSilent  bool
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -108,6 +109,15 @@ func ClusterOnDownDelayActionsBy(d time.Duration) ClusterOpt {
 func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.ct = ct
+	}
+}
+
+// ClusterWithInitSyncSilent tells the Cluster whether it should ignore
+// errors of creating pool for addrs during the initialization
+// if pool for all addrs failed to be created, it will still return errors
+func ClusterWithInitSyncSilent(initSyncSilent bool) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.initSyncSilent = initSyncSilent
 	}
 }
 
@@ -200,7 +210,7 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		break
 	}
 
-	if err := c.Sync(); err != nil {
+	if err := c.Sync(c.co.initSyncSilent); err != nil {
 		for _, p := range c.pools {
 			p.Close()
 		}
@@ -331,13 +341,22 @@ func (c *Cluster) getTopo(p Client) (ClusterTopo, error) {
 // to new instances and removing ones from instances no longer in the cluster.
 // This will be called periodically automatically, but you can manually call it
 // at any time as well
-func (c *Cluster) Sync() error {
+func (c *Cluster) Sync(args ...bool) error {
+	var silenceFlag bool
+	switch len(args) {
+	case 0:
+	case 1:
+		silenceFlag = args[0]
+	default:
+		return errors.Errorf("Sync() received too many arguments %d", len(args))
+	}
+
 	p, err := c.pool("")
 	if err != nil {
 		return err
 	}
 	c.syncDedupe.do(func() {
-		err = c.sync(p)
+		err = c.sync(p, silenceFlag)
 	})
 	return err
 }
@@ -393,7 +412,11 @@ func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 
 // while this method is normally deduplicated by the Sync method's use of
 // dedupe it is perfectly thread-safe on its own and can be used whenever.
-func (c *Cluster) sync(p Client) error {
+func (c *Cluster) sync(p Client, args ...bool) error {
+	silenceFlag := false
+	if len(args) > 0 {
+		silenceFlag = args[0]
+	}
 	tt, err := c.getTopo(p)
 	if err != nil {
 		return err
@@ -402,7 +425,11 @@ func (c *Cluster) sync(p Client) error {
 	for _, t := range tt {
 		// call pool just to ensure one exists for this addr
 		if _, err := c.pool(t.Addr); err != nil {
-			return errors.Errorf("error connecting to %s: %w", t.Addr, err)
+			if silenceFlag {
+				continue
+			} else {
+				return errors.Errorf("error connecting to %s: %w", t.Addr, err)
+			}
 		}
 	}
 
