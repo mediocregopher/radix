@@ -213,64 +213,85 @@ func (s *StreamEntries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 	return nil
 }
 
+// ErrNoStreamEntries is returned by StreamReader's Next method to indicate that
+// there were no stream entries left to be read.
+var ErrNoStreamEntries = errors.New("no stream entries")
+
+// StreamReader allows reading StreamEntrys sequentially from one or more
+// streams.
+type StreamReader interface {
+	// Next returns a new entry for any of the configured streams. If no new
+	// entries are available then Next uses the context's deadline to determine
+	// how long to block for (via the BLOCK argument to XREAD(GROUP)). If the
+	// context has no deadline then Next will block indefinitely.
+	//
+	// Next returns ErrNoStreamEntries if there were no entries to be returned.
+	// In general Next should be called again after receiving this error.
+	//
+	// The StreamReader should not be used again if an error which is not
+	// ErrNoStreamEntries is returned.
+	Next(context.Context) (stream string, entry StreamEntry, err error)
+}
+
 // StreamReaderConfig is used to create StreamReader instances with particular
 // settings. All fields are optional, all methods are thread-safe.
 type StreamReaderConfig struct {
-
-	// FallbackToUndelivered will cause any streams in with a non-nil value in Streams to fallback
-	// to delivering messages not-yet-delivered to other consumers (as if the value in the Streams map was nil),
-	// once the reader has read all its pending messages in the stream.
-	// This must be used in conjunction with Group.
-	FallbackToUndelivered bool
-
 	// Group is an optional consumer group name.
 	//
-	// If Group is not empty reads will use XREADGROUP with the Group as consumer group instead of XREAD.
+	// If Group is not empty reads will use XREADGROUP with the Group as the
+	// group name and Consumer as the consumer name. XREAD will be used
+	// otherwise.
 	Group string
 
 	// Consumer is an optional consumer name for use with Group.
 	Consumer string
 
-	// NoAck optionally enables passing the NOACK flag to XREADGROUP.
+	// NoAck enables passing the NOACK flag to XREADGROUP.
 	NoAck bool
 
-	// Block specifies the duration in milliseconds that reads will wait for new data before returning.
-	//
-	// If Block is negative, reads will block indefinitely until new entries can be read or there is an error.
-	//
-	// The default, if Block is 0, is 5 seconds.
-	//
-	// If Block is non-negative, the Client used for the StreamReader must not have a timeout for commands or
-	// the timeout duration must be substantial higher than the Block duration (at least 50% for small Block values,
-	// but may be less for higher values).
-	Block time.Duration
-
 	// NoBlock disables blocking when no new data is available.
-	//
-	// If this is true, setting Block will not have any effect.
 	NoBlock bool
 
-	// Count can be used to limit the number of entries retrieved by each call to Next.
+	// Count can be used to limit the number of entries retrieved by each
+	// internal redis call to XREAD(GROUP). Can be set to -1 to indicate no
+	// limit.
 	//
-	// If Count is 0, all available entries will be retrieved.
+	// Defaults to 20.
 	Count int
 }
 
-// StreamReader allows reading from on or more streams, always returning newer entries
-type StreamReader interface {
-	// Err returns any error that happened while calling Next or nil if no error happened.
-	//
-	// Once Err returns a non-nil error, all successive calls will return the same error.
-	Err() error
+func (cfg StreamReaderConfig) withDefaults() StreamReaderConfig {
+	if cfg.Count == -1 {
+		cfg.Count = 0
+	} else if cfg.Count == 0 {
+		cfg.Count = 10
+	}
+	return cfg
+}
 
-	// Next returns new entries for any of the configured streams.
+// StreamConfig is used to configure the reading behavior of individual streams
+// being read by a StreamReader. Exactly one field should be filled in.
+type StreamConfig struct {
+
+	// After indicates that only entries newer than the given ID will be
+	// returned. If Group is set on the outer StreamReaderConfig then only
+	// pending entries newer than the given ID will be returned.
 	//
-	// The returned slice is only valid until the next call to Next.
-	//
-	// If there was an error, ok will be false. Otherwise, even if no entries were read, ok will be true.
-	//
-	// If there was an error, all future calls to Next will return ok == false.
-	Next(context.Context) (stream string, entries []StreamEntry, ok bool)
+	// The zero StreamEntryID value is a valid value here.
+	After StreamEntryID
+
+	// Latest indicates that only entries added after the first call to Next
+	// should be returned. If Group is set on the outer StreamReaderConfig then
+	// only entries which haven't been delivered to other consumers will be
+	// returned.
+	Latest bool
+
+	// PendingThenLatest can only be used if Group is set on the outer
+	// StreamReaderConfig. The reader will first return entries which are marked
+	// as pending for the consumer. Once all pending entries are consumed then
+	// the reader will switch to returning entries which haven't been delivered
+	// to other consumers.
+	PendingThenLatest bool
 }
 
 // streamReader implements the StreamReader interface.
@@ -278,137 +299,131 @@ type streamReader struct {
 	c   Client
 	cfg StreamReaderConfig
 
-	streams []string
-	ids     map[string]string
+	streams    []string
+	streamCfgs map[string]StreamConfig
+	ids        map[string]string
 
 	cmd       string   // command. either XREAD or XREADGROUP
 	fixedArgs []string // fixed arguments that always come directly after the command
-	args      []string // arguments passed to Cmd. reused between calls to Next to avoid allocations.
 
 	unread []StreamEntries
 	err    error
 }
 
-// New returns a new StreamReader for the given Client.
-//
-// streams must contain one or more stream names that will be read. The value
-// for each stream can either be nil or an existing ID. If a value is non-nil,
-// only newer stream entries will be returned.
-func (cfg StreamReaderConfig) New(c Client, streams map[string]*StreamEntryID) StreamReader {
-	sr := &streamReader{c: c, cfg: cfg}
+// New returns a new StreamReader for the given Client. The StreamReader will
+// read from the streams given as the keys of the map.
+func (cfg StreamReaderConfig) New(c Client, streamCfgs map[string]StreamConfig) StreamReader {
+	sr := &streamReader{
+		c:          c,
+		cfg:        cfg.withDefaults(),
+		streamCfgs: streamCfgs,
+
+		// pre-allocated up to the maximumim potential arguments.
+		// (GROUP + group + consumer) + (BLOCK block) + (COUNT count) + NOACK +
+		// (STREAMS + streams... + ids...)
+		fixedArgs: make([]string, 0, 3+2+2+1+1+len(streamCfgs)*2),
+	}
 
 	if sr.cfg.Group != "" {
 		sr.cmd = "XREADGROUP"
-		sr.fixedArgs = []string{"GROUP", sr.cfg.Group, sr.cfg.Consumer}
+		sr.fixedArgs = append(sr.fixedArgs, "GROUP", sr.cfg.Group, sr.cfg.Consumer)
 	} else {
 		sr.cmd = "XREAD"
-		sr.fixedArgs = nil
 	}
 
 	if sr.cfg.Count > 0 {
 		sr.fixedArgs = append(sr.fixedArgs, "COUNT", strconv.Itoa(sr.cfg.Count))
 	}
-
-	if !sr.cfg.NoBlock {
-		dur := 5 * time.Second
-		if sr.cfg.Block < 0 {
-			dur = 0
-		} else if sr.cfg.Block > 0 {
-			dur = sr.cfg.Block
-		}
-		msec := int(dur / time.Millisecond)
-		sr.fixedArgs = append(sr.fixedArgs, "BLOCK", strconv.Itoa(msec))
-	}
-
 	if sr.cfg.Group != "" && sr.cfg.NoAck {
 		sr.fixedArgs = append(sr.fixedArgs, "NOACK")
 	}
 
-	sr.streams = make([]string, 0, len(streams))
-	sr.ids = make(map[string]string, len(streams))
-	for stream, id := range streams {
+	sr.streams = make([]string, 0, len(streamCfgs))
+	sr.ids = make(map[string]string, len(streamCfgs))
+	for stream, streamCfg := range streamCfgs {
 		sr.streams = append(sr.streams, stream)
-
-		if id != nil {
-			sr.ids[stream] = id.String()
-		} else if sr.cmd == "XREAD" {
-			sr.ids[stream] = "$"
-		} else if sr.cmd == "XREADGROUP" {
-			sr.ids[stream] = ">"
+		if streamCfg.Latest {
+			if sr.cfg.Group == "" {
+				sr.ids[stream] = "$"
+			} else {
+				sr.ids[stream] = ">"
+			}
+		} else {
+			sr.ids[stream] = streamCfg.After.String()
 		}
 	}
-
-	sr.fixedArgs = append(sr.fixedArgs, "STREAMS")
-	sr.fixedArgs = append(sr.fixedArgs, sr.streams...)
-
-	// preallocate space for all arguments passed to Cmd
-	sr.args = make([]string, 0, len(sr.fixedArgs)+len(sr.streams))
 
 	return sr
 }
 
-func (sr *streamReader) backfill(ctx context.Context) bool {
-	sr.args = append(sr.args[:0], sr.fixedArgs...)
+func (sr *streamReader) backfill(ctx context.Context) error {
+	args := sr.fixedArgs
 
-	for _, s := range sr.streams {
-		sr.args = append(sr.args, sr.ids[s])
-	}
-
-	if sr.err = sr.c.Do(ctx, Cmd(&sr.unread, sr.cmd, sr.args...)); sr.err != nil {
-		return false
-	}
-
-	return true
-}
-
-// Err implements the StreamReader interface.
-func (sr *streamReader) Err() error {
-	return sr.err
-}
-
-func (sr *streamReader) nextFromBuffer() (stream string, entries []StreamEntry) {
-	for len(sr.unread) > 0 {
-		sre := sr.unread[len(sr.unread)-1]
-		sr.unread = sr.unread[:len(sr.unread)-1]
-
-		stream = sre.Stream
-
-		// entries can be empty if we are using XREADGROUP and reading unacknowledged entries.
-		if len(sre.Entries) == 0 {
-			if sr.cfg.FallbackToUndelivered && sr.cmd == "XREADGROUP" && sr.ids[stream] != ">" {
-				sr.ids[stream] = ">"
+	if !sr.cfg.NoBlock {
+		now := time.Now()
+		if deadline, ok := ctx.Deadline(); ok {
+			if d := deadline.Sub(now); d > 200*time.Millisecond {
+				// to give us some wiggle room we only block for half the context
+				// timeout.
+				d /= 2
+				args = append(args, "BLOCK", strconv.Itoa(int(d/time.Millisecond)))
 			}
-			continue
 		}
-
-		// do not update the ID for XREADGROUP when we are not reading unacknowledged entries.
-		if sr.cmd == "XREAD" || (sr.cmd == "XREADGROUP" && sr.ids[stream] != ">") {
-			sr.ids[stream] = sre.Entries[len(sre.Entries)-1].ID.String()
-		}
-
-		return stream, sre.Entries
 	}
 
-	return "", nil
+	args = append(args, "STREAMS")
+	args = append(args, sr.streams...)
+	for _, s := range sr.streams {
+		args = append(args, sr.ids[s])
+	}
+
+	if err := sr.c.Do(ctx, Cmd(&sr.unread, sr.cmd, args...)); err != nil {
+		return fmt.Errorf("calling %s: %w", sr.cmd, err)
+	}
+
+	// run through returned entries and update ids for the next call, as needed
+	for _, sre := range sr.unread {
+		if len(sre.Entries) == 0 {
+			streamCfg := sr.streamCfgs[sre.Stream]
+			if sr.cfg.Group != "" && streamCfg.PendingThenLatest {
+				sr.ids[sre.Stream] = ">"
+			}
+		} else if sr.cfg.Group == "" || sr.ids[sre.Stream] != ">" {
+			sr.ids[sre.Stream] = sre.Entries[len(sre.Entries)-1].ID.String()
+		}
+	}
+
+	return nil
 }
 
-// Next implements the StreamReader interface.
-func (sr *streamReader) Next(ctx context.Context) (stream string, entries []StreamEntry, ok bool) {
+func (sr *streamReader) Next(ctx context.Context) (stream string, entry StreamEntry, err error) {
 	if sr.err != nil {
-		return "", nil, false
+		return "", StreamEntry{}, sr.err
 	}
 
-	if stream, entries = sr.nextFromBuffer(); stream != "" {
-		return stream, entries, true
+	var backfillCalled bool // we only call backfill once per Next
+	for {
+		if len(sr.unread) == 0 {
+			if backfillCalled {
+				break
+			} else if sr.err = sr.backfill(ctx); sr.err != nil {
+				return "", StreamEntry{}, sr.err
+			}
+			backfillCalled = true
+		}
+
+		for len(sr.unread) > 0 {
+			i := len(sr.unread) - 1
+			if len(sr.unread[i].Entries) == 0 {
+				sr.unread = sr.unread[:i]
+				continue
+			}
+
+			entry := sr.unread[i].Entries[0]
+			sr.unread[i].Entries = sr.unread[i].Entries[1:]
+			return sr.unread[i].Stream, entry, nil
+		}
 	}
 
-	if !sr.backfill(ctx) {
-		return "", nil, false
-	}
-
-	if stream, entries = sr.nextFromBuffer(); stream != "" {
-		return stream, entries, true
-	}
-
-	return "", nil, true
+	return "", StreamEntry{}, ErrNoStreamEntries
 }

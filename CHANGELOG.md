@@ -72,6 +72,8 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 * The `trace` package has been significantly updated to reflect changes to
   `Pool` and other `Client`s.
 
+* Refactor the `StreamReader` interface to be simpler to use.
+
 [resp3]: https://github.com/antirez/RESP3
 
 # v3.6.0
