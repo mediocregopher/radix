@@ -882,30 +882,6 @@ func TestStreamReader(t *T) {
 	})
 }
 
-func BenchmarkStreamReader(b *B) {
-	ctx := testCtx(b)
-	c := dial()
-	defer c.Close()
-
-	stream := randStr()
-	streams := map[string]StreamConfig{
-		stream: {},
-	}
-
-	addNStreamEntries(b, c, stream, 32)
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		r := (StreamReaderConfig{NoBlock: true}).New(c, streams)
-		for {
-			if _, _, err := r.Next(ctx); err != nil && !errors.Is(err, ErrNoStreamEntries) {
-				b.Fatal(err)
-			}
-		}
-	}
-}
-
 func addStreamEntry(tb TB, c Client, stream string) StreamEntryID {
 	tb.Helper()
 	var id StreamEntryID

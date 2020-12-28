@@ -183,12 +183,9 @@ type Client interface {
 // primary (read+write) instance and zero or more secondary (read-only)
 // instances.
 type ReplicaSet struct {
-	Primary Client
-	// TODO use "Replica" instad of "Secondary" in this package.
+	Primary     Client
 	Secondaries []Client
 }
-
-// TODO is MultiClient the right name?
 
 // MultiClient wraps one or more underlying Clients for different redis
 // instances. MultiClient methods are thread-safe and may return the same Client

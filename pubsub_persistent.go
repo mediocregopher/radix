@@ -2,6 +2,7 @@ package radix
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
@@ -67,13 +68,13 @@ type persistentPubSub struct {
 // This is effectively a way to have a permanent PubSubConn established which
 // supports subscribing/unsubscribing but without the hassle of implementing
 // reconnect/re-subscribe logic.
-func (cfg PersistentPubSubConfig) New(ctx context.Context, cb func() (network, addr string)) (PubSubConn, error) {
+func (cfg PersistentPubSubConfig) New(ctx context.Context, cb func() (network, addr string, err error)) (PubSubConn, error) {
 	p := &persistentPubSub{
 		proc: proc.New(),
 		dial: func(ctx context.Context) (Conn, error) {
-			var network, addr string
-			if cb != nil {
-				network, addr = cb()
+			network, addr, err := cb()
+			if err != nil {
+				return nil, fmt.Errorf("calling PersistentPubSub callback to determine network/address: %w", err)
 			}
 			return cfg.Dialer.Dial(ctx, network, addr)
 		},

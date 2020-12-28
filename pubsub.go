@@ -270,22 +270,6 @@ func (c *pubSubConn) testEvent(str string) {
 	}
 }
 
-func (c *pubSubConn) publish(m PubSubMessage) {
-	_ = c.proc.WithRLock(func() error {
-		var subs map[chan<- PubSubMessage]bool
-		if m.Type == "pmessage" {
-			subs = c.psubs[m.Pattern]
-		} else {
-			subs = c.subs[m.Channel]
-		}
-
-		for ch := range subs {
-			ch <- m
-		}
-		return nil
-	})
-}
-
 func (c *pubSubConn) pubSpin(ctx context.Context) {
 	doneCh := ctx.Done()
 	for {
@@ -293,7 +277,19 @@ func (c *pubSubConn) pubSpin(ctx context.Context) {
 		case <-doneCh:
 			return
 		case m := <-c.pubCh:
-			c.publish(m)
+			_ = c.proc.WithRLock(func() error {
+				var subs map[chan<- PubSubMessage]bool
+				if m.Type == "pmessage" {
+					subs = c.psubs[m.Pattern]
+				} else {
+					subs = c.subs[m.Channel]
+				}
+
+				for ch := range subs {
+					ch <- m
+				}
+				return nil
+			})
 		}
 	}
 }
@@ -325,8 +321,6 @@ func (c *pubSubConn) spin(ctx context.Context) {
 		case c.pubCh <- m:
 		case <-doneCh:
 			return
-		default:
-			panic("TODO figure out what to do in this case")
 		}
 	}
 }

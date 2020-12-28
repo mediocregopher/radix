@@ -2,6 +2,7 @@ package radix
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -416,13 +417,16 @@ func ExamplePersistentPubSubConfig_cluster() {
 	// Have PersistentPubSubConfig pick a random cluster node everytime it wants
 	// to make a new connection. If the node fails PersistentPubSubConfig will
 	// automatically pick a new node to connect to.
-	ps, err := (PersistentPubSubConfig{}).New(ctx, func() (string, string) {
-		clients, _ := cluster.Clients()
-		for addr := range clients {
-			return "tcp", addr
+	ps, err := (PersistentPubSubConfig{}).New(ctx, func() (string, string, error) {
+		clients, err := cluster.Clients()
+		if err != nil {
+			return "", "", err
 		}
-		// TODO should the callback return an error?
-		panic("unexpected empty result from Clients")
+
+		for addr := range clients {
+			return "tcp", addr, nil
+		}
+		return "", "", errors.New("no clients in the cluster")
 	})
 	if err != nil {
 		panic(err)

@@ -160,7 +160,6 @@ func (s *stub) EncodeDecode(ctx context.Context, m, u interface{}) error {
 
 	// This is a hack, but it lets the Pool tests have deterministic behavior
 	// when it comes to performing concurrent commands against a single conn.
-	// TODO should this be exposed publicly somehow?
 	if ch, _ := ctx.Value(stubEncDecCtxKeyQueuedCh).(chan struct{}); ch != nil {
 		close(ch)
 	}

@@ -619,17 +619,13 @@ func (p *Pipeline) Perform(ctx context.Context, c Conn) error {
 	// look through any errors encountered, if any. Perform will only return the
 	// first error encountered, but it does take into account all the others
 	// when determining if that error should be wrapped in ErrConnUsable.
-	//
-	// TODO this used to return a useful error describing which of the
-	// commands failed, mostly for the case of an application error like
-	// WRONGTYPE.
 	var err error
 	var errConnUsable resp.ErrConnUsable
 	connUsable := true
 	for _, m := range p.mm {
 		if m.err != nil {
 			if err == nil {
-				err = m.err
+				err = fmt.Errorf("command %+v in pipeline returned error: %w", m.marshal, m.err)
 			}
 			if !errors.As(m.err, &errConnUsable) {
 				connUsable = false
