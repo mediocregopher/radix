@@ -116,7 +116,7 @@ func TestPubSubSubscribe(t *T) {
 		}
 		close(pubCh)
 	}()
-	c := NewPubSubConn(dial())
+	c := (PubSubConfig{}).New(dial())
 	testSubscribe(t, c, pubCh)
 
 	assert.NoError(t, c.Close())
@@ -128,7 +128,7 @@ func TestPubSubSubscribe(t *T) {
 func TestPubSubPSubscribe(t *T) {
 	ctx := testCtx(t)
 	pubC := dial()
-	c := NewPubSubConn(dial())
+	c := (PubSubConfig{}).New(dial())
 	msgCh := make(chan PubSubMessage, 1)
 
 	p1, p2, msgStr := randStr()+"_*", randStr()+"_*", randStr()
@@ -216,7 +216,7 @@ func TestPubSubMixedSubscribe(t *T) {
 	pubC := dial()
 	defer pubC.Close()
 
-	c := NewPubSubConn(dial())
+	c := (PubSubConfig{}).New(dial())
 	defer func() {
 		assert.NoError(t, c.Close())
 	}()
@@ -255,7 +255,7 @@ func TestPubSubMixedSubscribe(t *T) {
 // from returns a timeout error
 func TestPubSubTimeout(t *T) {
 	ctx := testCtx(t)
-	c, pubC := NewPubSubConn(dial()), dial()
+	c, pubC := (PubSubConfig{}).New(dial()), dial()
 	c.(*pubSubConn).testEventCh = make(chan string, 1)
 
 	ch, msgCh := randStr(), make(chan PubSubMessage, 1)
@@ -281,7 +281,7 @@ func TestPubSubTimeout(t *T) {
 // subscribing/unsubscribing quickly on an active channel.
 func TestPubSubChaotic(t *T) {
 	ctx := testCtx(t)
-	c, pubC := NewPubSubConn(dial()), dial()
+	c, pubC := (PubSubConfig{}).New(dial()), dial()
 	defer func() {
 		assert.NoError(t, c.Close())
 	}()
@@ -338,7 +338,7 @@ func TestPubSubChaotic(t *T) {
 
 func BenchmarkPubSub(b *B) {
 	ctx := testCtx(b)
-	c, pubC := NewPubSubConn(dial()), dial()
+	c, pubC := (PubSubConfig{}).New(dial()), dial()
 	defer c.Close()
 	defer pubC.Close()
 
@@ -367,7 +367,7 @@ func ExampleNewPubSubConn() {
 	}
 
 	// Pass that connection into PubSub, conn should never get used after this
-	ps := NewPubSubConn(conn)
+	ps := (PubSubConfig{}).New(conn)
 	defer ps.Close() // this will close Conn as well
 
 	// Subscribe to a channel called "myChannel". All publishes to "myChannel"

@@ -43,8 +43,8 @@ type pubSubStub struct {
 // pretends it is a Conn to a real redis instance, but is instead using the
 // given callback to service requests. It is primarily useful for writing tests.
 //
-// NewPubSubStubConn differes from NewStubConn in that Encode calls for
-// (P)SUBSCRIBE, (P)UNSUBSCRIBE, MESSAGE, and PING will be intercepted and
+// NewPubSubStubConn differs from NewStubConn in that EncodeDecode calls for the
+// (P)SUBSCRIBE, (P)UNSUBSCRIBE, and PING commands will be intercepted and
 // handled as per redis' expected pubsub functionality. A PubSubMessage may be
 // written to the returned channel at any time, and if the returned Conn has had
 // (P)SUBSCRIBE called matching that PubSubMessage then the PubSubMessage will
@@ -53,6 +53,10 @@ type pubSubStub struct {
 // This is intended to be used for mocking services which can perform both
 // normal redis commands and pubsub (e.g. a real redis instance, redis
 // sentinel). The returned Conn can be passed into NewPubSubConn.
+//
+// remoteNetwork and remoteAddr can be empty, but if given will be used as the
+// return from the Addr method.
+//
 func NewPubSubStubConn(remoteNetwork, remoteAddr string, fn func(context.Context, []string) interface{}) (Conn, chan<- PubSubMessage) {
 	ch := make(chan PubSubMessage)
 	s := &pubSubStub{

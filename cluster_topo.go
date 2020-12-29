@@ -10,7 +10,7 @@ import (
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
-// ClusterNode describes a single node in the cluster at a moment in time.
+// ClusterNode describes a single node in a redis cluster at a moment in time.
 type ClusterNode struct {
 	// older versions of redis might not actually send back the id, so it may be
 	// blank
@@ -21,9 +21,9 @@ type ClusterNode struct {
 	SecondaryOfAddr, SecondaryOfID string
 }
 
-// ClusterTopo describes the cluster topology at a given moment. It will be
-// sorted first by slot number of each node and then by secondary status, so
-// primaries will come before secondaries.
+// ClusterTopo describes the topology of a redis cluster at a given moment. It
+// will be sorted first by slot number of each node and then by secondary
+// status, so primaries will come before secondaries.
 type ClusterTopo []ClusterNode
 
 // MarshalRESP implements the resp.Marshaler interface, and will marshal the

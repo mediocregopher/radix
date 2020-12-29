@@ -1186,11 +1186,6 @@ const streamedStringScratchSize = 1024
 // onto the given io.Writer.
 type StreamedStringReader struct {
 	W io.Writer
-
-	// Buffer will be used for reading streamed string chunks into. If nil then
-	// a buffer of reasonable size will retrieved from a pool and be used
-	// instead.
-	Buffer []byte
 }
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
@@ -1198,12 +1193,6 @@ func (r *StreamedStringReader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opt
 	if err := peekAndAssertPrefix(br, StreamedStringChunkPrefix, true, o); errors.As(err, new(errUnexpectedPrefix)) {
 		// the first message in a stream will be a blob string with a size of
 		// "?". Discard that message if it comes up.
-		//
-		// Technically this would also discard a "?" sized blob string which
-		// showed up in the middle of a stream, as well as allow a streamed
-		// string with no prefix at all. Not ideal, but it would require some
-		// state on the StreamedStringReader to fix it, which we don't do for
-		// any other Unmarshalers.
 		if err := peekAndAssertPrefix(br, BlobStringPrefix, true, o); err != nil {
 			return err
 		}
@@ -1215,12 +1204,9 @@ func (r *StreamedStringReader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opt
 		}
 	}
 
-	scratch := &r.Buffer
-	if len(*scratch) == 0 {
-		scratch = o.GetBytes()
-		defer o.PutBytes(scratch)
-		*scratch = bytesutil.Expand(*scratch, streamedStringScratchSize)
-	}
+	scratch := o.GetBytes()
+	defer o.PutBytes(scratch)
+	*scratch = bytesutil.Expand(*scratch, streamedStringScratchSize)
 
 	chunkBytes := StreamedStringChunkBytes{B: *scratch}
 	for {
@@ -1241,11 +1227,6 @@ func (r *StreamedStringReader) UnmarshalRESP(br resp.BufferedReader, o *resp.Opt
 // other error.
 type StreamedStringWriter struct {
 	R io.Reader
-
-	// Buffer will be used for io.Read calls on the given io.Reader. If nil then
-	// a buffer of reasonable size will retrieved from a pool and be used
-	// instead.
-	Buffer []byte
 }
 
 // MarshalRESP implements the method for resp.Marshaler.
@@ -1254,12 +1235,9 @@ func (sw StreamedStringWriter) MarshalRESP(w io.Writer, o *resp.Opts) error {
 		return err
 	}
 
-	scratch := &sw.Buffer
-	if len(*scratch) == 0 {
-		scratch = o.GetBytes()
-		defer o.PutBytes(scratch)
-		*scratch = bytesutil.Expand(*scratch, streamedStringScratchSize)
-	}
+	scratch := o.GetBytes()
+	defer o.PutBytes(scratch)
+	*scratch = bytesutil.Expand(*scratch, streamedStringScratchSize)
 
 	for {
 		if n, err := sw.R.Read(*scratch); errors.Is(err, io.EOF) {
@@ -1347,6 +1325,8 @@ func isSetMap(t reflect.Type) bool {
 // The mappings from go types to RESP types are as follows (T denotes a go type,
 // RT denotes the corresponding RESP type for T):
 //
+//	resp.Marshaler -> marshaled as-is
+//
 //	[]byte, string, []rune, resp.LenReader -> blob string
 //	encoding.TextMarshaler                 -> blob string
 //	encoding.BinaryMarshaler               -> blob string
@@ -1356,7 +1336,7 @@ func isSetMap(t reflect.Type) bool {
 //	error                                             -> blob error
 //
 //	bool                                    -> boolean
-//	float32, float64), big.Float            -> double
+//	float32, float64, big.Float             -> double
 //	int, int8, int16, int32, int64, big.Int -> number
 //	uint, uint8, uint16, uint32, uint64     -> number
 //

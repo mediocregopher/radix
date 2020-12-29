@@ -9,9 +9,10 @@ import (
 	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp3"
+	"github.com/mediocregopher/radix/v4/trace"
 )
 
-// PubSubMessage describes a message being published to a subscribed channel
+// PubSubMessage describes a message being published to a redis pubsub channel.
 type PubSubMessage struct {
 	Type    string // "message" or "pmessage"
 	Pattern string // will be set if Type is "pmessage"
@@ -170,6 +171,32 @@ func (cs chanSet) inverse() map[chan<- PubSubMessage][]string {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// PubSubConfig is used to create a PubSubConn with particular settings. All
+// fields are optional, all methods are thread-safe.
+type PubSubConfig struct {
+
+	// PingInterval is the interval at which PING will be called on the
+	// PubSubConn in the background.
+	//
+	// Defaults to 5 * time.Second. Can be set to -1 to disable periodic pings.
+	PingInterval time.Duration
+
+	// Trace contains callbacks that a PubSubConn can use to trace itself.
+	//
+	// All callbacks are blocking.
+	Trace trace.PubSubTrace
+}
+
+func (cfg PubSubConfig) withDefaults() PubSubConfig {
+	if cfg.PingInterval == -1 {
+		cfg.PingInterval = 0
+	} else if cfg.PingInterval == 0 {
+		cfg.PingInterval = 5 * time.Second
+	}
+
+	return cfg
+}
+
 // PubSubConn wraps an existing Conn to support redis' pubsub system.
 // User-created channels can be subscribed to redis channels to receive
 // PubSubMessages which have been published.
@@ -206,7 +233,10 @@ type PubSubConn interface {
 	PUnsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error
 
 	// Ping performs a simple Ping command on the PubSubConn, returning an error
-	// if it failed for some reason
+	// if it failed for some reason.
+	//
+	// Ping will be periodically called in the background of the default
+	// PubSubConn implementation.
 	Ping(context.Context) error
 
 	// Close closes the PubSubConn so it can't be used anymore. All subscribed
@@ -220,6 +250,7 @@ type PubSubConn interface {
 
 type pubSubConn struct {
 	proc *proc.Proc
+	cfg  PubSubConfig
 	conn Conn
 
 	subs  chanSet
@@ -232,35 +263,27 @@ type pubSubConn struct {
 	// SUBSCRIBE, PING). See the do method for how that works.
 	cmdResCh chan error
 
-	// This one is optional, and kind of cheating. We use it in persistent to
-	// get on-the-fly updates of when the connection fails. Maybe one day this
-	// could be exposed if there's a clean way of doing so, or another way
-	// accomplishing the same thing could be done instead.
-	closeErrCh chan error
-
 	// only used during testing
 	testEventCh chan string
 }
 
-// NewPubSubConn wraps the given Conn so that it becomes a PubSubConn. The
-// passed in Conn should not be used after this call.
-func NewPubSubConn(rc Conn) PubSubConn {
-	return newPubSub(rc, nil)
-}
-
-func newPubSub(rc Conn, closeErrCh chan error) PubSubConn {
+// New wraps the given Conn so that it becomes a PubSubConn. The passed in Conn
+// should not be used after this call.
+func (cfg PubSubConfig) New(conn Conn) PubSubConn {
 	c := &pubSubConn{
-		proc:       proc.New(),
-		conn:       rc,
-		subs:       chanSet{},
-		psubs:      chanSet{},
-		pubCh:      make(chan PubSubMessage, 1024),
-		cmdResCh:   make(chan error, 1),
-		closeErrCh: closeErrCh,
+		proc:     proc.New(),
+		cfg:      cfg.withDefaults(),
+		conn:     conn,
+		subs:     chanSet{},
+		psubs:    chanSet{},
+		pubCh:    make(chan PubSubMessage, 1024),
+		cmdResCh: make(chan error, 1),
 	}
 	c.proc.Run(c.pubSpin)
 	c.proc.Run(c.spin)
-	c.proc.Run(c.pingSpin)
+	if cfg.PingInterval > 0 {
+		c.proc.Run(c.pingSpin)
+	}
 	return c
 }
 
@@ -326,7 +349,7 @@ func (c *pubSubConn) spin(ctx context.Context) {
 }
 
 func (c *pubSubConn) pingSpin(ctx context.Context) {
-	t := time.NewTicker(5 * time.Second)
+	t := time.NewTicker(c.cfg.PingInterval)
 	defer t.Stop()
 	for {
 		select {
@@ -372,9 +395,10 @@ func (c *pubSubConn) closeInner(cmdResErr error) error {
 			default:
 			}
 		}
-		if c.closeErrCh != nil {
-			c.closeErrCh <- cmdResErr
-			close(c.closeErrCh)
+		if c.cfg.Trace.Closed != nil {
+			c.cfg.Trace.Closed(trace.PubSubClosed{
+				Err: cmdResErr,
+			})
 		}
 		err := c.conn.Close()
 		return err

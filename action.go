@@ -155,10 +155,11 @@ func getCmdAction() *cmdAction {
 // Cmd is used to perform a redis command and retrieve a result. It should not
 // be passed into Do more than once.
 //
+// If the receiver value of Cmd is nil then the result is discarded.
+//
 // If the receiver value of Cmd is a primitive, a slice/map, or a struct then a
 // pointer must be passed in. It may also be an io.Writer, an
-// encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler. See the package docs
-// for more on how results are unmarshaled into the receiver.
+// encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler.
 //
 // The Action returned by Cmd also implements resp.Marshaler.
 func Cmd(rcv interface{}, cmd string, args ...string) Action {
@@ -180,7 +181,7 @@ func Cmd(rcv interface{}, cmd string, args ...string) Action {
 // an argument. *bytes.Buffer is an example of a LenReader, and the resp package
 // has a NewLenReader function which can wrap an existing io.Reader.
 //
-// FlatCmd supports encoding.Text/BinaryMarshalers.
+// FlatCmd supports encoding.Text/BinaryMarshalers, big.Float, and big.Int.
 //
 // The receiver to FlatCmd follows the same rules as for Cmd.
 //
@@ -386,8 +387,6 @@ type evalAction struct {
 
 // Cmd is like the top-level Cmd but it uses the the EvalScript to perform an
 // EVALSHA command (and will automatically fallback to EVAL as necessary).
-// keysAndArgs must be at least as long as the numKeys argument of
-// NewEvalScript.
 func (es EvalScript) Cmd(rcv interface{}, keys []string, args ...string) Action {
 	return &evalAction{
 		EvalScript: es,
@@ -399,7 +398,7 @@ func (es EvalScript) Cmd(rcv interface{}, keys []string, args ...string) Action 
 
 // FlatCmd is like the top level FlatCmd except it uses the EvalScript to
 // perform an EVALSHA command (and will automatically fallback to EVAL as
-// necessary). keys must be as long as the numKeys argument of NewEvalScript.
+// necessary).
 func (es EvalScript) FlatCmd(rcv interface{}, keys []string, args ...interface{}) Action {
 	ec := &evalAction{
 		EvalScript: es,
@@ -475,6 +474,7 @@ type pipelineMarshalerUnmarshaler struct {
 // pipeline contains all the fields of Pipeline as well as some methods we'd
 // rather not expose to users.
 type pipeline struct {
+	actions    []Action
 	mm         []pipelineMarshalerUnmarshaler
 	properties ActionProperties
 
@@ -485,6 +485,23 @@ type pipeline struct {
 }
 
 var _ Conn = new(pipeline)
+
+func (p *pipeline) reset() {
+	p.actions = p.actions[:0]
+	p.mm = p.mm[:0]
+	p.properties.Keys = p.properties.Keys[:0]
+	p.properties.CanShareConn = true
+}
+
+func (p *pipeline) append(a Action) {
+	props := a.Properties()
+	if !props.CanPipeline {
+		panic(fmt.Sprintf("can't pipeline Action of type %T: %+v", a, a))
+	}
+	p.properties.Keys = append(p.properties.Keys, props.Keys...)
+	p.properties.CanShareConn = p.properties.CanShareConn && props.CanShareConn
+	p.actions = append(p.actions, a)
+}
 
 func (p *pipeline) EncodeDecode(_ context.Context, m, u interface{}) error {
 	p.mm = append(p.mm, pipelineMarshalerUnmarshaler{
@@ -537,64 +554,7 @@ func (p *pipeline) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	return nil
 }
 
-// Pipeline is an Action which combines multiple commands into a single network
-// round-trip. Pipeline accumulates commands via its Append method. When
-// Pipeline is performed (i.e. passed into a Client's Do method) it will first
-// write all commands as a single write operation and then read all command
-// responses with a single read operation.
-//
-// Pipeline may be Reset in order to re-use an instance for multiple sets of
-// commands. A Pipeline may _not_ be performed multiple times without being
-// Reset in between.
-//
-// NOTE that, while a Pipeline performs all commands on a single Conn, it
-// shouldn't be used by itself for MULTI/EXEC transactions, because if there's
-// an error it won't discard the incomplete transaction. Use WithConn or
-// EvalScript for transactional functionality instead.
-type Pipeline struct {
-	actions []Action
-	pipeline
-}
-
-// NewPipeline returns a Pipeline instance to which Actions can be Appended.
-func NewPipeline() *Pipeline {
-	return &Pipeline{pipeline: pipeline{
-		properties: ActionProperties{
-			CanPipeline:  true, // obviously
-			CanShareConn: true,
-		},
-	}}
-}
-
-// Reset discards all Actions and resets all internal state. A Pipeline with
-// Reset called on it is equivalent to one returned by NewPipeline.
-func (p *Pipeline) Reset() {
-	p.actions = p.actions[:0]
-	p.mm = p.mm[:0]
-	p.properties.Keys = p.properties.Keys[:0]
-	p.properties.CanShareConn = true
-}
-
-// Append adds the Action to the end of the list of Actions to pipeline
-// together. This will panic if given an Action without the CanPipeline property
-// set to true.
-func (p *Pipeline) Append(a Action) {
-	props := a.Properties()
-	if !props.CanPipeline {
-		panic(fmt.Sprintf("can't pipeline Action of type %T: %+v", a, a))
-	}
-	p.properties.Keys = append(p.properties.Keys, props.Keys...)
-	p.properties.CanShareConn = p.properties.CanShareConn && props.CanShareConn
-	p.actions = append(p.actions, a)
-}
-
-// Properties implements the method for the Action interface.
-func (p *Pipeline) Properties() ActionProperties {
-	return p.properties
-}
-
-// Perform implements the method for the Action interface.
-func (p *Pipeline) Perform(ctx context.Context, c Conn) error {
+func (p *pipeline) Perform(ctx context.Context, c Conn) error {
 	p.Conn = c
 	defer func() { p.Conn = nil }()
 
@@ -638,6 +598,57 @@ func (p *Pipeline) Perform(ctx context.Context, c Conn) error {
 		err = resp.ErrConnUnusable(err)
 	}
 	return err
+}
+
+// Pipeline is an Action which combines multiple commands into a single network
+// round-trip. Pipeline accumulates commands via its Append method. When
+// Pipeline is performed (i.e. passed into a Client's Do method) it will first
+// write all commands as a single write operation and then read all command
+// responses with a single read operation.
+//
+// Pipeline may be Reset in order to re-use an instance for multiple sets of
+// commands. A Pipeline may _not_ be performed multiple times without being
+// Reset in between.
+//
+// NOTE that, while a Pipeline performs all commands on a single Conn, it
+// shouldn't be used by itself for MULTI/EXEC transactions, because if there's
+// an error it won't discard the incomplete transaction. Use WithConn or
+// EvalScript for transactional functionality instead.
+type Pipeline struct {
+	pipeline pipeline
+}
+
+// NewPipeline returns a Pipeline instance to which Actions can be Appended.
+func NewPipeline() *Pipeline {
+	return &Pipeline{pipeline: pipeline{
+		properties: ActionProperties{
+			CanPipeline:  true, // obviously
+			CanShareConn: true,
+		},
+	}}
+}
+
+// Reset discards all Actions and resets all internal state. A Pipeline with
+// Reset called on it is equivalent to one returned by NewPipeline.
+func (p *Pipeline) Reset() {
+	p.pipeline.reset()
+}
+
+// Append adds the Action to the end of the list of Actions to pipeline
+// together. This will panic if given an Action without the CanPipeline property
+// set to true.
+func (p *Pipeline) Append(a Action) {
+	p.pipeline.append(a)
+}
+
+// Properties implements the method for the Action interface.
+func (p *Pipeline) Properties() ActionProperties {
+	return p.pipeline.properties
+}
+
+// Perform implements the method for the Action interface.
+func (p *Pipeline) Perform(ctx context.Context, c Conn) error {
+	return p.pipeline.Perform(ctx, c)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

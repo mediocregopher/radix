@@ -161,7 +161,7 @@ func BenchmarkScanner(b *B) {
 	}
 }
 
-func ExampleNewScanner_scan() {
+func ExampleScanner_scan() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -180,7 +180,7 @@ func ExampleNewScanner_scan() {
 	}
 }
 
-func ExampleNewScanner_hscan() {
+func ExampleScanner_hscan() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -190,6 +190,26 @@ func ExampleNewScanner_hscan() {
 	}
 
 	s := (ScannerConfig{Command: "HSCAN", Key: "somekey"}).New(client)
+	var key string
+	for s.Next(ctx, &key) {
+		log.Printf("key: %q", key)
+	}
+	if err := s.Close(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleScanner_cluster() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Initialize the cluster in any way you see fit
+	cluster, err := (ClusterConfig{}).New(ctx, []string{"127.0.0.1:6379"})
+	if err != nil {
+		panic(err)
+	}
+
+	s := (ScannerConfig{Command: "HSCAN", Key: "somekey"}).NewMulti(cluster)
 	var key string
 	for s.Next(ctx, &key) {
 		log.Printf("key: %q", key)

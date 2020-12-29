@@ -55,15 +55,16 @@ type ClusterConfig struct {
 	// then all Conns created by Cluster will have the READONLY command
 	// performed on them upon creation. For Conns to primary instances this will
 	// have no effect, but for secondaries this will allow DoSecondary to
-	// function properly. If CustomPool or CustomConn are set then READONLY
-	// must be called on each Conn inside whichever is set in order for
-	// DoSecondary to work.
+	// function properly.
+	//
+	// If PoolConfig.CustomPool or PoolConfig.Dialer.CustomConn are set then
+	// READONLY must be called by whichever is set in order for DoSecondary to
+	// work.
 	PoolConfig PoolConfig
 
 	// SyncEvery tells the Cluster to synchronize itself with the cluster's
 	// topology at the given interval. On every synchronization Cluster will ask
-	// the cluster for its topology and make/destroy its connections as
-	// necessary.
+	// the cluster for its topology and make/destroy its Clients as necessary.
 	//
 	// Defaults to 5 * time.Second. Set to -1 to disable.
 	SyncEvery time.Duration
@@ -82,11 +83,6 @@ type ClusterConfig struct {
 	//
 	// All callbacks are blocking.
 	Trace trace.ClusterTrace
-
-	// ErrCh is a channel which asynchronous errors encountered by the Cluster
-	// will be written to. If the channel blocks the error will be dropped.  The
-	// channel will be closed when the Cluster is closed.
-	ErrCh chan<- error
 }
 
 func (cfg ClusterConfig) withDefaults() ClusterConfig {
@@ -121,7 +117,11 @@ func (cfg ClusterConfig) withDefaults() ClusterConfig {
 
 // Cluster is a MultiClient which contains all information about a redis cluster
 // needed to interact with it, including a set of pools to each of its
-// instances. All methods on Cluster are thread-safe
+// instances.
+//
+// All methods on Cluster are thread-safe.
+//
+// Cluster will automatically attempt to handle MOVED/ASK errors.
 type Cluster struct {
 	// Atomic fields must be at the beginning of the struct since they must be
 	// correctly aligned or else access may cause panics on 32-bit architectures
@@ -183,9 +183,10 @@ func (c *Cluster) newClient(ctx context.Context, addr string) (Client, error) {
 }
 
 func (c *Cluster) err(err error) {
-	select {
-	case c.cfg.ErrCh <- err:
-	default:
+	if c.cfg.Trace.InternalError != nil {
+		c.cfg.Trace.InternalError(trace.ClusterInternalError{
+			Err: err,
+		})
 	}
 }
 
@@ -219,31 +220,6 @@ func (c *Cluster) rpool(addr string) (client Client, err error) {
 		return nil
 	})
 	return
-}
-
-var errUnknownAddress = errors.New("unknown address")
-
-// Client returns a Client for the given address, which could be either the
-// primary or one of the secondaries (see Topo method for retrieving known
-// addresses).
-//
-// NOTE that if there is a failover while a Client returned by this method is
-// being used the Client may or may not continue to work as expected, depending
-// on the nature of the failover.
-//
-// NOTE the Client should _not_ be closed.
-func (c *Cluster) Client(addr string) (Client, error) {
-	// rpool allows the address to be "", handle that case manually
-	if addr == "" {
-		return nil, errUnknownAddress
-	}
-	cl, err := c.rpool(addr)
-	if err != nil {
-		return nil, err
-	} else if cl == nil {
-		return nil, errUnknownAddress
-	}
-	return cl, nil
 }
 
 // if addr is "" returns a random pool. If addr is given but there's no pool for
@@ -456,7 +432,7 @@ func (c *Cluster) syncEvery(ctx context.Context, d time.Duration) {
 			err := c.Sync(ctx)
 			cancel()
 			if err != nil {
-				c.err(err)
+				c.err(fmt.Errorf("calling Sync internally: %w", err))
 			}
 		case <-c.proc.ClosedCh():
 			return
@@ -543,7 +519,7 @@ func (ac askConn) Do(ctx context.Context, a Action) error {
 const doAttempts = 5
 
 // Do performs an Action on a redis instance in the cluster, with the instance
-// being determeined by the key returned from the Action's Key() method.
+// being determeined by the keys returned from the Action's Properties() method.
 //
 // This method handles MOVED and ASK errors automatically in most cases.
 func (c *Cluster) Do(ctx context.Context, a Action) error {
@@ -575,18 +551,13 @@ func (c *Cluster) Do(ctx context.Context, a Action) error {
 	})
 }
 
-// DoSecondary implements the method for the Client interface. It will perform
-// the Action on a random secondary for the affected keys, or the primary if no
-// secondary is available.
+// DoSecondary implements the method for the MultiClient interface. It will
+// perform the Action on a random secondary for the affected keys, or the
+// primary if no secondary is available.
 //
-// For DoSecondary to work, all connections must be created in read-only mode,
-// by using a custom ClusterPoolFunc that executes the READONLY command on each
-// new connection.
-//
-// See ClusterPoolFunc for an example using the global DefaultClusterConnFunc.
-//
-// If the Action can not be handled by a secondary the Action will be send to
-// the primary instead.
+// For DoSecondary to work, all connections must be created in read-only mode by
+// using the READONLY command. See the PoolConfig field of ClusterConfig for
+// more details.
 func (c *Cluster) DoSecondary(ctx context.Context, a Action) error {
 	var client Client
 	var err error
@@ -805,10 +776,6 @@ func (c *Cluster) doInner(params clusterDoInnerParams) error {
 // Pools.
 func (c *Cluster) Close() error {
 	return c.proc.Close(func() error {
-		if c.cfg.ErrCh != nil {
-			close(c.cfg.ErrCh)
-		}
-
 		var pErr error
 		for _, p := range c.pools {
 			if err := p.Close(); pErr == nil && err != nil {

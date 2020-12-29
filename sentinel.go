@@ -22,11 +22,6 @@ type SentinelConfig struct {
 	// SentinelDialer is the Dialer instance used to create Conns to sentinels.
 	SentinelDialer Dialer
 
-	// ErrCh takes a channel which asynchronous errors encountered by the
-	// Sentinel can be read off of. If the channel blocks the error will be
-	// dropped. The channel will be closed when the Sentinel is closed.
-	ErrCh chan<- error
-
 	// Trace contains callbacks that a Sentinel can use to trace itself.
 	//
 	// All callbacks are blocking.
@@ -122,9 +117,10 @@ func (cfg SentinelConfig) New(ctx context.Context, primaryName string, sentinelA
 }
 
 func (sc *Sentinel) err(err error) {
-	select {
-	case sc.cfg.ErrCh <- err:
-	default:
+	if sc.cfg.Trace.InternalError != nil {
+		sc.cfg.Trace.InternalError(trace.SentinelInternalError{
+			Err: err,
+		})
 	}
 }
 
@@ -266,9 +262,6 @@ func (sc *Sentinel) Close() error {
 			if client != nil {
 				client.Close()
 			}
-		}
-		if sc.cfg.ErrCh != nil {
-			close(sc.cfg.ErrCh)
 		}
 		return nil
 	})

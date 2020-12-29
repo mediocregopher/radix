@@ -194,6 +194,55 @@ func ExampleFlatCmd() {
 	}
 }
 
+func ExampleFlatCmd_struct() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := (PoolConfig{}).New(ctx, "tcp", "127.0.0.1:6379") // or any other client
+	if err != nil {
+		panic(err)
+	}
+
+	// FlatCmd can marshal structs into a key/value array. Exported field names
+	// will be used as keys, using similar rules as the json package.
+
+	type ExampleStruct struct {
+		Foo string // The key "Foo" will be used.
+		Bar string `redis:"BAR"` // The key "BAR" will be used
+		Baz string `redis:"-"`   // This field will be skipped
+	}
+
+	type OuterExampleStruct struct {
+		// adds fields "Foo" and "BAR" to OuterExampleStruct
+		ExampleStruct
+		Biz int
+	}
+
+	s := OuterExampleStruct{
+		ExampleStruct: ExampleStruct{
+			Foo: "1",
+			Bar: "2",
+			Baz: "3",
+		},
+		Biz: 4,
+	}
+
+	err = client.Do(ctx, FlatCmd(nil, "HMSET", "barHash", s))
+	if err != nil {
+		panic(err)
+	}
+
+	// Cmd and FlatCmd can also unmarshal results into a struct.
+	var s2 OuterExampleStruct
+	err = client.Do(ctx, Cmd(&s2, "HGETALL", "barHash"))
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("s2: %+v\n", s2)
+	// Output: s2: {ExampleStruct:{Foo:1 Bar:2 Baz:} Biz:4}
+}
+
 func TestEvalAction(t *T) {
 	ctx := testCtx(t)
 	getSet := NewEvalScript(`

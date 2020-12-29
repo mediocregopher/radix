@@ -42,7 +42,7 @@ type stub struct {
 // this step then the call will block.
 //
 // remoteNetwork and remoteAddr can be empty, but if given will be used as the
-// return from the RemoteAddr method.
+// return from the Addr method.
 //
 func NewStubConn(remoteNetwork, remoteAddr string, fn func(context.Context, []string) interface{}) Conn {
 	s := &stub{

@@ -2,6 +2,8 @@ Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
 # v4.0.0
 
+* A Pool size of 0 is no longer supported.
+
 * `PersistentPubSubWithOpts` has been removed.
 
 * Rename `Action`'s `Run` method to `Perform`, and add `context.Context`

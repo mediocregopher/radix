@@ -1,6 +1,5 @@
-// Package resp is an umbrella package which covers both the old RESP protocol
-// (resp2) and the new one (resp3), allowing clients to choose which one they
-// care to use
+// Package resp contains types and utilities useful for interacting with RESP
+// protocols, without actually implementing any RESP protocol.
 package resp
 
 import (
@@ -14,7 +13,7 @@ import (
 //
 // NewOpts should always be used to initialize a new Opts instance, even if some
 // or all of the fields are expected to be changed. This way new fields may be
-// added without breaking existing usages.
+// added in the future without breaking existing usages.
 type Opts struct {
 	// GetBytes returns a *[]byte from an internal pool, or a newly allocated
 	// instance if the pool is empty. The returned instance will have a length
@@ -70,7 +69,7 @@ func NewOpts() *Opts {
 }
 
 // Marshaler is the interface implemented by types that can marshal themselves
-// into valid RESP. Opts may not be nil.
+// into valid RESP messages. Opts may not be nil.
 //
 // NOTE It's important to keep track of whether a partial RESP message has been
 // written to the Writer, and to use ErrConnUsable when returning errors if a
@@ -94,11 +93,11 @@ type BufferedWriter interface {
 }
 
 // Unmarshaler is the interface implemented by types that can unmarshal a RESP
-// description of themselves. Opts may not be nil.
+// message of themselves. Opts may not be nil.
 //
-// UnmarshalRESP should _always_ fully consume a RESP message off the reader,
-// unless there is an error returned from the reader itself. Use ErrConnUsable
-// when applicable.
+// NOTE It's important to keep track of whether a partial RESP message has been
+// read off the BufferedReader, and to use ErrConnUsable when returning errors
+// if a partial RESP message has not been read.
 type Unmarshaler interface {
 	UnmarshalRESP(BufferedReader, *Opts) error
 }

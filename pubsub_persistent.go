@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
+	"github.com/mediocregopher/radix/v4/trace"
 )
 
 // PersistentPubSubConfig is used to create a persistent PubSubConn with
@@ -13,6 +14,10 @@ import (
 type PersistentPubSubConfig struct {
 	// Dialer is used to create new Conns.
 	Dialer Dialer
+
+	// PubSubConfig is used to create PubSubConns from the Conns created by
+	// Dialer.
+	PubSubConfig PubSubConfig
 
 	// AbortAfter changes the reconnect behavior of the persistent PubSubConn.
 	// Usually a persistent PubSubConn will try to reconnect forever upon a
@@ -24,11 +29,11 @@ type PersistentPubSubConfig struct {
 	// must be called in order for reconnection to be tried again.
 	AbortAfter int
 
-	// ErrCh is a channel which asynchronous errors encountered by the
-	// persistent PubSubConn will be written to. If the channel blocks the error
-	// will be dropped. The channel will be closed when the PubSubConn is
-	// closed.
-	ErrCh chan<- error
+	// Trace contains callbacks that a persistent PubSubConn can use to trace
+	// itself.
+	//
+	// All callbacks are blocking.
+	Trace trace.PersistentPubSubTrace
 }
 
 type pubSubCmd struct {
@@ -58,8 +63,8 @@ type persistentPubSub struct {
 	cmdCh chan pubSubCmd
 }
 
-// New is like NewPubSubConn, but instead of taking in an existing Conn to wrap
-// it will create its own using the network/address returned from the given
+// New is like PubSubConfig.New, but instead of taking in an existing Conn to
+// wrap it will create its own using the network/address returned from the given
 // callback.
 //
 // If the Conn is ever severed then the callback will be re-called, a new Conn
@@ -95,6 +100,20 @@ func (cfg PersistentPubSubConfig) New(ctx context.Context, cb func() (network, a
 	return p, nil
 }
 
+func (p *persistentPubSub) mkPubSubCfg() (PubSubConfig, chan error) {
+	closeErrCh := make(chan error, 1)
+	pubSubCfg := p.cfg.PubSubConfig
+	prevClosed := pubSubCfg.Trace.Closed
+	pubSubCfg.Trace.Closed = func(t trace.PubSubClosed) {
+		closeErrCh <- t.Err
+		close(closeErrCh)
+		if prevClosed != nil {
+			prevClosed(t)
+		}
+	}
+	return pubSubCfg, closeErrCh
+}
+
 // refresh only returns an error if the connection could not be made
 func (p *persistentPubSub) refresh(ctx context.Context) error {
 	if p.curr != nil {
@@ -109,8 +128,9 @@ func (p *persistentPubSub) refresh(ctx context.Context) error {
 		if err != nil {
 			return nil, nil, err
 		}
-		errCh := make(chan error, 1)
-		pc := newPubSub(c, errCh)
+
+		pubSubCfg, closeErrCh := p.mkPubSubCfg()
+		pc := pubSubCfg.New(c)
 
 		for msgCh, channels := range p.subs.inverse() {
 			if err := pc.Subscribe(ctx, msgCh, channels...); err != nil {
@@ -125,7 +145,7 @@ func (p *persistentPubSub) refresh(ctx context.Context) error {
 				return nil, nil, err
 			}
 		}
-		return pc, errCh, nil
+		return pc, closeErrCh, nil
 	}
 
 	var attempts int
@@ -194,9 +214,10 @@ func (p *persistentPubSub) execCmd(cmd pubSubCmd) error {
 }
 
 func (p *persistentPubSub) err(err error) {
-	select {
-	case p.cfg.ErrCh <- err:
-	default:
+	if p.cfg.Trace.InternalError != nil {
+		p.cfg.Trace.InternalError(trace.PersistentPubSubInternalError{
+			Err: err,
+		})
 	}
 }
 
@@ -272,9 +293,6 @@ func (p *persistentPubSub) Close() error {
 		if p.curr != nil {
 			closeErr = p.curr.Close()
 			<-p.currErrCh
-		}
-		if p.cfg.ErrCh != nil {
-			close(p.cfg.ErrCh)
 		}
 		return closeErr
 	})

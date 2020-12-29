@@ -15,10 +15,10 @@ import (
 )
 
 // Conn is a Client wrapping a single network connection which synchronously
-// reads/writes data using the redis resp protocol.
+// reads/writes data using redis's RESP protocol.
 //
 // A Conn can be used directly as a Client, but in general you probably want to
-// use a *Pool instead
+// use a Pool instead
 type Conn interface {
 	// The Do method merely calls the Action's Perform method with the Conn as
 	// the argument.
@@ -27,6 +27,9 @@ type Conn interface {
 	// EncodeDecode will encode marshal onto the connection, then decode a
 	// response into unmarshalInto (see resp3.Marshal and resp3.Unmarshal,
 	// respectively). If either parameter is nil then that step is skipped.
+	//
+	// If EncodeDecode is called concurrently on the same Conn then the order of
+	// decode steps will match the order of encode steps.
 	EncodeDecode(ctx context.Context, marshal, unmarshalInto interface{}) error
 }
 

@@ -5,9 +5,8 @@ import (
 	"time"
 )
 
-// PoolTrace is passed into radix.NewPool via radix.PoolWithTrace, and contains
-// callbacks which can be triggered for specific events during the Pool's
-// runtime.
+// PoolTrace contains callbacks which can be triggered for specific events
+// during a Pool's runtime.
 //
 // All callbacks are called synchronously.
 type PoolTrace struct {
@@ -40,12 +39,12 @@ type PoolConnCreatedReason string
 // All possible values of PoolConnCreatedReason.
 const (
 	// PoolConnCreatedReasonInitialization indicates a Conn was created during
-	// initialization of the Pool (i.e. within NewPool).
+	// initialization of the Pool (i.e. within PoolConfig.New).
 	PoolConnCreatedReasonInitialization PoolConnCreatedReason = "initialization"
 
-	// PoolConnCreatedReasonReconnect indicates a Conn was being created during a
+	// PoolConnCreatedReasonReconnect indicates a Conn was created during a
 	// reconnect event.
-	PoolConnCreatedReasonReconnect PoolConnCreatedReason = "refill"
+	PoolConnCreatedReasonReconnect PoolConnCreatedReason = "reconnect"
 )
 
 // PoolConnCreated is passed into the PoolTrace.ConnCreated callback whenever
@@ -73,12 +72,12 @@ type PoolConnClosedReason string
 // All possible values of PoolConnClosedReason.
 const (
 	// PoolConnClosedReasonPoolClosed indicates a Conn was closed because the
-	// Close method was called on Pool.
+	// Close method was called on the Pool.
 	PoolConnClosedReasonPoolClosed PoolConnClosedReason = "pool closed"
 
 	// PoolConnClosedReasonError indicates a Conn was closed due to having
 	// received some kind of unrecoverable error on it.
-	PoolConnClosedReasonError PoolConnClosedReason = "pool full"
+	PoolConnClosedReasonError PoolConnClosedReason = "error"
 )
 
 // PoolConnClosed is passed into the PoolTrace.ConnClosed callback whenever the

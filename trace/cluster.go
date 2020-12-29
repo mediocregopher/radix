@@ -2,9 +2,8 @@ package trace
 
 import "context"
 
-// ClusterTrace is passed into radix.NewCluster via radix.ClusterWithTrace, and
-// contains callbacks which can be triggered for specific events during the
-// Cluster's runtime.
+// ClusterTrace contains callbacks which can be triggered for specific events
+// during a Cluster's runtime.
 //
 // All callbacks are called synchronously.
 type ClusterTrace struct {
@@ -18,6 +17,10 @@ type ClusterTrace struct {
 	// Redirected is called when redis responds to an Action with a 'MOVED' or
 	// 'ASK' error.
 	Redirected func(ClusterRedirected)
+
+	// InternalError is called whenever the Cluster encounters an error which is
+	// not otherwise communicated to the user.
+	InternalError func(ClusterInternalError)
 }
 
 // ClusterStateChange is passed into the ClusterTrace.StateChange callback
@@ -66,4 +69,11 @@ type ClusterRedirected struct {
 	// Final indicates that the MOVED/ASK error which was received will not be
 	// honored, and the call to Do will be returning the MOVED/ASK error.
 	Final bool
+}
+
+// ClusterInternalError is passed into the ClusterTrace.InternalError callback
+// whenever Cluster encounters an error which is not otherwise communicated to
+// the user.
+type ClusterInternalError struct {
+	Err error
 }

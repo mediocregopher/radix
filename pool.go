@@ -61,12 +61,7 @@ type PoolConfig struct {
 	// Dialer is used by Pool to create new Conns to the Pool's redis instance.
 	Dialer Dialer
 
-	// Size indicates the minimum number of Conns the Pool will attempt to
-	// maintain.
-	//
-	// If -1 then the Pool will not maintain any open Conns and all Actions will
-	// result in the creation and closing of a fresh Conn (except for where the
-	// overflow buffer is used, see OverflowBufferSize).
+	// Size indicates the number of Conns the Pool will attempt to maintain.
 	//
 	// Defaults to 4.
 	Size int
@@ -135,9 +130,7 @@ type poolConfig struct {
 }
 
 func (cfg poolConfig) withDefaults() poolConfig {
-	if cfg.Size == -1 {
-		cfg.Size = 0
-	} else if cfg.Size == 0 {
+	if cfg.Size == 0 {
 		cfg.Size = 4
 	}
 	if cfg.PingInterval == -1 {
