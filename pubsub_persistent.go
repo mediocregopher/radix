@@ -72,9 +72,14 @@ func (cfg PersistentPubSubConfig) New(ctx context.Context, cb func() (network, a
 	p := &persistentPubSub{
 		proc: proc.New(),
 		dial: func(ctx context.Context) (Conn, error) {
-			network, addr, err := cb()
-			if err != nil {
-				return nil, fmt.Errorf("calling PersistentPubSub callback to determine network/address: %w", err)
+			var network, addr string
+			var err error
+			if cb != nil {
+				// hidden feature, you don't have to give a callback if the
+				// Dialer is just going to ignore its results anyway.
+				if network, addr, err = cb(); err != nil {
+					return nil, fmt.Errorf("calling PersistentPubSub callback to determine network/address: %w", err)
+				}
 			}
 			return cfg.Dialer.Dial(ctx, network, addr)
 		},
