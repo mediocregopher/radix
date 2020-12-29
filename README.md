@@ -1,15 +1,26 @@
 # Radix
 
 [![Build Status](https://travis-ci.org/mediocregopher/radix.svg)](https://travis-ci.org/mediocregopher/radix)
-![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/mediocregopher/radix.svg)
-[![GoDoc](https://godoc.org/github.com/mediocregopher/radix?status.svg)][godoc]
-[![Go Report Card](https://goreportcard.com/badge/github.com/mediocregopher/radix/v3)](https://goreportcard.com/report/github.com/mediocregopher/radix/v3)
+[![Go Reference](https://pkg.go.dev/badge/mediocregopher/radix/v4.svg)](https://pkg.go.dev/mediocregopher/radix/v4#section-documentation) (v4)
+[![Go Reference](https://pkg.go.dev/badge/mediocregopher/radix/v3.svg)](https://pkg.go.dev/mediocregopher/radix/v3#section-documentation) (v3)
 
-Radix is a full-featured [Redis][redis] client for Go. See the [GoDoc][godoc]
-for documentation and general usage examples.
+Radix is a full-featured [Redis][redis] client for Go. See the reference links
+above for documentation and general usage examples.
 
-This is the third revision of this project, the previous one has been deprecated
-but can be found [here](https://github.com/mediocregopher/radix.v2).
+## Versions
+
+There are two major versions of radix being supported at the moment:
+
+* v3 is the more mature version, and is still being actively supported at the
+  moment.
+
+* v4 is in beta, but is essentially stable. You can view the v4
+  [CHANGELOG][v4changelog] to see what changed between the two versions. The
+  biggest selling point is that connection sharing (called "implicit pipelining"
+  in v3) now works with Pipeline and EvalScript, plus many other performance and
+  usability enhancements.
+
+[v4changelog]: https://github.com/mediocregopher/radix/blob/v4/CHANGELOG.md
 
 ## Features
 
@@ -42,15 +53,14 @@ to support others prior to those two.
     go get github.com/mediocregopher/radix/v3
     // import github.com/mediocregopher/radix/v3
 
-Legacy GOPATH mode:
-
-    go get github.com/mediocregopher/radix
-    // import github.com/mediocregopher/radix
+    go get github.com/mediocregopher/radix/v4
+    // import github.com/mediocregopher/radix/v4
 
 ## Testing
 
     # requires a redis server running on 127.0.0.1:6379
     go test github.com/mediocregopher/radix/v3
+    go test github.com/mediocregopher/radix/v4
 
 ## Benchmarks
 
