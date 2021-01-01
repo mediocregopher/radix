@@ -66,51 +66,101 @@ to support others prior to those two.
 
 ## Benchmarks
 
-Thanks to a huge amount of work put in by @nussjustin, and inspiration from the
-[redispipe][redispipe] project and @funny-falcon, radix/v3 is significantly
-faster than most redis drivers, including redigo, for normal parallel workloads,
-and is pretty comparable for serial workloads.
+(When reading these it should be noted that radixv4 has not been totally
+optimized for performance. It still performs well compared to v3 and other
+drivers and is quite usable, but there is some work left which can be done,
+specifically around its `Conn` implementation.)
 
-Benchmarks can be run from the bench folder. The following results were obtained
-by running the benchmarks with `-cpu` set to 32 and 64, on a 32 core machine,
-with the redis server on a separate machine. See [this thread][bench_thread]
-for more details.
+Benchmarks were run in as close to a "real" environment as possible. Two GCE
+instances were booted up, one hosting the redis server with 2vCPUs, the other
+running the benchmarks (found in the `bench` directory) with 16vCPUs.
 
-Some of radix's results are not included below because they use a non-default
-configuration.
+The benchmarks test a variety of situations against many different redis
+drivers, and the results are very large. You can view them [here][bench
+results]. Below are some highlights (I've tried to be fair here):
 
-[bench_thread]: https://github.com/mediocregopher/radix/issues/67#issuecomment-465060960
-
+For a typical workload, which is lots of concurrent commands with relatively
+small amounts of data, radix outperforms all tested drivers except
+[redispipe][redispipe]:
 
 ```
-# go get rsc.io/benchstat
-# cd bench
-# go test -v -run=XXX -bench=ParallelGetSet -cpu 32 -cpu 64 -benchmem . >/tmp/radix.stat
-# benchstat radix.stat
-name                                   time/op
-ParallelGetSet/radix/default-32        2.15µs ± 0% <--- The good stuff
-ParallelGetSet/radix/default-64        2.05µs ± 0% <--- The better stuff
-ParallelGetSet/redigo-32               27.9µs ± 0%
-ParallelGetSet/redigo-64               28.5µs ± 0%
-ParallelGetSet/redispipe-32            2.02µs ± 0%
-ParallelGetSet/redispipe-64            1.71µs ± 0%
-
-name                                   alloc/op
-ParallelGetSet/radix/default-32         72.0B ± 0%
-ParallelGetSet/radix/default-64         84.0B ± 0%
-ParallelGetSet/redigo-32                 119B ± 0%
-ParallelGetSet/redigo-64                 120B ± 0%
-ParallelGetSet/redispipe-32              168B ± 0%
-ParallelGetSet/redispipe-64              172B ± 0%
-
-name                                   allocs/op
-ParallelGetSet/radix/default-32          4.00 ± 0%
-ParallelGetSet/radix/default-64          4.00 ± 0%
-ParallelGetSet/redigo-32                 6.00 ± 0%
-ParallelGetSet/redigo-64                 6.00 ± 0%
-ParallelGetSet/redispipe-32              8.00 ± 0%
-ParallelGetSet/redispipe-64              8.00 ± 0%
+BenchmarkDrivers/parallel/no_pipeline/small_kv/radixv4-64                    	17815254	      2917 ns/op	     199 B/op	       6 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/small_kv/radixv3-64                    	16688293	      3120 ns/op	     109 B/op	       4 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/small_kv/redigo-64                     	 3504063	     15092 ns/op	     168 B/op	       9 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/small_kv/redispipe_pause150us-64       	31668576	      1680 ns/op	     217 B/op	      11 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/small_kv/redispipe_pause0-64           	31149280	      1685 ns/op	     218 B/op	      11 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/small_kv/go-redis-64                   	 3768988	     14409 ns/op	     411 B/op	      13 allocs/op
 ```
+
+The story is similar for pipelining commands concurrently (radixv3 doesn't do as
+well here, because it doesn't support connection sharing for pipeline commands):
+
+```
+BenchmarkDrivers/parallel/pipeline/small_kv/radixv4-64                       	24720337	      2245 ns/op	     508 B/op	      13 allocs/op
+BenchmarkDrivers/parallel/pipeline/small_kv/radixv3-64                       	 6921868	      7757 ns/op	     165 B/op	       7 allocs/op
+BenchmarkDrivers/parallel/pipeline/small_kv/redigo-64                        	 6738849	      8080 ns/op	     170 B/op	       9 allocs/op
+BenchmarkDrivers/parallel/pipeline/small_kv/redispipe_pause150us-64          	44479539	      1148 ns/op	     316 B/op	      12 allocs/op
+BenchmarkDrivers/parallel/pipeline/small_kv/redispipe_pause0-64              	45290868	      1126 ns/op	     315 B/op	      12 allocs/op
+BenchmarkDrivers/parallel/pipeline/small_kv/go-redis-64                      	 6740984	      7903 ns/op	     475 B/op	      15 allocs/op
+```
+
+For larger amounts of data being transferred the differences become less
+noticeable, but both radix versions come out on top:
+
+```
+BenchmarkDrivers/parallel/no_pipeline/large_kv/radixv4-64                    	 2395707	     22766 ns/op	   12553 B/op	       4 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/large_kv/radixv3-64                    	 3150398	     17087 ns/op	   12745 B/op	       4 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/large_kv/redigo-64                     	 1593054	     34038 ns/op	   24742 B/op	       9 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/large_kv/redispipe_pause150us-64       	 2105118	     25085 ns/op	   16962 B/op	      11 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/large_kv/redispipe_pause0-64           	 2354427	     24280 ns/op	   17295 B/op	      11 allocs/op
+BenchmarkDrivers/parallel/no_pipeline/large_kv/go-redis-64                   	 1519354	     35745 ns/op	   14033 B/op	      14 allocs/op
+```
+
+All results above show the high-concurrency results (`-cpu 64`). Concurrencies
+of 16 and 32 are also included in the results, but didn't show anything
+different.
+
+For serial workloads, which involve a single connection performing commands
+one after the other, radix is either as fast or within a couple % of the other
+drivers tested. This use-case is much less common, and so when tradeoffs have
+been made between parallel and serial performance radix has general leaned
+towards parallel.
+
+Serial non-pipelined:
+
+```
+BenchmarkDrivers/serial/no_pipeline/small_kv/radixv4-16 	  346915	    161493 ns/op	      67 B/op	       4 allocs/op
+BenchmarkDrivers/serial/no_pipeline/small_kv/radixv3-16 	  428313	    138011 ns/op	      67 B/op	       4 allocs/op
+BenchmarkDrivers/serial/no_pipeline/small_kv/redigo-16  	  416103	    134438 ns/op	     134 B/op	       8 allocs/op
+BenchmarkDrivers/serial/no_pipeline/small_kv/redispipe_pause150us-16         	   86734	    635637 ns/op	     217 B/op	      11 allocs/op
+BenchmarkDrivers/serial/no_pipeline/small_kv/redispipe_pause0-16             	  340320	    158732 ns/op	     216 B/op	      11 allocs/op
+BenchmarkDrivers/serial/no_pipeline/small_kv/go-redis-16                     	  429703	    138854 ns/op	     408 B/op	      13 allocs/op
+```
+
+Serial pipelined:
+
+```
+BenchmarkDrivers/serial/pipeline/small_kv/radixv4-16                         	  624417	     82336 ns/op	      83 B/op	       5 allocs/op
+BenchmarkDrivers/serial/pipeline/small_kv/radixv3-16                         	  784947	     68540 ns/op	     163 B/op	       7 allocs/op
+BenchmarkDrivers/serial/pipeline/small_kv/redigo-16                          	  770983	     69976 ns/op	     134 B/op	       8 allocs/op
+BenchmarkDrivers/serial/pipeline/small_kv/redispipe_pause150us-16            	  175623	    320512 ns/op	     312 B/op	      12 allocs/op
+BenchmarkDrivers/serial/pipeline/small_kv/redispipe_pause0-16                	  642673	     82225 ns/op	     312 B/op	      12 allocs/op
+BenchmarkDrivers/serial/pipeline/small_kv/go-redis-16                        	  787364	     72240 ns/op	     472 B/op	      15 allocs/op
+```
+
+Serial large values:
+
+```
+BenchmarkDrivers/serial/no_pipeline/large_kv/radixv4-16                      	  253586	    217600 ns/op	   12521 B/op	       4 allocs/op
+BenchmarkDrivers/serial/no_pipeline/large_kv/radixv3-16                      	  317356	    179608 ns/op	   12717 B/op	       4 allocs/op
+BenchmarkDrivers/serial/no_pipeline/large_kv/redigo-16                       	  244226	    231179 ns/op	   24704 B/op	       8 allocs/op
+BenchmarkDrivers/serial/no_pipeline/large_kv/redispipe_pause150us-16         	   80174	    674066 ns/op	   13780 B/op	      11 allocs/op
+BenchmarkDrivers/serial/no_pipeline/large_kv/redispipe_pause0-16             	  251810	    209890 ns/op	   13778 B/op	      11 allocs/op
+BenchmarkDrivers/serial/no_pipeline/large_kv/go-redis-16                     	  236379	    225677 ns/op	   13976 B/op	      14 allocs/op
+```
+
+
+[bench results]: https://github.com/mediocregopher/radix/blob/v4/bench/bench_results.txt
 
 ## Copyright and licensing
 
