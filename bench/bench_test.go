@@ -232,7 +232,9 @@ func BenchmarkDrivers(b *B) {
 
 			if params.parallelism > 0 {
 				pool := &redigo.Pool{
-					MaxIdle: params.parallelism,
+					MaxIdle:   params.parallelism,
+					MaxActive: params.parallelism * 10,
+					Wait:      true,
 					Dial: func() (redigo.Conn, error) {
 						return redigo.Dial("tcp", addr)
 					},
