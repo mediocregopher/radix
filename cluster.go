@@ -57,11 +57,11 @@ type ClusterCanRetryAction interface {
 ////////////////////////////////////////////////////////////////////////////////
 
 type clusterOpts struct {
-	pf              ClientFunc
-	clusterDownWait time.Duration
-	syncEvery       time.Duration
-	ct              trace.ClusterTrace
-	initSyncSilent  bool
+	pf                   ClientFunc
+	clusterDownWait      time.Duration
+	syncEvery            time.Duration
+	ct                   trace.ClusterTrace
+	initAllowUnavailable bool
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -112,12 +112,12 @@ func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
 	}
 }
 
-// ClusterWithInitSyncSilent tells the Cluster whether it should ignore
-// errors of creating pool for addrs during the initialization
-// if pool for all addrs failed to be created, it will still return errors
-func ClusterWithInitSyncSilent(initSyncSilent bool) ClusterOpt {
+// ClusterOnInitAllowUnavailable tells NewCluster to succeed
+// and not return an error as long as at least one redis instance
+// in the cluster can be successfully connected to.
+func ClusterOnInitAllowUnavailable(initAllowUnavailable bool) ClusterOpt {
 	return func(co *clusterOpts) {
-		co.initSyncSilent = initSyncSilent
+		co.initAllowUnavailable = initAllowUnavailable
 	}
 }
 
@@ -210,7 +210,15 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		break
 	}
 
-	if err := c.Sync(c.co.initSyncSilent); err != nil {
+	p, err := c.pool("")
+	if err != nil {
+		for _, p := range c.pools {
+			p.Close()
+		}
+		return nil, err
+	}
+
+	if err := c.sync(p, c.co.initAllowUnavailable); err != nil {
 		for _, p := range c.pools {
 			p.Close()
 		}
@@ -341,22 +349,13 @@ func (c *Cluster) getTopo(p Client) (ClusterTopo, error) {
 // to new instances and removing ones from instances no longer in the cluster.
 // This will be called periodically automatically, but you can manually call it
 // at any time as well
-func (c *Cluster) Sync(args ...bool) error {
-	var silenceFlag bool
-	switch len(args) {
-	case 0:
-	case 1:
-		silenceFlag = args[0]
-	default:
-		return errors.Errorf("Sync() received too many arguments %d", len(args))
-	}
-
+func (c *Cluster) Sync() error {
 	p, err := c.pool("")
 	if err != nil {
 		return err
 	}
 	c.syncDedupe.do(func() {
-		err = c.sync(p, silenceFlag)
+		err = c.sync(p, false)
 	})
 	return err
 }
@@ -412,11 +411,7 @@ func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 
 // while this method is normally deduplicated by the Sync method's use of
 // dedupe it is perfectly thread-safe on its own and can be used whenever.
-func (c *Cluster) sync(p Client, args ...bool) error {
-	silenceFlag := false
-	if len(args) > 0 {
-		silenceFlag = args[0]
-	}
+func (c *Cluster) sync(p Client, silenceFlag bool) error {
 	tt, err := c.getTopo(p)
 	if err != nil {
 		return err

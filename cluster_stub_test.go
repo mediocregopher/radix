@@ -333,11 +333,9 @@ func (scl *clusterStub) clientInitSyncFailedFunc(failedAddrsMap map[string]bool)
 	return func(network, addr string) (Client, error) {
 		for _, s := range scl.stubs {
 			if s.addr == addr {
-				for failedAddr, flag := range failedAddrsMap {
-					if s.addr == failedAddr && flag == true {
-						failedAddrsMap[s.addr] = false
-						return nil, errors.Errorf("timeout")
-					}
+				if failedAddrsMap[s.addr] {
+					failedAddrsMap[s.addr] = false
+					return nil, errors.Errorf("timeout")
 				}
 				return s.newConn(), nil
 			}
