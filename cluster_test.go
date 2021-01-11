@@ -46,6 +46,68 @@ func TestClusterClient(t *T) {
 	assert.Implements(t, new(Client), c)
 }
 
+func makeFailedFlagMap(addrs []string) map[string]bool {
+	failedAddrsFlag := make(map[string]bool)
+	for _, addr := range addrs {
+		failedAddrsFlag[addr] = true
+	}
+	return failedAddrsFlag
+}
+
+func TestClusterInitSync(t *T) {
+	scl := newStubCluster(testTopo)
+	serverAddrs := scl.addrs()
+
+	//part of the addresses are unavailable during the initialization
+	//and recover after that, call Sync to test whether it can work
+	{
+		c, err := scl.newInitSyncErrorCluster(serverAddrs,
+			makeFailedFlagMap(serverAddrs[0:len(serverAddrs)/2]),
+			ClusterOnInitAllowUnavailable(true))
+		require.Nil(t, err)
+		defer c.Close()
+		require.Nil(t, c.Sync())
+	}
+
+	//part of the addresses are unavailable during the initialization
+	//and recover after that, try Set and Get cmd to test whether it can work
+	{
+		c, err := scl.newInitSyncErrorCluster(serverAddrs,
+			makeFailedFlagMap(serverAddrs[len(serverAddrs)/2:]),
+			ClusterOnInitAllowUnavailable(true))
+		require.Nil(t, err)
+		defer c.Close()
+		// find the address's slot
+		var targetStub *clusterNodeStub
+		for i := len(serverAddrs) / 2; i < len(serverAddrs); i++ {
+			targetStub = scl.stubs[serverAddrs[i]]
+			if slotRanges := targetStub.slotRanges(); len(slotRanges) != 0 {
+				break
+			}
+		}
+		require.NotNil(t, targetStub)
+		client, _ := c.rpool(targetStub.addr)
+		require.Nil(t, client)
+
+		slotRanges := targetStub.slotRanges()[0]
+		targetSlotNum := (slotRanges[1] + slotRanges[0]) / 2
+		t.Logf("the target addr for set and get is %s, slotnum= %d", targetStub.addr, targetSlotNum)
+		k, v := clusterSlotKeys[targetSlotNum], randStr()
+		t.Logf("call set, key=%s, v=%s", k, v)
+		require.Nil(t, c.Do(Cmd(nil, "SET", k, v)))
+		var vgot string
+		require.Nil(t, c.Do(Cmd(&vgot, "GET", k)))
+		assert.Equal(t, v, vgot)
+	}
+	//all addresses are unavailable and the call of NewCluster will get an error
+	{
+		_, err := scl.newInitSyncErrorCluster(serverAddrs,
+			makeFailedFlagMap(serverAddrs),
+			ClusterOnInitAllowUnavailable(true))
+		assert.NotNil(t, err)
+	}
+}
+
 func TestClusterSync(t *T) {
 	c, scl := newTestCluster()
 	defer c.Close()

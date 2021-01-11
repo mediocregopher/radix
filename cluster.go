@@ -57,10 +57,11 @@ type ClusterCanRetryAction interface {
 ////////////////////////////////////////////////////////////////////////////////
 
 type clusterOpts struct {
-	pf              ClientFunc
-	clusterDownWait time.Duration
-	syncEvery       time.Duration
-	ct              trace.ClusterTrace
+	pf                   ClientFunc
+	clusterDownWait      time.Duration
+	syncEvery            time.Duration
+	ct                   trace.ClusterTrace
+	initAllowUnavailable bool
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
@@ -108,6 +109,15 @@ func ClusterOnDownDelayActionsBy(d time.Duration) ClusterOpt {
 func ClusterWithTrace(ct trace.ClusterTrace) ClusterOpt {
 	return func(co *clusterOpts) {
 		co.ct = ct
+	}
+}
+
+// ClusterOnInitAllowUnavailable tells NewCluster to succeed
+// and not return an error as long as at least one redis instance
+// in the cluster can be successfully connected to.
+func ClusterOnInitAllowUnavailable(initAllowUnavailable bool) ClusterOpt {
+	return func(co *clusterOpts) {
+		co.initAllowUnavailable = initAllowUnavailable
 	}
 }
 
@@ -200,7 +210,15 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		break
 	}
 
-	if err := c.Sync(); err != nil {
+	p, err := c.pool("")
+	if err != nil {
+		for _, p := range c.pools {
+			p.Close()
+		}
+		return nil, err
+	}
+
+	if err := c.sync(p, c.co.initAllowUnavailable); err != nil {
 		for _, p := range c.pools {
 			p.Close()
 		}
@@ -337,7 +355,7 @@ func (c *Cluster) Sync() error {
 		return err
 	}
 	c.syncDedupe.do(func() {
-		err = c.sync(p)
+		err = c.sync(p, false)
 	})
 	return err
 }
@@ -393,7 +411,7 @@ func (c *Cluster) traceTopoChanged(prevTopo ClusterTopo, newTopo ClusterTopo) {
 
 // while this method is normally deduplicated by the Sync method's use of
 // dedupe it is perfectly thread-safe on its own and can be used whenever.
-func (c *Cluster) sync(p Client) error {
+func (c *Cluster) sync(p Client, silenceFlag bool) error {
 	tt, err := c.getTopo(p)
 	if err != nil {
 		return err
@@ -402,7 +420,11 @@ func (c *Cluster) sync(p Client) error {
 	for _, t := range tt {
 		// call pool just to ensure one exists for this addr
 		if _, err := c.pool(t.Addr); err != nil {
-			return errors.Errorf("error connecting to %s: %w", t.Addr, err)
+			if silenceFlag {
+				continue
+			} else {
+				return errors.Errorf("error connecting to %s: %w", t.Addr, err)
+			}
 		}
 	}
 
