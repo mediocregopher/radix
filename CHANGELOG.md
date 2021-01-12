@@ -1,10 +1,22 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.7.0
+
+**New**
+
+* Add `FallbackToUndelivered` option to `StreamReaderOpts`. (PR #244)
+
+* Add `ClusterOnInitAllowUnavailable`. (PR #247)
+
+**Fixes and Improvements**
+
+* Fix reading a RESP error into a `*interface{}` panicking. (PR #240)
+
 # v3.6.0
 
 **New**
 
-* Add `Typle` type, which makes unmarshaling `EXEC` and `EVAL` results easier.
+* Add `Tuple` type, which makes unmarshaling `EXEC` and `EVAL` results easier.
 
 * Add `PersistentPubSubErrCh`, so that asynchronous errors within
   `PersistentPubSub` can be exposed to the user.
