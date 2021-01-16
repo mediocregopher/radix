@@ -451,10 +451,14 @@ func (ec *evalAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	return err
 }
 
+func (ec *evalAction) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
+	return resp3.Unmarshal(br, ec.rcv, o)
+}
+
 func (ec *evalAction) Perform(ctx context.Context, conn Conn) error {
 	run := func(eval bool) error {
 		ec.eval = eval
-		return conn.EncodeDecode(ctx, ec, ec.rcv)
+		return conn.EncodeDecode(ctx, ec, ec)
 	}
 
 	err := run(false)

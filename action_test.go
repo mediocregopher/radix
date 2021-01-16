@@ -293,6 +293,22 @@ func TestEvalActionWithInterfaceRcv(t *T) {
 	}
 }
 
+// Issue #252
+func TestEvalScriptEmptyUnmarshal(t *T) {
+	ctx := testCtx(t)
+	conn := dial()
+
+	err := conn.Do(ctx, NewEvalScript(`return {ARGV[1], ARGV[2]}`).FlatCmd(
+		nil, []string{}, "foo", "bar",
+	))
+	assert.NoError(t, err)
+
+	var pong string
+	err = conn.Do(ctx, Cmd(&pong, "PING"))
+	assert.NoError(t, err)
+	assert.Equal(t, "PONG", pong)
+}
+
 func ExampleEvalScript() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
