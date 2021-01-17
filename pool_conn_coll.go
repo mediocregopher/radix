@@ -63,13 +63,14 @@ func (p *poolConnColl) remove(conn *poolConn) {
 	}
 
 	if i < p.first {
-		copy(p.s[i:p.first], p.s[i+1:p.first])
+		copy(p.s[i:], p.s[i+1:p.first])
 		p.s[p.first-1] = nil
 	} else {
-		copy(p.s[1:], p.s[:i])
-		p.s[0] = nil
-		if p.first == 0 && p.l > 1 {
-			p.first++
+		copy(p.s[p.first+1:], p.s[p.first:i])
+		p.s[p.first] = nil
+		p.first++
+		if p.first == len(p.s) {
+			p.first = 0
 		}
 	}
 	p.l--

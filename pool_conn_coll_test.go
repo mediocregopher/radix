@@ -1,10 +1,92 @@
 package radix
 
 import (
+	"container/list"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestPoolConnCollChaotic(t *testing.T) {
+	t.Skip("useful for finding bugs, but not as part of the normal set of tests")
+
+	const capacity = 4
+	pcc := newPoolConnColl(capacity)
+	l := list.New()
+
+	assertState := func() bool {
+		exp := make([]*poolConn, 0, l.Len())
+		for el := l.Front(); el != nil; el = el.Next() {
+			exp = append(exp, el.Value.(*poolConn))
+		}
+
+		got := make([]*poolConn, pcc.len())
+		for i := range got {
+			got[i] = pcc.get(i)
+		}
+
+		return assert.Equal(t, exp, got)
+	}
+
+	assertState() // sanity check
+
+	seed := time.Now().UnixNano()
+	rand := rand.New(rand.NewSource(seed))
+	t.Logf("seed:%d", seed)
+
+	for i := 0; i < 10000; i++ {
+		switch rand.Intn(3) {
+		case 0:
+			if l.Len() == capacity {
+				i--
+				continue
+			}
+			pc := new(poolConn)
+			t.Logf("pushing %p", pc)
+			l.PushFront(pc)
+			pcc.pushFront(pc)
+
+		case 1:
+			if l.Len() == 0 {
+				i--
+				continue
+			}
+			expPC := l.Remove(l.Back())
+			t.Logf("popping %p from back", expPC)
+			gotPC := pcc.popBack()
+			assert.Equal(t, expPC, gotPC)
+
+		case 2:
+			if l.Len() == 0 {
+				i--
+				continue
+			}
+			idx := rand.Intn(pcc.len())
+			pc := pcc.get(idx)
+			t.Logf("removing %p (index:%d)", pc, idx)
+
+			var found bool
+			for el := l.Front(); el != nil; el = el.Next() {
+				if el.Value.(*poolConn) == pc {
+					found = true
+					l.Remove(el)
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("could not find poolConn %p in list", pc)
+			}
+
+			pcc.remove(pc)
+		}
+
+		if !assertState() {
+			return
+		}
+	}
+}
 
 func TestPoolConnColl(t *testing.T) {
 	poolConnNames := map[*poolConn]string{}
@@ -170,7 +252,7 @@ func TestPoolConnColl(t *testing.T) {
 				{
 					name:    "remove",
 					op:      func(_ *testing.T, coll *poolConnColl) { coll.remove(a) },
-					expColl: &poolConnColl{s: []*poolConn{nil, nil}, first: 0, l: 0},
+					expColl: &poolConnColl{s: []*poolConn{nil, nil}, first: 1, l: 0},
 				},
 				{
 					name:    "remove dne",
@@ -200,7 +282,7 @@ func TestPoolConnColl(t *testing.T) {
 				{
 					name:    "remove",
 					op:      func(_ *testing.T, coll *poolConnColl) { coll.remove(a) },
-					expColl: &poolConnColl{s: []*poolConn{nil, nil}, first: 1, l: 0},
+					expColl: &poolConnColl{s: []*poolConn{nil, nil}, first: 0, l: 0},
 				},
 				{
 					name:    "remove dne",
@@ -223,9 +305,14 @@ func TestPoolConnColl(t *testing.T) {
 					expColl: &poolConnColl{s: []*poolConn{a, nil}, first: 0, l: 1},
 				},
 				{
-					name:    "remove",
+					name:    "remove a",
 					op:      func(_ *testing.T, coll *poolConnColl) { coll.remove(a) },
 					expColl: &poolConnColl{s: []*poolConn{nil, b}, first: 1, l: 1},
+				},
+				{
+					name:    "remove b",
+					op:      func(_ *testing.T, coll *poolConnColl) { coll.remove(b) },
+					expColl: &poolConnColl{s: []*poolConn{nil, a}, first: 1, l: 1},
 				},
 				{
 					name:    "remove dne",
@@ -299,12 +386,12 @@ func TestPoolConnColl(t *testing.T) {
 				{
 					name:    "remove b",
 					op:      func(_ *testing.T, coll *poolConnColl) { coll.remove(b) },
-					expColl: &poolConnColl{s: []*poolConn{nil, a, c}, first: 1, l: 2},
+					expColl: &poolConnColl{s: []*poolConn{a, nil, c}, first: 2, l: 2},
 				},
 				{
 					name:    "remove c",
 					op:      func(_ *testing.T, coll *poolConnColl) { coll.remove(c) },
-					expColl: &poolConnColl{s: []*poolConn{nil, a, b}, first: 1, l: 2},
+					expColl: &poolConnColl{s: []*poolConn{a, nil, b}, first: 2, l: 2},
 				},
 			},
 		},
@@ -327,7 +414,21 @@ func TestPoolConnColl(t *testing.T) {
 				{
 					name:    "remove c",
 					op:      func(_ *testing.T, coll *poolConnColl) { coll.remove(c) },
-					expColl: &poolConnColl{s: []*poolConn{nil, a, b}, first: 2, l: 2},
+					expColl: &poolConnColl{s: []*poolConn{a, b, nil}, first: 0, l: 2},
+				},
+			},
+		},
+
+		{
+			name: "issue 254",
+			initColl: func() *poolConnColl {
+				return &poolConnColl{s: []*poolConn{nil, b, a}, first: 1, l: 2}
+			},
+			subTests: []subTest{
+				{
+					name:    "remove a",
+					op:      func(_ *testing.T, coll *poolConnColl) { coll.remove(a) },
+					expColl: &poolConnColl{s: []*poolConn{nil, nil, b}, first: 2, l: 1},
 				},
 			},
 		},
