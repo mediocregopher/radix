@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
@@ -21,6 +22,8 @@ type poolConn struct {
 	// network error is basically any non-application level error, e.g. a
 	// timeout, disconnect, etc...
 	lastIOErrCh chan error
+
+	once sync.Once
 }
 
 func newPoolConn(c Conn) *poolConn {
@@ -307,13 +310,13 @@ func (p *pool) runReconnect() func(context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-p.reconnectCh:
+			case <-waitCh:
 			}
 
 			select {
 			case <-ctx.Done():
 				return
-			case <-waitCh:
+			case <-p.reconnectCh:
 			}
 
 			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -345,6 +348,14 @@ func (p *pool) checkConn(pc *poolConn) bool {
 	case <-pc.lastIOErrCh:
 	default:
 		return true
+	}
+
+	// ensure that the discard logic for the conn only occurs once, specifically
+	// buffering a message on reconnectCh.
+	var ok bool
+	pc.once.Do(func() { ok = true })
+	if !ok {
+		return false
 	}
 
 	err := p.proc.WithLock(func() error {

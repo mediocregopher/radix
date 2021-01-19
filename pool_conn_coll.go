@@ -77,6 +77,10 @@ func (p *poolConnColl) remove(conn *poolConn) {
 }
 
 func (p *poolConnColl) pushFront(c *poolConn) {
+	if len(p.s) == p.l {
+		panic("cannot push onto front of poolConnColl, it is already full")
+	}
+
 	i := p.first - 1
 	if i == -1 {
 		i = len(p.s) - 1

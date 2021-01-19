@@ -162,6 +162,7 @@ func TestPool(t *T) {
 		assertNumConns                *int
 		syncReconnect                 bool
 		setCanConnect, setCantConnect bool
+		assertReconnectChLen          *int
 	}
 
 	type test struct {
@@ -354,6 +355,25 @@ func TestPool(t *T) {
 			},
 		},
 		{
+			name: "multi fail same conn",
+			steps: []step{
+				{goCmd: &cmd{i: 0, cmd: []string{"FAIL"}}},
+				{goCmd: &cmd{i: 0, cmd: []string{"FAIL"}}},
+				{unblock: i(0)},
+				{unblock: i(1)},
+				{assertDone: &assertDone{i: 0, expErr: errTestPoolFailCmd}},
+				{assertDone: &assertDone{i: 1, expErr: errTestPoolFailCmd}},
+
+				{incrTime: poolCfgMinReconnectInterval},
+				{syncReconnect: true},
+				{assertNumConns: i(poolCfgSize)},
+
+				// there should have only been one reconnect written for the
+				// single Conn which had an error.
+				{assertReconnectChLen: i(0)},
+			},
+		},
+		{
 			name: "reconnect backoff",
 			cfg:  PoolConfig{PingInterval: -1},
 			steps: []step{
@@ -493,6 +513,10 @@ func TestPool(t *T) {
 				case step.setCantConnect:
 					logf("setCantConnect")
 					h.canConnect = false
+
+				case step.assertReconnectChLen != nil:
+					logf("assertReconnectChLen(%d)", *step.assertReconnectChLen)
+					assert.Equal(t, *step.assertReconnectChLen, len(h.pool.reconnectCh))
 
 				default:
 					panic(fmt.Sprintf("unknown step %#v", step))
