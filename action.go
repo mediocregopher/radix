@@ -478,6 +478,11 @@ type pipelineMarshalerUnmarshaler struct {
 // pipeline contains all the fields of Pipeline as well as some methods we'd
 // rather not expose to users.
 type pipeline struct {
+	// preallocated buffers of slices to avoid allocating for small pipelines
+	actionsBuf        [4]Action
+	mmBuf             [4]pipelineMarshalerUnmarshaler
+	propertiesKeysBuf [4]string
+
 	actions    []Action
 	mm         []pipelineMarshalerUnmarshaler
 	properties ActionProperties
@@ -489,6 +494,16 @@ type pipeline struct {
 }
 
 var _ Conn = new(pipeline)
+
+func (p *pipeline) init() {
+	p.actions = p.actionsBuf[:0]
+	p.mm = p.mmBuf[:0]
+	p.properties = ActionProperties{
+		Keys:         p.propertiesKeysBuf[:0],
+		CanPipeline:  true, // obviously
+		CanShareConn: true,
+	}
+}
 
 func (p *pipeline) reset() {
 	p.actions = p.actions[:0]
@@ -624,12 +639,9 @@ type Pipeline struct {
 
 // NewPipeline returns a Pipeline instance to which Actions can be Appended.
 func NewPipeline() *Pipeline {
-	return &Pipeline{pipeline: pipeline{
-		properties: ActionProperties{
-			CanPipeline:  true, // obviously
-			CanShareConn: true,
-		},
-	}}
+	p := &Pipeline{}
+	p.pipeline.init()
+	return p
 }
 
 // Reset discards all Actions and resets all internal state. A Pipeline with
