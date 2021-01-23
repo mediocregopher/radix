@@ -479,9 +479,9 @@ type pipelineMarshalerUnmarshaler struct {
 // rather not expose to users.
 type pipeline struct {
 	// preallocated buffers of slices to avoid allocating for small pipelines
-	actionsBuf        [4]Action
-	mmBuf             [4]pipelineMarshalerUnmarshaler
-	propertiesKeysBuf [4]string
+	actionsBuf        [8]Action
+	mmBuf             [8]pipelineMarshalerUnmarshaler
+	propertiesKeysBuf [8]string
 
 	actions    []Action
 	mm         []pipelineMarshalerUnmarshaler
