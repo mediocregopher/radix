@@ -584,15 +584,15 @@ func (p *pipeline) Perform(ctx context.Context, c Conn) error {
 	// first error encountered, but it does take into account all the others
 	// when determining if that error should be wrapped in ErrConnUsable.
 	var err error
-	var errConnUsable resp.ErrConnUsable
 	connUsable := true
 	for _, m := range p.mm {
 		if m.err != nil {
 			if err == nil {
 				err = fmt.Errorf("command %+v in pipeline returned error: %w", m.marshal, m.err)
 			}
-			if !errors.As(m.err, &errConnUsable) {
+			if !errors.As(m.err, new(resp.ErrConnUsable)) {
 				connUsable = false
+				break
 			}
 		}
 	}
