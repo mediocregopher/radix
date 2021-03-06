@@ -35,6 +35,12 @@ type testStructB struct {
 	Biz []byte
 }
 
+type TestStructWithMarshaler struct {
+	Foo int
+	Bar SimpleString
+	Baz *SimpleString
+}
+
 type textCP []byte
 
 func (cu textCP) MarshalText() ([]byte, error) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mediocregopher/radix/v4/resp"
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,6 +27,8 @@ func testStub() Conn {
 			return nil
 		case "ECHO":
 			return args[1]
+		case "COMPLEX":
+			return []interface{}{resp3.SimpleString{S: "Key"}, "value"}
 		default:
 			return fmt.Errorf("testStub doesn't support command %q", args[0])
 		}
@@ -48,6 +51,12 @@ func TestStub(t *T) {
 		require.Nil(t, stub.Do(ctx, FlatCmd(nil, "SET", "foo", 1)))
 		require.Nil(t, stub.Do(ctx, Cmd(&foo, "GET", "foo")))
 		assert.Equal(t, 1, foo)
+	}
+
+	{
+		var rcv []interface{}
+		require.Nil(t, stub.Do(ctx, Cmd(&rcv, "COMPLEX")))
+		assert.Equal(t, []interface{}{"Key", []byte("value")}, rcv)
 	}
 }
 
