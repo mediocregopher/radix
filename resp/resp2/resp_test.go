@@ -733,3 +733,31 @@ func TestErrorAs(t *T) {
 		assert.Equal(t, *err, errDiscarded.Err)
 	}
 }
+
+func TestUnmarshalSimpleStringFieldsIntoStruct(t *T) {
+	type foo struct {
+		A int
+		B string
+	}
+
+	exp := func() foo { return foo{1, "2"} }
+
+	ins := map[string]string{
+		"simple-strings": "*4\r\n" +
+			"+A\r\n" + ":1\r\n" +
+			"+B\r\n" + "$1\r\n2\r\n",
+
+		"bulk-strings": "*4\r\n" +
+			"$1\r\nA\r\n" + ":1\r\n" +
+			"$1\r\nB\r\n" + "$1\r\n2\r\n",
+	}
+
+	for name, in := range ins {
+		t.Run(name, func(t *T) {
+			br := bufio.NewReader(bytes.NewBufferString(in))
+			var rcv foo
+			assert.NoError(t, Any{I: &rcv}.UnmarshalRESP(br))
+			assert.Equal(t, exp(), rcv)
+		})
+	}
+}

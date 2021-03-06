@@ -1068,12 +1068,35 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		var field BulkStringBytes
 
 		for i := 0; i < size; i += 2 {
-			if err := field.UnmarshalRESP(br); err != nil {
-				return discardArrayAfterErr(br, int(l)-i-1, err)
+
+			var structField structField
+			var ok bool
+
+			prefix, err := br.Peek(1)
+			switch {
+			case err != nil:
+				return discardArrayAfterErr(br, int(l)-i, err)
+
+			case bytes.Equal(prefix, SimpleStringPrefix):
+				var field SimpleString
+				if err := field.UnmarshalRESP(br); err != nil {
+					return discardArrayAfterErr(br, int(l)-i-1, err)
+				}
+				structField, ok = structFields[field.S]
+
+			case bytes.Equal(prefix, BulkStringPrefix):
+				if err := field.UnmarshalRESP(br); err != nil {
+					return discardArrayAfterErr(br, int(l)-i-1, err)
+				}
+				structField, ok = structFields[string(field.B)] // no allocation, since Go 1.3
+
+			default:
+				var err error = errUnexpectedPrefix{Prefix: prefix, ExpectedPrefix: BulkStringPrefix}
+				err = resp.ErrDiscarded{Err: err}
+				return discardArrayAfterErr(br, int(l)-i, err)
 			}
 
 			var vv reflect.Value
-			structField, ok := structFields[string(field.B)] // no allocation, since Go 1.3
 			if ok {
 				vv = getStructField(v, structField.indices)
 			}
@@ -1083,10 +1106,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 				if err := (Any{}).UnmarshalRESP(br); err != nil {
 					return discardArrayAfterErr(br, int(l)-i-2, err)
 				}
-				continue
-			}
-
-			if err := (Any{I: vv.Interface()}).UnmarshalRESP(br); err != nil {
+			} else if err := (Any{I: vv.Interface()}).UnmarshalRESP(br); err != nil {
 				return discardArrayAfterErr(br, int(l)-i-2, err)
 			}
 		}
