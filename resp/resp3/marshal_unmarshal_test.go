@@ -35,12 +35,6 @@ type testStructB struct {
 	Biz []byte
 }
 
-type TestStructWithMarshaler struct {
-	Foo int
-	Bar SimpleString
-	Baz *SimpleString
-}
-
 type textCP []byte
 
 func (cu textCP) MarshalText() ([]byte, error) {
@@ -1367,8 +1361,18 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
 				},
 				{
+					label:     "arr-bulk-fields",
+					msg:       "*10\r\n$3\r\nFoo\r\n:1\r\n$3\r\nBAZ\r\n:2\r\n$3\r\nBoz\r\n:3\r\n$3\r\nBiz\r\n:4\r\n$5\r\nOther\r\n:5\r\n",
+					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
+				},
+				{
 					label:     "map",
 					msg:       "%5\r\n+Foo\r\n:1\r\n+BAZ\r\n:2\r\n+Boz\r\n:3\r\n+Biz\r\n:4\r\n+Other\r\n:5\r\n",
+					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
+				},
+				{
+					label:     "map-bulk-fields",
+					msg:       "%5\r\n$3\r\nFoo\r\n:1\r\n$3\r\nBAZ\r\n:2\r\n$3\r\nBoz\r\n:3\r\n$3\r\nBiz\r\n:4\r\n$5\r\nOther\r\n:5\r\n",
 					flattened: []string{"Foo", "1", "BAZ", "2", "Boz", "3", "Biz", "4"},
 				},
 				{
