@@ -39,11 +39,11 @@ type pubSubStub struct {
 	mDoneCh chan struct{}
 }
 
-// NewPubSubStubConn returns a stubbed Conn, much like NewStubConn does, which
+// NewPubSubConnStub returns a stubbed Conn, much like NewStubConn does, which
 // pretends it is a Conn to a real redis instance, but is instead using the
 // given callback to service requests. It is primarily useful for writing tests.
 //
-// NewPubSubStubConn differs from NewStubConn in that EncodeDecode calls for the
+// NewPubSubConnStub differs from NewStubConn in that EncodeDecode calls for the
 // (P)SUBSCRIBE, (P)UNSUBSCRIBE, and PING commands will be intercepted and
 // handled as per redis' expected pubsub functionality. A PubSubMessage may be
 // written to the returned channel at any time, and if the returned Conn has had
@@ -57,7 +57,13 @@ type pubSubStub struct {
 // remoteNetwork and remoteAddr can be empty, but if given will be used as the
 // return from the Addr method.
 //
-func NewPubSubStubConn(remoteNetwork, remoteAddr string, fn func(context.Context, []string) interface{}) (Conn, chan<- PubSubMessage) {
+func NewPubSubConnStub(remoteNetwork, remoteAddr string, fn func(context.Context, []string) interface{}) (Conn, chan<- PubSubMessage) {
+	if fn == nil {
+		fn = func(_ context.Context, args []string) interface{} {
+			return fmt.Errorf("command %#v not supported by stub", args)
+		}
+	}
+
 	ch := make(chan PubSubMessage)
 	s := &pubSubStub{
 		proc:    proc.New(),
@@ -84,9 +90,9 @@ func (s *pubSubStub) innerFn(ctx context.Context, ss []string) interface{} {
 		switch strings.ToUpper(ss[0]) {
 		case "PING":
 			if !s.pubsubMode {
-				res = s.fn(ctx, ss)
+				res = resp3.SimpleString{S: "PONG"}
 			} else {
-				res = []string{"pong", ""}
+				res = []string{"PONG", ""}
 			}
 		case "SUBSCRIBE":
 			var mm multiMarshal

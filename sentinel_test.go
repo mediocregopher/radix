@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	. "testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,7 +72,7 @@ func (s *sentinelStub) newConn(ctx context.Context, network, addr string) (Conn,
 		return nil, fmt.Errorf("%q not in sentinel cluster", addr)
 	}
 
-	conn, stubCh := NewPubSubStubConn(network, addr, func(_ context.Context, args []string) interface{} {
+	conn, stubCh := NewPubSubConnStub(network, addr, func(_ context.Context, args []string) interface{} {
 		s.Lock()
 		defer s.Unlock()
 
@@ -221,14 +220,6 @@ func TestSentinel(t *T) {
 	)
 
 	assertPoolWorks()
-
-	// Check that closing the instance doesn't deadlock while updating the state.
-	// This is racy but should be good enough for now.
-	_ = scc.proc.WithLock(func() error {
-		scc.forceMasterSwitch(100 * time.Millisecond) // delay so that Close has a chance to acquire scc.l
-		return nil
-	})
-	require.NoError(t, scc.Close())
 }
 
 func TestSentinelSecondaryRead(t *T) {

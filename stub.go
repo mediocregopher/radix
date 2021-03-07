@@ -14,6 +14,7 @@ import (
 )
 
 type stubUnmarshaler struct {
+	ctx           context.Context
 	unmarshalInto interface{}
 	errCh         chan error
 }
@@ -77,10 +78,43 @@ func (s *stub) responder(ctx context.Context) {
 		return nil
 	}
 
+	maybeUnmarshal := func() {
+		for {
+			if unmarshalerList.Len() == 0 {
+				break
+			}
+
+			unmarshaler := popFront(unmarshalerList).(*stubUnmarshaler)
+			if err := unmarshaler.ctx.Err(); err != nil {
+				unmarshaler.errCh <- err
+				continue
+			}
+
+			if retBuf.Len() == 0 && retBr.Buffered() == 0 && errList.Len() == 0 {
+				unmarshalerList.PushFront(unmarshaler)
+				break
+			}
+
+			if errList.Len() > 0 {
+				err := popFront(errList).(error)
+				unmarshaler.errCh <- err
+				continue
+			}
+
+			err := resp3.Unmarshal(retBr, unmarshaler.unmarshalInto, opts)
+			unmarshaler.errCh <- err
+		}
+	}
+
+	var lastDoneCh <-chan struct{}
+
 	for {
 		select {
 		case <-doneCh:
 			return
+		case <-lastDoneCh:
+			maybeUnmarshal()
+			lastDoneCh = nil
 		case cu := <-s.ch:
 			for _, cmd := range cu.cmds {
 				ret := s.fn(cu.ctx, cmd)
@@ -92,24 +126,9 @@ func (s *stub) responder(ctx context.Context) {
 			}
 			if cu.unmarshaler != nil {
 				unmarshalerList.PushBack(cu.unmarshaler)
+				lastDoneCh = cu.unmarshaler.ctx.Done()
 			}
-			for {
-				if (retBuf.Len() == 0 && retBr.Buffered() == 0 && errList.Len() == 0) ||
-					unmarshalerList.Len() == 0 {
-					break
-				}
-
-				unmarshaler := popFront(unmarshalerList).(*stubUnmarshaler)
-
-				if errList.Len() > 0 {
-					err := popFront(errList).(error)
-					unmarshaler.errCh <- err
-					continue
-				}
-
-				err := resp3.Unmarshal(retBr, unmarshaler.unmarshalInto, opts)
-				unmarshaler.errCh <- err
-			}
+			maybeUnmarshal()
 		}
 	}
 }
@@ -138,20 +157,35 @@ func (s *stub) EncodeDecode(ctx context.Context, m, u interface{}) error {
 		}
 	}
 
+	doneCh := ctx.Done()
+	closedCh := s.proc.ClosedCh()
 	var errCh chan error
+
 	if u != nil {
 		errCh = make(chan error, 1)
 		cu.unmarshaler = &stubUnmarshaler{
 			unmarshalInto: u,
 			errCh:         errCh,
 		}
-	}
 
-	closedCh := s.proc.ClosedCh()
+		// ctx is sent in case we need this EncodeDecode to block/timeout. if m
+		// is not nil then this EncodeDecode represents a call/response, which
+		// we consider to occur instantly, so there's no need to send the actual
+		// ctx.
+		//
+		// On the other hand, if m _is_ nil then this EncodeDecode should block
+		// until some other EncodeDecode has induced a response, so we send ctx
+		// so it can do that.
+		if m == nil {
+			cu.unmarshaler.ctx = ctx
+		} else {
+			cu.unmarshaler.ctx = context.Background()
+		}
+	}
 
 	select {
 	case s.ch <- cu:
-	case <-ctx.Done():
+	case <-doneCh:
 		return ctx.Err()
 	case <-closedCh:
 		return proc.ErrClosed
@@ -170,8 +204,6 @@ func (s *stub) EncodeDecode(ctx context.Context, m, u interface{}) error {
 	select {
 	case err := <-errCh:
 		return err
-	case <-ctx.Done():
-		return ctx.Err()
 	case <-closedCh:
 		return proc.ErrClosed
 	}

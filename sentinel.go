@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"sync/atomic"
 	"time"
 
 	"github.com/mediocregopher/radix/v4/internal/proc"
@@ -43,17 +42,12 @@ type Sentinel struct {
 	sentinelAddrs map[string]bool // the known sentinel addresses
 
 	// We use a persistent PubSubConn here, so we don't need to do much after
-	// initialization. The pconn is only really kept around for closing
-	pconn   PubSubConn
-	pconnCh chan PubSubMessage
+	// initialization.
+	pconn PubSubConn
 
 	// only used by tests to ensure certain actions have happened before
 	// continuing on during the test
 	testEventCh chan string
-
-	// only used by tests to delay updates after event on pconnCh
-	// contains time in milliseconds
-	testSleepBeforeSwitch uint32
 }
 
 var _ MultiClient = new(Sentinel)
@@ -72,7 +66,6 @@ func (cfg SentinelConfig) New(ctx context.Context, primaryName string, sentinelA
 		name:          primaryName,
 		clients:       map[string]Client{},
 		sentinelAddrs: addrs,
-		pconnCh:       make(chan PubSubMessage, 1),
 		testEventCh:   make(chan string, 1),
 	}
 
@@ -95,7 +88,7 @@ func (cfg SentinelConfig) New(ctx context.Context, primaryName string, sentinelA
 		}
 	}
 
-	pconnCfg := PersistentPubSubConfig{
+	pconnCfg := PersistentPubSubConnConfig{
 		Dialer: Dialer{
 			CustomConn: func(ctx context.Context, _, _ string) (Conn, error) {
 				return sc.dialSentinel(ctx)
@@ -111,7 +104,7 @@ func (cfg SentinelConfig) New(ctx context.Context, primaryName string, sentinelA
 		return nil, err
 	}
 
-	_ = sc.pconn.Subscribe(ctx, sc.pconnCh, "switch-master")
+	_ = sc.pconn.Subscribe(ctx, "switch-master")
 	sc.proc.Run(sc.spin)
 	return sc, nil
 }
@@ -442,9 +435,6 @@ func (sc *Sentinel) innerSpin(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	tick := time.NewTicker(5 * time.Second)
-	defer tick.Stop()
-
 	var switchMaster bool
 	for {
 		err := func() error {
@@ -472,22 +462,18 @@ func (sc *Sentinel) innerSpin(ctx context.Context) error {
 			switchMaster = false
 		}
 
-		select {
-		case <-tick.C:
-			// loop
-		case <-sc.pconnCh:
+		innerCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, err = sc.pconn.Next(innerCtx)
+		cancel()
+
+		if err == nil {
 			switchMaster = true
-			if waitFor := atomic.SwapUint32(&sc.testSleepBeforeSwitch, 0); waitFor > 0 {
-				time.Sleep(time.Duration(waitFor) * time.Millisecond)
-			}
-			// loop
-		case <-ctx.Done():
+
+		} else if ctx.Err() != nil {
 			return nil
+
+		} else if innerCtx.Err() == nil {
+			sc.err(fmt.Errorf("unexpected error from pubsub conn: %w", err))
 		}
 	}
-}
-
-func (sc *Sentinel) forceMasterSwitch(waitFor time.Duration) {
-	atomic.StoreUint32(&sc.testSleepBeforeSwitch, uint32(waitFor.Milliseconds()))
-	sc.pconnCh <- PubSubMessage{}
 }

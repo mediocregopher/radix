@@ -3,13 +3,14 @@ package radix
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
-	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/mediocregopher/radix/v4/trace"
+	"github.com/tilinna/clock"
 )
 
 // PubSubMessage describes a message being published to a redis pubsub channel.
@@ -139,51 +140,39 @@ func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type chanSet map[string]map[chan<- PubSubMessage]bool
+// PubSubConn wraps an existing Conn to support redis' pubsub system. Unlike
+// Conn, a PubSubConn's methods are _not_ thread-safe.
+type PubSubConn interface {
 
-func (cs chanSet) add(s string, ch chan<- PubSubMessage) {
-	m, ok := cs[s]
-	if !ok {
-		m = map[chan<- PubSubMessage]bool{}
-		cs[s] = m
-	}
-	m[ch] = true
+	// Subscribe subscribes the PubSubConn to the given set of channels.
+	Subscribe(ctx context.Context, channels ...string) error
+
+	// Unsubscribe unsubscribes the PubSubConn from the given set of channels.
+	Unsubscribe(ctx context.Context, channels ...string) error
+
+	// PSubscribe is like Subscribe, but it subscribes to a set of patterns and
+	// not individual channels.
+	PSubscribe(ctx context.Context, patterns ...string) error
+
+	// PUnsubscribe is like Unsubscribe, but it unsubscribes from a set of
+	// patterns and not individual channels.
+	PUnsubscribe(ctx context.Context, patterns ...string) error
+
+	// Ping performs a simple Ping command on the PubSubConn, returning an error
+	// if it failed for some reason.
+	//
+	// Ping will be periodically called by Next in the default PubSubConn
+	// implementations.
+	Ping(ctx context.Context) error
+
+	// Next blocks until a message is published to the PubSubConn or an error is
+	// encountered. If the context is canceled then the resulting error is
+	// returned immediately.
+	Next(ctx context.Context) (PubSubMessage, error)
+
+	// Close closes the PubSubConn and cleans up all resources it holds.
+	Close() error
 }
-
-func (cs chanSet) del(s string, ch chan<- PubSubMessage) bool {
-	m, ok := cs[s]
-	if !ok {
-		return true
-	}
-	delete(m, ch)
-	if len(m) == 0 {
-		delete(cs, s)
-		return true
-	}
-	return false
-}
-
-func (cs chanSet) missing(ss []string) []string {
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		if _, ok := cs[s]; !ok {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func (cs chanSet) inverse() map[chan<- PubSubMessage][]string {
-	inv := map[chan<- PubSubMessage][]string{}
-	for s, m := range cs {
-		for ch := range m {
-			inv[ch] = append(inv[ch], s)
-		}
-	}
-	return inv
-}
-
-////////////////////////////////////////////////////////////////////////////////
 
 // PubSubConfig is used to create a PubSubConn with particular settings. All
 // fields are optional, all methods are thread-safe.
@@ -194,305 +183,366 @@ type PubSubConfig struct {
 	//
 	// Defaults to 5 * time.Second. Can be set to -1 to disable periodic pings.
 	PingInterval time.Duration
-
-	// Trace contains callbacks that a PubSubConn can use to trace itself.
-	//
-	// All callbacks are blocking.
-	Trace trace.PubSubTrace
 }
 
-func (cfg PubSubConfig) withDefaults() PubSubConfig {
+type pubSubConfig struct {
+	PubSubConfig
+	clock clock.Clock
+
+	testEventCh chan string
+}
+
+const pubSubDefaultPingInterval = 5 * time.Second
+
+func (cfg pubSubConfig) withDefaults() pubSubConfig {
 	if cfg.PingInterval == -1 {
 		cfg.PingInterval = 0
 	} else if cfg.PingInterval == 0 {
-		cfg.PingInterval = 5 * time.Second
+		cfg.PingInterval = pubSubDefaultPingInterval
+	}
+
+	if cfg.clock == nil {
+		cfg.clock = clock.Realtime()
 	}
 
 	return cfg
 }
 
-// PubSubConn wraps an existing Conn to support redis' pubsub system.
-// User-created channels can be subscribed to redis channels to receive
-// PubSubMessages which have been published.
-//
-// If any methods return an error it means the PubSubConn has been Close'd and
-// subscribed msgCh's will no longer receive PubSubMessages from it. All methods
-// are threadsafe, but should be called in a different go-routine than that
-// which is reading from the PubSubMessage channels.
-//
-// NOTE the PubSubMessage channels should never block. If any channels block
-// when being written to they will block all other channels from receiving a
-// publish and block methods from returning.
-type PubSubConn interface {
-	// Subscribe subscribes the PubSubConn to the given set of channels. msgCh
-	// will receieve a PubSubMessage for every publish written to any of the
-	// channels. This may be called multiple times for the same channels and
-	// different msgCh's, each msgCh will receieve a copy of the PubSubMessage
-	// for each publish.
-	Subscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error
-
-	// Unsubscribe unsubscribes the msgCh from the given set of channels, if it
-	// was subscribed at all.
-	//
-	// NOTE until Unsubscribe has returned it should be assumed that msgCh can
-	// still have messages written to it.
-	Unsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error
-
-	// PSubscribe is like Subscribe, but it subscribes msgCh to a set of
-	// patterns and not individual channels.
-	PSubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error
-
-	// PUnsubscribe is like Unsubscribe, but it unsubscribes msgCh from a set of
-	// patterns and not individual channels.
-	PUnsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error
-
-	// Ping performs a simple Ping command on the PubSubConn, returning an error
-	// if it failed for some reason.
-	//
-	// Ping will be periodically called in the background of the default
-	// PubSubConn implementation.
-	Ping(context.Context) error
-
-	// Close closes the PubSubConn so it can't be used anymore. All subscribed
-	// channels will stop receiving PubSubMessages from this Conn (but will not
-	// themselves be closed).
-	//
-	// NOTE until Close returns it should be assumed that all subscribed msgChs
-	// can still be written to.
-	Close() error
-}
-
 type pubSubConn struct {
-	proc *proc.Proc
-	cfg  PubSubConfig
+	cfg  pubSubConfig
 	conn Conn
 
-	subs  chanSet
-	psubs chanSet
-
-	// pubCh is used for communicating between spin and pubSpin
-	pubCh chan PubSubMessage
-
-	// used for writing commands and waiting for their response (e.g.
-	// SUBSCRIBE, PING). See the do method for how that works.
-	cmdResCh chan error
-
-	// only used during testing
-	testEventCh chan string
+	subs, psubs map[string]bool
+	pingTicker  *clock.Ticker
 }
 
-// New wraps the given Conn so that it becomes a PubSubConn. The passed in Conn
-// should not be used after this call.
-func (cfg PubSubConfig) New(conn Conn) PubSubConn {
+func (cfg pubSubConfig) new(conn Conn) PubSubConn {
 	c := &pubSubConn{
-		proc:     proc.New(),
-		cfg:      cfg.withDefaults(),
-		conn:     conn,
-		subs:     chanSet{},
-		psubs:    chanSet{},
-		pubCh:    make(chan PubSubMessage, 1024),
-		cmdResCh: make(chan error, 1),
+		cfg:   cfg.withDefaults(),
+		conn:  conn,
+		subs:  map[string]bool{},
+		psubs: map[string]bool{},
 	}
-	c.proc.Run(c.pubSpin)
-	c.proc.Run(c.spin)
-	if cfg.PingInterval > 0 {
-		c.proc.Run(c.pingSpin)
+
+	if c.cfg.PingInterval > 0 {
+		c.pingTicker = c.cfg.clock.NewTicker(c.cfg.PingInterval)
 	}
+
 	return c
 }
 
-func (c *pubSubConn) testEvent(str string) {
-	if c.testEventCh != nil {
-		c.testEventCh <- str
-	}
+// New returns a PubSubConn instance using the given PubSubConfig.
+func (cfg PubSubConfig) New(conn Conn) PubSubConn {
+	return pubSubConfig{PubSubConfig: cfg}.new(conn)
 }
 
-func (c *pubSubConn) pubSpin(ctx context.Context) {
-	doneCh := ctx.Done()
-	for {
-		select {
-		case <-doneCh:
-			return
-		case m := <-c.pubCh:
-			_ = c.proc.WithRLock(func() error {
-				var subs map[chan<- PubSubMessage]bool
-				if m.Type == "pmessage" {
-					subs = c.psubs[m.Pattern]
-				} else {
-					subs = c.subs[m.Channel]
-				}
-
-				for ch := range subs {
-					ch <- m
-				}
-				return nil
-			})
-		}
+func (c *pubSubConn) Close() error {
+	if c.pingTicker != nil {
+		c.pingTicker.Stop()
 	}
+
+	return c.conn.Close()
 }
 
-const pubSubTimeout = 1 * time.Second
-
-func (c *pubSubConn) spin(ctx context.Context) {
-	doneCh := ctx.Done()
-	for {
-		var m PubSubMessage
-		ctx, cancel := context.WithTimeout(ctx, pubSubTimeout)
-		err := c.conn.EncodeDecode(ctx, nil, &m)
-		cancel()
-		if errors.Is(err, context.DeadlineExceeded) {
-			c.testEvent("timeout")
-			continue
-		} else if errors.Is(err, context.Canceled) {
-			return
-		} else if errors.Is(err, errNotPubSubMessage) {
-			c.cmdResCh <- nil
-			continue
-		} else if err != nil {
-			// this must be done in a new go-routine to avoid deadlocks
-			go func() { _ = c.closeInner(err) }()
-			return
-		}
-
-		select {
-		case c.pubCh <- m:
-		case <-doneCh:
-			return
-		}
-	}
+func (c *pubSubConn) cmd(cmd string, args ...string) resp.Marshaler {
+	return Cmd(nil, cmd, args...).(resp.Marshaler)
 }
 
-func (c *pubSubConn) pingSpin(ctx context.Context) {
-	t := time.NewTicker(c.cfg.PingInterval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			err := c.Ping(ctx)
-			cancel()
-			if err != nil {
-				return
-			}
-		}
-	}
-}
-
-// NOTE proc's lock _must_ be held to use do.
-func (c *pubSubConn) do(ctx context.Context, exp int, cmd string, args ...string) error {
-	rcmd := Cmd(nil, cmd, args...).(resp.Marshaler)
-	if err := c.conn.EncodeDecode(ctx, rcmd, nil); err != nil {
+func (c *pubSubConn) Subscribe(ctx context.Context, channels ...string) error {
+	if err := c.conn.EncodeDecode(ctx, c.cmd("SUBSCRIBE", channels...), nil); err != nil {
 		return err
 	}
 
-	doneCh := c.proc.ClosedCh()
-	for i := 0; i < exp; i++ {
-		select {
-		case err := <-c.cmdResCh:
-			if err != nil {
-				return err
-			}
-		case <-doneCh:
-			return proc.ErrClosed
-		}
+	for _, ch := range channels {
+		c.subs[ch] = true
 	}
 	return nil
 }
 
-func (c *pubSubConn) closeInner(cmdResErr error) error {
-	return c.proc.Close(func() error {
-		if cmdResErr != nil {
-			select {
-			case c.cmdResCh <- cmdResErr:
-			default:
-			}
-		}
-		if c.cfg.Trace.Closed != nil {
-			c.cfg.Trace.Closed(trace.PubSubClosed{
-				Err: cmdResErr,
-			})
-		}
-		err := c.conn.Close()
+func (c *pubSubConn) Unsubscribe(ctx context.Context, channels ...string) error {
+	if err := c.conn.EncodeDecode(ctx, c.cmd("UNSUBSCRIBE", channels...), nil); err != nil {
 		return err
-	})
+	}
+
+	for _, ch := range channels {
+		delete(c.subs, ch)
+	}
+	return nil
 }
 
-func (c *pubSubConn) Close() error {
-	return c.closeInner(nil)
+func (c *pubSubConn) PSubscribe(ctx context.Context, patterns ...string) error {
+	if err := c.conn.EncodeDecode(ctx, c.cmd("PSUBSCRIBE", patterns...), nil); err != nil {
+		return err
+	}
+
+	for _, p := range patterns {
+		c.psubs[p] = true
+	}
+	return nil
 }
 
-func (c *pubSubConn) Subscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
-	return c.proc.WithLock(func() error {
-		missing := c.subs.missing(channels)
-		if len(missing) > 0 {
-			if err := c.do(ctx, len(missing), "SUBSCRIBE", missing...); err != nil {
-				return err
-			}
-		}
+func (c *pubSubConn) PUnsubscribe(ctx context.Context, patterns ...string) error {
+	if err := c.conn.EncodeDecode(ctx, c.cmd("PUNSUBSCRIBE", patterns...), nil); err != nil {
+		return err
+	}
 
-		for _, channel := range channels {
-			c.subs.add(channel, msgCh)
-		}
-
-		return nil
-	})
-}
-
-func (c *pubSubConn) Unsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, channels ...string) error {
-	return c.proc.WithLock(func() error {
-		emptyChannels := make([]string, 0, len(channels))
-		for _, channel := range channels {
-			if empty := c.subs.del(channel, msgCh); empty {
-				emptyChannels = append(emptyChannels, channel)
-			}
-		}
-
-		if len(emptyChannels) == 0 {
-			return nil
-		}
-
-		return c.do(ctx, len(emptyChannels), "UNSUBSCRIBE", emptyChannels...)
-	})
-}
-
-func (c *pubSubConn) PSubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error {
-	return c.proc.WithLock(func() error {
-		missing := c.psubs.missing(patterns)
-		if len(missing) > 0 {
-			if err := c.do(ctx, len(missing), "PSUBSCRIBE", missing...); err != nil {
-				return err
-			}
-		}
-
-		for _, pattern := range patterns {
-			c.psubs.add(pattern, msgCh)
-		}
-
-		return nil
-	})
-}
-
-func (c *pubSubConn) PUnsubscribe(ctx context.Context, msgCh chan<- PubSubMessage, patterns ...string) error {
-	return c.proc.WithLock(func() error {
-		emptyPatterns := make([]string, 0, len(patterns))
-		for _, pattern := range patterns {
-			if empty := c.psubs.del(pattern, msgCh); empty {
-				emptyPatterns = append(emptyPatterns, pattern)
-			}
-		}
-
-		if len(emptyPatterns) == 0 {
-			return nil
-		}
-
-		return c.do(ctx, len(emptyPatterns), "PUNSUBSCRIBE", emptyPatterns...)
-	})
+	for _, p := range patterns {
+		delete(c.psubs, p)
+	}
+	return nil
 }
 
 func (c *pubSubConn) Ping(ctx context.Context) error {
-	return c.proc.WithRLock(func() error {
-		return c.do(ctx, 1, "PING")
+	return c.conn.EncodeDecode(ctx, c.cmd("PING"), nil)
+}
+
+func (c *pubSubConn) testEvent(event string) {
+	if c.cfg.testEventCh != nil {
+		c.cfg.testEventCh <- event
+		<-c.cfg.testEventCh
+	}
+}
+
+var nullCtxCancel = context.CancelFunc(func() {})
+
+const pubSubCtxWrapTimeout = 1 * time.Second
+
+func (c *pubSubConn) wrapNextCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	if c.pingTicker == nil {
+		return ctx, nullCtxCancel
+	}
+
+	return c.cfg.clock.TimeoutContext(ctx, pubSubCtxWrapTimeout)
+}
+
+func (c *pubSubConn) Next(ctx context.Context) (PubSubMessage, error) {
+	for {
+		c.testEvent("next-top")
+
+		if c.pingTicker != nil {
+			select {
+			case <-c.pingTicker.C:
+				if err := c.Ping(ctx); err != nil {
+					return PubSubMessage{}, fmt.Errorf("calling PING internally: %w", err)
+				}
+				c.testEvent("pinged")
+			default:
+			}
+		}
+
+		// ctx has the potential to be wrapped so that it will have a 1 second
+		// deadline, so that we can loop back up to check the pingTicker now and
+		// then.
+		innerCtx, cancel := c.wrapNextCtx(ctx)
+		c.testEvent("wrapped-ctx")
+
+		var msg PubSubMessage
+		err := c.conn.EncodeDecode(innerCtx, nil, &msg)
+		cancel()
+		c.testEvent("decode-returned")
+
+		if errors.Is(err, errNotPubSubMessage) {
+			continue
+		} else if ctxErr := ctx.Err(); ctxErr != nil {
+			return msg, ctxErr
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			continue
+		} else if err != nil {
+			return msg, err
+		}
+
+		if msg.Pattern != "" && !c.psubs[msg.Pattern] {
+			c.testEvent("skipped-pattern")
+			continue
+		} else if !c.subs[msg.Channel] {
+			c.testEvent("skipped-channel")
+			continue
+		}
+
+		return msg, nil
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// PersistentPubSubConnConfig is used to create a persistent PubSubConn with
+// particular settings. All fields are optional, all methods are thread-safe.
+type PersistentPubSubConnConfig struct {
+	// Dialer is used to create new Conns.
+	Dialer Dialer
+
+	// PubSubConfig is used to create PubSubConns from the Conns created by
+	// Dialer.
+	PubSubConfig PubSubConfig
+
+	// Trace contains callbacks that a persistent PubSubConn can use to trace
+	// itself.
+	//
+	// All callbacks are blocking.
+	Trace trace.PersistentPubSubTrace
+}
+
+type persistentPubSubConn struct {
+	cfg  PersistentPubSubConnConfig
+	dial func(context.Context) (Conn, error)
+
+	subs, psubs map[string]bool
+	conn        PubSubConn
+}
+
+// New is like PubSubConfig.New, but instead of taking in an existing Conn to
+// wrap it will create its own using the network/address returned from the given
+// callback.
+//
+// If the Conn is ever severed then the callback will be re-called, a new Conn
+// will be created, and that Conn will be reset to the previous Conn's state.
+//
+// This is effectively a way to have a permanent PubSubConn established which
+// supports subscribing/unsubscribing but without the hassle of implementing
+// reconnect/re-subscribe logic.
+func (cfg PersistentPubSubConnConfig) New(
+	ctx context.Context,
+	cb func() (network, addr string, err error),
+) (
+	PubSubConn, error,
+) {
+	p := &persistentPubSubConn{
+		cfg: cfg,
+		dial: func(ctx context.Context) (Conn, error) {
+			var network, addr string
+			var err error
+			if cb != nil {
+				// hidden feature, you don't have to give a callback if the
+				// Dialer is just going to ignore its results anyway.
+				if network, addr, err = cb(); err != nil {
+					return nil, fmt.Errorf("calling PersistentPubSub callback to determine network/address: %w", err)
+				}
+			}
+			return cfg.Dialer.Dial(ctx, network, addr)
+		},
+
+		subs:  map[string]bool{},
+		psubs: map[string]bool{},
+	}
+
+	if err := p.refresh(ctx); err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
+func (p *persistentPubSubConn) refresh(ctx context.Context) error {
+	if p.conn != nil {
+		p.conn.Close()
+
+		// sleep a bit in between closing and re-opening the connection. If the
+		// server is unavailable we don't want the client to get stuck in a
+		// tight loop creating/closing connections.
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	conn, err := p.dial(ctx)
+	if err != nil {
+		return err
+	}
+
+	p.conn = p.cfg.PubSubConfig.New(conn)
+
+	mtos := func(m map[string]bool) []string {
+		strs := make([]string, 0, len(m))
+		for str := range m {
+			strs = append(strs, str)
+		}
+		return strs
+	}
+
+	if len(p.subs) > 0 {
+		if err := p.conn.Subscribe(ctx, mtos(p.subs)...); err != nil {
+			return fmt.Errorf("recreating subscriptions: %w", err)
+		}
+	}
+
+	if len(p.psubs) > 0 {
+		if err := p.conn.PSubscribe(ctx, mtos(p.psubs)...); err != nil {
+			return fmt.Errorf("recreating pattern subscriptions: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (p *persistentPubSubConn) traceErr(err error) {
+	if p.cfg.Trace.InternalError != nil {
+		p.cfg.Trace.InternalError(trace.PersistentPubSubInternalError{
+			Err: err,
+		})
+	}
+}
+
+func (p *persistentPubSubConn) do(ctx context.Context, fn func() error) error {
+	var err error
+	for {
+		if errors.Is(err, context.Canceled) ||
+			errors.Is(err, context.DeadlineExceeded) {
+			return err
+
+		} else if err != nil {
+			p.traceErr(err)
+			err = p.refresh(ctx)
+
+		} else if err = fn(); err == nil {
+			return nil
+		}
+	}
+}
+
+func (p *persistentPubSubConn) Subscribe(ctx context.Context, channels ...string) error {
+	for _, ch := range channels {
+		p.subs[ch] = true
+	}
+
+	return p.do(ctx, func() error { return p.conn.Subscribe(ctx, channels...) })
+}
+
+func (p *persistentPubSubConn) Unsubscribe(ctx context.Context, channels ...string) error {
+	for _, ch := range channels {
+		delete(p.subs, ch)
+	}
+
+	return p.do(ctx, func() error { return p.conn.Unsubscribe(ctx, channels...) })
+}
+
+func (p *persistentPubSubConn) PSubscribe(ctx context.Context, channels ...string) error {
+	for _, ch := range channels {
+		p.psubs[ch] = true
+	}
+
+	return p.do(ctx, func() error { return p.conn.PSubscribe(ctx, channels...) })
+}
+
+func (p *persistentPubSubConn) PUnsubscribe(ctx context.Context, channels ...string) error {
+	for _, ch := range channels {
+		delete(p.psubs, ch)
+	}
+
+	return p.do(ctx, func() error { return p.conn.PUnsubscribe(ctx, channels...) })
+}
+
+func (p *persistentPubSubConn) Ping(ctx context.Context) error {
+	return p.do(ctx, func() error { return p.conn.Ping(ctx) })
+}
+
+func (p *persistentPubSubConn) Next(ctx context.Context) (PubSubMessage, error) {
+	var msg PubSubMessage
+	var err error
+	err = p.do(ctx, func() error {
+		msg, err = p.conn.Next(ctx)
+		return err
 	})
+	return msg, err
+}
+
+func (p *persistentPubSubConn) Close() error {
+	return p.conn.Close()
 }

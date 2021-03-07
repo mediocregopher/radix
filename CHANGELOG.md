@@ -52,6 +52,9 @@ here.
   * Add `context.Context` parameter to `Action.Perform` (previously called
     `Action.Run`).
 
+* The `PubSubConn` interface has been redesigned to be simpler to implement and
+  use. Naming around pub/sub types has also been made more consistent.
+
 
 **Minor Changes**
 

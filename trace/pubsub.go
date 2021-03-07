@@ -1,22 +1,5 @@
 package trace
 
-// PubSubTrace contains callbacks which can be triggered for specific events
-// during a PubSubConn's runtime.
-//
-// All callbacks are called synchronously.
-type PubSubTrace struct {
-	// Closed is called whenever the underlying Conn is closed due to some
-	// error.
-	Closed func(PubSubClosed)
-}
-
-// PubSubClosed is passed into the PubSubTrace.Closed callback whenever the
-// PubSubConn determines that its underlying Conn has been closed, along with
-// the error which induced the closing.
-type PubSubClosed struct {
-	Err error
-}
-
 // PersistentPubSubTrace contains callbacks which can be triggered for specific
 // events during a persistent PubSubConn's runtime.
 //

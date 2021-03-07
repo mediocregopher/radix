@@ -34,12 +34,6 @@ func dial() Conn {
 	return c
 }
 
-var dialer = Dialer{
-	CustomConn: func(context.Context, string, string) (Conn, error) {
-		return dial(), nil
-	},
-}
-
 var (
 	testCtxs  = map[TB]context.Context{}
 	testCtxsL sync.Mutex

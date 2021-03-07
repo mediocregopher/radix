@@ -2,6 +2,7 @@ package radix
 
 import (
 	"context"
+	"errors"
 	"log"
 	. "testing"
 	"time"
@@ -12,7 +13,7 @@ import (
 
 func TestPubSubStub(t *T) {
 	ctx := testCtx(t)
-	conn, stubCh := NewPubSubStubConn("tcp", "127.0.0.1:6379", func(_ context.Context, in []string) interface{} {
+	conn, stubCh := NewPubSubConnStub("tcp", "127.0.0.1:6379", func(_ context.Context, in []string) interface{} {
 		return in
 	})
 	message := func(channel, val string) {
@@ -48,7 +49,7 @@ func TestPubSubStub(t *T) {
 	assert.Equal(t, errPubSubMode.Error(), conn.EncodeDecode(ctx, nil, new(string)).Error())
 
 	assertEncode("PING")
-	assertDecode("pong", "")
+	assertDecode("PONG", "")
 
 	message("foo", "b")
 	message("bar", "c")
@@ -87,13 +88,13 @@ func TestPubSubStub(t *T) {
 	assert.NoError(t, conn.Close())
 }
 
-func ExampleNewPubSubStubConn() {
+func ExampleNewPubSubConnStub() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Make a pubsub stub conn which will return nil for everything except
 	// pubsub commands (which will be handled automatically)
-	stub, stubCh := NewPubSubStubConn("tcp", "127.0.0.1:6379", func(context.Context, []string) interface{} {
+	stub, stubCh := NewPubSubConnStub("tcp", "127.0.0.1:6379", func(context.Context, []string) interface{} {
 		return nil
 	})
 
@@ -113,15 +114,21 @@ func ExampleNewPubSubStubConn() {
 	// connection
 	pstub := (PubSubConfig{}).New(stub)
 
-	// Subscribe msgCh to "foo"
-	msgCh := make(chan PubSubMessage)
-	if err := pstub.Subscribe(ctx, msgCh, "foo"); err != nil {
-		log.Fatal(err)
+	// Subscribe to "foo"
+	if err := pstub.Subscribe(ctx, "foo"); err != nil {
+		panic(err)
 	}
 
 	// now msgCh is subscribed the publishes being made by the go-routine above
 	// will start being written to it
-	for m := range msgCh {
-		log.Printf("read m: %#v", m)
+	for {
+		msg, err := pstub.Next(ctx)
+		if errors.Is(err, context.DeadlineExceeded) {
+			break
+		} else if err != nil {
+			panic(err)
+		}
+
+		log.Printf("read msg: %#v", msg)
 	}
 }

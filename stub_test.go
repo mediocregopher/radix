@@ -2,9 +2,11 @@ package radix
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
+	"testing"
 	. "testing"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tilinna/clock"
 )
 
 // Watching the watchmen
@@ -117,6 +120,53 @@ func TestStubLockingTimeout(t *T) {
 		err := stub.EncodeDecode(ctx, nil, new(string))
 		cancel()
 		assert.Equal(t, context.DeadlineExceeded, err)
+	}
+}
+
+// The point of this test is to ensure behavior around the context deadline. If
+// the context is canceled while EncodeDecode is waiting for a response, and the
+// response is written to the "connection" at that exact same moment, then one
+// of two things should happen: The response makes it to EncodeDecode just in
+// time and no error is returned from EncodeDecode, or the response doesn't make
+// it and stays buffered on the connection until the next call to EncodeDecode.
+func TestStubReadTimeoutRace(t *testing.T) {
+	stub := testStub()
+	clock := clock.NewMock(time.Now().Truncate(time.Hour))
+	ctx := testCtx(t)
+
+	for i := 0; i < 5; i++ {
+		errCh := make(chan error, 1)
+		go func(i int) {
+			errCh <- stub.EncodeDecode(ctx, FlatCmd(nil, "ECHO", i).(resp.Marshaler), nil)
+		}(i)
+
+		for {
+			if ctx.Err() != nil {
+				t.Fatal(ctx.Err())
+			}
+
+			innerCtx, cancel := clock.TimeoutContext(ctx, 1*time.Second)
+			clockAddedCh := make(chan struct{})
+			go func() {
+				clock.Add(1 * time.Second)
+				close(clockAddedCh)
+			}()
+			var into int
+			err := stub.EncodeDecode(innerCtx, nil, &into)
+			cancel()
+
+			<-clockAddedCh
+
+			if errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+
+			assert.NoError(t, err)
+			require.Equal(t, i, into)
+			break
+		}
+
+		assert.NoError(t, <-errCh)
 	}
 }
 
