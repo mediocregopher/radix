@@ -46,6 +46,31 @@ func TestCmdAction(t *T) {
 	assert.Equal(t, val, dstval)
 }
 
+func TestCmdActionMSet(t *T) {
+	ctx := testCtx(t)
+	c := dial()
+	key1, val1 := randStr(), randStr()
+	key2, val2 := randStr(), randStr()
+
+	cmd := Cmd(nil, "MSET", key1, val1, key2, val2)
+	assert.Equal(t, ActionProperties{
+		Keys:         []string{key1, key2},
+		CanRetry:     true,
+		CanPipeline:  true,
+		CanShareConn: true,
+	}, cmd.Properties())
+
+	require.Nil(t, c.Do(ctx, cmd))
+
+	var dst1 string
+	require.Nil(t, c.Do(ctx, Cmd(&dst1, "GET", key1)))
+	assert.Equal(t, val1, dst1)
+
+	var dst2 string
+	require.Nil(t, c.Do(ctx, Cmd(&dst2, "GET", key2)))
+	assert.Equal(t, val2, dst2)
+}
+
 func TestCmdActionStreams(t *T) {
 	ctx := testCtx(t)
 	c := dial()

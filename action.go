@@ -233,6 +233,8 @@ func DefaultActionProperties(cmd string, args ...string) ActionProperties {
 	case noKeyCmds[cmd] || len(args) == 0:
 	case cmd == "BITOP" && len(args) > 1:
 		properties.Keys = args[1:]
+	case cmd == "MSET":
+		properties.Keys = keysFromKeyValuePairs(args)
 	case cmd == "XINFO":
 		if len(args) >= 2 {
 			properties.Keys = args[1:2]
@@ -262,6 +264,14 @@ func findStreamsKeys(args []string) []string {
 	}
 
 	return nil
+}
+
+func keysFromKeyValuePairs(pairs []string) []string {
+	keys := make([]string, len(pairs)/2)
+	for i := range keys {
+		keys[i] = pairs[i*2]
+	}
+	return keys
 }
 
 func (cfg CmdConfig) actionProperties(cmd string, args ...string) ActionProperties {
