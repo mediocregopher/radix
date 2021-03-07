@@ -86,6 +86,7 @@ func TestDialAuth(t *T) {
 			{url: "127.0.0.1:6379", dialOptUser: "mediocregopher", dialOptPass: "myPass"},
 		}, []string{
 			"WRONGPASS invalid username-password pair",
+			"WRONGPASS invalid username-password pair or user is disabled.",
 		})
 	})
 }
