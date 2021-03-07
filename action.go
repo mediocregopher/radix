@@ -191,9 +191,11 @@ func (c *cmdAction) String() string {
 	return "[" + strings.Join(ss, " ") + "]"
 }
 
-// CmdConfig allows creating Actions for commands using custom logic for
-// determining the ActionProperties without the need for creating a custom
-// Action implementation.
+// CmdConfig is used to create redis command Actions with particular settings. All
+// fields are optional, all methods are thread-safe.
+//
+// The global Cmd and FlatCmd functions are shortcuts for using an empty
+// CmdConfig{}.
 //
 // This can be useful for working with custom commands provided by Redis
 // modules for which the built in logic may return sub-optimal properties or in
@@ -207,14 +209,19 @@ type CmdConfig struct {
 	// creating a new Action using CmdConfig.Cmd or CmdConfig.FlatCmd and is
 	// used to set the ActionProperties for the new Action.
 	//
-	// If ActionProperties is nil, a builtin default callback will be used that
-	// should work with all standard Redis commands but may not return correct
-	// results for custom commands provided by Redis Modules or unreleased
-	// commands.
+	// If ActionProperties is nil, DefaultActionProperties will be used.
 	ActionProperties func(cmd string, args ...string) ActionProperties
 }
 
-func defaultActionProperties(cmd string, args ...string) ActionProperties {
+// DefaultActionProperties returns an ActionProperties instance for the given
+// Redis command and it's argument.
+//
+// The returned ActionProperties should work well with all standard Redis
+// commands, including allowing the command to be used in pipelines and for
+// connection sharing if the command is non-blocking, but may not return
+// correct results for custom commands provided by Redis Modules or unreleased
+// commands.
+func DefaultActionProperties(cmd string, args ...string) ActionProperties {
 	isBlocking := blockingCmds[strings.ToUpper(cmd)]
 	properties := ActionProperties{
 		CanRetry:     true,
@@ -260,21 +267,13 @@ func findStreamsKeys(args []string) []string {
 func (cfg CmdConfig) actionProperties(cmd string, args ...string) ActionProperties {
 	pf := cfg.ActionProperties
 	if pf == nil {
-		pf = defaultActionProperties
+		pf = DefaultActionProperties
 	}
 	return pf(cmd, args...)
 }
 
-// Cmd works like the global Cmd function but using the value returned by
-// calling the ActionProperties callback specified in cfg (or a builtin default
-// if the callback is nil) with cmd and args as parameters, using the returned
-// properties for the newly created Action.
-//
-// Calling Cmd on a zero-value CmdConfig is the same as calling the global Cmd
-// function.
-//
-// See the documentation for the global Cmd function for information about the
-// returned Action.
+// Cmd works like the global Cmd function but can be additionally configured using
+// fields on CmdConfig. See the global Cmd's documentation for further details.
 func (cfg CmdConfig) Cmd(rcv interface{}, cmd string, args ...string) Action {
 	c := getCmdAction()
 	*c = cmdAction{
@@ -286,16 +285,8 @@ func (cfg CmdConfig) Cmd(rcv interface{}, cmd string, args ...string) Action {
 	return c
 }
 
-// FlatCmd works like the global FlatCmd function but using the value returned
-// by calling the ActionProperties callback specified in cfg (or a builtin
-// default if the callback is nil) with cmd and args as parameters, using the
-// returned properties for the newly created Action.
-//
-// Calling FlatCmd on a zero-value CmdConfig is the same as calling the global
-// FlatCmd function.
-//
-// See the documentation for the global FlatCmd function for information about
-// the returned Action.
+// FlatCmd works like the global FlatCmd function but can be additionally configured using
+// fields on CmdConfig. See the global FlatCmd's documentation for further details.
 func (cfg CmdConfig) FlatCmd(rcv interface{}, cmd string, args ...interface{}) Action {
 	c := getCmdAction()
 	*c = cmdAction{
@@ -318,15 +309,8 @@ func (cfg CmdConfig) FlatCmd(rcv interface{}, cmd string, args ...interface{}) A
 //
 // The Action returned by Cmd also implements resp.Marshaler.
 //
-// The ActionProperties for the Action method will be automatically determined
-// based on the command used. For non-builtin commands (e.g. provided by Redis
-// Modules) the ActionProperties may not always return correct results.
-//
-// In this case it's possible to create a new CmdConfig instance with a custom
-// ActionProperties resolver and creating the Action via the CmdConfig`s Cmd
-// method.
-//
-// See the documentation on CmdConfig for more information.
+// See CmdConfig's documentation if more configurability is required, e.g. if
+// using commands provided by Redis Modules.
 func Cmd(rcv interface{}, cmd string, args ...string) Action {
 	return (CmdConfig{}).Cmd(rcv, cmd, args...)
 }
@@ -345,15 +329,8 @@ func Cmd(rcv interface{}, cmd string, args ...string) Action {
 //
 // The Action returned by FlatCmd implements resp.Marshaler.
 //
-// The ActionProperties for the Action method will be automatically determined
-// based on the command used. For non-builtin commands (e.g. provided by Redis
-// Modules) the ActionProperties may not always return correct results.
-//
-// In this case it's possible to create a new CmdConfig instance with a custom
-// ActionProperties resolver and creating the Action via the CmdConfig`s
-// FlatCmd method.
-//
-// See the documentation on CmdConfig for more information.
+// See CmdConfig's documentation if more configurability is required, e.g. if
+// using commands provided by Redis Modules.
 func FlatCmd(rcv interface{}, cmd string, args ...interface{}) Action {
 	return (CmdConfig{}).FlatCmd(rcv, cmd, args...)
 }
