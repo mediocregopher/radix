@@ -46,6 +46,31 @@ func TestCmdAction(t *T) {
 	assert.Equal(t, val, dstval)
 }
 
+func TestCmdActionMSet(t *T) {
+	ctx := testCtx(t)
+	c := dial()
+	key1, val1 := randStr(), randStr()
+	key2, val2 := randStr(), randStr()
+
+	cmd := Cmd(nil, "MSET", key1, val1, key2, val2)
+	assert.Equal(t, ActionProperties{
+		Keys:         []string{key1, key2},
+		CanRetry:     true,
+		CanPipeline:  true,
+		CanShareConn: true,
+	}, cmd.Properties())
+
+	require.Nil(t, c.Do(ctx, cmd))
+
+	var dst1 string
+	require.Nil(t, c.Do(ctx, Cmd(&dst1, "GET", key1)))
+	assert.Equal(t, val1, dst1)
+
+	var dst2 string
+	require.Nil(t, c.Do(ctx, Cmd(&dst2, "GET", key2)))
+	assert.Equal(t, val2, dst2)
+}
+
 func TestCmdActionStreams(t *T) {
 	ctx := testCtx(t)
 	c := dial()
@@ -241,6 +266,104 @@ func ExampleFlatCmd_struct() {
 
 	fmt.Printf("s2: %+v\n", s2)
 	// Output: s2: {ExampleStruct:{Foo:1 Bar:2 Baz:} Biz:4}
+}
+
+func TestCmdConfig(t *T) {
+	cc := CmdConfig{}
+
+	{
+		cmd := cc.Cmd(nil, "CUSTOM.GET", "a", "b", "c").Properties()
+		assert.True(t, cmd.CanPipeline)
+		assert.True(t, cmd.CanRetry)
+		assert.True(t, cmd.CanShareConn)
+		assert.Equal(t, []string{"a"}, cmd.Keys)
+
+		flatCmd := cc.FlatCmd(nil, "CUSTOM.FLATCMD", false, 1, nil).Properties()
+		assert.True(t, flatCmd.CanPipeline)
+		assert.True(t, flatCmd.CanRetry)
+		assert.True(t, flatCmd.CanShareConn)
+		assert.Equal(t, []string{"0"}, flatCmd.Keys)
+	}
+
+	var arg1 string
+	var arg2 []string
+	var calls int
+
+	cc.ActionProperties = func(cmd string, args ...string) ActionProperties {
+		calls++
+		arg1, arg2 = cmd, args
+		return ActionProperties{
+			Keys:         args[1:2],
+			CanPipeline:  true,
+			CanRetry:     false,
+			CanShareConn: false,
+		}
+	}
+
+	{
+		cmd := cc.Cmd(nil, "CUSTOM.GET", "a", "b", "c").Properties()
+		assert.True(t, cmd.CanPipeline)
+		assert.False(t, cmd.CanRetry)
+		assert.False(t, cmd.CanShareConn)
+		assert.Equal(t, []string{"b"}, cmd.Keys)
+
+		assert.Equal(t, 1, calls)
+		assert.Equal(t, "CUSTOM.GET", arg1)
+		assert.Equal(t, []string{"a", "b", "c"}, arg2)
+
+		flatCmd := cc.FlatCmd(nil, "CUSTOM.FLATCMD", false, 1, nil).Properties()
+		assert.True(t, flatCmd.CanPipeline)
+		assert.False(t, flatCmd.CanRetry)
+		assert.False(t, flatCmd.CanShareConn)
+		assert.Equal(t, []string{"1"}, flatCmd.Keys)
+
+		assert.Equal(t, 2, calls)
+		assert.Equal(t, "CUSTOM.FLATCMD", arg1)
+		assert.Equal(t, []string{"0", "1", ""}, arg2)
+	}
+}
+
+// ExampleCmdConfig_Cmd shows how to use the CmdConfig type to handle an
+// imaginary CUSTOM.MZADD command which allows adding members to multiple
+// sorted sets at once.
+//
+// The assumed syntax for the command is:
+//
+// 	CUSTOM.MZADD key score member [key score member ...]
+func ExampleCmdConfig() {
+	cfg := CmdConfig{
+		// Specify a custom ActionProperties resolver which will be called for
+		// actions created using cfg.
+		ActionProperties: func(cmd string, args ...string) ActionProperties {
+			keys := make([]string, 0, len(args)/3)
+			// The first value of each pair of 3 arguments is the key.
+			for i := 0; i < len(args); i += 3 {
+				keys = append(keys, args[i])
+			}
+			return ActionProperties{
+				Keys:         keys,
+				CanRetry:     true,
+				CanPipeline:  true,
+				CanShareConn: true,
+			}
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := (PoolConfig{}).New(ctx, "tcp", "127.0.0.1:6379") // or any other client
+	if err != nil {
+		// handle error
+	}
+
+	// Use our cfg type to created the Action instead of the global Cmd function.
+	if err := client.Do(ctx, cfg.Cmd(nil, "CUSTOM.MZADD",
+		"key1", "100", "member1",
+		"key2", "200", "member2",
+		"key3", "300", "member3")); err != nil {
+		// handle error
+	}
 }
 
 func TestEvalAction(t *T) {

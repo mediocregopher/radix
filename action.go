@@ -152,97 +152,8 @@ func getCmdAction() *cmdAction {
 	return new(cmdAction)
 }
 
-// Cmd is used to perform a redis command and retrieve a result. It should not
-// be passed into Do more than once.
-//
-// If the receiver value of Cmd is nil then the result is discarded.
-//
-// If the receiver value of Cmd is a primitive, a slice/map, or a struct then a
-// pointer must be passed in. It may also be an io.Writer, an
-// encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler.
-//
-// The Action returned by Cmd also implements resp.Marshaler.
-func Cmd(rcv interface{}, cmd string, args ...string) Action {
-	c := getCmdAction()
-	*c = cmdAction{
-		rcv:  rcv,
-		cmd:  cmd,
-		args: args,
-	}
-	c.fillProperties()
-	return c
-}
-
-// FlatCmd is like Cmd, but the arguments can be of almost any type, and FlatCmd
-// will automatically flatten them into a single array of strings. Like Cmd, a
-// FlatCmd should not be passed into Do more than once.
-//
-// FlatCmd supports using a resp.LenReader (an io.Reader with a Len() method) as
-// an argument. *bytes.Buffer is an example of a LenReader, and the resp package
-// has a NewLenReader function which can wrap an existing io.Reader.
-//
-// FlatCmd supports encoding.Text/BinaryMarshalers, big.Float, and big.Int.
-//
-// The receiver to FlatCmd follows the same rules as for Cmd.
-//
-// The Action returned by FlatCmd implements resp.Marshaler.
-func FlatCmd(rcv interface{}, cmd string, args ...interface{}) Action {
-	c := getCmdAction()
-	*c = cmdAction{
-		rcv: rcv,
-		cmd: cmd,
-	}
-	c.args, c.flattenErr = resp3.Flatten(args, nil)
-	c.fillProperties()
-	return c
-}
-
-func findStreamsKeys(args []string) []string {
-	for i, arg := range args {
-		if strings.ToUpper(arg) != "STREAMS" {
-			continue
-		}
-
-		// after STREAMS only stream keys and IDs can be given and since there must be the same number of keys and ids
-		// we can just take half of remaining arguments as keys. If the number of IDs does not match the number of
-		// keys the command will fail later when send to Redis so no need for us to handle that case.
-		ids := len(args[i+1:]) / 2
-
-		return args[i+1 : len(args)-ids]
-	}
-
-	return nil
-}
-
 func (c *cmdAction) Properties() ActionProperties {
 	return c.properties
-}
-
-func (c *cmdAction) fillProperties() {
-	isBlocking := blockingCmds[strings.ToUpper(c.cmd)]
-	c.properties = ActionProperties{
-		CanRetry:     true,
-		CanPipeline:  !isBlocking,
-		CanShareConn: !isBlocking,
-	}
-	cmd := strings.ToUpper(c.cmd)
-	switch {
-	case noKeyCmds[cmd] || len(c.args) == 0:
-		return
-	case cmd == "BITOP" && len(c.args) > 1:
-		c.properties.Keys = c.args[1:]
-	case cmd == "XINFO":
-		if len(c.args) < 2 {
-			return
-		}
-		c.properties.Keys = c.args[1:2]
-	case cmd == "XGROUP" && len(c.args) > 1:
-		c.properties.Keys = c.args[1:2]
-	case cmd == "XREAD" || cmd == "XREADGROUP":
-		c.properties.Keys = findStreamsKeys(c.args)
-	default:
-		c.properties.Keys = c.args[:1]
-	}
 }
 
 func (c *cmdAction) MarshalRESP(w io.Writer, o *resp.Opts) error {
@@ -278,6 +189,160 @@ func (c *cmdAction) String() string {
 		ss[i] = strconv.QuoteToASCII(ss[i])
 	}
 	return "[" + strings.Join(ss, " ") + "]"
+}
+
+// CmdConfig is used to create redis command Actions with particular settings. All
+// fields are optional, all methods are thread-safe.
+//
+// The global Cmd and FlatCmd functions are shortcuts for using an empty
+// CmdConfig{}.
+//
+// This can be useful for working with custom commands provided by Redis
+// modules for which the built in logic may return sub-optimal properties or in
+// case some commands are known to be slow in some cases and therefore should
+// not use connection sharing.
+//
+// All methods on CmdConfig are safe for concurrent use from different
+// goroutines.
+type CmdConfig struct {
+	// ActionProperties is an optional callback that will be called when
+	// creating a new Action using CmdConfig.Cmd or CmdConfig.FlatCmd and is
+	// used to set the ActionProperties for the new Action.
+	//
+	// If ActionProperties is nil, DefaultActionProperties will be used.
+	ActionProperties func(cmd string, args ...string) ActionProperties
+}
+
+// DefaultActionProperties returns an ActionProperties instance for the given
+// Redis command and it's argument.
+//
+// The returned ActionProperties should work well with all standard Redis
+// commands, including allowing the command to be used in pipelines and for
+// connection sharing if the command is non-blocking, but may not return
+// correct results for custom commands provided by Redis Modules or unreleased
+// commands.
+func DefaultActionProperties(cmd string, args ...string) ActionProperties {
+	isBlocking := blockingCmds[strings.ToUpper(cmd)]
+	properties := ActionProperties{
+		CanRetry:     true,
+		CanPipeline:  !isBlocking,
+		CanShareConn: !isBlocking,
+	}
+	cmd = strings.ToUpper(cmd)
+	switch {
+	case noKeyCmds[cmd] || len(args) == 0:
+	case cmd == "BITOP" && len(args) > 1:
+		properties.Keys = args[1:]
+	case cmd == "MSET":
+		properties.Keys = keysFromKeyValuePairs(args)
+	case cmd == "XINFO":
+		if len(args) >= 2 {
+			properties.Keys = args[1:2]
+		}
+	case cmd == "XGROUP" && len(args) > 1:
+		properties.Keys = args[1:2]
+	case cmd == "XREAD" || cmd == "XREADGROUP":
+		properties.Keys = findStreamsKeys(args)
+	default:
+		properties.Keys = args[:1]
+	}
+	return properties
+}
+
+func findStreamsKeys(args []string) []string {
+	for i, arg := range args {
+		if strings.ToUpper(arg) != "STREAMS" {
+			continue
+		}
+
+		// after STREAMS only stream keys and IDs can be given and since there must be the same number of keys and ids
+		// we can just take half of remaining arguments as keys. If the number of IDs does not match the number of
+		// keys the command will fail later when send to Redis so no need for us to handle that case.
+		ids := len(args[i+1:]) / 2
+
+		return args[i+1 : len(args)-ids]
+	}
+
+	return nil
+}
+
+func keysFromKeyValuePairs(pairs []string) []string {
+	keys := make([]string, len(pairs)/2)
+	for i := range keys {
+		keys[i] = pairs[i*2]
+	}
+	return keys
+}
+
+func (cfg CmdConfig) actionProperties(cmd string, args ...string) ActionProperties {
+	pf := cfg.ActionProperties
+	if pf == nil {
+		pf = DefaultActionProperties
+	}
+	return pf(cmd, args...)
+}
+
+// Cmd works like the global Cmd function but can be additionally configured using
+// fields on CmdConfig. See the global Cmd's documentation for further details.
+func (cfg CmdConfig) Cmd(rcv interface{}, cmd string, args ...string) Action {
+	c := getCmdAction()
+	*c = cmdAction{
+		rcv:  rcv,
+		cmd:  cmd,
+		args: args,
+	}
+	c.properties = cfg.actionProperties(c.cmd, c.args...)
+	return c
+}
+
+// FlatCmd works like the global FlatCmd function but can be additionally configured using
+// fields on CmdConfig. See the global FlatCmd's documentation for further details.
+func (cfg CmdConfig) FlatCmd(rcv interface{}, cmd string, args ...interface{}) Action {
+	c := getCmdAction()
+	*c = cmdAction{
+		rcv: rcv,
+		cmd: cmd,
+	}
+	c.args, c.flattenErr = resp3.Flatten(args, nil)
+	c.properties = cfg.actionProperties(c.cmd, c.args...)
+	return c
+}
+
+// Cmd is used to perform a redis command and retrieve a result. It should not
+// be passed into Do more than once.
+//
+// If the receiver value of Cmd is nil then the result is discarded.
+//
+// If the receiver value of Cmd is a primitive, a slice/map, or a struct then a
+// pointer must be passed in. It may also be an io.Writer, an
+// encoding.Text/BinaryUnmarshaler, or a resp.Unmarshaler.
+//
+// The Action returned by Cmd also implements resp.Marshaler.
+//
+// See CmdConfig's documentation if more configurability is required, e.g. if
+// using commands provided by Redis Modules.
+func Cmd(rcv interface{}, cmd string, args ...string) Action {
+	return (CmdConfig{}).Cmd(rcv, cmd, args...)
+}
+
+// FlatCmd is like Cmd, but the arguments can be of almost any type, and FlatCmd
+// will automatically flatten them into a single array of strings. Like Cmd, a
+// FlatCmd should not be passed into Do more than once.
+//
+// FlatCmd supports using a resp.LenReader (an io.Reader with a Len() method) as
+// an argument. *bytes.Buffer is an example of a LenReader, and the resp package
+// has a NewLenReader function which can wrap an existing io.Reader.
+//
+// FlatCmd supports encoding.Text/BinaryMarshalers, big.Float, and big.Int.
+//
+// The receiver to FlatCmd follows the same rules as for Cmd.
+//
+// The Action returned by FlatCmd implements resp.Marshaler.
+//
+// See CmdConfig's documentation if more configurability is required, e.g. if
+// using commands provided by Redis Modules.
+func FlatCmd(rcv interface{}, cmd string, args ...interface{}) Action {
+	return (CmdConfig{}).FlatCmd(rcv, cmd, args...)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
