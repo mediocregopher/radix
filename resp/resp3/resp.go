@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -25,8 +26,6 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-
-	"errors"
 
 	"github.com/mediocregopher/radix/v4/internal/bytesutil"
 	"github.com/mediocregopher/radix/v4/resp"
@@ -144,7 +143,8 @@ func discardMulti(br resp.BufferedReader, l int, o *resp.Opts) error {
 	return nil
 }
 
-func discardAttribute(br resp.BufferedReader, o *resp.Opts) error {
+// DiscardAttribute discards a RESP3 attribute if there is one.
+func DiscardAttribute(br resp.BufferedReader, o *resp.Opts) error {
 	var attrHead AttributeHeader
 	b, err := br.Peek(1)
 	if err != nil {
@@ -156,6 +156,13 @@ func discardAttribute(br resp.BufferedReader, o *resp.Opts) error {
 	}
 
 	return discardMulti(br, attrHead.NumPairs*2, o)
+}
+
+// HasPrefix returns true if the next value in the given reader has the given
+// prefix.
+func HasPrefix(br resp.BufferedReader, p Prefix) bool {
+	b, err := br.Peek(1)
+	return err == nil && p.doesPrefix(b)
 }
 
 type errUnexpectedPrefix struct {
@@ -180,7 +187,7 @@ func (e errUnexpectedPrefix) Error() string {
 // with discardAttr set
 func peekAndAssertPrefix(br resp.BufferedReader, expectedPrefix Prefix, discardAttr bool, o *resp.Opts) error {
 	if discardAttr {
-		if err := discardAttribute(br, o); err != nil {
+		if err := DiscardAttribute(br, o); err != nil {
 			return err
 		}
 	}
@@ -520,7 +527,7 @@ func (Null) MarshalRESP(w io.Writer, o *resp.Opts) error {
 
 // UnmarshalRESP implements the method for resp.Unmarshaler.
 func (*Null) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
-	if err := discardAttribute(br, o); err != nil {
+	if err := DiscardAttribute(br, o); err != nil {
 		return err
 	}
 
@@ -1684,7 +1691,7 @@ func Unmarshal(br resp.BufferedReader, rcv interface{}, o *resp.Opts) error {
 		}
 		return resp.ErrConnUsable{Err: into}
 	case AttributeHeaderPrefix:
-		if err := discardAttribute(br, o); err != nil {
+		if err := DiscardAttribute(br, o); err != nil {
 			return err
 		}
 		return Unmarshal(br, rcv, o)
