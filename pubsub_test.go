@@ -22,7 +22,7 @@ func assertMsgRead(t *T, msgCh <-chan PubSubMessage) PubSubMessage {
 	select {
 	case m := <-msgCh:
 		return m
-	case <-time.After(5 * time.Second):
+	case <-time.After(15 * time.Second):
 		panic("timedout reading")
 	}
 }
