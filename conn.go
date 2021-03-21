@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -189,6 +190,12 @@ type Dialer struct {
 	// database index set, this takes precedence.
 	SelectDB string
 
+	// Protocol can be used to automatically set the RESP protocol version.
+	//
+	// If Protocol is not 0 the Dialer will send a HELLO command with the
+	// value of Protocol as version, otherwise no HELLO command will be send.
+	Protocol int
+
 	// NetDialer is used to create the underlying network connection.
 	//
 	// Defaults to net.Dialer.
@@ -334,7 +341,18 @@ func (d Dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
 		conn.writer(ctx, d.WriteFlushInterval)
 	})
 
-	if d.AuthUser != "" {
+	if d.Protocol != 0 {
+		args := []string{strconv.Itoa(d.Protocol)}
+		if d.AuthUser != "" {
+			args = append(args, "AUTH", d.AuthUser, d.AuthPass)
+		} else if d.AuthPass != "" {
+			args = append(args, "AUTH", "default", d.AuthPass)
+		}
+		if err := conn.Do(ctx, Cmd(nil, "HELLO", args...)); err != nil {
+			conn.Close()
+			return nil, err
+		}
+	} else if d.AuthUser != "" {
 		if err := conn.Do(ctx, Cmd(nil, "AUTH", d.AuthUser, d.AuthPass)); err != nil {
 			conn.Close()
 			return nil, err
