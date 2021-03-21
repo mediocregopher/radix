@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"flag"
 	"sync"
 	. "testing"
 	"time"
@@ -17,10 +18,16 @@ func randStr() string {
 	return hex.EncodeToString(b)
 }
 
+var flagRESP3 = flag.Bool("resp3", false, "Enables RESP3 for all tests")
+
 func dial() Conn {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, err := Dial(ctx, "tcp", "127.0.0.1:6379")
+	protocol := 0
+	if *flagRESP3 {
+		protocol = 3
+	}
+	c, err := Dialer{Protocol: protocol}.Dial(ctx, "tcp", "127.0.0.1:6379")
 	if err != nil {
 		panic(err)
 	}
