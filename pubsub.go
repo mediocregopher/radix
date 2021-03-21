@@ -59,9 +59,11 @@ func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 	// fine, since the driver will still only allow the 5 commands, except PING
 	// will return a simple string when in the non-subscribed state. So this
 	// needs to check for that.
-	if prefix, err := br.Peek(1); err != nil {
-		return err
-	} else if resp3.Prefix(prefix[0]) == resp3.SimpleStringPrefix {
+	//
+	// NOTE: This is technically only true for connections using RESP2, not for
+	// connections using RESP3, but for backwards compatibility with RESP2 we
+	// assume the same limitations for RESP3.
+	if resp3.HasPrefix(br, resp3.SimpleStringPrefix) {
 		// if it's a simple string, discard it (it's probably PONG) and error
 		if err := resp3.Unmarshal(br, nil, o); err != nil {
 			return err
@@ -69,10 +71,22 @@ func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 		return resp.ErrConnUsable{Err: errNotPubSubMessage}
 	}
 
-	var ah resp3.ArrayHeader
-	if err := ah.UnmarshalRESP(br, o); err != nil {
-		return err
-	} else if ah.NumElems < 2 {
+	var numElems int
+	if resp3.HasPrefix(br, resp3.PushHeaderPrefix) {
+		var ph resp3.PushHeader
+		if err := ph.UnmarshalRESP(br, o); err != nil {
+			return err
+		}
+		numElems = ph.NumElems
+	} else {
+		var ah resp3.ArrayHeader
+		if err := ah.UnmarshalRESP(br, o); err != nil {
+			return err
+		}
+		numElems = ah.NumElems
+	}
+
+	if numElems < 2 {
 		return errors.New("message has too few elements")
 	}
 
@@ -84,12 +98,12 @@ func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 	switch string(msgType.B) {
 	case "message":
 		m.Type = "message"
-		if ah.NumElems != 3 {
+		if numElems != 3 {
 			return errors.New("message has wrong number of elements")
 		}
 	case "pmessage":
 		m.Type = "pmessage"
-		if ah.NumElems != 4 {
+		if numElems != 4 {
 			return errors.New("message has wrong number of elements")
 		}
 
@@ -100,7 +114,7 @@ func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 		m.Pattern = pattern.S
 	default:
 		// if it's not a PubSubMessage then discard the rest of the array
-		for i := 1; i < ah.NumElems; i++ {
+		for i := 1; i < numElems; i++ {
 			if err := resp3.Unmarshal(br, nil, o); err != nil {
 				return err
 			}

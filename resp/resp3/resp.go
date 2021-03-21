@@ -160,6 +160,8 @@ func DiscardAttribute(br resp.BufferedReader, o *resp.Opts) error {
 
 // HasPrefix returns true if the next value in the given reader has the given
 // prefix.
+//
+// If there is an error reading from br, HasPrefix will return false.
 func HasPrefix(br resp.BufferedReader, p Prefix) bool {
 	b, err := br.Peek(1)
 	return err == nil && p.doesPrefix(b)
