@@ -155,9 +155,14 @@ func (sc *Sentinel) dialSentinel(ctx context.Context) (conn Conn, err error) {
 // Do implements the method for the Client interface. It will perform the given
 // Action on the current primary.
 func (sc *Sentinel) Do(ctx context.Context, a Action) error {
-	return sc.proc.WithRLock(func() error {
-		return sc.clients[sc.primAddr].Do(ctx, a)
-	})
+	var client Client
+	if err := sc.proc.WithRLock(func() error {
+		client = sc.clients[sc.primAddr]
+		return nil
+	}); err != nil {
+		return err
+	}
+	return client.Do(ctx, a)
 }
 
 // DoSecondary implements the method for the Client interface. It will perform
