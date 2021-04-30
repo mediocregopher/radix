@@ -201,8 +201,9 @@ func (sc *Sentinel) dialSentinel() (Conn, error) {
 // Action will likely fail and return an error.
 func (sc *Sentinel) Do(a Action) error {
 	sc.l.RLock()
-	defer sc.l.RUnlock()
-	return sc.clients[sc.primAddr].Do(a)
+	client := sc.clients[sc.primAddr]
+	sc.l.RUnlock()
+	return client.Do(a)
 }
 
 // DoSecondary is like Do but executes the Action on a random replica if possible.
