@@ -162,7 +162,7 @@ func DiscardAttribute(br resp.BufferedReader, o *resp.Opts) error {
 // NextMessageIs returns true if the next value in the given reader has the given
 // prefix.
 //
-// If there is an error reading from br, NextMessageIs will return false.
+// If there is an error reading from br, NextMessageIs will return false and the error.
 func NextMessageIs(br resp.BufferedReader, p Prefix) (bool, error) {
 	b, err := br.Peek(1)
 	return err == nil && p.doesPrefix(b), err
