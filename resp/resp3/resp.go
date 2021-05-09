@@ -143,7 +143,8 @@ func discardMulti(br resp.BufferedReader, l int, o *resp.Opts) error {
 	return nil
 }
 
-// DiscardAttribute discards a RESP3 attribute if there is one.
+// DiscardAttribute discards the next RESP3 message if it is an attribute message.
+// If the next message is not an attribute message then DiscardAttribute does nothing..
 func DiscardAttribute(br resp.BufferedReader, o *resp.Opts) error {
 	var attrHead AttributeHeader
 	b, err := br.Peek(1)
