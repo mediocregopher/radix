@@ -159,13 +159,13 @@ func DiscardAttribute(br resp.BufferedReader, o *resp.Opts) error {
 	return discardMulti(br, attrHead.NumPairs*2, o)
 }
 
-// HasPrefix returns true if the next value in the given reader has the given
+// NextMessageIs returns true if the next value in the given reader has the given
 // prefix.
 //
-// If there is an error reading from br, HasPrefix will return false.
-func HasPrefix(br resp.BufferedReader, p Prefix) bool {
+// If there is an error reading from br, NextMessageIs will return false.
+func NextMessageIs(br resp.BufferedReader, p Prefix) (bool, error) {
 	b, err := br.Peek(1)
-	return err == nil && p.doesPrefix(b)
+	return err == nil && p.doesPrefix(b), err
 }
 
 type errUnexpectedPrefix struct {

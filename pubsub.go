@@ -63,7 +63,7 @@ func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 	// NOTE: This is technically only true for connections using RESP2, not for
 	// connections using RESP3, but for backwards compatibility with RESP2 we
 	// assume the same limitations for RESP3.
-	if resp3.HasPrefix(br, resp3.SimpleStringPrefix) {
+	if ok, _ := resp3.NextMessageIs(br, resp3.SimpleStringPrefix); ok {
 		// if it's a simple string, discard it (it's probably PONG) and error
 		if err := resp3.Unmarshal(br, nil, o); err != nil {
 			return err
@@ -72,7 +72,7 @@ func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 	}
 
 	var numElems int
-	if resp3.HasPrefix(br, resp3.PushHeaderPrefix) {
+	if ok, _ := resp3.NextMessageIs(br, resp3.PushHeaderPrefix); ok {
 		var ph resp3.PushHeader
 		if err := ph.UnmarshalRESP(br, o); err != nil {
 			return err

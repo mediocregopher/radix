@@ -187,7 +187,7 @@ type StreamEntries struct {
 // UnmarshalRESP implements the resp.Unmarshaler interface.
 func (s *StreamEntries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	// For RESP2 we get an array of 2 elements, for RESP 3 we are already inside an map so there is no array header.
-	if resp3.HasPrefix(br, resp3.ArrayHeaderPrefix) {
+	if ok, _ := resp3.NextMessageIs(br, resp3.ArrayHeaderPrefix); ok {
 		var ah resp3.ArrayHeader
 		if err := ah.UnmarshalRESP(br, o); err != nil {
 			return err
@@ -225,7 +225,7 @@ func (s *streamEntriesMap) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) e
 		return err
 	}
 
-	if resp3.HasPrefix(br, resp3.MapHeaderPrefix) {
+	if ok, _ := resp3.NextMessageIs(br, resp3.MapHeaderPrefix); ok {
 		return s.unmarshalRESP3(br, o)
 	}
 
