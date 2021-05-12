@@ -13,7 +13,8 @@ before_install:
 
 script:
   # for some reason go test -v -race ./... doesn't work on travis, so use this
-  - go list ./... | xargs -n1 go test -race
+  - go list ./... | xargs -n1 go test -race -v
+  - go list ./... | xargs -n1 go test -race -v -resp3
   - golangci-lint run -D errcheck -E goimports -E golint -E misspell -E stylecheck -E unconvert
 
 after_failure:

@@ -3,13 +3,12 @@ package radix
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"strconv"
 	"time"
-
-	"errors"
 
 	"github.com/mediocregopher/radix/v4/internal/bytesutil"
 	"github.com/mediocregopher/radix/v4/resp"
@@ -187,11 +186,14 @@ type StreamEntries struct {
 
 // UnmarshalRESP implements the resp.Unmarshaler interface.
 func (s *StreamEntries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
-	var ah resp3.ArrayHeader
-	if err := ah.UnmarshalRESP(br, o); err != nil {
-		return err
-	} else if ah.NumElems != 2 {
-		return errors.New("invalid xread[group] response")
+	// For RESP2 we get an array of 2 elements, for RESP 3 we are already inside an map so there is no array header.
+	if ok, _ := resp3.NextMessageIs(br, resp3.ArrayHeaderPrefix); ok {
+		var ah resp3.ArrayHeader
+		if err := ah.UnmarshalRESP(br, o); err != nil {
+			return err
+		} else if ah.NumElems != 2 {
+			return errors.New("invalid xread[group] response")
+		}
 	}
 
 	var stream resp3.BlobString
@@ -200,6 +202,7 @@ func (s *StreamEntries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 	}
 	s.Stream = stream.S
 
+	var ah resp3.ArrayHeader
 	if err := ah.UnmarshalRESP(br, o); err != nil {
 		return err
 	}
@@ -210,6 +213,56 @@ func (s *StreamEntries) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 			return err
 		}
 	}
+	return nil
+}
+
+// streamEntriesMap implements parsing of StreamEntries from XREAD[GROUP] for
+// both RESP2 and RESP3 which use different ways to represent the stream names.
+type streamEntriesMap []StreamEntries
+
+func (s *streamEntriesMap) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
+	if err := resp3.DiscardAttribute(br, o); err != nil {
+		return err
+	}
+
+	if ok, _ := resp3.NextMessageIs(br, resp3.MapHeaderPrefix); ok {
+		return s.unmarshalRESP3(br, o)
+	}
+
+	return s.unmarshalRESP2(br, o)
+}
+
+func (s *streamEntriesMap) unmarshalRESP2(br resp.BufferedReader, o *resp.Opts) error {
+	return resp3.Unmarshal(br, (*[]StreamEntries)(s), o)
+}
+
+func (s *streamEntriesMap) unmarshalRESP3(br resp.BufferedReader, o *resp.Opts) error {
+	var mh resp3.MapHeader
+	if err := mh.UnmarshalRESP(br, o); err != nil {
+		return err
+	}
+
+	// NOTE: This does not handle streamed map responses, but current Redis
+	// versions don't use streamed maps for XREAD[GROUP] responses so unless
+	// this changes, we panic for now.
+	if mh.StreamedMapHeader {
+		panic("streamed map response from XREAD[GROUP] not supported")
+	}
+
+	ss := *s
+	if cap(ss) >= mh.NumPairs {
+		ss = ss[:mh.NumPairs]
+	} else {
+		ss = make([]StreamEntries, mh.NumPairs)
+	}
+
+	for i := range ss {
+		if err := ss[i].UnmarshalRESP(br, o); err != nil {
+			return err
+		}
+	}
+
+	*s = ss
 	return nil
 }
 
@@ -306,7 +359,7 @@ type streamReader struct {
 	cmd       string   // command. either XREAD or XREADGROUP
 	fixedArgs []string // fixed arguments that always come directly after the command
 
-	unread []StreamEntries
+	unread streamEntriesMap
 	err    error
 }
 
