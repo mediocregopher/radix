@@ -113,6 +113,10 @@ func (cw *connWriter) flush() bool {
 	for _, mu := range cw.flushBuf {
 		if cw.write(mu) {
 			flushBuf = append(flushBuf, mu)
+		} else if !cw.forwardToReader(eofMarshalerUnmarshaler) {
+			// Forward an EOF error marker. Any reads after this
+			// will fail.
+			return false
 		}
 	}
 	cw.flushBuf = cw.flushBuf[:0]
@@ -120,6 +124,10 @@ func (cw *connWriter) flush() bool {
 	if err := cw.bw.Flush(); err != nil {
 		for _, mu := range flushBuf {
 			mu.errCh <- err
+		}
+		// Unclear how much data was flushed; send error marker.
+		if !cw.forwardToReader(eofMarshalerUnmarshaler) {
+			return false
 		}
 	} else {
 		for _, mu := range flushBuf {

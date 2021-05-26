@@ -41,6 +41,9 @@ type connMarshalerUnmarshaler struct {
 	errCh                  chan error
 }
 
+// eofMarshalerUnmarshaler is used as an error marker.
+var eofMarshalerUnmarshaler connMarshalerUnmarshaler
+
 type conn struct {
 	proc *proc.Proc
 
@@ -61,24 +64,43 @@ func (c *conn) Close() error {
 	return c.proc.PrefixedClose(c.conn.Close, nil)
 }
 
+func (c *conn) updateReadDeadline(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := c.conn.SetReadDeadline(deadline); err != nil {
+			return fmt.Errorf("setting read deadline to %v: %w", deadline, err)
+		}
+	} else if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("unsetting read deadline: %w", err)
+	}
+
+	return nil
+}
+
 func (c *conn) reader(ctx context.Context) {
 	doneCh := ctx.Done()
+	var connErr error
 	for {
 		select {
 		case <-doneCh:
 			return
 		case mu := <-c.rCh:
-
-			if err := mu.ctx.Err(); err != nil {
-				mu.errCh <- err
+			if mu == eofMarshalerUnmarshaler {
+				// This is an error marker; do not write to
+				// mu.errCh.
+				connErr = errors.New("previous IO error")
 				continue
-			} else if deadline, ok := mu.ctx.Deadline(); ok {
-				if err := c.conn.SetReadDeadline(deadline); err != nil {
-					mu.errCh <- fmt.Errorf("setting read deadline to %v: %w", deadline, err)
-					continue
-				}
-			} else if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
-				mu.errCh <- fmt.Errorf("unsetting read deadline: %w", err)
+			}
+			if connErr != nil {
+				// A permanent connection error is already present.
+				mu.errCh <- connErr
+				continue
+			}
+
+			if connErr = c.updateReadDeadline(mu.ctx); connErr != nil {
+				mu.errCh <- connErr
 				continue
 			}
 
@@ -90,6 +112,10 @@ func (c *conn) reader(ctx context.Context) {
 				var netErr net.Error
 				if errors.As(err, &netErr) && netErr.Timeout() {
 					err = context.DeadlineExceeded
+				}
+				if !errors.As(err, new(resp.ErrConnUsable)) {
+					// This a permanent connection error.
+					connErr = err
 				}
 			}
 
