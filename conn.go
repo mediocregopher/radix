@@ -41,9 +41,6 @@ type connMarshalerUnmarshaler struct {
 	errCh                  chan error
 }
 
-// eofMarshalerUnmarshaler is used as an error marker.
-var eofMarshalerUnmarshaler connMarshalerUnmarshaler
-
 type conn struct {
 	proc *proc.Proc
 
@@ -87,12 +84,6 @@ func (c *conn) reader(ctx context.Context) {
 		case <-doneCh:
 			return
 		case mu := <-c.rCh:
-			if mu == eofMarshalerUnmarshaler {
-				// This is an error marker; do not write to
-				// mu.errCh.
-				connErr = errors.New("previous IO error")
-				continue
-			}
 			if connErr != nil {
 				// A permanent connection error is already present.
 				mu.errCh <- connErr
@@ -114,7 +105,7 @@ func (c *conn) reader(ctx context.Context) {
 					err = context.DeadlineExceeded
 				}
 				if !errors.As(err, new(resp.ErrConnUsable)) {
-					// This a permanent connection error.
+					// Connection is no longer usable.
 					connErr = err
 				}
 			}

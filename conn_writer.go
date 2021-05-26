@@ -26,6 +26,7 @@ type connWriter struct {
 	flushTickerCh <-chan time.Time
 
 	// populated during run()
+	connErr           error
 	flushBuf          []connMarshalerUnmarshaler
 	flushTickerPaused bool
 
@@ -80,26 +81,27 @@ func (cw *connWriter) forwardToReader(mu connMarshalerUnmarshaler) bool {
 }
 
 // write returns true if the write was successful
-func (cw *connWriter) write(mu connMarshalerUnmarshaler) bool {
+func (cw *connWriter) write(mu connMarshalerUnmarshaler) error {
 	if err := mu.ctx.Err(); err != nil {
-		mu.errCh <- err
-		return false
+		return err
 	} else if deadline, ok := mu.ctx.Deadline(); ok {
 		if err := cw.conn.SetWriteDeadline(deadline); err != nil {
-			mu.errCh <- fmt.Errorf("setting write deadline to %v: %w", deadline, err)
-			return false
+			return fmt.Errorf("setting write deadline to %v: %w", deadline, err)
 		}
 	} else if err := cw.conn.SetWriteDeadline(time.Time{}); err != nil {
-		mu.errCh <- fmt.Errorf("unsetting write deadline: %w", err)
-		return false
+		return fmt.Errorf("unsetting write deadline: %w", err)
 	}
 
-	if err := resp3.Marshal(cw.bw, mu.marshal, cw.opts); err != nil {
+	return resp3.Marshal(cw.bw, mu.marshal, cw.opts)
+}
+
+// setConnErr marks the connWriter as failed and forwards the error to all
+// actions in flushBuf.
+func (cw *connWriter) setConnErr(err error, flushBuf []connMarshalerUnmarshaler) {
+	for _, mu := range flushBuf {
 		mu.errCh <- err
-		return false
 	}
-
-	return true
+	cw.connErr = err
 }
 
 // flush returns false if doneCh is closed
@@ -110,25 +112,20 @@ func (cw *connWriter) flush() bool {
 	}
 
 	flushBuf := cw.flushBuf[:0]
-	for _, mu := range cw.flushBuf {
-		if cw.write(mu) {
+	for i, mu := range cw.flushBuf {
+		if err := cw.write(mu); err != nil {
+			// Connection can now be in an inconsistent state; we
+			// don't know how much was written to the buffer.
+			cw.setConnErr(err, cw.flushBuf[i:])
+			break
+		} else {
 			flushBuf = append(flushBuf, mu)
-		} else if !cw.forwardToReader(eofMarshalerUnmarshaler) {
-			// Forward an EOF error marker. Any reads after this
-			// will fail.
-			return false
 		}
 	}
 	cw.flushBuf = cw.flushBuf[:0]
 
 	if err := cw.bw.Flush(); err != nil {
-		for _, mu := range flushBuf {
-			mu.errCh <- err
-		}
-		// Unclear how much data was flushed; send error marker.
-		if !cw.forwardToReader(eofMarshalerUnmarshaler) {
-			return false
-		}
+		cw.setConnErr(err, flushBuf)
 	} else {
 		for _, mu := range flushBuf {
 			// if there's no unmarshaler then don't forward to the reader
@@ -157,6 +154,11 @@ func (cw *connWriter) run() {
 		case <-cw.eventLoopCh:
 			// do nothing, only used for tests
 		case mu := <-cw.wCh:
+			// Permanent connection error; no action can be taken.
+			if cw.connErr != nil {
+				mu.errCh <- cw.connErr
+				return
+			}
 			if mu.marshal != nil {
 				cw.flushBuf = append(cw.flushBuf, mu)
 				if (cw.flushInterval == 0 || cw.flushTickerPaused) && !cw.flush() {
