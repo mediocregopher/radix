@@ -2,7 +2,9 @@ package radix
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/mediocregopher/radix/v4/resp"
@@ -95,6 +97,13 @@ func (cw *connWriter) write(mu connMarshalerUnmarshaler) bool {
 	}
 
 	if err := resp3.Marshal(cw.bw, mu.marshal, cw.opts); err != nil {
+
+		// simplify things for the caller by translating network timeouts into
+		// DeadlineExceeded, since that's actually what happened.
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			err = context.DeadlineExceeded
+		}
+
 		mu.errCh <- err
 		return false
 	}
@@ -118,6 +127,13 @@ func (cw *connWriter) flush() bool {
 	cw.flushBuf = cw.flushBuf[:0]
 
 	if err := cw.bw.Flush(); err != nil {
+
+		// simplify things for the caller by translating network timeouts into
+		// DeadlineExceeded, since that's actually what happened.
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			err = context.DeadlineExceeded
+		}
+
 		for _, mu := range flushBuf {
 			mu.errCh <- err
 		}

@@ -1,12 +1,15 @@
 package radix
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	. "testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -168,4 +171,49 @@ func TestConnConcurrentMarshalUnmarshal(t *T) {
 		assert.NoError(t, conn.EncodeDecode(ctx, []string{"ECHO", vv[i]}, nil))
 	}
 	wg.Wait()
+}
+
+func TestConnDeadlineExceeded(t *T) {
+	const n = 100
+
+	subConn, pubConn := dial(), dial()
+	ctx := testCtx(t)
+	ch := randStr()
+
+	err := subConn.Do(ctx, Cmd(nil, "SUBSCRIBE", ch))
+	assert.NoError(t, err)
+
+	for i := 0; i < n; i++ {
+		err := pubConn.Do(ctx, FlatCmd(nil, "PUBLISH", ch, i))
+		assert.NoError(t, err)
+	}
+
+	var numTimeouts uint64
+	for i := 0; i < n; {
+		if err := ctx.Err(); err != nil {
+			panic(err)
+		}
+
+		// the time here needs to be small enough that we get a timeout reading
+		// sometimes, but not so small that it times out everytime. By having
+		// the timeout slowly increase after every previous timeout error we can
+		// ensure we find this value in disparate test environments.
+		innerCtx, cancel := context.WithTimeout(ctx, time.Duration(numTimeouts)*time.Microsecond)
+
+		var msg PubSubMessage
+		err := subConn.EncodeDecode(innerCtx, nil, &msg)
+		cancel()
+
+		if err != nil {
+			assert.True(t, errors.Is(err, context.DeadlineExceeded), "err:%v", err)
+			numTimeouts++
+		} else {
+			if !assert.Equal(t, fmt.Sprint(i), string(msg.Message)) {
+				return
+			}
+			i++
+		}
+	}
+
+	t.Logf("successes:%d timeouts:%v", n, numTimeouts)
 }
