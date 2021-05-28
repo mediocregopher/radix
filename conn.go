@@ -38,6 +38,41 @@ type Conn interface {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type wrappedNetConn struct {
+	net.Conn
+	bytesRead int
+	addr      net.Addr
+}
+
+var _ net.Conn = new(wrappedNetConn)
+
+func (c *wrappedNetConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	c.bytesRead += n
+
+	if err == nil || !errors.Is(err, os.ErrDeadlineExceeded) || n == 0 {
+		return n, err
+	}
+
+	// a timeout was reached, but there were bytes read before it was reached.
+	// In that case we pretend no timeout was reached. If there's more data to
+	// be pulled then we can do so, but if there's not more data to be pulled
+	// then a timeout will be returned the subsequent call to Read.
+	err = c.Conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+
+	return n, err
+}
+
+func (c *wrappedNetConn) resetBytesRead() {
+	c.bytesRead = 0
+}
+
+func (c *wrappedNetConn) RemoteAddr() net.Addr {
+	return c.addr
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 type connMarshalerUnmarshaler struct {
 	ctx                    context.Context
 	marshal, unmarshalInto interface{}
@@ -48,7 +83,7 @@ type connMarshalerUnmarshaler struct {
 type conn struct {
 	proc *proc.Proc
 
-	conn         net.Conn
+	conn         *wrappedNetConn
 	rOpts, wOpts *resp.Opts
 	br           resp.BufferedReader
 	bw           resp.BufferedWriter
@@ -77,6 +112,7 @@ func (c *conn) Close() error {
 }
 
 func (c *conn) reader(ctx context.Context) {
+	var discard uint
 	doneCh := ctx.Done()
 	for {
 		select {
@@ -110,13 +146,56 @@ func (c *conn) reader(ctx context.Context) {
 				continue
 			}
 
-			err := resp3.Unmarshal(c.br, mu.unmarshalInto, c.rOpts)
+			var err error
+
+			// Discard messages queued up on the wire which aren't for this
+			// EncodeDecode call. Only discard messages if the EncodeDecode
+			// gives a value to marshal, as that indicates there's a specific
+			// response message in the queue which corresponds to it. If no
+			// value to marshal is given then the EncodeDecode will read in
+			// whatever the next message in the queue is.
+			if mu.marshal != nil {
+				for ; discard > 0; discard-- {
+					if err = resp3.Unmarshal(c.br, nil, c.rOpts); err != nil {
+						break
+					}
+				}
+			}
+
+			// if discarding didn't fail then read the actual desired response.
+			if err != nil {
+				err = resp3.Unmarshal(c.br, mu.unmarshalInto, c.rOpts)
+			}
+
+			if err == nil && discard > 0 {
+				discard--
+			}
 
 			// simplify things for the caller by translating network timeouts
 			// into DeadlineExceeded, since that's actually what happened.
 			if errors.Is(err, os.ErrDeadlineExceeded) {
 				err = context.DeadlineExceeded
 			}
+
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				if c.conn.bytesRead == 0 {
+					err = resp.ErrConnUsable{Err: err}
+
+					if mu.marshal != nil {
+						discard++
+					}
+
+				} else {
+					// if Unmarshal returned a context error but data was also
+					// read it means that a message was only partially read off
+					// the wire. The Conn is unusable at this point, close it
+					// and bail.
+					go c.Close()
+					mu.errCh <- err
+					return
+				}
+			}
+			c.conn.resetBytesRead()
 
 			mu.errCh <- err
 		}
@@ -201,17 +280,6 @@ func (c *conn) Do(ctx context.Context, a Action) error {
 
 func (c *conn) Addr() net.Addr {
 	return c.conn.RemoteAddr()
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-type connAddrWrap struct {
-	net.Conn
-	addr net.Addr
-}
-
-func (c connAddrWrap) RemoteAddr() net.Addr {
-	return c.addr
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -343,14 +411,6 @@ func (d Dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
 		return nil, err
 	}
 
-	// wrap the conn so that it will return exactly what was used for dialing
-	// when Addr is called. If Conn's RemoteAddr is used then it returns the
-	// fully resolved form of the host.
-	netConn = connAddrWrap{
-		Conn: netConn,
-		addr: rawAddr{network: network, addr: addr},
-	}
-
 	// If the netConn is a net.TCPConn (or some wrapper for it) and so can have
 	// keepalive enabled, do so with a sane (though slightly aggressive)
 	// default.
@@ -371,9 +431,18 @@ func (d Dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
 		}
 	}
 
+	wrappedNetConn := &wrappedNetConn{
+		Conn: netConn,
+
+		// wrap the conn so that it will return exactly what was used for
+		// dialing when Addr is called. If Conn's normal RemoteAddr is used then
+		// it returns the fully resolved form of the host.
+		addr: rawAddr{network: network, addr: addr},
+	}
+
 	conn := &conn{
 		proc:      proc.New(),
-		conn:      netConn,
+		conn:      wrappedNetConn,
 		rOpts:     d.NewRespOpts(),
 		wOpts:     d.NewRespOpts(),
 		rCh:       make(chan connMarshalerUnmarshaler, 128),
@@ -381,8 +450,8 @@ func (d Dialer) Dial(ctx context.Context, network, addr string) (Conn, error) {
 		errChPool: make(chan chan error, 16),
 	}
 
-	conn.br = conn.rOpts.GetBufferedReader(netConn)
-	conn.bw = conn.wOpts.GetBufferedWriter(netConn)
+	conn.br = conn.rOpts.GetBufferedReader(wrappedNetConn)
+	conn.bw = conn.wOpts.GetBufferedWriter(wrappedNetConn)
 
 	conn.proc.Run(conn.reader)
 	conn.proc.Run(func(ctx context.Context) {
