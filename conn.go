@@ -40,17 +40,20 @@ type Conn interface {
 
 type wrappedNetConn struct {
 	net.Conn
-	bytesRead int
-	addr      net.Addr
+	prevBytesRead, totalBytesRead int
+	addr                          net.Addr
 }
 
 var _ net.Conn = new(wrappedNetConn)
 
 func (c *wrappedNetConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
-	c.bytesRead += n
+	c.totalBytesRead += n
 
-	if err == nil || !errors.Is(err, os.ErrDeadlineExceeded) || n == 0 {
+	prevBytesRead := c.prevBytesRead
+	c.prevBytesRead = n
+
+	if err == nil || !errors.Is(err, os.ErrDeadlineExceeded) || (prevBytesRead == 0 && n == 0) {
 		return n, err
 	}
 
@@ -64,7 +67,8 @@ func (c *wrappedNetConn) Read(b []byte) (int, error) {
 }
 
 func (c *wrappedNetConn) resetBytesRead() {
-	c.bytesRead = 0
+	c.prevBytesRead = 0
+	c.totalBytesRead = 0
 }
 
 func (c *wrappedNetConn) RemoteAddr() net.Addr {
@@ -124,7 +128,7 @@ func (c *conn) reader(ctx context.Context) {
 
 			var skip bool
 			if err := mu.ctx.Err(); err != nil {
-				mu.errCh <- err
+				mu.errCh <- fmt.Errorf("checking context before read: %w", err)
 				skip = true
 			} else if deadline, ok := mu.ctx.Deadline(); ok {
 				if err := c.conn.SetReadDeadline(deadline); err != nil {
@@ -143,10 +147,14 @@ func (c *conn) reader(ctx context.Context) {
 			c.readSeqL.Unlock()
 
 			if skip {
+				if mu.marshal != nil {
+					discard++
+				}
 				continue
 			}
 
 			var err error
+			c.conn.resetBytesRead()
 
 			// Discard messages queued up on the wire which aren't for this
 			// EncodeDecode call. Only discard messages if the EncodeDecode
@@ -155,20 +163,19 @@ func (c *conn) reader(ctx context.Context) {
 			// value to marshal is given then the EncodeDecode will read in
 			// whatever the next message in the queue is.
 			if mu.marshal != nil {
-				for ; discard > 0; discard-- {
+				for discard > 0 {
 					if err = resp3.Unmarshal(c.br, nil, c.rOpts); err != nil {
 						break
 					}
+					discard--
 				}
 			}
 
 			// if discarding didn't fail then read the actual desired response.
-			if err != nil {
-				err = resp3.Unmarshal(c.br, mu.unmarshalInto, c.rOpts)
-			}
-
-			if err == nil && discard > 0 {
-				discard--
+			if err == nil {
+				if err = resp3.Unmarshal(c.br, mu.unmarshalInto, c.rOpts); err == nil && discard > 0 {
+					discard--
+				}
 			}
 
 			// simplify things for the caller by translating network timeouts
@@ -177,8 +184,12 @@ func (c *conn) reader(ctx context.Context) {
 				err = context.DeadlineExceeded
 			}
 
+			if err != nil {
+				err = fmt.Errorf("unmarshaling message off Conn: %w", err)
+			}
+
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				if c.conn.bytesRead == 0 {
+				if c.conn.totalBytesRead == 0 {
 					err = resp.ErrConnUsable{Err: err}
 
 					if mu.marshal != nil {
@@ -191,11 +202,10 @@ func (c *conn) reader(ctx context.Context) {
 					// the wire. The Conn is unusable at this point, close it
 					// and bail.
 					go c.Close()
-					mu.errCh <- err
+					mu.errCh <- fmt.Errorf("after partial read off Conn: %w", err)
 					return
 				}
 			}
-			c.conn.resetBytesRead()
 
 			mu.errCh <- err
 		}
@@ -256,7 +266,7 @@ func (c *conn) EncodeDecode(ctx context.Context, m, u interface{}) error {
 		case err := <-mu.errCh:
 			c.putErrCh(mu.errCh)
 			if err != nil {
-				err = ctx.Err()
+				err = fmt.Errorf("waiting for response from Conn: %w", ctx.Err())
 			}
 			return err
 		case <-closedCh:
@@ -270,6 +280,9 @@ func (c *conn) EncodeDecode(ctx context.Context, m, u interface{}) error {
 		// it's actually been used, otherwise it might still end up with
 		// something written to it.
 		c.putErrCh(mu.errCh)
+		if err != nil {
+			err = fmt.Errorf("response returned from Conn: %w", err)
+		}
 		return err
 	}
 }

@@ -527,7 +527,7 @@ func (ec *evalAction) Perform(ctx context.Context, conn Conn) error {
 	}
 
 	err := run(false)
-	if err != nil && strings.HasPrefix(err.Error(), "NOSCRIPT") {
+	if rErr := (resp3.SimpleError{}); errors.As(err, &rErr) && strings.HasPrefix(rErr.Error(), "NOSCRIPT") {
 		err = run(true)
 	}
 	return err

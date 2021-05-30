@@ -12,10 +12,6 @@ import (
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 )
 
-type nullWriteDeadliner struct{}
-
-func (nullWriteDeadliner) SetWriteDeadline(time.Time) error { return nil }
-
 type mockTicker struct {
 	paused bool
 }
@@ -287,7 +283,6 @@ func TestConnWriter(t *testing.T) {
 				wCh:         wCh,
 				rCh:         rCh,
 				bw:          bw,
-				conn:        nullWriteDeadliner{},
 				opts:        resp.NewOpts(),
 				doneCh:      doneCh,
 				eventLoopCh: make(chan struct{}),
