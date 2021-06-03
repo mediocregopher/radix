@@ -1,13 +1,18 @@
 package radix
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	. "testing"
+	"time"
 
+	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -51,6 +56,11 @@ func TestDialAuth(t *T) {
 				dialer.AuthPass = test.dialOptPass
 			}
 			_, err := dialer.Dial(ctx, "tcp", test.url)
+
+			// unwrap the error
+			if rErr := (resp3.SimpleError{}); errors.As(err, &rErr) {
+				err = rErr
+			}
 
 			// It's difficult to test _which_ password is being sent, but it's easy
 			// enough to tell that one was sent because redis returns an error if one
@@ -168,4 +178,109 @@ func TestConnConcurrentMarshalUnmarshal(t *T) {
 		assert.NoError(t, conn.EncodeDecode(ctx, []string{"ECHO", vv[i]}, nil))
 	}
 	wg.Wait()
+}
+
+func TestConnDeadlineExceeded(t *T) {
+	t.Run("echo", func(t *T) {
+		const p, n = 10, 100
+		conn := dial()
+		defer conn.Close()
+		ctx := testCtx(t)
+
+		var wg sync.WaitGroup
+		wg.Add(p)
+
+		var numSuccesses, numTimeouts uint64
+
+		for i := 0; i < p; i++ {
+			go func(id int) {
+				defer wg.Done()
+				for i := 0; i < n; {
+					if err := ctx.Err(); err != nil {
+						panic(err)
+					}
+
+					// the time here needs to be small enough that we get a
+					// timeout reading sometimes, but not so small that it times
+					// out everytime. By having the timeout slowly increase
+					// after every previous timeout error we can ensure we find
+					// this sweet spot in disparate test environments.
+					timeout := time.Duration(atomic.LoadUint64(&numTimeouts)) * (10 * time.Microsecond)
+					innerCtx, cancel := context.WithTimeout(ctx, timeout)
+
+					str, into := randStr(), ""
+					err := conn.Do(innerCtx, Cmd(&into, "ECHO", str))
+					cancel()
+
+					if err != nil {
+						if !assert.True(t, errors.Is(err, context.DeadlineExceeded), "err:%v", err) {
+							return
+						}
+						atomic.AddUint64(&numTimeouts, 1)
+					} else {
+						if !assert.Equal(t, str, into) {
+							return
+						}
+						atomic.AddUint64(&numSuccesses, 1)
+						i++
+					}
+				}
+			}(i)
+		}
+
+		wg.Wait()
+		t.Logf("successes:%d timeouts:%d", numSuccesses, numTimeouts)
+	})
+
+	t.Run("pubsub", func(t *T) {
+		const n = 100
+
+		subConn, pubConn := dial(), dial()
+		defer subConn.Close()
+		defer pubConn.Close()
+
+		ctx := testCtx(t)
+		ch := randStr()
+
+		err := subConn.Do(ctx, Cmd(nil, "SUBSCRIBE", ch))
+		assert.NoError(t, err)
+
+		for i := 0; i < n; i++ {
+			err := pubConn.Do(ctx, FlatCmd(nil, "PUBLISH", ch, i))
+			assert.NoError(t, err)
+		}
+
+		var numSuccesses, numTimeouts uint64
+		for i := 0; i < n; {
+			if err := ctx.Err(); err != nil {
+				panic(err)
+			}
+
+			// the time here needs to be small enough that we get a timeout
+			// reading sometimes, but not so small that it times out everytime.
+			// By having the timeout slowly increase after every previous
+			// timeout error we can ensure we find this sweet spot in disparate
+			// test environments.
+			innerCtx, cancel := context.WithTimeout(ctx, time.Duration(numTimeouts)*time.Microsecond)
+
+			var msg PubSubMessage
+			err := subConn.EncodeDecode(innerCtx, nil, &msg)
+			cancel()
+
+			if err != nil {
+				if !assert.True(t, errors.Is(err, context.DeadlineExceeded), "err:%v", err) {
+					return
+				}
+				numTimeouts++
+			} else {
+				if !assert.Equal(t, fmt.Sprint(i), string(msg.Message)) {
+					return
+				}
+				i++
+				numSuccesses++
+			}
+		}
+
+		t.Logf("successes:%d timeouts:%d", numSuccesses, numTimeouts)
+	})
 }

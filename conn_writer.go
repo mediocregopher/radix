@@ -15,7 +15,6 @@ type connWriter struct {
 	doneCh <-chan struct{}
 
 	bw   resp.BufferedWriter
-	conn interface{ SetWriteDeadline(time.Time) error }
 	opts *resp.Opts
 
 	flushInterval time.Duration
@@ -39,7 +38,6 @@ func (c *conn) writer(ctx context.Context, flushInterval time.Duration) {
 		rCh:           c.rCh,
 		doneCh:        ctx.Done(),
 		bw:            c.bw,
-		conn:          c.conn,
 		opts:          c.wOpts,
 		flushInterval: flushInterval,
 	}
@@ -82,20 +80,11 @@ func (cw *connWriter) forwardToReader(mu connMarshalerUnmarshaler) bool {
 // write returns true if the write was successful
 func (cw *connWriter) write(mu connMarshalerUnmarshaler) bool {
 	if err := mu.ctx.Err(); err != nil {
-		mu.errCh <- err
+		mu.errCh <- resp.ErrConnUsable{Err: fmt.Errorf("checking context before write: %w", err)}
 		return false
-	} else if deadline, ok := mu.ctx.Deadline(); ok {
-		if err := cw.conn.SetWriteDeadline(deadline); err != nil {
-			mu.errCh <- fmt.Errorf("setting write deadline to %v: %w", deadline, err)
-			return false
-		}
-	} else if err := cw.conn.SetWriteDeadline(time.Time{}); err != nil {
-		mu.errCh <- fmt.Errorf("unsetting write deadline: %w", err)
-		return false
-	}
 
-	if err := resp3.Marshal(cw.bw, mu.marshal, cw.opts); err != nil {
-		mu.errCh <- err
+	} else if err := resp3.Marshal(cw.bw, mu.marshal, cw.opts); err != nil {
+		mu.errCh <- fmt.Errorf("marshaling message to Conn: %w", err)
 		return false
 	}
 
@@ -114,13 +103,16 @@ func (cw *connWriter) flush() bool {
 		if cw.write(mu) {
 			flushBuf = append(flushBuf, mu)
 		}
+
 	}
 	cw.flushBuf = cw.flushBuf[:0]
 
 	if err := cw.bw.Flush(); err != nil {
+		err = fmt.Errorf("flushing write buffer: %w", err)
 		for _, mu := range flushBuf {
 			mu.errCh <- err
 		}
+
 	} else {
 		for _, mu := range flushBuf {
 			// if there's no unmarshaler then don't forward to the reader
