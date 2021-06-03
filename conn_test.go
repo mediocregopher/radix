@@ -46,6 +46,7 @@ func TestDialAuth(t *T) {
 	}
 
 	runTests := func(t *T, tests []testCase, allowedErrs []string) {
+		t.Helper()
 		ctx := testCtx(t)
 		for _, test := range tests {
 			var dialer Dialer
@@ -193,7 +194,7 @@ func TestConnDeadlineExceeded(t *T) {
 		var numSuccesses, numTimeouts uint64
 
 		for i := 0; i < p; i++ {
-			go func(id int) {
+			go func() {
 				defer wg.Done()
 				for i := 0; i < n; {
 					if err := ctx.Err(); err != nil {
@@ -225,7 +226,7 @@ func TestConnDeadlineExceeded(t *T) {
 						i++
 					}
 				}
-			}(i)
+			}()
 		}
 
 		wg.Wait()

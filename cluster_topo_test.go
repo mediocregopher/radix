@@ -151,7 +151,7 @@ func TestClusterTopo(t *T) {
 }
 
 // Test parsing a topology where a node in the cluster has two different sets of
-// slots, as well as a secondary
+// slots, as well as a secondary.
 func TestClusterTopoSplitSlots(t *T) {
 	clusterSlotsResp := respArr{
 		respArr{0, 0,

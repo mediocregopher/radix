@@ -408,9 +408,10 @@ func BenchmarkStreamEntry(b *B) {
 
 func TestStreamReader(t *T) {
 	assertRespErr := func(tb TB, expPrefix string, err error) {
+		tb.Helper()
 		var respErr resp3.SimpleError
-		assert.True(t, errors.As(err, &respErr), "err:%v", err)
-		assert.True(t, strings.HasPrefix(respErr.S, expPrefix))
+		assert.True(tb, errors.As(err, &respErr), "err:%v", err)
+		assert.True(tb, strings.HasPrefix(respErr.S, expPrefix))
 	}
 
 	t.Run("Group", func(t *T) {

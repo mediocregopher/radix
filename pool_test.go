@@ -427,7 +427,6 @@ func TestPool(t *T) {
 
 			var cmdDoneChs []chan error
 			var cmdBlockChs []chan struct{}
-			echoCtr := 0
 
 			for i, step := range test.steps {
 				logf := func(str string, args ...interface{}) {
@@ -451,7 +450,7 @@ func TestPool(t *T) {
 					cmdDoneChs = append(cmdDoneChs, doneCh)
 
 					wg.Add(1)
-					go func(c cmd, echoCtr int) {
+					go func(c cmd) {
 						defer wg.Done()
 
 						ctx := context.WithValue(h.ctx, stubEncDecCtxKeyQueuedCh, cmdQueuedCh)
@@ -473,13 +472,11 @@ func TestPool(t *T) {
 							assert.Equal(t, res, c.expRes)
 						}
 						doneCh <- err
-					}(*step.goCmd, echoCtr)
+					}(*step.goCmd)
 
 					if !step.goCmd.dontWaitForQueued {
 						<-cmdQueuedCh
 					}
-
-					echoCtr++
 
 				case step.unblock != nil:
 					logf("unblock(%+v)", *step.unblock)

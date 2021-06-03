@@ -114,7 +114,7 @@ func (p *persistentPubSub) mkPubSubCfg() (PubSubConfig, chan error) {
 	return pubSubCfg, closeErrCh
 }
 
-// refresh only returns an error if the connection could not be made
+// refresh only returns an error if the connection could not be made.
 func (p *persistentPubSub) refresh(ctx context.Context) error {
 	if p.curr != nil {
 		p.curr.Close()

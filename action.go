@@ -142,7 +142,7 @@ type cmdAction struct {
 	flattenErr error
 }
 
-// BREAM: Benchmarks Rule Everything Around Me
+// BREAM: Benchmarks Rule Everything Around Me.
 var cmdActionPool sync.Pool
 
 func getCmdAction() *cmdAction {
@@ -750,7 +750,7 @@ type withConn struct {
 //
 // NOTE that WithConn only ensures all inner Actions are performed on the same
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
-// WithConn for transactions, or use EvalScript
+// WithConn for transactions, or use EvalScript.
 func WithConn(key string, fn func(context.Context, Conn) error) Action {
 	return &withConn{[1]string{key}, fn}
 }

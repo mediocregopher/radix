@@ -122,7 +122,7 @@ func TestPersistentPubSubClose(t *T) {
 			panic(err)
 		}
 		msgCh := make(chan PubSubMessage)
-		p.Subscribe(ctx, msgCh, channel)
+		assert.NoError(t, p.Subscribe(ctx, msgCh, channel))
 		// drain msgCh till it closes
 		go func() {
 			for range msgCh {
@@ -143,7 +143,7 @@ func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
 		panic(err)
 	}
 	msgCh := make(chan PubSubMessage)
-	p.Subscribe(ctx, msgCh, channel)
+	assert.NoError(t, p.Subscribe(ctx, msgCh, channel))
 	p.Close()
 
 	errch := make(chan error)

@@ -21,7 +21,7 @@ type clusterSlotStub struct {
 
 // clusterDatasetStub describes a dataset hosted by a clusterStub instance. This
 // is separated out because different instances can host the same dataset
-// (primary and secondaries)
+// (primary and secondaries).
 type clusterDatasetStub struct {
 	sync.Mutex
 	slots map[uint16]clusterSlotStub
@@ -49,7 +49,7 @@ func (sd *clusterDatasetStub) slotRanges() [][2]uint16 {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// equivalent to a single redis instance
+// equivalent to a single redis instance.
 type clusterNodeStub struct {
 	addr, id                       string
 	secondaryOfAddr, secondaryOfID string // set if secondary
@@ -365,7 +365,7 @@ func (scl *clusterStub) migrateInit(dstAddr string, slot uint16) {
 	}
 }
 
-// migrateInit must have been called on the slot this key belongs to
+// migrateInit must have been called on the slot this key belongs to.
 func (scl *clusterStub) migrateKey(key string) {
 	slot := ClusterSlot([]byte(key))
 	src := scl.stubForSlot(slot)
@@ -381,7 +381,7 @@ func (scl *clusterStub) migrateKey(key string) {
 	delete(srcSlot.kv, key)
 }
 
-// migrateInit must have been called on the slot already
+// migrateInit must have been called on the slot already.
 func (scl *clusterStub) migrateAllKeys(slot uint16) {
 	src := scl.stubForSlot(slot)
 	src.clusterDatasetStub.Lock()
@@ -398,7 +398,7 @@ func (scl *clusterStub) migrateAllKeys(slot uint16) {
 	}
 }
 
-// all keys must have been migrated to call this, probably via migrateAllKeys
+// all keys must have been migrated to call this, probably via migrateAllKeys.
 func (scl *clusterStub) migrateDone(slot uint16) {
 	src := scl.stubForSlot(slot)
 	src.clusterDatasetStub.Lock()

@@ -9,6 +9,7 @@ import (
 
 func BenchmarkBytePool(b *testing.B) {
 	do := func(b *testing.B, o *Opts) {
+		b.Helper()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			buf := o.GetBytes()

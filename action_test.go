@@ -416,7 +416,7 @@ func TestEvalActionWithInterfaceRcv(t *T) {
 	}
 }
 
-// Issue #252
+// Issue #252.
 func TestEvalScriptEmptyUnmarshal(t *T) {
 	ctx := testCtx(t)
 	conn := dial()
@@ -624,7 +624,7 @@ func ExampleWithConn_transaction() {
 				// The return from DISCARD doesn't matter. If it's an error then
 				// it's a network error and the Conn will be closed by the
 				// client.
-				c.Do(ctx, Cmd(nil, "DISCARD"))
+				_ = c.Do(ctx, Cmd(nil, "DISCARD"))
 			}
 		}()
 

@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// structs used for tests
+// structs used for tests.
 type TestStructInner struct {
 	Foo int
 	bar int
@@ -1670,11 +1670,11 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 
 									// test unmarshaling
 									if withAttr {
-										AttributeHeader{NumPairs: 2}.MarshalRESP(buf, opts)
-										SimpleString{S: "foo"}.MarshalRESP(buf, opts)
-										SimpleString{S: "1"}.MarshalRESP(buf, opts)
-										SimpleString{S: "bar"}.MarshalRESP(buf, opts)
-										SimpleString{S: "2"}.MarshalRESP(buf, opts)
+										_ = AttributeHeader{NumPairs: 2}.MarshalRESP(buf, opts)
+										_ = SimpleString{S: "foo"}.MarshalRESP(buf, opts)
+										_ = SimpleString{S: "1"}.MarshalRESP(buf, opts)
+										_ = SimpleString{S: "bar"}.MarshalRESP(buf, opts)
+										_ = SimpleString{S: "2"}.MarshalRESP(buf, opts)
 									}
 									buf.WriteString(inMsg)
 

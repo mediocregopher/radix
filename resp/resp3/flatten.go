@@ -50,7 +50,7 @@ type flattener struct {
 	out  []string
 }
 
-// emit always returns nil for convenience
+// emit always returns nil for convenience.
 func (f *flattener) emit(str string) error {
 	f.out = append(f.out, str)
 	return nil
@@ -181,7 +181,7 @@ func (f *flattener) flatten(i interface{}) error {
 			if tag != "" {
 				keyName = tag
 			}
-			f.emit(keyName)
+			_ = f.emit(keyName)
 
 			if err := f.flatten(fv.Interface()); err != nil {
 				return err

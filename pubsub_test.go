@@ -23,8 +23,9 @@ func assertMsgRead(t *T, msgCh <-chan PubSubMessage) PubSubMessage {
 	case m := <-msgCh:
 		return m
 	case <-time.After(15 * time.Second):
-		panic("timedout reading")
+		t.Fatal("timedout reading")
 	}
+	panic("can't get here")
 }
 
 func assertMsgNoRead(t *T, msgCh <-chan PubSubMessage) {
@@ -252,7 +253,7 @@ func TestPubSubMixedSubscribe(t *T) {
 }
 
 // Ensure that PubSubConn properly handles the case where the Conn it's reading
-// from returns a timeout error
+// from returns a timeout error.
 func TestPubSubTimeout(t *T) {
 	ctx := testCtx(t)
 	c, pubC := (PubSubConfig{}).New(dial()), dial()
@@ -434,7 +435,10 @@ func ExamplePersistentPubSubConfig_cluster() {
 
 	// Use the PubSubConn as normal.
 	msgCh := make(chan PubSubMessage)
-	ps.Subscribe(ctx, msgCh, "myChannel")
+	if err := ps.Subscribe(ctx, msgCh, "myChannel"); err != nil {
+		panic(err)
+	}
+
 	for msg := range msgCh {
 		log.Printf("publish to channel %q received: %q", msg.Channel, msg.Message)
 	}
