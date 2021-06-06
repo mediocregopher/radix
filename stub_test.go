@@ -137,9 +137,14 @@ func ExampleNewStubConn() {
 		}
 	})
 
-	stub.Do(ctx, Cmd(nil, "SET", "foo", "1"))
+	if err := stub.Do(ctx, Cmd(nil, "SET", "foo", "1")); err != nil {
+		panic(err)
+	}
 
 	var foo int
-	stub.Do(ctx, Cmd(&foo, "GET", "foo"))
+	if err := stub.Do(ctx, Cmd(&foo, "GET", "foo")); err != nil {
+		panic(err)
+	}
+
 	fmt.Printf("foo: %d\n", foo)
 }

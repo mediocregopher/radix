@@ -15,6 +15,8 @@ import (
 var redisVersionPat = regexp.MustCompile(`(?m)^redis_version:(\d+)\.(\d+)\.(\d+).*$`)
 
 func requireRedisVersion(tb TB, c Client, major, minor, patch int) {
+	tb.Helper()
+
 	ctx := testCtx(tb)
 	tb.Helper()
 
@@ -24,6 +26,7 @@ func requireRedisVersion(tb TB, c Client, major, minor, patch int) {
 	m := redisVersionPat.FindStringSubmatch(info)
 	if m == nil {
 		tb.Fatal("failed to get redis server version")
+		return // to shut the linter up
 	}
 
 	gotMajor, _ := strconv.Atoi(m[1])
@@ -72,7 +75,7 @@ func TestScanner(t *T) {
 	require.Nil(t, sc.Close())
 }
 
-// Similar to TestScanner, but scans over a set instead of the whole key space
+// Similar to TestScanner, but scans over a set instead of the whole key space.
 func TestScannerSet(t *T) {
 	ctx := testCtx(t)
 	c := dial()

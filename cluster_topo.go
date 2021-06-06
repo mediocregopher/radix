@@ -27,7 +27,7 @@ type ClusterNode struct {
 type ClusterTopo []ClusterNode
 
 // MarshalRESP implements the resp.Marshaler interface, and will marshal the
-// ClusterTopo in the same format as the return from CLUSTER SLOTS
+// ClusterTopo in the same format as the return from CLUSTER SLOTS.
 func (tt ClusterTopo) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	m := map[[2]uint16]topoSlotSet{}
 	for _, t := range tt {
@@ -63,7 +63,7 @@ func (tt ClusterTopo) MarshalRESP(w io.Writer, o *resp.Opts) error {
 
 // UnmarshalRESP implements the resp.Unmarshaler interface, but only supports
 // unmarshaling the return from CLUSTER SLOTS. The unmarshaled nodes will be
-// sorted before they are returned
+// sorted before they are returned.
 func (tt *ClusterTopo) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	var arrHead resp3.ArrayHeader
 	if err := arrHead.UnmarshalRESP(br, o); err != nil {
@@ -115,7 +115,7 @@ func (tt ClusterTopo) sort() {
 
 }
 
-// Map returns the topology as a mapping of node address to its ClusterNode
+// Map returns the topology as a mapping of node address to its ClusterNode.
 func (tt ClusterTopo) Map() map[string]ClusterNode {
 	m := make(map[string]ClusterNode, len(tt))
 	for _, t := range tt {
@@ -125,7 +125,7 @@ func (tt ClusterTopo) Map() map[string]ClusterNode {
 }
 
 // Primaries returns a ClusterTopo instance containing only the primary nodes
-// from the ClusterTopo being called on
+// from the ClusterTopo being called on.
 func (tt ClusterTopo) Primaries() ClusterTopo {
 	mtt := make(ClusterTopo, 0, len(tt))
 	for _, node := range tt {
@@ -137,7 +137,7 @@ func (tt ClusterTopo) Primaries() ClusterTopo {
 }
 
 // we only use this type during unmarshalling, the topo Unmarshal method will
-// convert these into ClusterNodes
+// convert these into ClusterNodes.
 type topoSlotSet struct {
 	slots [2]uint16
 	nodes []ClusterNode

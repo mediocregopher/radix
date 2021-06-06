@@ -21,7 +21,7 @@ import (
 // reads/writes data using redis's RESP protocol.
 //
 // A Conn can be used directly as a Client, but in general you probably want to
-// use a Pool instead
+// use a Pool instead.
 type Conn interface {
 	// The Do method merely calls the Action's Perform method with the Conn as
 	// the argument.
@@ -258,7 +258,10 @@ func (c *conn) EncodeDecode(ctx context.Context, m, u interface{}) error {
 		// successfully read despite the context being canceled.
 		c.readSeqL.Lock()
 		if c.currReadSeq == mu.readSeq {
-			c.conn.SetReadDeadline(time.Unix(0, 0))
+			if err := c.conn.SetReadDeadline(time.Unix(0, 0)); err != nil {
+				c.readSeqL.Unlock()
+				return fmt.Errorf("canceling Conn read from EncodeDecode: %w", err)
+			}
 		}
 		c.readSeqL.Unlock()
 

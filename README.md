@@ -1,9 +1,10 @@
 # Radix
 
-[![Build Status](https://travis-ci.org/mediocregopher/radix.svg)](https://travis-ci.org/mediocregopher/radix)
 ![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/mediocregopher/radix.svg)
 [![GoDoc](https://godoc.org/github.com/mediocregopher/radix?status.svg)][godoc]
 [![Go Report Card](https://goreportcard.com/badge/github.com/mediocregopher/radix/v4)](https://goreportcard.com/report/github.com/mediocregopher/radix/v4)
+![Build Status](https://github.com/github/docs/actions/workflows/push.yml/badge.svg?branch=v4)
+
 
 Radix is a full-featured [Redis][redis] client for Go. See the [GoDoc][godoc]
 for documentation and general usage examples.

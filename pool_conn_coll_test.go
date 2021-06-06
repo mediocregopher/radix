@@ -106,6 +106,7 @@ func TestPoolConnColl(t *testing.T) {
 	a, b, c := newPoolConn("a"), newPoolConn("b"), newPoolConn("c")
 
 	assertConnEqual := func(t *testing.T, exp, got *poolConn) {
+		t.Helper()
 		if exp != got {
 			t.Fatalf("expected conn %s, got %s", getPoolConnName(exp), getPoolConnName(got))
 		}

@@ -67,7 +67,7 @@ func (cw *connWriter) resumeTicker() {
 	cw.flushTickerPaused = false
 }
 
-// forwardToReader returns false if doneCh is closed
+// forwardToReader returns false if doneCh is closed.
 func (cw *connWriter) forwardToReader(mu connMarshalerUnmarshaler) bool {
 	select {
 	case <-cw.doneCh:
@@ -77,7 +77,7 @@ func (cw *connWriter) forwardToReader(mu connMarshalerUnmarshaler) bool {
 	}
 }
 
-// write returns true if the write was successful
+// write returns true if the write was successful.
 func (cw *connWriter) write(mu connMarshalerUnmarshaler) bool {
 	if err := mu.ctx.Err(); err != nil {
 		mu.errCh <- resp.ErrConnUsable{Err: fmt.Errorf("checking context before write: %w", err)}
@@ -91,7 +91,7 @@ func (cw *connWriter) write(mu connMarshalerUnmarshaler) bool {
 	return true
 }
 
-// flush returns false if doneCh is closed
+// flush returns false if doneCh is closed.
 func (cw *connWriter) flush() bool {
 	if len(cw.flushBuf) == 0 {
 		cw.pauseTicker()

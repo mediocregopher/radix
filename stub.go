@@ -69,13 +69,12 @@ func (s *stub) responder(ctx context.Context) {
 	}
 
 	asErr := func(i interface{}) error {
-		err, ok := i.(error)
-		if !ok {
+		if _, ok := i.(resp.Marshaler); ok {
 			return nil
-		} else if _, ok = err.(resp.Marshaler); ok {
-			return nil
+		} else if err, ok := i.(error); ok {
+			return err
 		}
-		return err
+		return nil
 	}
 
 	for {

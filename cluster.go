@@ -207,7 +207,7 @@ func assertKeysSlot(keys []string) error {
 	return nil
 }
 
-// may return nil, nil if no pool for the addr
+// may return nil, nil if no pool for the addr.
 func (c *Cluster) rpool(addr string) (client Client, err error) {
 	err = c.proc.WithRLock(func() error {
 		if addr == "" {
@@ -223,7 +223,7 @@ func (c *Cluster) rpool(addr string) (client Client, err error) {
 }
 
 // if addr is "" returns a random pool. If addr is given but there's no pool for
-// it one will be created on-the-fly
+// it one will be created on-the-fly.
 func (c *Cluster) pool(ctx context.Context, addr string) (Client, error) {
 	p, err := c.rpool(addr)
 	if p != nil || err != nil {
@@ -305,7 +305,7 @@ func (c *Cluster) getTopo(ctx context.Context, p Client) (ClusterTopo, error) {
 // Sync will synchronize the Cluster with the actual cluster, making new pools
 // to new instances and removing ones from instances no longer in the cluster.
 // This will be called periodically automatically, but you can manually call it
-// at any time as well
+// at any time as well.
 func (c *Cluster) Sync(ctx context.Context) error {
 	p, err := c.pool(ctx, "")
 	if err != nil {

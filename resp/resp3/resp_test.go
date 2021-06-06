@@ -43,8 +43,9 @@ func TestPeekAndAssertPrefix(t *testing.T) {
 			err := peekAndAssertPrefix(br, test.prefix, false, opts)
 
 			assert.IsType(t, test.exp, err)
-			if expUsable, ok := test.exp.(resp.ErrConnUsable); ok {
-				usable, _ := err.(resp.ErrConnUsable)
+			if expUsable := (resp.ErrConnUsable{}); errors.As(err, &expUsable) {
+				var usable resp.ErrConnUsable
+				errors.As(err, &usable)
 				assert.IsType(t, expUsable.Err, usable.Err)
 			}
 			if test.exp != nil {
@@ -202,12 +203,12 @@ func Example_streamedAggregatedType() {
 	opts := resp.NewOpts()
 
 	// First write a streamed array to the buffer. The array will have 3 number
-	// elements.
-	(ArrayHeader{StreamedArrayHeader: true}).MarshalRESP(buf, opts)
-	(Number{N: 1}).MarshalRESP(buf, opts)
-	(Number{N: 2}).MarshalRESP(buf, opts)
-	(Number{N: 3}).MarshalRESP(buf, opts)
-	(StreamedAggregatedTypeEnd{}).MarshalRESP(buf, opts)
+	// elements (remember to check the errors).
+	_ = (ArrayHeader{StreamedArrayHeader: true}).MarshalRESP(buf, opts)
+	_ = (Number{N: 1}).MarshalRESP(buf, opts)
+	_ = (Number{N: 2}).MarshalRESP(buf, opts)
+	_ = (Number{N: 3}).MarshalRESP(buf, opts)
+	_ = (StreamedAggregatedTypeEnd{}).MarshalRESP(buf, opts)
 
 	// Now create a reader which will read from the buffer, and use it to read
 	// the streamed array.
@@ -219,8 +220,9 @@ func Example_streamedAggregatedType() {
 	}
 
 	var head ArrayHeader
-	head.UnmarshalRESP(br, opts)
-	if !head.StreamedArrayHeader {
+	if err := head.UnmarshalRESP(br, opts); err != nil {
+		panic(err)
+	} else if !head.StreamedArrayHeader {
 		panic("expected streamed array header")
 	}
 	fmt.Println("streamed array begun")
@@ -228,8 +230,10 @@ func Example_streamedAggregatedType() {
 	for {
 		var el Number
 		aggEl := StreamedAggregatedElement{Receiver: &el}
-		aggEl.UnmarshalRESP(br, opts)
-		if aggEl.End {
+		if err := aggEl.UnmarshalRESP(br, opts); err != nil {
+			panic(err)
+
+		} else if aggEl.End {
 			fmt.Println("streamed array ended")
 			return
 		}

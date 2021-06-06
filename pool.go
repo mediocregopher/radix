@@ -14,7 +14,7 @@ import (
 )
 
 // poolConn is a Conn which tracks the last net.Error which was seen either
-// during an Encode call or a Decode call
+// during an Encode call or a Decode call.
 type poolConn struct {
 	Conn
 
@@ -214,7 +214,7 @@ func (cfg poolConfig) new(ctx context.Context, network, addr string) (*pool, err
 		p.atIntervalDo(p.cfg.PingInterval, func(ctx context.Context) {
 			ctx, cancel := p.cfg.clock.TimeoutContext(ctx, 2*time.Second)
 			defer cancel()
-			p.Do(ctx, Cmd(nil, "PING"))
+			_ = p.Do(ctx, Cmd(nil, "PING"))
 			if p.cfg.pingSyncCh != nil {
 				<-p.cfg.pingSyncCh
 			}

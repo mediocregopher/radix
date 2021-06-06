@@ -45,16 +45,18 @@ var (
 	testCtxsL sync.Mutex
 )
 
-func testCtx(t TB) context.Context {
+func testCtx(tb TB) context.Context {
+	tb.Helper()
+
 	testCtxsL.Lock()
 	defer testCtxsL.Unlock()
 
-	if ctx, ok := testCtxs[t]; ok {
+	if ctx, ok := testCtxs[tb]; ok {
 		return ctx
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
-	testCtxs[t] = ctx
+	tb.Cleanup(cancel)
+	testCtxs[tb] = ctx
 	return ctx
 }

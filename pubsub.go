@@ -46,7 +46,7 @@ func (m PubSubMessage) MarshalRESP(w io.Writer, o *resp.Opts) error {
 
 var errNotPubSubMessage = errors.New("message is not a PubSubMessage")
 
-// UnmarshalRESP implements the Unmarshaler interface
+// UnmarshalRESP implements the Unmarshaler interface.
 func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 	// This method will fully consume the message on the wire, regardless of if
 	// it is a PubSubMessage or not. If it is not then errNotPubSubMessage is
@@ -350,7 +350,7 @@ func (c *pubSubConn) spin(ctx context.Context) {
 			continue
 		} else if err != nil {
 			// this must be done in a new go-routine to avoid deadlocks
-			go c.closeInner(err)
+			go func() { _ = c.closeInner(err) }()
 			return
 		}
 
@@ -380,7 +380,7 @@ func (c *pubSubConn) pingSpin(ctx context.Context) {
 	}
 }
 
-// NOTE proc's lock _must_ be held to use do
+// NOTE proc's lock _must_ be held to use do.
 func (c *pubSubConn) do(ctx context.Context, exp int, cmd string, args ...string) error {
 	rcmd := Cmd(nil, cmd, args...).(resp.Marshaler)
 	if err := c.conn.EncodeDecode(ctx, rcmd, nil); err != nil {

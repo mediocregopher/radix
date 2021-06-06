@@ -57,7 +57,7 @@ func (ssc *sentinelStubConn) Close() error {
 	return ssc.Conn.Close()
 }
 
-// addr must be one of sentAddrs
+// addr must be one of sentAddrs.
 func (s *sentinelStub) newConn(ctx context.Context, network, addr string) (Conn, error) {
 	s.Lock()
 	defer s.Unlock()
@@ -224,7 +224,7 @@ func TestSentinel(t *T) {
 
 	// Check that closing the instance doesn't deadlock while updating the state.
 	// This is racy but should be good enough for now.
-	scc.proc.WithLock(func() error {
+	_ = scc.proc.WithLock(func() error {
 		scc.forceMasterSwitch(100 * time.Millisecond) // delay so that Close has a chance to acquire scc.l
 		return nil
 	})

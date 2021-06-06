@@ -111,7 +111,7 @@ func (cfg SentinelConfig) New(ctx context.Context, primaryName string, sentinelA
 		return nil, err
 	}
 
-	sc.pconn.Subscribe(ctx, sc.pconnCh, "switch-master")
+	_ = sc.pconn.Subscribe(ctx, sc.pconnCh, "switch-master")
 	sc.proc.Run(sc.spin)
 	return sc, nil
 }
@@ -155,9 +155,14 @@ func (sc *Sentinel) dialSentinel(ctx context.Context) (conn Conn, err error) {
 // Do implements the method for the Client interface. It will perform the given
 // Action on the current primary.
 func (sc *Sentinel) Do(ctx context.Context, a Action) error {
-	return sc.proc.WithRLock(func() error {
-		return sc.clients[sc.primAddr].Do(ctx, a)
-	})
+	var client Client
+	if err := sc.proc.WithRLock(func() error {
+		client = sc.clients[sc.primAddr]
+		return nil
+	}); err != nil {
+		return err
+	}
+	return client.Do(ctx, a)
 }
 
 // DoSecondary implements the method for the Client interface. It will perform
@@ -267,7 +272,7 @@ func (sc *Sentinel) Close() error {
 	})
 }
 
-// cmd should be the command called which generated m
+// cmd should be the command called which generated m.
 func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
 	if m["ip"] == "" || m["port"] == "" {
 		return "", fmt.Errorf("malformed %q response: %#v", cmd, m)
@@ -276,7 +281,7 @@ func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
 }
 
 // given a connection to a sentinel, ensures that the Clients currently being
-// held agrees with what the sentinel thinks they should be
+// held agrees with what the sentinel thinks they should be.
 func (sc *Sentinel) ensureClients(ctx context.Context, conn Conn) error {
 	var primM map[string]string
 	var secMM []map[string]string
@@ -380,7 +385,7 @@ func (sc *Sentinel) traceTopoChanged(prevTopo, newTopo map[string]trace.Sentinel
 }
 
 // annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_
-// sentinel instance, only the others it knows about for that primary
+// sentinel instance, only the others it knows about for that primary.
 func (sc *Sentinel) ensureSentinelAddrs(ctx context.Context, conn Conn) error {
 	var mm []map[string]string
 	err := conn.Do(ctx, Cmd(&mm, "SENTINEL", "SENTINELS", sc.name))
@@ -483,7 +488,6 @@ func (sc *Sentinel) innerSpin(ctx context.Context) error {
 }
 
 func (sc *Sentinel) forceMasterSwitch(waitFor time.Duration) {
-	// can not use waitFor.Milliseconds() here since it was only introduced in Go 1.13 and we still support 1.12
-	atomic.StoreUint32(&sc.testSleepBeforeSwitch, uint32(waitFor.Nanoseconds()/1e6))
+	atomic.StoreUint32(&sc.testSleepBeforeSwitch, uint32(waitFor.Milliseconds()))
 	sc.pconnCh <- PubSubMessage{}
 }

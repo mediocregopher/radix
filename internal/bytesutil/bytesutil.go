@@ -179,7 +179,7 @@ func ReadNDiscard(r io.Reader, n int, scratch *[]byte) error {
 		n -= nr
 		if n == 0 {
 			return nil
-		} else if err == io.EOF {
+		} else if errors.Is(err, io.EOF) {
 			return io.ErrUnexpectedEOF
 		} else if err != nil {
 			return err

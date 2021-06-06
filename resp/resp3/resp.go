@@ -187,7 +187,7 @@ func (e errUnexpectedPrefix) Error() string {
 // discarded and errUnexpectedPrefix will be returned.
 //
 // peekAndAssertPrefix will discard any preceding attribute message when called
-// with discardAttr set
+// with discardAttr set.
 func peekAndAssertPrefix(br resp.BufferedReader, expectedPrefix Prefix, discardAttr bool, o *resp.Opts) error {
 	if discardAttr {
 		if err := DiscardAttribute(br, o); err != nil {
@@ -1257,7 +1257,7 @@ func (sw StreamedStringWriter) MarshalRESP(w io.Writer, o *resp.Opts) error {
 			return err
 		} else if n == 0 {
 			continue
-		} else if (StreamedStringChunkBytes{B: (*scratch)[:n]}).MarshalRESP(w, o); err != nil {
+		} else if err = (StreamedStringChunkBytes{B: (*scratch)[:n]}).MarshalRESP(w, o); err != nil {
 			return err
 		}
 	}
@@ -1723,7 +1723,11 @@ func Unmarshal(br resp.BufferedReader, rcv interface{}, o *resp.Opts) error {
 		return nil
 	}
 
-	br.Discard(1)
+	// we've already peeked at this byte so there really shouldn't be an error
+	if _, err := br.Discard(1); err != nil {
+		return err
+	}
+
 	b, err = bytesutil.ReadBytesDelim(br)
 	if err != nil {
 		return err
@@ -2031,10 +2035,10 @@ func unmarshalAgg(prefix Prefix, br resp.BufferedReader, l int64, rcv interface{
 			slice.SetLen(0)
 		}
 
-		// TODO this isn't ideal, but it works for now. Ideally this loop would
-		// be unmarshaling straight into slice elements based on i, expanding
-		// slice as needed, before finally setting the length appropriately at
-		// the end.
+		// this isn't ideal, but it works for now. Ideally this loop would be
+		// unmarshaling straight into slice elements based on i, expanding slice
+		// as needed, before finally setting the length appropriately at the
+		// end.
 		into := reflect.New(v.Type().Elem())
 		for i := 0; i < size || stream; i++ {
 			into.Elem().Set(reflect.Zero(into.Type().Elem()))
@@ -2203,7 +2207,7 @@ type structField struct {
 	indices []int
 }
 
-// encoding/json uses a similar pattern for unmarshaling into structs
+// encoding/json uses a similar pattern for unmarshaling into structs.
 var structFieldsCache sync.Map // aka map[reflect.Type]map[string]structField
 
 func getStructFields(t reflect.Type) map[string]structField {
