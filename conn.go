@@ -206,7 +206,7 @@ func (c *conn) reader(ctx context.Context) {
 					mu.errCh <- fmt.Errorf("after partial read off Conn: %w", err)
 					return
 				}
-			} else if err != nil {
+			} else if err != nil && !errors.As(err, new(resp.ErrConnUsable)) {
 				go c.Close()
 				mu.errCh <- fmt.Errorf("unexpected error on Conn: %w", err)
 				return
