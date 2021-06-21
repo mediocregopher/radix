@@ -190,7 +190,7 @@ func (c *conn) reader(ctx context.Context) {
 			}
 
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				if buffered == c.conn.Buffered() && c.conn.totalBytesRead == 0 {
+				if buffered == c.br.Buffered() && c.conn.totalBytesRead == 0 {
 					err = resp.ErrConnUsable{Err: err}
 
 					if mu.marshal != nil {
