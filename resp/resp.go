@@ -84,6 +84,7 @@ type BufferedReader interface {
 	ReadSlice(delim byte) (line []byte, err error)
 	Peek(n int) ([]byte, error)
 	Discard(n int) (discarded int, err error)
+	Buffered() int
 }
 
 // BufferedWriter wraps a bufio.Writer.
