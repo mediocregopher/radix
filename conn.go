@@ -155,6 +155,7 @@ func (c *conn) reader(ctx context.Context) {
 
 			var err error
 			c.conn.resetBytesRead()
+			buffered := c.br.Buffered()
 
 			// Discard messages queued up on the wire which aren't for this
 			// EncodeDecode call. Only discard messages if the EncodeDecode
@@ -189,7 +190,7 @@ func (c *conn) reader(ctx context.Context) {
 			}
 
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				if c.conn.totalBytesRead == 0 {
+				if buffered == c.br.Buffered() && c.conn.totalBytesRead == 0 {
 					err = resp.ErrConnUsable{Err: err}
 
 					if mu.marshal != nil {
@@ -205,6 +206,11 @@ func (c *conn) reader(ctx context.Context) {
 					mu.errCh <- fmt.Errorf("after partial read off Conn: %w", err)
 					return
 				}
+			} else if err != nil && !errors.As(err, new(resp.ErrConnUsable)) {
+				go c.Close()
+				mu.errCh <- fmt.Errorf("unexpected error on Conn: %w", err)
+				return
+
 			}
 
 			mu.errCh <- err
