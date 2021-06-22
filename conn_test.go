@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	. "testing"
 	"time"
 
+	"github.com/mediocregopher/radix/v4/internal/proc"
 	"github.com/mediocregopher/radix/v4/resp/resp3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -184,6 +186,7 @@ func TestConnConcurrentMarshalUnmarshal(t *T) {
 func TestConnDeadlineExceeded(t *T) {
 	t.Run("echo", func(t *T) {
 		const p, n = 10, 100
+		const initTimeout = time.Second
 		conn := dial()
 		defer conn.Close()
 		ctx := testCtx(t)
@@ -191,33 +194,42 @@ func TestConnDeadlineExceeded(t *T) {
 		var wg sync.WaitGroup
 		wg.Add(p)
 
-		var numSuccesses, numTimeouts uint64
+		var numSuccesses, numTimeouts, numClosed uint64
 
 		for i := 0; i < p; i++ {
 			go func() {
+				timeout := initTimeout
 				defer wg.Done()
 				for i := 0; i < n; {
 					if err := ctx.Err(); err != nil {
 						panic(err)
 					}
 
-					// the time here needs to be small enough that we get a
-					// timeout reading sometimes, but not so small that it times
-					// out everytime. By having the timeout slowly increase
-					// after every previous timeout error we can ensure we find
-					// this sweet spot in disparate test environments.
-					timeout := time.Duration(atomic.LoadUint64(&numTimeouts)) * (10 * time.Microsecond)
 					innerCtx, cancel := context.WithTimeout(ctx, timeout)
-
 					str, into := randStr(), ""
 					err := conn.Do(innerCtx, Cmd(&into, "ECHO", str))
 					cancel()
+					// We want to see at least one successful operation and one
+					// timeout. But once we hit a timeout the connection may be
+					// unusable (closed).  By halving the timeout after every
+					// successful operation we can ensure we find this sweet spot
+					// in disparate test environments.
+					timeout /= 2
 
 					if err != nil {
-						if !assert.True(t, errors.Is(err, context.DeadlineExceeded), "err:%v", err) {
+						isTimeout := errors.Is(err, context.DeadlineExceeded)
+						isClosed := errors.Is(err, proc.ErrClosed) ||
+							errors.Is(err, net.ErrClosed)
+						if !assert.True(t, isTimeout || isClosed, "err:%v", err) {
 							return
 						}
-						atomic.AddUint64(&numTimeouts, 1)
+						if isTimeout {
+							atomic.AddUint64(&numTimeouts, 1)
+						}
+						if isClosed {
+							atomic.AddUint64(&numClosed, 1)
+						}
+						return
 					} else {
 						if !assert.Equal(t, str, into) {
 							return
@@ -230,7 +242,8 @@ func TestConnDeadlineExceeded(t *T) {
 		}
 
 		wg.Wait()
-		t.Logf("successes:%d timeouts:%d", numSuccesses, numTimeouts)
+		assert.NotZero(t, numTimeouts, "number of timeouts")
+		t.Logf("successes:%d timeouts:%d closed:%d", numSuccesses, numTimeouts, numClosed)
 	})
 
 	t.Run("pubsub", func(t *T) {
@@ -242,6 +255,7 @@ func TestConnDeadlineExceeded(t *T) {
 
 		ctx := testCtx(t)
 		ch := randStr()
+		timeout := time.Second
 
 		err := subConn.Do(ctx, Cmd(nil, "SUBSCRIBE", ch))
 		assert.NoError(t, err)
@@ -257,31 +271,40 @@ func TestConnDeadlineExceeded(t *T) {
 				panic(err)
 			}
 
-			// the time here needs to be small enough that we get a timeout
-			// reading sometimes, but not so small that it times out everytime.
-			// By having the timeout slowly increase after every previous
-			// timeout error we can ensure we find this sweet spot in disparate
-			// test environments.
-			innerCtx, cancel := context.WithTimeout(ctx, time.Duration(numTimeouts)*time.Microsecond)
+			innerCtx, cancel := context.WithTimeout(ctx, timeout)
 
 			var msg PubSubMessage
 			err := subConn.EncodeDecode(innerCtx, nil, &msg)
 			cancel()
+			// We want to see at least one successful operation and one
+			// timeout. But once we hit a timeout the connection may be
+			// unusable (closed).  By halving the timeout after every
+			// successful operation we can ensure we find this sweet spot
+			// in disparate test environments.
+			timeout /= 2
 
 			if err != nil {
-				if !assert.True(t, errors.Is(err, context.DeadlineExceeded), "err:%v", err) {
+				isTimeout := errors.Is(err, context.DeadlineExceeded)
+				isClosed := errors.Is(err, proc.ErrClosed) ||
+					errors.Is(err, net.ErrClosed)
+				if !assert.True(t, isTimeout || isClosed, "err:%v", err) {
 					return
 				}
-				numTimeouts++
+				if isTimeout {
+					numTimeouts++
+				}
+				break
 			} else {
 				if !assert.Equal(t, fmt.Sprint(i), string(msg.Message)) {
 					return
 				}
-				i++
 				numSuccesses++
+				i++
 			}
 		}
 
+		assert.NotZero(t, numTimeouts, "timeouts")
+		assert.NotZero(t, numSuccesses, "successes")
 		t.Logf("successes:%d timeouts:%d", numSuccesses, numTimeouts)
 	})
 }
