@@ -305,6 +305,8 @@ type MaybeNil struct {
 func (mn *MaybeNil) UnmarshalRESP(br *bufio.Reader) error {
 	var rm resp2.RawMessage
 	err := rm.UnmarshalRESP(br)
+	mn.Nil = false
+	mn.EmptyArray = false
 	switch {
 	case err != nil:
 		return err
