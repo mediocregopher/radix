@@ -193,6 +193,14 @@ func TestConnDeadlineExceeded(t *T) {
 		return base + time.Duration(err)
 	}
 
+	// NOTE once we're not supporting 1.15, use `errors.Is(err, net.ErrClosed)`
+	isNetClosed := func(err error) bool {
+		if opErr := new(net.OpError); errors.As(err, &opErr) {
+			return opErr.Err.Error() == "use of closed network connection"
+		}
+		return false
+	}
+
 	t.Run("echo", func(t *T) {
 		const p, n = 10, 100
 		const initTimeout = time.Second
@@ -238,8 +246,7 @@ func TestConnDeadlineExceeded(t *T) {
 					if err != nil {
 						//log.Printf("%q %q err:%v", str, str2, err)
 						isTimeout := errors.Is(err, context.DeadlineExceeded)
-						isClosed := errors.Is(err, proc.ErrClosed) ||
-							errors.Is(err, net.ErrClosed)
+						isClosed := errors.Is(err, proc.ErrClosed) || isNetClosed(err)
 						if !assert.True(t, isTimeout || isClosed, "err:%v", err) {
 							return
 						}
@@ -308,8 +315,7 @@ func TestConnDeadlineExceeded(t *T) {
 
 			if err != nil {
 				isTimeout := errors.Is(err, context.DeadlineExceeded)
-				isClosed := errors.Is(err, proc.ErrClosed) ||
-					errors.Is(err, net.ErrClosed)
+				isClosed := errors.Is(err, proc.ErrClosed) || isNetClosed(err)
 				if !assert.True(t, isTimeout || isClosed, "err:%v", err) {
 					return
 				}
