@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"regexp"
 	"strconv"
@@ -184,6 +185,14 @@ func TestConnConcurrentMarshalUnmarshal(t *T) {
 }
 
 func TestConnDeadlineExceeded(t *T) {
+
+	const timeoutStdErr = 0.1
+	mkTimeout := func(base time.Duration) time.Duration {
+		err := rand.Int63n(int64(base)*2) - int64(base)
+		err = int64(float64(err) * timeoutStdErr)
+		return base + time.Duration(err)
+	}
+
 	t.Run("echo", func(t *T) {
 		const p, n = 10, 100
 		const initTimeout = time.Second
@@ -197,7 +206,7 @@ func TestConnDeadlineExceeded(t *T) {
 		var numSuccesses, numTimeouts, numClosed uint64
 
 		for i := 0; i < p; i++ {
-			go func() {
+			go func(workerID int) {
 				timeout := initTimeout
 				defer wg.Done()
 				for i := 0; i < n; {
@@ -205,18 +214,29 @@ func TestConnDeadlineExceeded(t *T) {
 						panic(err)
 					}
 
-					innerCtx, cancel := context.WithTimeout(ctx, timeout)
-					str, into := randStr(), ""
-					err := conn.Do(innerCtx, Cmd(&into, "ECHO", str))
+					str := fmt.Sprintf("%d-%da-%s", workerID, i, randStr())
+					str2 := fmt.Sprintf("%d-%db-%s", workerID, i, randStr())
+					into := ""
+					into2 := ""
+
+					pipeline := NewPipeline()
+					pipeline.Append(Cmd(&into, "ECHO", str))
+					pipeline.Append(Cmd(&into2, "ECHO", str2))
+
+					innerCtx, cancel := context.WithTimeout(ctx, mkTimeout(timeout))
+					//err := conn.Do(innerCtx, Cmd(&into, "ECHO", str))
+					err := conn.Do(innerCtx, pipeline)
 					cancel()
+
 					// We want to see at least one successful operation and one
 					// timeout. But once we hit a timeout the connection may be
-					// unusable (closed).  By halving the timeout after every
-					// successful operation we can ensure we find this sweet spot
-					// in disparate test environments.
+					// unusable (closed). By halving the timeout after every
+					// successful operation we can ensure we find this sweet
+					// spot in disparate test environments.
 					timeout /= 2
 
 					if err != nil {
+						//log.Printf("%q %q err:%v", str, str2, err)
 						isTimeout := errors.Is(err, context.DeadlineExceeded)
 						isClosed := errors.Is(err, proc.ErrClosed) ||
 							errors.Is(err, net.ErrClosed)
@@ -230,15 +250,17 @@ func TestConnDeadlineExceeded(t *T) {
 							atomic.AddUint64(&numClosed, 1)
 						}
 						return
-					} else {
-						if !assert.Equal(t, str, into) {
-							return
-						}
-						atomic.AddUint64(&numSuccesses, 1)
-						i++
+
+					} else if !assert.Equal(t, str, into) {
+						return
+					} else if !assert.Equal(t, str2, into2) {
+						return
 					}
+
+					atomic.AddUint64(&numSuccesses, 1)
+					i++
 				}
-			}()
+			}(i)
 		}
 
 		wg.Wait()
@@ -276,11 +298,12 @@ func TestConnDeadlineExceeded(t *T) {
 			var msg PubSubMessage
 			err := subConn.EncodeDecode(innerCtx, nil, &msg)
 			cancel()
-			// We want to see at least one successful operation and one
-			// timeout. But once we hit a timeout the connection may be
-			// unusable (closed).  By halving the timeout after every
-			// successful operation we can ensure we find this sweet spot
-			// in disparate test environments.
+
+			// We want to see at least one successful operation and one timeout.
+			// But once we hit a timeout the connection may be unusable
+			// (closed). By halving the timeout after every successful operation
+			// we can ensure we find this sweet spot in disparate test
+			// environments.
 			timeout /= 2
 
 			if err != nil {

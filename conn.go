@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -33,6 +34,9 @@ type Conn interface {
 	//
 	// If EncodeDecode is called concurrently on the same Conn then the order of
 	// decode steps will match the order of encode steps.
+	//
+	// NOTE If ctx is canceled then marshaling, and possibly unmarshaling, might
+	// still occur in the background even though EncodeDecode has returned.
 	EncodeDecode(ctx context.Context, marshal, unmarshalInto interface{}) error
 }
 
@@ -116,7 +120,9 @@ func (c *conn) Close() error {
 }
 
 func (c *conn) reader(ctx context.Context) {
-	var discard uint
+
+	discardList := list.New()
+
 	doneCh := ctx.Done()
 	for {
 		select {
@@ -130,11 +136,6 @@ func (c *conn) reader(ctx context.Context) {
 			if err := mu.ctx.Err(); err != nil {
 				mu.errCh <- fmt.Errorf("checking context before read: %w", err)
 				skip = true
-			} else if deadline, ok := mu.ctx.Deadline(); ok {
-				if err := c.conn.SetReadDeadline(deadline); err != nil {
-					mu.errCh <- fmt.Errorf("setting read deadline to %v: %w", deadline, err)
-					skip = true
-				}
 			} else if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
 				mu.errCh <- fmt.Errorf("unsetting read deadline: %w", err)
 				skip = true
@@ -148,7 +149,7 @@ func (c *conn) reader(ctx context.Context) {
 
 			if skip {
 				if mu.marshal != nil {
-					discard++
+					discardList.PushBack(mu)
 				}
 				continue
 			}
@@ -164,37 +165,51 @@ func (c *conn) reader(ctx context.Context) {
 			// value to marshal is given then the EncodeDecode will read in
 			// whatever the next message in the queue is.
 			if mu.marshal != nil {
-				for discard > 0 {
-					if err = resp3.Unmarshal(c.br, nil, c.rOpts); err != nil {
+				for {
+					el := discardList.Front()
+					if el == nil {
 						break
 					}
-					discard--
+
+					discardMU := el.Value.(connMarshalerUnmarshaler)
+
+					if err = resp3.Unmarshal(c.br, discardMU.unmarshalInto, c.rOpts); err != nil {
+						break
+					}
+
+					discardList.Remove(el)
 				}
 			}
 
 			// if discarding didn't fail then read the actual desired response.
 			if err == nil {
-				if err = resp3.Unmarshal(c.br, mu.unmarshalInto, c.rOpts); err == nil && discard > 0 {
-					discard--
+				if err = resp3.Unmarshal(c.br, mu.unmarshalInto, c.rOpts); err == nil && discardList.Len() > 0 {
+					discardList.Remove(discardList.Front())
 				}
 			}
 
 			// simplify things for the caller by translating network timeouts
-			// into DeadlineExceeded, since that's actually what happened.
-			if errors.Is(err, os.ErrDeadlineExceeded) {
-				err = context.DeadlineExceeded
+			// into the context error, since that's actually what happened.
+			var canceled bool
+			if canceled = errors.Is(err, os.ErrDeadlineExceeded); canceled {
+				if err = mu.ctx.Err(); err == nil {
+					// there might be some crazy edge case where this can
+					// happen, I'm not sure... go contexts are not pleasant to
+					// work with.
+					err = context.Canceled
+				}
 			}
 
 			if err != nil {
 				err = fmt.Errorf("unmarshaling message off Conn: %w", err)
 			}
 
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			if canceled {
 				if buffered == c.br.Buffered() && c.conn.totalBytesRead == 0 {
 					err = resp.ErrConnUsable{Err: err}
 
 					if mu.marshal != nil {
-						discard++
+						discardList.PushBack(mu)
 					}
 
 				} else {
@@ -206,6 +221,7 @@ func (c *conn) reader(ctx context.Context) {
 					mu.errCh <- fmt.Errorf("after partial read off Conn: %w", err)
 					return
 				}
+
 			} else if err != nil && !errors.As(err, new(resp.ErrConnUsable)) {
 				go c.Close()
 				mu.errCh <- fmt.Errorf("unexpected error on Conn: %w", err)
