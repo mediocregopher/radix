@@ -594,12 +594,6 @@ func (p *pipeline) EncodeDecode(_ context.Context, m, u interface{}) error {
 	return nil
 }
 
-func (p *pipeline) setErr(startingAt int, err error) {
-	for i := startingAt; i < len(p.mm); i++ {
-		p.mm[i].err = err
-	}
-}
-
 func (p *pipeline) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	for i := range p.mm {
 		if p.mm[i].marshal == nil {
@@ -612,11 +606,7 @@ func (p *pipeline) MarshalRESP(w io.Writer, o *resp.Opts) error {
 			// on to the rest...
 			p.mm[i].err = err
 		} else {
-			// ..otherwise if the connection isn't usable then mark this and all
-			// subsequent pipelineMarshalerUnmarshalers as having had this
-			// error.
-			p.setErr(i, err)
-			break
+			return err
 		}
 	}
 	return nil
@@ -629,10 +619,12 @@ func (p *pipeline) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) error {
 		} else if err := resp3.Unmarshal(br, p.mm[i].unmarshalInto, o); err == nil {
 			// ok
 		} else if errors.As(err, new(resp.ErrConnUsable)) {
+			// if the connection is still usable then mark this
+			// pipelineMarshalerUnmarshaler as having had an error but continue
+			// on to the rest...
 			p.mm[i].err = err
 		} else {
-			p.setErr(i, err)
-			break
+			return err
 		}
 	}
 	return nil
@@ -650,38 +642,24 @@ func (p *pipeline) Perform(ctx context.Context, c Conn) error {
 		}
 	}
 
-	// pipeline's Marshal/UnmarshalRESP methods don't return an error, but
-	// instead swallow any errors they come across. If EncodeDecode returns an
-	// error it means something else the Conn was doing errored (like flushing
-	// its write buffer). There's not much to be done except return that error
-	// for all pipelineMarshalerUnmarshalers.
+	// pipeline's Marshal/UnmarshalRESP methods only return conn-unusable
+	// errors. There's not much to be done for those except return the error for
+	// the entire pipeline.
 	if err := c.EncodeDecode(ctx, p, p); err != nil {
-		p.setErr(0, err)
 		return err
 	}
 
-	// look through any errors encountered, if any. Perform will only return the
-	// first error encountered, but it does take into account all the others
-	// when determining if that error should be wrapped in ErrConnUsable.
-	var err error
-	connUsable := true
+	// look through the errors encountered on individual
+	// pipelineMarshalerUnmarshalers, they will be conn-usable. Return the first
+	// one in a nicely formatted way so the caller knows that something went
+	// wrong but the connection is still usable.
 	for _, m := range p.mm {
 		if m.err != nil {
-			if err == nil {
-				err = fmt.Errorf("command %+v in pipeline returned error: %w", m.marshal, m.err)
-			}
-			if !errors.As(m.err, new(resp.ErrConnUsable)) {
-				connUsable = false
-				break
-			}
+			return fmt.Errorf("command %+v in pipeline returned error: %w", m.marshal, m.err)
 		}
 	}
 
-	// unwrap the error if not all of the errors encountered were discarded.
-	if !connUsable {
-		err = resp.ErrConnUnusable(err)
-	}
-	return err
+	return nil
 }
 
 // Pipeline is an Action which combines multiple commands into a single network
