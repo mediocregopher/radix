@@ -1,7 +1,5 @@
 # Radix
 
-[![Build Status](https://travis-ci.org/mediocregopher/radix.svg)](https://travis-ci.org/mediocregopher/radix)
-
 [![Go v3 reference](https://pkg.go.dev/badge/github.com/mediocregopher/radix/v3.svg)](https://pkg.go.dev/github.com/mediocregopher/radix/v3#section-documentation) (v3)
 
 [![Go v4 reference](https://pkg.go.dev/badge/github.com/mediocregopher/radix/v4.svg)](https://pkg.go.dev/github.com/mediocregopher/radix/v4#section-documentation) (v4, still in beta)

@@ -1,5 +1,9 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.7.1
+
+* Release the RLock in `Sentinel`'s `Do`. (PR #272)
+
 # v3.7.0
 
 **New**
