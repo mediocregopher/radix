@@ -98,6 +98,9 @@ type poolOpts struct {
 // to effect a Pool's behavior
 type PoolOpt func(*poolOpts)
 
+// PoolMaxLifetime sets the maximum amount of time a connection may be reused.
+// Expired connections may be closed lazily before reuse.
+// If d <= 0, connections are not closed due to a connection's age.
 func PoolMaxLifetime(d time.Duration) PoolOpt {
 	return func(po *poolOpts) {
 		po.maxLifetime = d
@@ -514,21 +517,6 @@ func (p *Pool) doOverflowDrain() {
 }
 
 func (p *Pool) getExisting() (*ioErrConn, error) {
-	// Fast-path if the pool is not empty. Return error if pool has been closed.
-	select {
-	case ioc, ok := <-p.pool:
-		if !ok {
-			return nil, errClientClosed
-		}
-		return ioc, nil
-	default:
-	}
-
-	if p.opts.onEmptyWait == 0 {
-		// If we should not wait we return without allocating a timer.
-		return nil, p.opts.errOnEmpty
-	}
-
 	// only set when we have a timeout, since a nil channel always blocks which
 	// is what we want
 	var tc <-chan time.Time
@@ -539,15 +527,28 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 		tc = t.C
 	}
 
-	select {
-	case ioc, ok := <-p.pool:
-		if !ok {
-			return nil, errClientClosed
+	// Fast-path if the pool is not empty. Return error if pool has been closed.
+	for {
+		select {
+		case ioc, ok := <-p.pool:
+			if !ok {
+				return nil, errClientClosed
+			}
+			if ioc.expired(p.opts.maxLifeDuration) {
+				ioc.Close()
+				p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
+				atomic.AddInt64(&p.totalConns, -1)
+				continue
+			}
+			return ioc, nil
+		case <-tc:
+			return nil, p.opts.errOnEmpty
+		default:
 		}
-		return ioc, nil
-	case <-tc:
-		return nil, p.opts.errOnEmpty
 	}
+
+	return nil, p.opts.errOnEmpty
+
 }
 
 func (p *Pool) get() (*ioErrConn, error) {
