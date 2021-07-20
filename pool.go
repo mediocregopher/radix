@@ -74,7 +74,7 @@ func (ioc *ioErrConn) expired(timeout time.Duration) bool {
 	if timeout <= 0 {
 		return false
 	}
-	return ioc.createdAt.Add(timeout).Before(time.Now())
+	return time.Since(ioc.createdAt) >= timeout
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -517,6 +517,29 @@ func (p *Pool) doOverflowDrain() {
 }
 
 func (p *Pool) getExisting() (*ioErrConn, error) {
+	// Fast-path if the pool is not empty. Return error if pool has been closed.
+	for {
+		select {
+		case ioc, ok := <-p.pool:
+			if !ok {
+				return nil, errClientClosed
+			}
+			if ioc.expired(p.opts.maxLifetime) {
+				ioc.Close()
+				p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
+				atomic.AddInt64(&p.totalConns, -1)
+				continue
+			}
+			return ioc, nil
+		default:
+		}
+	}
+
+	if p.opts.onEmptyWait == 0 {
+		// If we should not wait we return without allocating a timer.
+		return nil, p.opts.errOnEmpty
+	}
+
 	// only set when we have a timeout, since a nil channel always blocks which
 	// is what we want
 	var tc <-chan time.Time
@@ -527,14 +550,13 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 		tc = t.C
 	}
 
-	// Fast-path if the pool is not empty. Return error if pool has been closed.
 	for {
 		select {
 		case ioc, ok := <-p.pool:
 			if !ok {
 				return nil, errClientClosed
 			}
-			if ioc.expired(p.opts.maxLifeDuration) {
+			if ioc.expired(p.opts.maxLifetime) {
 				ioc.Close()
 				p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
 				atomic.AddInt64(&p.totalConns, -1)
@@ -543,13 +565,8 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 			return ioc, nil
 		case <-tc:
 			return nil, p.opts.errOnEmpty
-		default:
-			break
 		}
 	}
-
-	return nil, p.opts.errOnEmpty
-
 }
 
 func (p *Pool) get() (*ioErrConn, error) {
