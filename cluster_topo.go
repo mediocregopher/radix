@@ -198,7 +198,7 @@ func (tss *topoSlotSet) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 		}
 
 		node := ClusterNode{
-			Addr:  ip + ":" + port,
+			Addr:  net.JoinHostPort(ip, port),
 			ID:    id,
 			Slots: [][2]uint16{tss.slots},
 		}
