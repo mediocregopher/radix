@@ -197,3 +197,35 @@ func TestClusterTopoSplitSlots(t *T) {
 	}
 
 }
+
+func TestIPV6ClusterTopo(t *T) {
+	clusterSlotsResp := respArr(
+		respArr(0, 0,
+			respArr("8ffd:50::d4eb", "7001", "90900dd4ef2182825bc853c448737b2ba9975a50"),
+		),
+	)
+	expTopo := ClusterTopo{
+		ClusterNode{
+			Slots: [][2]uint16{{0, 1}},
+			Addr:  "[8ffd:50::d4eb]:7001", ID: "90900dd4ef2182825bc853c448737b2ba9975a50",
+		},
+	}
+
+	// unmarshal the resp into a Topo and make sure it matches expTopo
+	{
+		buf := new(bytes.Buffer)
+		require.Nil(t, clusterSlotsResp.MarshalRESP(buf))
+		var topo ClusterTopo
+		require.Nil(t, topo.UnmarshalRESP(bufio.NewReader(buf)))
+		assert.Equal(t, expTopo, topo)
+	}
+
+	// marshal Topo, then re-unmarshal, and make sure it still matches
+	{
+		buf := new(bytes.Buffer)
+		require.Nil(t, expTopo.MarshalRESP(buf))
+		var topo ClusterTopo
+		require.Nil(t, topo.UnmarshalRESP(bufio.NewReader(buf)))
+		assert.Equal(t, expTopo, topo)
+	}
+}
