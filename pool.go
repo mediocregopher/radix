@@ -526,7 +526,7 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 			}
 			if ioc.expired(p.opts.maxLifetime) {
 				ioc.Close()
-				p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
+				p.traceConnClosed(trace.PoolConnClosedReasonConnExpired)
 				atomic.AddInt64(&p.totalConns, -1)
 				continue
 			}
@@ -558,7 +558,7 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 			}
 			if ioc.expired(p.opts.maxLifetime) {
 				ioc.Close()
-				p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
+				p.traceConnClosed(trace.PoolConnClosedReasonConnExpired)
 				atomic.AddInt64(&p.totalConns, -1)
 				continue
 			}
@@ -583,12 +583,15 @@ func (p *Pool) get() (*ioErrConn, error) {
 // discarded.
 func (p *Pool) put(ioc *ioErrConn) bool {
 	p.l.RLock()
-	if ioc.lastIOErr == nil && !p.closed && !ioc.expired(p.opts.maxLifetime) {
-		select {
-		case p.pool <- ioc:
-			p.l.RUnlock()
-			return true
-		default:
+	var expired bool
+	if ioc.lastIOErr == nil && !p.closed {
+		if expired = ioc.expired(p.opts.maxLifetime); !expired {
+			select {
+			case p.pool <- ioc:
+				p.l.RUnlock()
+				return true
+			default:
+			}
 		}
 	}
 	p.l.RUnlock()
@@ -596,7 +599,11 @@ func (p *Pool) put(ioc *ioErrConn) bool {
 	// the pool might close here, but that's fine, because all that's happening
 	// at this point is that the connection is being closed
 	ioc.Close()
-	p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
+	if expired {
+		p.traceConnClosed(trace.PoolConnClosedReasonConnExpired)
+	} else {
+		p.traceConnClosed(trace.PoolConnClosedReasonPoolFull)
+	}
 	atomic.AddInt64(&p.totalConns, -1)
 	return false
 }
