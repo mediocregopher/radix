@@ -60,6 +60,7 @@ func TestPool(t *T) {
 	// This one is expected to error, since this test empties the pool by design
 	//t.Run("onEmptyErr", func(t *T) { do(PoolOnEmptyErrAfter(0)) })
 	t.Run("onEmptyErrAfter", func(t *T) { do(PoolOnEmptyErrAfter(1 * time.Second)) })
+	t.Run("maxLifetime", func(t *T) { do(PoolMaxLifetime(1 * time.Second)) })
 
 	t.Run("withTrace", func(t *T) {
 		var connCreatedCount int

@@ -88,6 +88,10 @@ const (
 	// PoolConnClosedReasonPoolFull indicates a connection was closed due to
 	// the Pool already being full. See The radix.PoolOnFullClose options.
 	PoolConnClosedReasonPoolFull PoolConnClosedReason = "pool full"
+
+	// PoolConnClosedReasonConnExpired indicates a connection was closed because
+	// the connection was expired. See The radix.PoolMaxLifetime options.
+	PoolConnClosedReasonConnExpired PoolConnClosedReason = "conn expired"
 )
 
 // PoolConnClosed is passed into the PoolTrace.ConnClosed callback whenever the
