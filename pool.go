@@ -533,6 +533,7 @@ func (p *Pool) getExisting() (*ioErrConn, error) {
 			return ioc, nil
 		default:
 		}
+		break // Failed to get from pool, so jump out to conduct for the next move.
 	}
 
 	if p.opts.onEmptyWait == 0 {
