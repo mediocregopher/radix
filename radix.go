@@ -163,7 +163,7 @@
 package radix
 
 import (
-	errors "golang.org/x/xerrors"
+	"errors"
 )
 
 var errClientClosed = errors.New("client is closed")

@@ -39,7 +39,7 @@ func newTestCluster(opts ...ClusterOpt) (*Cluster, *clusterStub) {
 	return scl.newCluster(opts...), scl
 }
 
-// sanity check that Cluster is a client
+// sanity check that Cluster is a client.
 func TestClusterClient(t *T) {
 	c, _ := newTestCluster()
 	defer c.Close()
@@ -355,7 +355,14 @@ func TestClusterDoSecondary(t *T) {
 var clusterAddrs []string
 
 func ExampleClusterPoolFunc_defaultClusterConnFunc() {
-	NewCluster(clusterAddrs, ClusterPoolFunc(func(network, addr string) (Client, error) {
+
+	cluster, err := NewCluster(clusterAddrs, ClusterPoolFunc(func(network, addr string) (Client, error) {
 		return NewPool(network, addr, 4, PoolConnFunc(DefaultClusterConnFunc))
 	}))
+
+	if err != nil {
+		// handle err
+	}
+
+	_ = cluster // use the cluster
 }

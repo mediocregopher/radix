@@ -16,7 +16,7 @@ import (
 // reads/writes data using the redis resp protocol.
 //
 // A Conn can be used directly as a Client, but in general you probably want to
-// use a *Pool instead
+// use a *Pool instead.
 type Conn interface {
 	// The Do method of a Conn is _not_ expected to be thread-safe with the
 	// other methods of Conn, and merely calls the Action's Run method with
@@ -197,14 +197,20 @@ type timeoutConn struct {
 
 func (tc *timeoutConn) Read(b []byte) (int, error) {
 	if tc.readTimeout > 0 {
-		tc.Conn.SetReadDeadline(time.Now().Add(tc.readTimeout))
+		err := tc.Conn.SetReadDeadline(time.Now().Add(tc.readTimeout))
+		if err != nil {
+			return 0, err
+		}
 	}
 	return tc.Conn.Read(b)
 }
 
 func (tc *timeoutConn) Write(b []byte) (int, error) {
 	if tc.writeTimeout > 0 {
-		tc.Conn.SetWriteDeadline(time.Now().Add(tc.writeTimeout))
+		err := tc.Conn.SetWriteDeadline(time.Now().Add(tc.writeTimeout))
+		if err != nil {
+			return 0, err
+		}
 	}
 	return tc.Conn.Write(b)
 }

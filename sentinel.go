@@ -1,12 +1,11 @@
 package radix
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	errors "golang.org/x/xerrors"
 )
 
 type sentinelOpts struct {
@@ -50,7 +49,7 @@ func SentinelPoolFunc(pf ClientFunc) SentinelOpt {
 // creates a new Client to the new primary
 //
 // * Keeps track of other sentinels in the cluster, and uses them if the
-// currently connected one becomes unreachable
+// currently connected one becomes unreachable.
 //
 type Sentinel struct {
 	so        sentinelOpts
@@ -148,7 +147,9 @@ func NewSentinel(primaryName string, sentinelAddrs []string, opts ...SentinelOpt
 	sc.pconn = PersistentPubSub("", "", func(_, _ string) (Conn, error) {
 		return sc.dialSentinel()
 	})
-	sc.pconn.Subscribe(sc.pconnCh, "switch-master")
+
+	// persistent pubsub doesn't return errors
+	_ = sc.pconn.Subscribe(sc.pconnCh, "switch-master")
 
 	sc.closeWG.Add(1)
 	go sc.spin()
@@ -330,16 +331,16 @@ func (sc *Sentinel) Close() error {
 	return closeErr
 }
 
-// cmd should be the command called which generated m
+// cmd should be the command called which generated m.
 func sentinelMtoAddr(m map[string]string, cmd string) (string, error) {
 	if m["ip"] == "" || m["port"] == "" {
-		return "", errors.Errorf("malformed %q response: %#v", cmd, m)
+		return "", fmt.Errorf("malformed %q response: %#v", cmd, m)
 	}
 	return net.JoinHostPort(m["ip"], m["port"]), nil
 }
 
 // given a connection to a sentinel, ensures that the Clients currently being
-// held agrees with what the sentinel thinks they should be
+// held agrees with what the sentinel thinks they should be.
 func (sc *Sentinel) ensureClients(conn Conn) error {
 	var primM map[string]string
 	var secMM []map[string]string
@@ -367,7 +368,7 @@ func (sc *Sentinel) ensureClients(conn Conn) error {
 	return sc.setClients(newPrimAddr, newClients)
 }
 
-// all values of newClients should be nil
+// all values of newClients should be nil.
 func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client) error {
 	newClients[newPrimAddr] = nil
 	var toClose []Client
@@ -430,7 +431,7 @@ func (sc *Sentinel) setClients(newPrimAddr string, newClients map[string]Client)
 }
 
 // annoyingly the SENTINEL SENTINELS <name> command doesn't return _this_
-// sentinel instance, only the others it knows about for that primary
+// sentinel instance, only the others it knows about for that primary.
 func (sc *Sentinel) ensureSentinelAddrs(conn Conn) error {
 	var mm []map[string]string
 	err := conn.Do(Cmd(&mm, "SENTINEL", "SENTINELS", sc.name))
@@ -494,7 +495,9 @@ func (sc *Sentinel) innerSpin() error {
 		} else if err := sc.ensureClients(conn); err != nil {
 			return err
 		}
-		sc.pconn.Ping()
+
+		// persistent pubsub methods don't return an error
+		_ = sc.pconn.Ping()
 
 		// the tests want to know when the client state has been updated due to
 		// a switch-master event

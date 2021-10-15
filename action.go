@@ -11,10 +11,9 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/xerrors"
-
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
+	"golang.org/x/xerrors"
 )
 
 // Action performs a task using a Conn.
@@ -141,7 +140,7 @@ type cmdAction struct {
 	flatArgs []interface{}
 }
 
-// BREAM: Benchmarks Rule Everything Around Me
+// BREAM: Benchmarks Rule Everything Around Me.
 var cmdActionPool sync.Pool
 
 func getCmdAction() *cmdAction {
@@ -375,7 +374,7 @@ type EvalScript struct {
 }
 
 // NewEvalScript initializes a EvalScript instance. numKeys corresponds to the
-// number of arguments which will be keys when Cmd is called
+// number of arguments which will be keys when Cmd is called.
 func NewEvalScript(numKeys int, script string) EvalScript {
 	sumRaw := sha1.Sum([]byte(script))
 	sum := hex.EncodeToString(sumRaw[:])
@@ -558,13 +557,13 @@ func (p pipeline) drain(c Conn, n int) {
 func decodeErr(cmd CmdAction, err error) error {
 	c, ok := cmd.(*cmdAction)
 	if ok {
-		return xerrors.Errorf(
+		return fmt.Errorf(
 			"failed to decode pipeline CmdAction '%v' with keys %v: %w",
 			c.cmd,
 			c.Keys(),
 			err)
 	}
-	return xerrors.Errorf(
+	return fmt.Errorf(
 		"failed to decode pipeline CmdAction '%v': %w",
 		cmd,
 		err)
@@ -610,7 +609,7 @@ type withConn struct {
 //
 // NOTE that WithConn only ensures all inner Actions are performed on the same
 // Conn, it doesn't make them transactional. Use MULTI/WATCH/EXEC within a
-// WithConn for transactions, or use EvalScript
+// WithConn for transactions, or use EvalScript.
 func WithConn(key string, fn func(Conn) error) Action {
 	return &withConn{[1]string{key}, fn}
 }

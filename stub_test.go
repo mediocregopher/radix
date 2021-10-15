@@ -1,14 +1,13 @@
 package radix
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"sync"
 	. "testing"
 	"time"
-
-	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ func testStub() Conn {
 		case "ECHO":
 			return args[1]
 		default:
-			return errors.Errorf("testStub doesn't support command %q", args[0])
+			return fmt.Errorf("testStub doesn't support command %q", args[0])
 		}
 	})
 }
@@ -93,15 +92,17 @@ func TestStubLockingTimeout(t *T) {
 	// when there's actually data to read
 	now := time.Now()
 	conn := stub.NetConn()
-	conn.SetDeadline(now.Add(2 * time.Second))
+	err := conn.SetDeadline(now.Add(2 * time.Second))
+	assert.NoError(t, err)
 	require.Nil(t, stub.Encode(Cmd(nil, "ECHO", "1")))
 	require.Nil(t, stub.Decode(resp2.Any{}))
 
 	// now there's no data to read, should return after 2-ish seconds with a
 	// timeout error
-	err := stub.Decode(resp2.Any{})
-	nerr, ok := err.(*net.OpError)
-	assert.True(t, ok)
+	err = stub.Decode(resp2.Any{})
+
+	var nerr *net.OpError
+	assert.True(t, errors.As(err, &nerr))
 	assert.True(t, nerr.Timeout())
 }
 
@@ -115,13 +116,18 @@ func ExampleStub() {
 			m[args[1]] = args[2]
 			return nil
 		default:
-			return errors.Errorf("this stub doesn't support command %q", args[0])
+			return fmt.Errorf("this stub doesn't support command %q", args[0])
 		}
 	})
 
-	stub.Do(Cmd(nil, "SET", "foo", "1"))
+	if err := stub.Do(Cmd(nil, "SET", "foo", "1")); err != nil {
+		// handle error
+	}
 
 	var foo int
-	stub.Do(Cmd(&foo, "GET", "foo"))
+	if err := stub.Do(Cmd(&foo, "GET", "foo")); err != nil {
+		// handle error
+	}
+
 	fmt.Printf("foo: %d\n", foo)
 }

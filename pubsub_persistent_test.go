@@ -4,8 +4,9 @@ import (
 	. "testing"
 	"time"
 
+	"errors"
+
 	"github.com/stretchr/testify/assert"
-	errors "golang.org/x/xerrors"
 )
 
 func closablePersistentPubSub() (PubSubConn, func()) {
@@ -96,7 +97,8 @@ func TestPersistentPubSubClose(t *T) {
 			return dial(), nil
 		})
 		msgCh := make(chan PubSubMessage)
-		p.Subscribe(msgCh, channel)
+		err := p.Subscribe(msgCh, channel)
+		assert.NoError(t, err)
 		// drain msgCh till it closes
 		go func() {
 			for range msgCh {
@@ -114,7 +116,8 @@ func TestPersistentPubSubUseAfterCloseDeadlock(t *T) {
 		return dial(), nil
 	})
 	msgCh := make(chan PubSubMessage)
-	p.Subscribe(msgCh, channel)
+	err := p.Subscribe(msgCh, channel)
+	assert.NoError(t, err)
 	p.Close()
 
 	errch := make(chan error)

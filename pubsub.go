@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
 
-// PubSubMessage describes a message being published to a subscribed channel
+// PubSubMessage describes a message being published to a subscribed channel.
 type PubSubMessage struct {
 	Type    string // "message" or "pmessage"
 	Pattern string // will be set if Type is "pmessage"
@@ -48,7 +48,7 @@ func (m PubSubMessage) MarshalRESP(w io.Writer) error {
 
 var errNotPubSubMessage = errors.New("message is not a PubSubMessage")
 
-// UnmarshalRESP implements the Unmarshaler interface
+// UnmarshalRESP implements the Unmarshaler interface.
 func (m *PubSubMessage) UnmarshalRESP(br *bufio.Reader) error {
 	// This method will fully consume the message on the wire, regardless of if
 	// it is a PubSubMessage or not. If it is not then errNotPubSubMessage is
@@ -309,21 +309,23 @@ func (c *pubSubConn) spin() {
 	for {
 		var m PubSubMessage
 		err := c.conn.Decode(&m)
-		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+		if nerr := net.Error(nil); errors.As(err, &nerr) && nerr.Timeout() {
 			c.testEvent("timeout")
 			continue
 		} else if errors.Is(err, errNotPubSubMessage) {
 			c.cmdResCh <- nil
 			continue
 		} else if err != nil {
-			c.closeInner(err)
+			// closeInner returns the error from closing the Conn, which doesn't
+			// really matter here.
+			_ = c.closeInner(err)
 			return
 		}
 		c.publish(m)
 	}
 }
 
-// NOTE cmdL _must_ be held to use do
+// NOTE cmdL _must_ be held to use do.
 func (c *pubSubConn) do(exp int, cmd string, args ...string) error {
 	rcmd := Cmd(nil, cmd, args...)
 	if err := c.conn.Encode(rcmd); err != nil {

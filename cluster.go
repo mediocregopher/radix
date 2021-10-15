@@ -1,13 +1,14 @@
 package radix
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
@@ -65,7 +66,7 @@ type clusterOpts struct {
 }
 
 // ClusterOpt is an optional behavior which can be applied to the NewCluster
-// function to effect a Cluster's behavior
+// function to effect a Cluster's behavior.
 type ClusterOpt func(*clusterOpts)
 
 // ClusterPoolFunc tells the Cluster to use the given ClientFunc when creating
@@ -123,7 +124,7 @@ func ClusterOnInitAllowUnavailable(initAllowUnavailable bool) ClusterOpt {
 
 // Cluster contains all information about a redis cluster needed to interact
 // with it, including a set of pools to each of its instances. All methods on
-// Cluster are thread-safe
+// Cluster are thread-safe.
 type Cluster struct {
 	// Atomic fields must be at the beginning of the struct since they must be
 	// correctly aligned or else access may cause panics on 32-bit architectures
@@ -246,7 +247,7 @@ func assertKeysSlot(keys []string) error {
 		if !ok {
 			ok = true
 		} else if slot != thisSlot {
-			return errors.Errorf("keys %q and %q do not belong to the same slot", prevKey, key)
+			return fmt.Errorf("keys %q and %q do not belong to the same slot", prevKey, key)
 		}
 		prevKey = key
 		slot = thisSlot
@@ -254,7 +255,7 @@ func assertKeysSlot(keys []string) error {
 	return nil
 }
 
-// may return nil, nil if no pool for the addr
+// may return nil, nil if no pool for the addr.
 func (c *Cluster) rpool(addr string) (Client, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()
@@ -295,7 +296,7 @@ func (c *Cluster) Client(addr string) (Client, error) {
 }
 
 // if addr is "" returns a random pool. If addr is given but there's no pool for
-// it one will be created on-the-fly
+// it one will be created on-the-fly.
 func (c *Cluster) pool(addr string) (Client, error) {
 	p, err := c.rpool(addr)
 	if p != nil || err != nil {
@@ -348,7 +349,7 @@ func (c *Cluster) getTopo(p Client) (ClusterTopo, error) {
 // Sync will synchronize the Cluster with the actual cluster, making new pools
 // to new instances and removing ones from instances no longer in the cluster.
 // This will be called periodically automatically, but you can manually call it
-// at any time as well
+// at any time as well.
 func (c *Cluster) Sync() error {
 	p, err := c.pool("")
 	if err != nil {
@@ -423,7 +424,7 @@ func (c *Cluster) sync(p Client, silenceFlag bool) error {
 			if silenceFlag {
 				continue
 			} else {
-				return errors.Errorf("error connecting to %s: %w", t.Addr, err)
+				return fmt.Errorf("error connecting to %s: %w", t.Addr, err)
 			}
 		}
 	}
@@ -727,7 +728,7 @@ func (c *Cluster) doInner(a Action, addr, key string, ask bool, attempts int) er
 
 	msgParts := strings.Split(msg, " ")
 	if len(msgParts) < 3 {
-		return errors.Errorf("malformed MOVED/ASK error %q", msg)
+		return fmt.Errorf("malformed MOVED/ASK error %q", msg)
 	}
 	ogAddr, addr := addr, msgParts[2]
 

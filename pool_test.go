@@ -7,9 +7,10 @@ import (
 	. "testing"
 	"time"
 
+	"errors"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	errors "golang.org/x/xerrors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
@@ -26,10 +27,13 @@ func testPool(size int, opts ...PoolOpt) *Pool {
 }
 
 func TestPool(t *T) {
+
 	testEcho := func(c Conn) error {
 		exp := randStr()
 		var out string
-		assert.Nil(t, c.Do(Cmd(&out, "ECHO", exp)))
+		if err := c.Do(Cmd(&out, "ECHO", exp)); err != nil {
+			return err
+		}
 		assert.Equal(t, exp, out)
 		return nil
 	}
@@ -94,7 +98,7 @@ func TestPool(t *T) {
 	})
 }
 
-// Test all the different OnEmpty behaviors
+// Test all the different OnEmpty behaviors.
 func TestPoolGet(t *T) {
 	getBlock := func(p *Pool) (time.Duration, error) {
 		start := time.Now()
@@ -197,29 +201,32 @@ func TestPoolPut(t *T) {
 
 	// Make sure that put does not accept a connection which has had a critical
 	// network error
-	pool.Do(WithConn("", func(conn Conn) error {
+	err := pool.Do(WithConn("", func(conn Conn) error {
 		assertPoolConns(9)
 		conn.(*ioErrConn).lastIOErr = io.EOF
 		return nil
 	}))
+	assert.NoError(t, err)
 	assertPoolConns(9)
 
 	// Make sure that a put _does_ accept a connection which had a
 	// marshal/unmarshal error
-	pool.Do(WithConn("", func(conn Conn) error {
+	err = pool.Do(WithConn("", func(conn Conn) error {
 		assert.NotNil(t, conn.Do(FlatCmd(nil, "ECHO", "", func() {})))
 		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
 		return nil
 	}))
+	assert.NoError(t, err)
 	assertPoolConns(9)
 
 	// Make sure that a put _does_ accept a connection which had an app level
 	// resp error
-	pool.Do(WithConn("", func(conn Conn) error {
+	err = pool.Do(WithConn("", func(conn Conn) error {
 		assert.NotNil(t, Cmd(nil, "CMDDNE"))
 		assert.Nil(t, conn.(*ioErrConn).lastIOErr)
 		return nil
 	}))
+	assert.NoError(t, err)
 	assertPoolConns(9)
 
 	// Make sure that closing the pool closes outstanding connections as well
@@ -229,16 +236,17 @@ func TestPoolPut(t *T) {
 		assert.Nil(t, pool.Close())
 		closeCh <- true
 	}()
-	pool.Do(WithConn("", func(conn Conn) error {
+	err = pool.Do(WithConn("", func(conn Conn) error {
 		closeCh <- true
 		<-closeCh
 		return nil
 	}))
+	assert.NoError(t, err)
 	assertPoolConns(0)
 }
 
 // TestPoolDoDoesNotBlock checks that with a positive onEmptyWait Pool.Do()
-// does not block longer than the timeout period given by user
+// does not block longer than the timeout period given by user.
 func TestPoolDoDoesNotBlock(t *T) {
 	size := 10
 	requestTimeout := 200 * time.Millisecond
@@ -266,14 +274,15 @@ func TestPoolDoDoesNotBlock(t *T) {
 	for i := 0; i < 5*size; i++ {
 		wg.Add(1)
 		go func(i int) {
-			time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+			time.Sleep(time.Duration(i*10) * time.Millisecond)
 
 			timeStart := time.Now()
-			pool.Do(WithConn("", func(conn Conn) error {
+			err := pool.Do(WithConn("", func(conn Conn) error {
 				time.Sleep(requestTimeout)
 				conn.(*ioErrConn).lastIOErr = errors.New("i/o timeout")
 				return nil
 			}))
+			assert.NoError(t, err)
 
 			if time.Since(timeStart)-requestTimeout-redialInterval > 20*time.Millisecond {
 				atomic.AddUint32(&timeExceeded, 1)

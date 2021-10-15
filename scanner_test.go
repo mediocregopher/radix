@@ -20,7 +20,7 @@ func requireRedisVersion(tb TB, c Client, major, minor, patch int) {
 
 	m := redisVersionPat.FindStringSubmatch(info)
 	if m == nil {
-		tb.Fatal("failed to get redis server version")
+		panic("failed to get redis server version")
 	}
 
 	gotMajor, _ := strconv.Atoi(m[1])
@@ -68,7 +68,7 @@ func TestScanner(t *T) {
 	require.Nil(t, sc.Close())
 }
 
-// Similar to TestScanner, but scans over a set instead of the whole key space
+// Similar to TestScanner, but scans over a set instead of the whole key space.
 func TestScannerSet(t *T) {
 	c := dial()
 

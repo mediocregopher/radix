@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// global pool of *time.Timer's
+// global pool of *time.Timer's.
 var timerPool sync.Pool
 
 // get returns a timer that completes after the given duration.

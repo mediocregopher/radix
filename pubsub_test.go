@@ -16,7 +16,7 @@ func publish(t *T, c Conn, ch, msg string) {
 	require.Nil(t, c.Do(Cmd(nil, "PUBLISH", ch, msg)))
 }
 
-func assertMsgRead(t *T, msgCh <-chan PubSubMessage) PubSubMessage {
+func assertMsgRead(_ *T, msgCh <-chan PubSubMessage) PubSubMessage {
 	select {
 	case m := <-msgCh:
 		return m
@@ -243,7 +243,7 @@ func TestPubSubMixedSubscribe(t *T) {
 }
 
 // Ensure that PubSubConn properly handles the case where the Conn it's reading
-// from returns a timeout error
+// from returns a timeout error.
 func TestPubSubTimeout(t *T) {
 	c, pubC := PubSub(dial(DialReadTimeout(1*time.Second))), dial()
 	c.(*pubSubConn).testEventCh = make(chan string, 1)
@@ -380,7 +380,7 @@ func ExamplePersistentPubSub_cluster() {
 	// Initialize the cluster in any way you see fit
 	cluster, err := NewCluster([]string{"127.0.0.1:6379"})
 	if err != nil {
-		panic(err)
+		// handle error
 	}
 
 	// Have PersistentPubSub pick a random cluster node everytime it wants to
@@ -394,7 +394,11 @@ func ExamplePersistentPubSub_cluster() {
 
 	// Use the PubSubConn as normal.
 	msgCh := make(chan PubSubMessage)
-	ps.Subscribe(msgCh, "myChannel")
+
+	if err = ps.Subscribe(msgCh, "myChannel"); err != nil {
+		// handle error
+	}
+
 	for msg := range msgCh {
 		log.Printf("publish to channel %q received: %q", msg.Channel, msg.Message)
 	}

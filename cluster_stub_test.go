@@ -8,7 +8,7 @@ import (
 	"sync"
 	. "testing"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 	"github.com/stretchr/testify/assert"
@@ -22,7 +22,7 @@ type clusterSlotStub struct {
 
 // clusterDatasetStub describes a dataset hosted by a clusterStub instance. This
 // is separated out because different instances can host the same dataset
-// (primary and secondaries)
+// (primary and secondaries).
 type clusterDatasetStub struct {
 	sync.Mutex
 	slots map[uint16]clusterSlotStub
@@ -50,7 +50,7 @@ func (sd *clusterDatasetStub) slotRanges() [][2]uint16 {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// equivalent to a single redis instance
+// equivalent to a single redis instance.
 type clusterNodeStub struct {
 	addr, id                       string
 	secondaryOfAddr, secondaryOfID string // set if secondary
@@ -94,11 +94,11 @@ func (s *clusterNodeStub) withKeyLocked(key string, asking, readonly bool, fn fu
 		if movedStub == nil {
 			return resp2.Error{E: errors.New("CLUSTERDOWN Hash slot not served")}
 		}
-		return resp2.Error{E: errors.Errorf("MOVED %d %s", slotI, movedStub.addr)}
+		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, movedStub.addr)}
 	} else if _, ok := slot.kv[key]; !ok && slot.migrating != "" {
-		return resp2.Error{E: errors.Errorf("ASK %d %s", slotI, slot.migrating)}
+		return resp2.Error{E: fmt.Errorf("ASK %d %s", slotI, slot.migrating)}
 	} else if slot.importing != "" && !asking {
-		return resp2.Error{E: errors.Errorf("MOVED %d %s", slotI, slot.importing)}
+		return resp2.Error{E: fmt.Errorf("MOVED %d %s", slotI, slot.importing)}
 	}
 
 	return fn(slot)
@@ -214,7 +214,7 @@ func (s *clusterNodeStub) newConn() Conn {
 			return resp2.SimpleString{S: "OK"}
 		}
 
-		return resp2.Error{E: errors.Errorf("unknown command %#v", args)}
+		return resp2.Error{E: fmt.Errorf("unknown command %#v", args)}
 	})
 }
 
@@ -308,7 +308,7 @@ func (scl *clusterStub) clientFunc() ClientFunc {
 				return s.newConn(), nil
 			}
 		}
-		return nil, errors.Errorf("unknown addr: %q", addr)
+		return nil, fmt.Errorf("unknown addr: %q", addr)
 	}
 }
 
@@ -335,12 +335,12 @@ func (scl *clusterStub) clientInitSyncFailedFunc(failedAddrsMap map[string]bool)
 			if s.addr == addr {
 				if failedAddrsMap[s.addr] {
 					failedAddrsMap[s.addr] = false
-					return nil, errors.Errorf("timeout")
+					return nil, fmt.Errorf("timeout")
 				}
 				return s.newConn(), nil
 			}
 		}
-		return nil, errors.Errorf("unknown addr: %q", addr)
+		return nil, fmt.Errorf("unknown addr: %q", addr)
 	}
 }
 
@@ -384,7 +384,7 @@ func (scl *clusterStub) migrateInit(dstAddr string, slot uint16) {
 	}
 }
 
-// migrateInit must have been called on the slot this key belongs to
+// migrateInit must have been called on the slot this key belongs to.
 func (scl *clusterStub) migrateKey(key string) {
 	slot := ClusterSlot([]byte(key))
 	src := scl.stubForSlot(slot)
@@ -400,7 +400,7 @@ func (scl *clusterStub) migrateKey(key string) {
 	delete(srcSlot.kv, key)
 }
 
-// migrateInit must have been called on the slot already
+// migrateInit must have been called on the slot already.
 func (scl *clusterStub) migrateAllKeys(slot uint16) {
 	src := scl.stubForSlot(slot)
 	src.clusterDatasetStub.Lock()
@@ -417,7 +417,7 @@ func (scl *clusterStub) migrateAllKeys(slot uint16) {
 	}
 }
 
-// all keys must have been migrated to call this, probably via migrateAllKeys
+// all keys must have been migrated to call this, probably via migrateAllKeys.
 func (scl *clusterStub) migrateDone(slot uint16) {
 	src := scl.stubForSlot(slot)
 	src.clusterDatasetStub.Lock()

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp/resp2"
 )
@@ -68,7 +68,7 @@ func (o ScanOpts) cmd(rcv interface{}, cursor string) CmdAction {
 	return Cmd(rcv, cmdStr, args...)
 }
 
-// ScanAllKeys is a shortcut ScanOpts which can be used to scan all keys
+// ScanAllKeys is a shortcut ScanOpts which can be used to scan all keys.
 var ScanAllKeys = ScanOpts{
 	Command: "SCAN",
 }
