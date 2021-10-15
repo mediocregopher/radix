@@ -7,7 +7,7 @@ import (
 	"strings"
 	. "testing"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/stretchr/testify/assert"
@@ -39,10 +39,13 @@ func TestPeekAndAssertPrefix(t *T) {
 
 		debugArgs := []interface{}{"%d) %q (got err:%s)", i, test.in, err}
 		assert.IsType(t, test.exp, err, debugArgs...)
-		if expDiscarded, ok := test.exp.(resp.ErrDiscarded); ok {
-			discarded, _ := err.(resp.ErrDiscarded)
+
+		if expDiscarded := (resp.ErrDiscarded{}); errors.As(test.exp, &expDiscarded) {
+			var discarded resp.ErrDiscarded
+			assert.True(t, errors.As(err, &discarded), debugArgs...)
 			assert.IsType(t, expDiscarded.Err, discarded.Err, debugArgs...)
 		}
+
 		if test.exp != nil {
 			assert.Equal(t, test.exp.Error(), err.Error(), debugArgs...)
 		}
@@ -103,7 +106,8 @@ func TestRESPTypes(t *T) {
 		umr := reflect.New(reflect.TypeOf(et.in).Elem())
 		um, ok := umr.Interface().(resp.Unmarshaler)
 		if !ok {
-			br.Discard(len(et.out))
+			_, err = br.Discard(len(et.out))
+			assert.NoError(t, err)
 			continue
 		}
 
@@ -131,7 +135,8 @@ func TestRESPTypes(t *T) {
 			umr := reflect.New(reflect.TypeOf(et.in).Elem())
 			um, ok := umr.Interface().(resp.Unmarshaler)
 			if !ok {
-				br.Discard(len(et.out))
+				_, err := br.Discard(len(et.out))
+				assert.NoError(t, err)
 				continue
 			}
 
@@ -149,7 +154,7 @@ func TestRESPTypes(t *T) {
 	}
 }
 
-// structs used for tests
+// structs used for tests.
 type testStructInner struct {
 	Foo int
 	bar int

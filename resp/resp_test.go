@@ -3,8 +3,9 @@ package resp
 import (
 	. "testing"
 
+	"errors"
+
 	"github.com/stretchr/testify/assert"
-	errors "golang.org/x/xerrors"
 )
 
 func TestErrDiscarded(t *T) {

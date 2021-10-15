@@ -136,7 +136,7 @@ func PersistentPubSub(network, addr string, connFn ConnFunc) PubSubConn {
 	return p
 }
 
-// refresh only returns an error if the connection could not be made
+// refresh only returns an error if the connection could not be made.
 func (p *persistentPubSub) refresh() error {
 	if p.curr != nil {
 		p.curr.Close()

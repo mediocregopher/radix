@@ -2,6 +2,7 @@ package radix
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"net"
 	. "testing"
@@ -140,14 +141,21 @@ func TestPipeliner(t *T) {
 
 		secondPopErr := <-secondPopCmd.resCh
 		require.IsType(t, (*net.OpError)(nil), secondPopErr)
-		require.True(t, secondPopErr.(net.Error).Temporary())
-		require.True(t, secondPopErr.(net.Error).Timeout())
+
+		var secondPopNetErr net.Error
+		assert.True(t, errors.As(secondPopErr, &secondPopNetErr))
+
+		require.True(t, secondPopNetErr.Temporary())
+		require.True(t, secondPopNetErr.Timeout())
 		assert.Empty(t, secondPopResult)
 
 		thirdPopErr := <-thirdPopCmd.resCh
-		require.IsType(t, (*net.OpError)(nil), thirdPopErr)
-		require.True(t, thirdPopErr.(net.Error).Temporary())
-		require.True(t, thirdPopErr.(net.Error).Timeout())
+
+		var thirdPopNetErr *net.OpError
+		assert.True(t, errors.As(thirdPopErr, &thirdPopNetErr))
+
+		require.True(t, thirdPopNetErr.Temporary())
+		require.True(t, thirdPopNetErr.Timeout())
 		assert.Empty(t, thirdPopResult)
 	}
 

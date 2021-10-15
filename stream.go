@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"github.com/mediocregopher/radix/v3/resp"
@@ -265,18 +265,23 @@ type StreamReaderOpts struct {
 	Count int
 }
 
-// StreamReader allows reading from on or more streams, always returning newer entries
+// StreamReader allows reading from on or more streams, always returning newer
+// entries.
 type StreamReader interface {
-	// Err returns any error that happened while calling Next or nil if no error happened.
+
+	// Err returns any error that happened while calling Next or nil if no error
+	// happened.
 	//
-	// Once Err returns a non-nil error, all successive calls will return the same error.
+	// Once Err returns a non-nil error, all successive calls will return the
+	// same error.
 	Err() error
 
 	// Next returns new entries for any of the configured streams.
 	//
 	// The returned slice is only valid until the next call to Next.
 	//
-	// If there was an error, ok will be false. Otherwise, even if no entries were read, ok will be true.
+	// If there was an error, ok will be false. Otherwise, even if no entries
+	// were read, ok will be true.
 	//
 	// If there was an error, all future calls to Next will return ok == false.
 	Next() (stream string, entries []StreamEntry, ok bool)

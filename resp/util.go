@@ -17,7 +17,7 @@ type lenReader struct {
 }
 
 // NewLenReader wraps an existing io.Reader whose length is known so that it
-// implements LenReader
+// implements LenReader.
 func NewLenReader(r io.Reader, l int64) LenReader {
 	return &lenReader{r: r, l: l}
 }

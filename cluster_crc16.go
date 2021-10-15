@@ -42,7 +42,7 @@ var tab = [256]uint16{
 const numSlots = 16384
 
 // CRC16 returns checksum for a given set of bytes based on the crc algorithm
-// defined for hashing redis keys in a cluster setup
+// defined for hashing redis keys in a cluster setup.
 func CRC16(buf []byte) uint16 {
 	crc := uint16(0)
 	for _, b := range buf {
@@ -53,7 +53,7 @@ func CRC16(buf []byte) uint16 {
 }
 
 // ClusterSlot returns the slot number the key belongs to in any redis cluster,
-// taking into account key hash tags
+// taking into account key hash tags.
 func ClusterSlot(key []byte) uint16 {
 	if start := bytes.Index(key, []byte("{")); start >= 0 {
 		if end := bytes.Index(key[start+1:], []byte("}")); end > 0 {

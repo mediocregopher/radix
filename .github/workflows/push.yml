@@ -1,0 +1,48 @@
+on: push
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          args: >-
+            --timeout 10m
+            --max-same-issues 0
+            --max-issues-per-linter 0
+            -E durationcheck
+            -E errorlint
+            -E exportloopref
+            -E forbidigo
+            -E gochecknoinits
+            -E godot
+            -E godox
+            -E goimports
+            -E misspell
+            -E revive
+            -E unconvert
+            -E unparam
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: [ '1.17', '1.16' ] # should always be latest two go version
+    services:
+      redis:
+        image: redis
+        # Set health checks to wait until redis has started
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+      - uses: actions/checkout@v2
+      - run: go test -race ./...

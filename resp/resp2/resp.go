@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"sync"
 
-	errors "golang.org/x/xerrors"
+	"errors"
 
 	"github.com/mediocregopher/radix/v3/internal/bytesutil"
 	"github.com/mediocregopher/radix/v3/resp"
@@ -128,12 +128,12 @@ func assertBufferedPrefix(br *bufio.Reader, pref []byte) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// SimpleString represents the simple string type in the RESP protocol
+// SimpleString represents the simple string type in the RESP protocol.
 type SimpleString struct {
 	S string
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (ss SimpleString) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
 	*scratch = append(*scratch, SimpleStringPrefix...)
@@ -144,7 +144,7 @@ func (ss SimpleString) MarshalRESP(w io.Writer) error {
 	return err
 }
 
-// UnmarshalRESP implements the Unmarshaler method
+// UnmarshalRESP implements the Unmarshaler method.
 func (ss *SimpleString) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, SimpleStringPrefix); err != nil {
 		return err
@@ -163,7 +163,7 @@ func (ss *SimpleString) UnmarshalRESP(br *bufio.Reader) error {
 // Error represents an error type in the RESP protocol. Note that this only
 // represents an actual error message being read/written on the stream, it is
 // separate from network or parsing errors. An E value of nil is equivalent to
-// an empty error string
+// an empty error string.
 type Error struct {
 	E error
 }
@@ -172,7 +172,7 @@ func (e Error) Error() string {
 	return e.E.Error()
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (e Error) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
 	*scratch = append(*scratch, ErrorPrefix...)
@@ -185,7 +185,7 @@ func (e Error) MarshalRESP(w io.Writer) error {
 	return err
 }
 
-// UnmarshalRESP implements the Unmarshaler method
+// UnmarshalRESP implements the Unmarshaler method.
 func (e *Error) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, ErrorPrefix); err != nil {
 		return err
@@ -208,12 +208,12 @@ func (e Error) As(target interface{}) bool {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Int represents an int type in the RESP protocol
+// Int represents an int type in the RESP protocol.
 type Int struct {
 	I int64
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (i Int) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
 	*scratch = append(*scratch, IntPrefix...)
@@ -224,7 +224,7 @@ func (i Int) MarshalRESP(w io.Writer) error {
 	return err
 }
 
-// UnmarshalRESP implements the Unmarshaler method
+// UnmarshalRESP implements the Unmarshaler method.
 func (i *Int) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, IntPrefix); err != nil {
 		return err
@@ -247,7 +247,7 @@ type BulkStringBytes struct {
 	MarshalNotNil bool
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (b BulkStringBytes) MarshalRESP(w io.Writer) error {
 	if b.B == nil && !b.MarshalNotNil {
 		_, err := w.Write(nilBulkString)
@@ -264,7 +264,7 @@ func (b BulkStringBytes) MarshalRESP(w io.Writer) error {
 	return err
 }
 
-// UnmarshalRESP implements the Unmarshaler method
+// UnmarshalRESP implements the Unmarshaler method.
 func (b *BulkStringBytes) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, BulkStringPrefix); err != nil {
 		return err
@@ -299,7 +299,7 @@ type BulkString struct {
 	S string
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (b BulkString) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
 	*scratch = append(*scratch, BulkStringPrefix...)
@@ -344,12 +344,12 @@ func (b *BulkString) UnmarshalRESP(br *bufio.Reader) error {
 
 // BulkReader is like BulkString, but it only supports marshalling and will use
 // the given LenReader to do so. If LR is nil then the nil bulk string RESP will
-// be written
+// be written.
 type BulkReader struct {
 	LR resp.LenReader
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (b BulkReader) MarshalRESP(w io.Writer) error {
 	if b.LR == nil {
 		_, err := w.Write(nilBulkString)
@@ -381,12 +381,12 @@ func (b BulkReader) MarshalRESP(w io.Writer) error {
 // protocol. It does not actually encompass any elements itself, it only
 // declares how many elements will come after it.
 //
-// An N of -1 may also be used to indicate a nil response, as per the RESP spec
+// An N of -1 may also be used to indicate a nil response, as per the RESP spec.
 type ArrayHeader struct {
 	N int
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (ah ArrayHeader) MarshalRESP(w io.Writer) error {
 	scratch := bytesutil.GetBytes()
 	*scratch = append(*scratch, ArrayPrefix...)
@@ -397,7 +397,7 @@ func (ah ArrayHeader) MarshalRESP(w io.Writer) error {
 	return err
 }
 
-// UnmarshalRESP implements the Unmarshaler method
+// UnmarshalRESP implements the Unmarshaler method.
 func (ah *ArrayHeader) UnmarshalRESP(br *bufio.Reader) error {
 	if err := assertBufferedPrefix(br, ArrayPrefix); err != nil {
 		return err
@@ -415,7 +415,7 @@ type Array struct {
 	A []resp.Marshaler
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (a Array) MarshalRESP(w io.Writer) error {
 	ah := ArrayHeader{N: len(a.A)}
 	if a.A == nil {
@@ -538,7 +538,7 @@ func numElems(vv reflect.Value) int {
 	case reflect.Ptr:
 		return numElems(reflect.Indirect(vv))
 	case reflect.Slice, reflect.Array:
-		// TODO does []rune need extra support here?
+		// NOTE []rune might need extra support here
 		if vv.Type() == byteSliceT {
 			return 1
 		}
@@ -599,7 +599,7 @@ func numElemsStruct(vv reflect.Value, flat bool) int {
 	return c
 }
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (a Any) MarshalRESP(w io.Writer) error {
 	marshalBulk := func(b []byte) error {
 		bs := BulkStringBytes{B: b, MarshalNotNil: a.MarshalBulkString}
@@ -727,7 +727,7 @@ func (a Any) MarshalRESP(w io.Writer) error {
 		return a.marshalStruct(w, vv, false)
 
 	default:
-		return errors.Errorf("could not marshal value of type %T", a.I)
+		return fmt.Errorf("could not marshal value of type %T", a.I)
 	}
 
 	return err
@@ -794,7 +794,7 @@ func saneDefault(prefix byte) interface{} {
 // which has a simple string or bulk string (the vast majority of them) is going
 // to go through one of these.
 var (
-	// RawMessage.UnmarshalInto also uses these
+	// RawMessage.UnmarshalInto also uses these.
 	byteReaderPool = sync.Pool{
 		New: func() interface{} {
 			return bytes.NewReader(nil)
@@ -807,7 +807,7 @@ var (
 	}
 )
 
-// UnmarshalRESP implements the Unmarshaler method
+// UnmarshalRESP implements the Unmarshaler method.
 func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 	// if I is itself an Unmarshaler just hit that directly
 	if u, ok := a.I.(resp.Unmarshaler); ok {
@@ -833,7 +833,10 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		return nil
 	}
 
-	br.Discard(1)
+	if _, err = br.Discard(1); err != nil {
+		return err
+	}
+
 	b, err = bytesutil.BufferedBytesDelim(br)
 	if err != nil {
 		return err
@@ -879,7 +882,7 @@ func (a Any) UnmarshalRESP(br *bufio.Reader) error {
 		byteReaderPool.Put(reader)
 		return err
 	default:
-		return errors.Errorf("unknown type prefix %q", b[0])
+		return fmt.Errorf("unknown type prefix %q", b[0])
 	}
 }
 
@@ -962,7 +965,7 @@ func (a Any) unmarshalSingle(body io.Reader, n int) error {
 			break
 		}
 		err = resp.ErrDiscarded{
-			Err: errors.Errorf("can't unmarshal into %T, message body was: %q", a.I, *scratch),
+			Err: fmt.Errorf("can't unmarshal into %T, message body was: %q", a.I, *scratch),
 		}
 		bytesutil.PutBytes(scratch)
 	}
@@ -992,7 +995,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 	v := reflect.ValueOf(a.I)
 	if v.Kind() != reflect.Ptr {
 		err := resp.ErrDiscarded{
-			Err: errors.Errorf("can't unmarshal array into %T", a.I),
+			Err: fmt.Errorf("can't unmarshal array into %T", a.I),
 		}
 		return discardArrayAfterErr(br, int(l), err)
 	}
@@ -1114,7 +1117,7 @@ func (a Any) unmarshalArray(br *bufio.Reader, l int64) error {
 		return nil
 
 	default:
-		err := resp.ErrDiscarded{Err: errors.Errorf("cannot decode redis array into %v", v.Type())}
+		err := resp.ErrDiscarded{Err: fmt.Errorf("cannot decode redis array into %v", v.Type())}
 		return discardArrayAfterErr(br, int(l), err)
 	}
 }
@@ -1150,7 +1153,7 @@ type structField struct {
 	indices []int
 }
 
-// encoding/json uses a similar pattern for unmarshaling into structs
+// encoding/json uses a similar pattern for unmarshaling into structs.
 var structFieldsCache sync.Map // aka map[reflect.Type]map[string]structField
 
 func getStructFields(t reflect.Type) map[string]structField {
@@ -1240,13 +1243,13 @@ func getStructField(v reflect.Value, ii []int) reflect.Value {
 // read into the RawMessage's bytes.
 type RawMessage []byte
 
-// MarshalRESP implements the Marshaler method
+// MarshalRESP implements the Marshaler method.
 func (rm RawMessage) MarshalRESP(w io.Writer) error {
 	_, err := w.Write(rm)
 	return err
 }
 
-// UnmarshalRESP implements the Unmarshaler method
+// UnmarshalRESP implements the Unmarshaler method.
 func (rm *RawMessage) UnmarshalRESP(br *bufio.Reader) error {
 	*rm = (*rm)[:0]
 	return rm.unmarshal(br)
@@ -1290,7 +1293,7 @@ func (rm *RawMessage) unmarshal(br *bufio.Reader) error {
 	case ErrorPrefix[0], SimpleStringPrefix[0], IntPrefix[0]:
 		return nil
 	default:
-		return errors.Errorf("unknown type prefix %q", b[0])
+		return fmt.Errorf("unknown type prefix %q", b[0])
 	}
 }
 
