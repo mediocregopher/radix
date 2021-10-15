@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ '1.16', '1.15' ] # should always be latest two go version
+        go: [ '1.17', '1.16' ] # should always be latest two go version
         resp3: [ 'true', 'false' ]
     services:
       redis:
