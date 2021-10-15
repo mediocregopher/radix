@@ -79,7 +79,7 @@
 // AUTH and other settings via Dialer
 //
 // Dialer has fields like AuthPass and SelectDB which can be used to configure
-// Conns at upon creation.
+// Conns at creation.
 //
 // PoolConfig takes a Dialer as one of its fields, so that all Conns the Pool
 // creates will be created with those settings.

@@ -72,7 +72,7 @@ here.
 
 * `resp.Unmarshaler` now takes a `resp.BufferedReader`, rather than
   `*bufio.Reader`. Generally `resp.BufferedReader` will be implemented by a
-  `*bufio.Reader`, but this gives move flexibility.
+  `*bufio.Reader`, but this gives more flexibility.
 
 * `Stub` and `PubSubStub` have been renamed to `NewStubConn` and
   `NewPubSubStubConn`, respectively.

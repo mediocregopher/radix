@@ -212,7 +212,7 @@ func ExampleScanner_cluster() {
 		panic(err)
 	}
 
-	s := (ScannerConfig{Command: "HSCAN", Key: "somekey"}).NewMulti(cluster)
+	s := (ScannerConfig{Command: "SCAN"}).NewMulti(cluster)
 	var key string
 	for s.Next(ctx, &key) {
 		log.Printf("key: %q", key)
