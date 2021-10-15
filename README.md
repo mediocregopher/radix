@@ -1,47 +1,43 @@
 # Radix
 
-[![Go v3 reference](https://pkg.go.dev/badge/github.com/mediocregopher/radix/v3.svg)](https://pkg.go.dev/github.com/mediocregopher/radix/v3#section-documentation) (v3)
-
-[![Go v4 reference](https://pkg.go.dev/badge/github.com/mediocregopher/radix/v4.svg)](https://pkg.go.dev/github.com/mediocregopher/radix/v4#section-documentation) (v4, still in beta)
-
 Radix is a full-featured [Redis][redis] client for Go. See the reference links
-above for documentation and general usage examples.
+below for documentation and general usage examples.
 
-## Versions
+**[v3 Documentation](https://pkg.go.dev/github.com/mediocregopher/radix/v3#section-documentation)**
 
-There are two major versions of radix being supported at the moment:
-
-* v3 is the more mature version, and is still being actively supported at the
-  moment.
-
-* v4 is in beta, but is essentially stable. You can view the v4
-  [CHANGELOG][v4changelog] to see what changed between the two versions. The
-  biggest selling point is that connection sharing (called "implicit pipelining"
-  in v3) now works with Pipeline and EvalScript, plus many other performance and
-  usability enhancements.
-
-[v4changelog]: https://github.com/mediocregopher/radix/blob/v4/CHANGELOG.md
+**[v4 Documentation](https://pkg.go.dev/github.com/mediocregopher/radix/v4#section-documentation)**
 
 ## Features
 
-* Standard print-like API which supports all current and future redis commands.
+* Standard print-like API which supports **all current and future redis commands**.
 
-* Support for using an io.Reader as a command argument and writing responses to
-  an io.Writer, as well as marshaling/unmarshaling command arguments from
-  structs.
+* Connection pool which uses **connection sharing** to minimize system calls.
 
-* Connection pooling, which takes advantage of implicit pipelining to reduce
-  system calls.
-
-* Helpers for [EVAL][eval], [SCAN][scan], and manual [pipelining][pipelining].
+* Full support for [Sentinel][sentinel] and [Cluster][cluster].
+  
+* Helpers for [EVAL][eval], [SCAN][scan], [Streams][stream], and [Pipelining][pipelining].
 
 * Support for [pubsub][pubsub], as well as persistent pubsub wherein if a
   connection is lost a new one transparently replaces it.
 
-* Full support for [sentinel][sentinel] and [cluster][cluster].
+* API design allows for custom implementations of nearly anything.
+  
+## Versions
 
-* Nearly all important types are interfaces, allowing for custom implementations
-  of nearly anything.
+There are two major versions of radix being supported:
+
+* v3 is the more mature version, but lacks the polished API of v4. v3 is only accepting bug fixes at this point.
+  
+* v4 has feature parity with v3 and more! The biggest selling points are:
+
+  * More polished API.
+  * Full [RESP3][resp3] support.
+  * Support for [context.Context][context] on all blocking operations.
+  * Connection sharing (called "implicit pipelining" in v3) now works with Pipeline and EvalScript.
+
+  View the [CHANGELOG][v4changelog] for more details.
+
+[v4changelog]: https://github.com/mediocregopher/radix/blob/v4/CHANGELOG.md
 
 ## Installation and Usage
 
@@ -63,11 +59,6 @@ to support others prior to those two.
     go test github.com/mediocregopher/radix/v4
 
 ## Benchmarks
-
-(When reading these it should be noted that radixv4 has not been totally
-optimized for performance. It still performs well compared to v3 and other
-drivers and is quite usable, but there is some work left which can be done,
-specifically around its `Conn` implementation.)
 
 Benchmarks were run in as close to a "real" environment as possible. Two GCE
 instances were booted up, one hosting the redis server with 2vCPUs, the other
@@ -157,7 +148,6 @@ BenchmarkDrivers/serial/no_pipeline/large_kv/redispipe_pause0-16             	  
 BenchmarkDrivers/serial/no_pipeline/large_kv/go-redis-16                     	  236379	    225677 ns/op	   13976 B/op	      14 allocs/op
 ```
 
-
 [bench results]: https://github.com/mediocregopher/radix/blob/v4/bench/bench_results.txt
 
 ## Copyright and licensing
@@ -166,12 +156,14 @@ Unless otherwise noted, the source files are distributed under the *MIT License*
 found in the LICENSE.txt file.
 
 [redis]: http://redis.io
-[godoc]: https://godoc.org/github.com/mediocregopher/radix
 [eval]: https://redis.io/commands/eval
 [scan]: https://redis.io/commands/scan
+[stream]: https://redis.io/topics/streams-intro
 [pipelining]: https://redis.io/topics/pipelining
 [pubsub]: https://redis.io/topics/pubsub
 [sentinel]: http://redis.io/topics/sentinel
 [cluster]: http://redis.io/topics/cluster-spec
 [module]: https://github.com/golang/go/wiki/Modules
 [redispipe]: https://github.com/joomcode/redispipe
+[context]: https://pkg.go.dev/context
+[resp3]: https://github.com/antirez/RESP3/blob/master/spec.md
