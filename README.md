@@ -7,6 +7,10 @@ below for documentation and general usage examples.
 
 **[v4 Documentation](https://pkg.go.dev/github.com/mediocregopher/radix/v4#section-documentation)**
 
+**[Discussion/Support Chat](https://matrix.to/#/#radix:waffle.farm)**
+
+Please open an issue, or start a discussion in the chat, before opening a pull request!
+
 ## Features
 
 * Standard print-like API which supports **all current and future redis commands**.
