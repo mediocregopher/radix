@@ -1,5 +1,20 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.8.0
+
+**New**
+
+* Add `PoolMaxLifetime` option for `Pool`. (PR #294)
+
+**Fixes And Improvements**
+
+* Switched to using `errors` package, rather than `golang.org/x/xerrors`. (PR
+  #300)
+
+* Switch to using Github Actions from travis. (PR #300)
+
+* Fixed IPv6 addresses breaking `Cluster`. (Issue #288)
+
 # v3.7.1
 
 * Release the RLock in `Sentinel`'s `Do`. (PR #272)
