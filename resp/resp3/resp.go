@@ -1677,7 +1677,7 @@ func Unmarshal(br resp.BufferedReader, rcv interface{}, o *resp.Opts) error {
 	}
 	prefix := Prefix(b[0])
 
-	if o == nil || !o.TreatErrorsAsValues {
+	if !o.TreatErrorsAsValues {
 		// if the prefix is one of the error types then just parse and return that
 		// full message here using the actual unmarshalers, which is easier than
 		// re-implementing them.
@@ -2009,7 +2009,7 @@ func unmarshalAgg(prefix Prefix, br resp.BufferedReader, l int64, rcv interface{
 		l *= 2
 	}
 
-	if o == nil || o.TreatErrorsAsValues == false {
+	if !o.TreatErrorsAsValues {
 		if o == nil {
 			o = resp.NewOpts()
 		} else {
