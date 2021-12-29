@@ -50,6 +50,10 @@ type Opts struct {
 	// deterministic results. This is largely used for ensuring map key/values
 	// are emitted in a deterministic order.
 	Deterministic bool
+
+	// TreatErrorsAsValues indicates that unmarshaled RESP errors should
+	// not be treated as actual errors but like other response type.
+	TreatErrorsAsValues bool
 }
 
 const defaultBytePoolThreshold = 10000000 // ~10MB
