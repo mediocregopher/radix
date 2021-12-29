@@ -1585,6 +1585,46 @@ func TestAnyUnmarshalMarshal(t *testing.T) {
 				return cases
 			},
 		},
+		{
+			descr: "blob error in aggregated",
+			ins: []in{
+				{
+					msg:       "*2\r\n$5\r\nhello\r\n!10\r\nsome error\r\n",
+					flattened: []string{"hello", "some error"},
+				},
+			},
+			mkCases: func(in in) []kase {
+				return []kase{
+					{
+						r: true,
+						ie: ie{
+							[]interface{}{[]byte("hello"), &BlobError{B: []byte("some error")}},
+							[]interface{}{[]byte("hello"), errors.New("some error")},
+						},
+					},
+				}
+			},
+		},
+		{
+			descr: "simple error in aggregated",
+			ins: []in{
+				{
+					msg:       "*2\r\n$5\r\nhello\r\n-ERR some error\r\n",
+					flattened: []string{"hello", "ERR some error"},
+				},
+			},
+			mkCases: func(in in) []kase {
+				return []kase{
+					{
+						r: false,
+						ie: ie{
+							[]interface{}{[]byte("hello"), &SimpleError{S: "ERR some error"}},
+							[]interface{}{[]byte("hello"), errors.New("ERR some error")},
+						},
+					},
+				}
+			},
+		},
 	}
 
 	opts := resp.NewOpts()

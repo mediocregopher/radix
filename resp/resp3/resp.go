@@ -1609,6 +1609,8 @@ func saneDefault(prefix Prefix) (interface{}, error) {
 	// we don't handle ErrorPrefix because that always returns an error and
 	// doesn't touch I
 	switch prefix {
+	case BlobErrorPrefix, SimpleErrorPrefix:
+		return new(error), nil
 	case BlobStringPrefix:
 		bb := make([]byte, 16)
 		return &bb, nil
@@ -1677,27 +1679,29 @@ func Unmarshal(br resp.BufferedReader, rcv interface{}, o *resp.Opts) error {
 	}
 	prefix := Prefix(b[0])
 
-	// if the prefix is one of the error types then just parse and return that
-	// full message here using the actual unmarshalers, which is easier than
-	// re-implementing them.
-	switch prefix {
-	case SimpleErrorPrefix:
-		var into SimpleError
-		if err := into.UnmarshalRESP(br, o); err != nil {
-			return err
+	if o == nil || !o.TreatErrorsAsValues {
+		// if the prefix is one of the error types then just parse and return that
+		// full message here using the actual unmarshalers, which is easier than
+		// re-implementing them.
+		switch prefix {
+		case SimpleErrorPrefix:
+			var into SimpleError
+			if err := into.UnmarshalRESP(br, o); err != nil {
+				return err
+			}
+			return resp.ErrConnUsable{Err: into}
+		case BlobErrorPrefix:
+			var into BlobError
+			if err := into.UnmarshalRESP(br, o); err != nil {
+				return err
+			}
+			return resp.ErrConnUsable{Err: into}
+		case AttributeHeaderPrefix:
+			if err := DiscardAttribute(br, o); err != nil {
+				return err
+			}
+			return Unmarshal(br, rcv, o)
 		}
-		return resp.ErrConnUsable{Err: into}
-	case BlobErrorPrefix:
-		var into BlobError
-		if err := into.UnmarshalRESP(br, o); err != nil {
-			return err
-		}
-		return resp.ErrConnUsable{Err: into}
-	case AttributeHeaderPrefix:
-		if err := DiscardAttribute(br, o); err != nil {
-			return err
-		}
-		return Unmarshal(br, rcv, o)
 	}
 
 	// This is a super special case that _must_ be handled before we actually
@@ -1748,7 +1752,7 @@ func Unmarshal(br resp.BufferedReader, rcv interface{}, o *resp.Opts) error {
 		}
 		return unmarshalAgg(prefix, br, l, rcv, o)
 
-	case BlobStringPrefix, VerbatimStringPrefix:
+	case BlobErrorPrefix, BlobStringPrefix, VerbatimStringPrefix:
 		var l int64
 		if len(b) == 1 && b[0] == '?' {
 			l = -1
@@ -1821,7 +1825,7 @@ func Unmarshal(br resp.BufferedReader, rcv interface{}, o *resp.Opts) error {
 		}
 		fallthrough
 
-	case SimpleStringPrefix, NumberPrefix, DoublePrefix, BigNumberPrefix:
+	case SimpleErrorPrefix, SimpleStringPrefix, NumberPrefix, DoublePrefix, BigNumberPrefix:
 		// We used to have a pool for *bytes.Reader instances which was used
 		// here. This resulted in one fewer heap allocation than this does, but
 		// took longer per-op due to the locking around the Pool.
@@ -1853,6 +1857,9 @@ func unmarshalSingle(body io.Reader, n int, rcv interface{}, o *resp.Opts) error
 			*ai = []byte{}
 		}
 		*ai, err = bytesutil.ReadNAppend(body, (*ai)[:0], n)
+	case *error:
+		*scratch, err = bytesutil.ReadNAppend(body, *scratch, n)
+		*ai = errors.New(string(*scratch))
 	case *string:
 		*scratch, err = bytesutil.ReadNAppend(body, *scratch, n)
 		*ai = string(*scratch)
@@ -2002,6 +2009,17 @@ func keyableReceiver(prefix Prefix, kv reflect.Value) (reflect.Value, error) {
 func unmarshalAgg(prefix Prefix, br resp.BufferedReader, l int64, rcv interface{}, o *resp.Opts) error {
 	if prefix == MapHeaderPrefix {
 		l *= 2
+	}
+
+	if o == nil || o.TreatErrorsAsValues == false {
+		if o == nil {
+			o = resp.NewOpts()
+		} else {
+			o1 := *o
+			o = &o1
+		}
+
+		o.TreatErrorsAsValues = true
 	}
 
 	size := int(l)
