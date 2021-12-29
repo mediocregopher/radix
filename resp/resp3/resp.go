@@ -1606,8 +1606,6 @@ func marshalStruct(w io.Writer, vv reflect.Value, inline bool, o *resp.Opts) err
 }
 
 func saneDefault(prefix Prefix) (interface{}, error) {
-	// we don't handle ErrorPrefix because that always returns an error and
-	// doesn't touch I
 	switch prefix {
 	case BlobErrorPrefix, SimpleErrorPrefix:
 		return new(error), nil
