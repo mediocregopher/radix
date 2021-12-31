@@ -51,9 +51,9 @@ type Opts struct {
 	// are emitted in a deterministic order.
 	Deterministic bool
 
-	// TreatErrorsAsValues indicates that unmarshaled RESP errors should
+	// DisableErrorBubbling indicates that unmarshaled RESP errors should
 	// not be treated as actual errors but like other response type.
-	TreatErrorsAsValues bool
+	DisableErrorBubbling bool
 }
 
 const defaultBytePoolThreshold = 10000000 // ~10MB
