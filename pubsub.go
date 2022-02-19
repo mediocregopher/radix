@@ -120,7 +120,7 @@ func (m *PubSubMessage) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 				return err
 			}
 		}
-		return errNotPubSubMessage
+		return resp.ErrConnUsable{Err: errNotPubSubMessage}
 	}
 
 	var channel resp3.BlobString
