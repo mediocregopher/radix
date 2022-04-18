@@ -1,5 +1,16 @@
 Changelog from v4.0.0 and up. v3 changelog can be found in its branch.
 
+# v4.1.0
+
+**New**
+
+* Added `TreatErrorsAsValues` field to `resp.Opts`. (#309)
+
+**Fixes and Improvements**
+
+* Fixed PubSubMessage unmarshaling not correctly handling non-pubsub messages.
+  (#306)
+
 # v4.0.0
 
 Below is documented all breaking changes between v3 and v4. There are further
