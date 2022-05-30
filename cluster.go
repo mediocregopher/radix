@@ -500,10 +500,23 @@ func (c *Cluster) addrForKey(key string) string {
 	return ""
 }
 
+// add the getting master node without lock to fix the fix deadlock
+func (c *Cluster) addrForKeyWithNoLock(key string) string {
+	s := ClusterSlot([]byte(key))
+	for _, t := range c.primTopo {
+		for _, slot := range t.Slots {
+			if s >= slot[0] && s < slot[1] {
+				return t.Addr
+			}
+		}
+	}
+	return ""
+}
+
 func (c *Cluster) secondaryAddrForKey(key string) string {
 	c.l.RLock()
 	defer c.l.RUnlock()
-	primAddr := c.addrForKey(key)
+	primAddr := c.addrForKeyWithNoLock(key)
 	for addr := range c.secondaries[primAddr] {
 		return addr
 	}
