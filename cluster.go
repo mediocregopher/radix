@@ -154,14 +154,23 @@ func (cfg ClusterConfig) New(ctx context.Context, clusterAddrs []string) (*Clust
 		pools:      map[string]Client{},
 	}
 
+	var err error
+
 	// make a pool to base the cluster on
 	for _, addr := range clusterAddrs {
-		client, err := c.newClient(ctx, addr)
-		if err != nil {
+
+		var client Client
+
+		if client, err = c.newClient(ctx, addr); err != nil {
 			continue
 		}
+
 		c.pools[addr] = client
 		break
+	}
+
+	if len(c.pools) == 0 {
+		return nil, fmt.Errorf("could not connect to any redis instances, last error was: %w", err)
 	}
 
 	if err := c.Sync(ctx); err != nil {
