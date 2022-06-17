@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sort"
+	"strconv"
 
 	"github.com/mediocregopher/radix/v4/resp"
 	"github.com/mediocregopher/radix/v4/resp/resp3"
@@ -156,8 +157,14 @@ func (tss topoSlotSet) MarshalRESP(w io.Writer, o *resp.Opts) error {
 	marshal(tss.slots[1] - 1)
 
 	for _, n := range tss.nodes {
-		host, port, _ := net.SplitHostPort(n.Addr)
-		node := []string{host, port}
+		host, portStr, _ := net.SplitHostPort(n.Addr)
+
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return err
+		}
+
+		node := []interface{}{host, port}
 		if n.ID != "" {
 			node = append(node, n.ID)
 		}
@@ -185,21 +192,44 @@ func (tss *topoSlotSet) UnmarshalRESP(br resp.BufferedReader, o *resp.Opts) erro
 
 	var primaryNode ClusterNode
 	for i := 0; i < arrHead.NumElems; i++ {
-		var nodeStrs []string
-		if err := resp3.Unmarshal(br, &nodeStrs, o); err != nil {
+
+		var nodeArrHead resp3.ArrayHeader
+		if err := nodeArrHead.UnmarshalRESP(br, o); err != nil {
 			return err
-		} else if len(nodeStrs) < 2 {
-			return fmt.Errorf("malformed node array: %#v", nodeStrs)
+		} else if nodeArrHead.NumElems < 2 {
+			return fmt.Errorf("expected at least 2 array elements, got %d", nodeArrHead.NumElems)
 		}
-		ip, port := nodeStrs[0], nodeStrs[1]
-		var id string
-		if len(nodeStrs) > 2 {
-			id = nodeStrs[2]
+
+		var ip resp3.BlobString
+		if err := ip.UnmarshalRESP(br, o); err != nil {
+			return err
+		}
+
+		var port resp3.Number
+		if err := port.UnmarshalRESP(br, o); err != nil {
+			return err
+		}
+
+		nodeArrHead.NumElems -= 2
+
+		var id resp3.BlobString
+		if nodeArrHead.NumElems > 0 {
+			if err := id.UnmarshalRESP(br, o); err != nil {
+				return err
+			}
+			nodeArrHead.NumElems--
+		}
+
+		// discard anything after
+		for i := 0; i < nodeArrHead.NumElems; i++ {
+			if err := resp3.Unmarshal(br, nil, o); err != nil {
+				return err
+			}
 		}
 
 		node := ClusterNode{
-			Addr:  net.JoinHostPort(ip, port),
-			ID:    id,
+			Addr:  net.JoinHostPort(ip.S, strconv.FormatInt(port.N, 10)),
+			ID:    id.S,
 			Slots: [][2]uint16{tss.slots},
 		}
 
