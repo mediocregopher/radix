@@ -201,14 +201,22 @@ func NewCluster(clusterAddrs []string, opts ...ClusterOpt) (*Cluster, error) {
 		}
 	}
 
+	var err error
+
 	// make a pool to base the cluster on
 	for _, addr := range clusterAddrs {
-		p, err := c.co.pf("tcp", addr)
-		if err != nil {
+
+		var p Client
+
+		if p, err = c.co.pf("tcp", addr); err != nil {
 			continue
 		}
 		c.pools[addr] = p
 		break
+	}
+
+	if len(c.pools) == 0 {
+		return nil, fmt.Errorf("could not connect to any redis instances, last error was: %w", err)
 	}
 
 	p, err := c.pool("")
