@@ -494,7 +494,7 @@ func (c *Cluster) syncEvery(d time.Duration) {
 	}()
 }
 
-// v3.8.5 add the getting master node without lock to fix the fix deadlock
+// v3.8.5 add the getting master node without lock to fix the fix deadlock.
 func (c *Cluster) addrForKeyWithNoLock(key string) string {
 	s := ClusterSlot([]byte(key))
 	for _, t := range c.primTopo {
