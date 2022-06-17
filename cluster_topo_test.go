@@ -31,7 +31,10 @@ var testTopoResp = func() resp.Marshaler {
 		),
 		respArr(5461, 8190,
 			respArr("10.128.0.36", 6379, "a3c69665bb05c8d5770407cad5b35af29e740586"),
-			respArr("10.128.0.24", 6379, "bef29809fbfe964d3b7c3ad02d3d9a40e55de317"),
+
+			// redis >7.0 returns an extra map as a fourth arg
+			respArr("10.128.0.24", 6379, "bef29809fbfe964d3b7c3ad02d3d9a40e55de317",
+				respArr("hostname", "whatever")),
 		),
 		respArr(10923, 13652,
 			respArr("10.128.0.20", 6379, "e0abc57f65496368e73a9b52b55efd00668adab7"),
@@ -150,15 +153,15 @@ func TestClusterTopo(t *T) {
 func TestClusterTopoSplitSlots(t *T) {
 	clusterSlotsResp := respArr(
 		respArr(0, 0,
-			respArr("127.0.0.1", "7001", "90900dd4ef2182825bc853c448737b2ba9975a50"),
-			respArr("127.0.0.1", "7011", "073a013f8886b6cf4c1b018612102601534912e9"),
+			respArr("127.0.0.1", 7001, "90900dd4ef2182825bc853c448737b2ba9975a50"),
+			respArr("127.0.0.1", 7011, "073a013f8886b6cf4c1b018612102601534912e9"),
 		),
 		respArr(1, 8191,
-			respArr("127.0.0.1", "7000", "3ff1ddc420cfceeb4c42dc4b1f8f85c3acf984fe"),
+			respArr("127.0.0.1", 7000, "3ff1ddc420cfceeb4c42dc4b1f8f85c3acf984fe"),
 		),
 		respArr(8192, 16383,
-			respArr("127.0.0.1", "7001", "90900dd4ef2182825bc853c448737b2ba9975a50"),
-			respArr("127.0.0.1", "7011", "073a013f8886b6cf4c1b018612102601534912e9"),
+			respArr("127.0.0.1", 7001, "90900dd4ef2182825bc853c448737b2ba9975a50"),
+			respArr("127.0.0.1", 7011, "073a013f8886b6cf4c1b018612102601534912e9"),
 		),
 	)
 	expTopo := ClusterTopo{
@@ -201,7 +204,7 @@ func TestClusterTopoSplitSlots(t *T) {
 func TestIPV6ClusterTopo(t *T) {
 	clusterSlotsResp := respArr(
 		respArr(0, 0,
-			respArr("8ffd:50::d4eb", "7001", "90900dd4ef2182825bc853c448737b2ba9975a50"),
+			respArr("8ffd:50::d4eb", 7001, "90900dd4ef2182825bc853c448737b2ba9975a50"),
 		),
 	)
 	expTopo := ClusterTopo{

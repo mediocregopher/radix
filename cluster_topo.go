@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sort"
+	"strconv"
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
@@ -157,8 +158,15 @@ func (tss topoSlotSet) MarshalRESP(w io.Writer) error {
 	marshal(resp2.Any{I: tss.slots[1] - 1})
 
 	for _, n := range tss.nodes {
-		host, port, _ := net.SplitHostPort(n.Addr)
-		node := []string{host, port}
+
+		host, portStr, _ := net.SplitHostPort(n.Addr)
+
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return err
+		}
+
+		node := []interface{}{host, port}
 		if n.ID != "" {
 			node = append(node, n.ID)
 		}
@@ -186,21 +194,44 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 
 	var primaryNode ClusterNode
 	for i := 0; i < arrHead.N; i++ {
-		var nodeStrs []string
-		if err := (resp2.Any{I: &nodeStrs}).UnmarshalRESP(br); err != nil {
+
+		var nodeArrHead resp2.ArrayHeader
+		if err := nodeArrHead.UnmarshalRESP(br); err != nil {
 			return err
-		} else if len(nodeStrs) < 2 {
-			return fmt.Errorf("malformed node array: %#v", nodeStrs)
+		} else if nodeArrHead.N < 2 {
+			return fmt.Errorf("expected at least 2 array elements, got %d", nodeArrHead.N)
 		}
-		ip, port := nodeStrs[0], nodeStrs[1]
-		var id string
-		if len(nodeStrs) > 2 {
-			id = nodeStrs[2]
+
+		var ip resp2.BulkString
+		if err := ip.UnmarshalRESP(br); err != nil {
+			return err
+		}
+
+		var port resp2.Int
+		if err := port.UnmarshalRESP(br); err != nil {
+			return err
+		}
+
+		nodeArrHead.N -= 2
+
+		var id resp2.BulkString
+		if nodeArrHead.N > 0 {
+			if err := id.UnmarshalRESP(br); err != nil {
+				return err
+			}
+			nodeArrHead.N--
+		}
+
+		// discard anything after
+		for i := 0; i < nodeArrHead.N; i++ {
+			if err := (resp2.Any{}).UnmarshalRESP(br); err != nil {
+				return err
+			}
 		}
 
 		node := ClusterNode{
-			Addr:  net.JoinHostPort(ip, port),
-			ID:    id,
+			Addr:  net.JoinHostPort(ip.S, strconv.FormatInt(port.I, 10)),
+			ID:    id.S,
 			Slots: [][2]uint16{tss.slots},
 		}
 
