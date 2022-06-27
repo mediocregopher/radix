@@ -198,19 +198,19 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 		}
 		var ip resp2.BulkString
 		if err := ip.UnmarshalRESP(br); err != nil {
-			return fmt.Errorf("Error while reading ip address. Error %v", err)
+			return fmt.Errorf("Error while reading ip address. Error %w", err)
 		}
 
 		var port resp2.Int
 		if err := port.UnmarshalRESP(br); err != nil {
-			return fmt.Errorf("Error while reading port. Error %v", err)
+			return fmt.Errorf("Error while reading port. Error %w", err)
 		}
 		nodeArrHead.N -= 2
 
 		var id resp2.BulkString
 		if nodeArrHead.N > 0 {
 			if err := id.UnmarshalRESP(br); err != nil {
-				return fmt.Errorf("Error while reading id. Error %v", err)
+				return fmt.Errorf("Error while reading id. Error %w", err)
 			}
 			nodeArrHead.N--
 		}

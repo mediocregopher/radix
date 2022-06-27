@@ -31,7 +31,7 @@ var testTopoResp = func() resp.Marshaler {
 		),
 		respArr(5461, 8190,
 			respArr("10.128.0.36", 6379, "a3c69665bb05c8d5770407cad5b35af29e740586"),
-			respArr("10.128.0.24", 6379, "bef29809fbfe964d3b7c3ad02d3d9a40e55de317",respArr("hostname", "whatever")),
+			respArr("10.128.0.24", 6379, "bef29809fbfe964d3b7c3ad02d3d9a40e55de317", respArr("hostname", "whatever")),
 		),
 		respArr(10923, 13652,
 			respArr("10.128.0.20", 6379, "e0abc57f65496368e73a9b52b55efd00668adab7"),
