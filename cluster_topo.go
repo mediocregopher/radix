@@ -9,6 +9,7 @@ import (
 
 	"github.com/mediocregopher/radix/v3/resp"
 	"github.com/mediocregopher/radix/v3/resp/resp2"
+	"strconv"
 )
 
 // ClusterNode describes a single node in the cluster at a moment in time.
@@ -158,7 +159,10 @@ func (tss topoSlotSet) MarshalRESP(w io.Writer) error {
 
 	for _, n := range tss.nodes {
 		host, port, _ := net.SplitHostPort(n.Addr)
-		node := []string{host, port}
+		node := make([]interface{}, 0, 2)
+		node = append(node, host)
+		portInteger, _ := strconv.Atoi(port)
+		node = append(node, portInteger)
 		if n.ID != "" {
 			node = append(node, n.ID)
 		}
@@ -186,21 +190,41 @@ func (tss *topoSlotSet) UnmarshalRESP(br *bufio.Reader) error {
 
 	var primaryNode ClusterNode
 	for i := 0; i < arrHead.N; i++ {
-		var nodeStrs []string
-		if err := (resp2.Any{I: &nodeStrs}).UnmarshalRESP(br); err != nil {
+		var nodeArrHead resp2.ArrayHeader
+		if err := nodeArrHead.UnmarshalRESP(br); err != nil {
 			return err
-		} else if len(nodeStrs) < 2 {
-			return fmt.Errorf("malformed node array: %#v", nodeStrs)
+		} else if nodeArrHead.N < 2 {
+			return fmt.Errorf("expected at least 2 array elements, got %d", nodeArrHead.N)
 		}
-		ip, port := nodeStrs[0], nodeStrs[1]
-		var id string
-		if len(nodeStrs) > 2 {
-			id = nodeStrs[2]
+		var ip resp2.BulkString
+		if err := ip.UnmarshalRESP(br); err != nil {
+			return fmt.Errorf("Error while reading ip address. Error %v", err)
+		}
+
+		var port resp2.Int
+		if err := port.UnmarshalRESP(br); err != nil {
+			return fmt.Errorf("Error while reading port. Error %v", err)
+		}
+		nodeArrHead.N -= 2
+
+		var id resp2.BulkString
+		if nodeArrHead.N > 0 {
+			if err := id.UnmarshalRESP(br); err != nil {
+				return fmt.Errorf("Error while reading id. Error %v", err)
+			}
+			nodeArrHead.N--
+		}
+		// discard anything after
+		if nodeArrHead.N > 0 {
+			var arrMetadata []string
+			if err := (resp2.Any{I: &arrMetadata}).UnmarshalRESP(br); err != nil {
+				return err
+			}
 		}
 
 		node := ClusterNode{
-			Addr:  net.JoinHostPort(ip, port),
-			ID:    id,
+			Addr:  net.JoinHostPort(ip.S, strconv.FormatInt(port.I, 10)),
+			ID:    id.S,
 			Slots: [][2]uint16{tss.slots},
 		}
 
