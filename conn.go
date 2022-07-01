@@ -174,7 +174,12 @@ func (c *conn) reader(ctx context.Context) {
 					discardMU := el.Value.(connMarshalerUnmarshaler)
 
 					if err = resp3.Unmarshal(c.br, discardMU.unmarshalInto, c.rOpts); err != nil {
-						break
+						// Ignore RESP errors.
+						if !errors.As(err, &resp3.SimpleError{}) && !errors.As(err, &resp3.BlobError{}) {
+							break
+						}
+
+						err = nil
 					}
 
 					discardList.Remove(el)
