@@ -44,6 +44,11 @@ func TestCmdAction(t *T) {
 	var dstval string
 	require.Nil(t, c.Do(ctx, Cmd(&dstval, "GET", key+key)))
 	assert.Equal(t, val, dstval)
+
+	// MEMORY USAGE needs special handling
+	memoryUsageCmd := Cmd(nil, "MEMORY", "USAGE", key)
+	assert.Equal(t, []string{key}, memoryUsageCmd.Properties().Keys)
+	require.Nil(t, c.Do(ctx, memoryUsageCmd))
 }
 
 func TestCmdActionMSet(t *T) {

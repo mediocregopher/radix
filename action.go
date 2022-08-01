@@ -233,6 +233,8 @@ func DefaultActionProperties(cmd string, args ...string) ActionProperties {
 	case noKeyCmds[cmd] || len(args) == 0:
 	case cmd == "BITOP" && len(args) > 1:
 		properties.Keys = args[1:]
+	case cmd == "MEMORY" && len(args) > 1 && strings.ToUpper(args[0]) == "USAGE":
+		properties.Keys = args[1:2]
 	case cmd == "MSET":
 		properties.Keys = keysFromKeyValuePairs(args)
 	case cmd == "XINFO":
