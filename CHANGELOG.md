@@ -1,5 +1,17 @@
 Changelog from v4.0.0 and up. v3 changelog can be found in its branch.
 
+# v4.1.1
+
+* Fixed `NewCluster` not returning an error if it can't connect to any of the
+  redis instances given. (#319)
+
+* Fix parsing for `CLUSTER SLOTS` command, which changed slightly with redis
+  7.0. (#320)
+
+* Fix a bug around discarding of errors in `Conn`. (#323)
+
+* Properly handle the `MEMORY USAGE` command in the context of a cluster. (#325)
+
 # v4.1.0
 
 **New**
