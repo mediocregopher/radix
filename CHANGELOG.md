@@ -1,5 +1,15 @@
 Changelog from v3.0.1 and up. Prior changes don't have a changelog.
 
+# v3.8.1
+
+* Fixed `NewCluster` not returning an error if it can't connect to any of the
+  redis instances given. (#319)
+
+* Fix deadlock in `Cluster` when using `DoSecondary`. (#317)
+
+* Fix parsing for `CLUSTER SLOTS` command, which changed slightly with redis
+  7.0. (#322)
+
 # v3.8.0
 
 **New**
