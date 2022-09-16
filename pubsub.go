@@ -348,8 +348,8 @@ func (c *pubSubConn) closeInner(cmdResErr error) error {
 		c.csL.Lock()
 		defer c.csL.Unlock()
 		c.closeErr = c.conn.Close()
-		c.subs = nil
-		c.psubs = nil
+		c.subs = chanSet{}
+		c.psubs = chanSet{}
 
 		if cmdResErr != nil {
 			select {
