@@ -13,18 +13,33 @@ type FlattenTestSuite struct {
 
 type NestedStruct struct{}
 
-type sliceTestStruct struct {
-	Other  string
-	Nested []NestedStruct
-}
-
+// Test whether by default, an empty slice in a hashmap should be flattened to an empty value.
 func (s *FlattenTestSuite) TestEmptyNestedSlice() {
-	testInst := sliceTestStruct{
+	testInst := struct {
+		Other  string
+		Nested []NestedStruct
+	}{
 		Other: "hello",
 	}
 
 	flat, err := Flatten(testInst, resp.NewOpts())
 	s.NoError(err)
+
+	s.Equal([]string{"Other", "hello", "Nested", ""}, flat)
+}
+
+// Test with omitempty; empty slices should be left off altogether.
+func (s *FlattenTestSuite) TestOmitEmptyNestedSlice() {
+	testInst := struct {
+		Other           string
+		NestedOmitEmpty []NestedStruct `redis:",omitempty"`
+	}{
+		Other: "hello",
+	}
+
+	flat, err := Flatten(testInst, resp.NewOpts())
+	s.NoError(err)
+
 	s.Equal([]string{"Other", "hello"}, flat)
 }
 
