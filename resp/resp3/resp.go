@@ -2255,7 +2255,7 @@ func getStructFields(t reflect.Type) map[string]structField {
 			}
 
 			key, fromTag := ft.Name, false
-			if tag := ft.Tag.Get("redis"); tag != "" && tag != "-" {
+			if tag, _ := parseTag(ft.Tag.Get("redis")); tag != "" && tag != "-" {
 				key, fromTag = tag, true
 			}
 			if m[key].fromTag {
