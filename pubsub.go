@@ -351,9 +351,11 @@ func (c *pubSubConn) Next(ctx context.Context) (PubSubMessage, error) {
 			return msg, err
 		}
 
-		if msg.Pattern != "" && !c.psubs[msg.Pattern] {
-			c.testEvent("skipped-pattern")
-			continue
+		if msg.Pattern != "" {
+			if !c.psubs[msg.Pattern] {
+				c.testEvent("skipped-pattern")
+				continue
+			}
 		} else if !c.subs[msg.Channel] {
 			c.testEvent("skipped-channel")
 			continue
