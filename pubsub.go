@@ -264,9 +264,14 @@ func (c *pubSubConn) Unsubscribe(ctx context.Context, channels ...string) error 
 		return err
 	}
 
-	for _, ch := range channels {
-		delete(c.subs, ch)
+	if len(channels) == 0 {
+		c.subs = map[string]bool{}
+	} else {
+		for _, ch := range channels {
+			delete(c.subs, ch)
+		}
 	}
+
 	return nil
 }
 
@@ -286,9 +291,14 @@ func (c *pubSubConn) PUnsubscribe(ctx context.Context, patterns ...string) error
 		return err
 	}
 
-	for _, p := range patterns {
-		delete(c.psubs, p)
+	if len(patterns) == 0 {
+		c.psubs = map[string]bool{}
+	} else {
+		for _, p := range patterns {
+			delete(c.psubs, p)
+		}
 	}
+
 	return nil
 }
 
@@ -508,27 +518,37 @@ func (p *persistentPubSubConn) Subscribe(ctx context.Context, channels ...string
 }
 
 func (p *persistentPubSubConn) Unsubscribe(ctx context.Context, channels ...string) error {
-	for _, ch := range channels {
-		delete(p.subs, ch)
+
+	if len(channels) == 0 {
+		p.subs = map[string]bool{}
+	} else {
+		for _, ch := range channels {
+			delete(p.subs, ch)
+		}
 	}
 
 	return p.do(ctx, func() error { return p.conn.Unsubscribe(ctx, channels...) })
 }
 
-func (p *persistentPubSubConn) PSubscribe(ctx context.Context, channels ...string) error {
-	for _, ch := range channels {
-		p.psubs[ch] = true
+func (p *persistentPubSubConn) PSubscribe(ctx context.Context, patterns ...string) error {
+	for _, pat := range patterns {
+		p.psubs[pat] = true
 	}
 
-	return p.do(ctx, func() error { return p.conn.PSubscribe(ctx, channels...) })
+	return p.do(ctx, func() error { return p.conn.PSubscribe(ctx, patterns...) })
 }
 
-func (p *persistentPubSubConn) PUnsubscribe(ctx context.Context, channels ...string) error {
-	for _, ch := range channels {
-		delete(p.psubs, ch)
+func (p *persistentPubSubConn) PUnsubscribe(ctx context.Context, patterns ...string) error {
+
+	if len(patterns) == 0 {
+		p.psubs = map[string]bool{}
+	} else {
+		for _, pat := range patterns {
+			delete(p.psubs, pat)
+		}
 	}
 
-	return p.do(ctx, func() error { return p.conn.PUnsubscribe(ctx, channels...) })
+	return p.do(ctx, func() error { return p.conn.PUnsubscribe(ctx, patterns...) })
 }
 
 func (p *persistentPubSubConn) Ping(ctx context.Context) error {
