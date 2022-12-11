@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -119,122 +118,123 @@ func (c *conn) Close() error {
 	return c.proc.PrefixedClose(c.conn.Close, nil)
 }
 
-func (c *conn) reader(ctx context.Context) {
+func isRespErr(err error) bool {
+	return errors.As(err, &resp3.SimpleError{}) || errors.As(err, &resp3.BlobError{})
+}
 
-	discardList := list.New()
+func (c *conn) doDiscard(unmarshalInto interface{}) error {
+
+	c.readSeqL.Lock()
+
+	if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
+		c.readSeqL.Unlock()
+		return fmt.Errorf("unsetting read deadline: %w", err)
+	}
+
+	// setting currReadSeq lets us discard the next message without any
+	// possibility of being interrupted by an EncodeDecode routine.
+	c.currReadSeq = 0
+
+	c.readSeqL.Unlock()
+
+	err := resp3.Unmarshal(c.br, unmarshalInto, c.rOpts)
+
+	if isRespErr(err) {
+		err = nil
+	}
+
+	return err
+}
+
+func (c *conn) prepareForRead(mu connMarshalerUnmarshaler) error {
+
+	c.readSeqL.Lock()
+	defer c.readSeqL.Unlock()
+
+	if err := mu.ctx.Err(); err != nil {
+		return resp.ErrConnUsable{
+			Err: fmt.Errorf("checking context before read: %w", err),
+		}
+	}
+
+	if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("unsetting read deadline: %w", err)
+	}
+
+	c.currReadSeq = mu.readSeq
+	return nil
+}
+
+func (c *conn) doRead(mu connMarshalerUnmarshaler) error {
+
+	if err := c.prepareForRead(mu); err != nil {
+		return err
+	}
+
+	c.conn.resetBytesRead()
+	buffered := c.br.Buffered()
+
+	err := resp3.Unmarshal(c.br, mu.unmarshalInto, c.rOpts)
+
+	// simplify things for the caller by translating network timeouts
+	// into the context error, since that's actually what happened.
+	var canceled bool
+	if canceled = errors.Is(err, os.ErrDeadlineExceeded); canceled {
+
+		err = mu.ctx.Err()
+
+		// there might be some crazy edge case where this can happen, I'm not
+		// sure... go contexts are not pleasant to work with.
+		if err == nil {
+			err = context.Canceled
+		}
+
+		// if Unmarshal returned a context error but data was also read it means
+		// that a message was only partially read off the wire. The Conn is
+		// unusable at this point, close it and bail.
+		if buffered != c.br.Buffered() || c.conn.totalBytesRead > 0 {
+			return fmt.Errorf("after partial read off Conn: %w", err)
+		}
+
+		return resp.ErrConnUsable{Err: err}
+	}
+
+	return err
+}
+
+func (c *conn) reader(ctx context.Context) {
 
 	doneCh := ctx.Done()
 	for {
 		select {
+
 		case <-doneCh:
 			return
+
 		case mu := <-c.rCh:
 
-			c.readSeqL.Lock()
+			err := c.doRead(mu)
+			mu.errCh <- err
 
-			var skip bool
-			if err := mu.ctx.Err(); err != nil {
-				mu.errCh <- fmt.Errorf("checking context before read: %w", err)
-				skip = true
-			} else if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
-				mu.errCh <- fmt.Errorf("unsetting read deadline: %w", err)
-				skip = true
-			}
-
-			if !skip {
-				c.currReadSeq = mu.readSeq
-			}
-
-			c.readSeqL.Unlock()
-
-			if skip {
-				if mu.marshal != nil {
-					discardList.PushBack(mu)
-				}
+			if err == nil || isRespErr(err) {
 				continue
-			}
 
-			var err error
-			c.conn.resetBytesRead()
-			buffered := c.br.Buffered()
-
-			// Discard messages queued up on the wire which aren't for this
-			// EncodeDecode call. Only discard messages if the EncodeDecode
-			// gives a value to marshal, as that indicates there's a specific
-			// response message in the queue which corresponds to it. If no
-			// value to marshal is given then the EncodeDecode will read in
-			// whatever the next message in the queue is.
-			if mu.marshal != nil {
-				for {
-					el := discardList.Front()
-					if el == nil {
-						break
-					}
-
-					discardMU := el.Value.(connMarshalerUnmarshaler)
-
-					if err = resp3.Unmarshal(c.br, discardMU.unmarshalInto, c.rOpts); err != nil {
-						// Ignore RESP errors.
-						if !errors.As(err, &resp3.SimpleError{}) && !errors.As(err, &resp3.BlobError{}) {
-							break
-						}
-
-						err = nil
-					}
-
-					discardList.Remove(el)
-				}
-			}
-
-			// if discarding didn't fail then read the actual desired response.
-			if err == nil {
-				if err = resp3.Unmarshal(c.br, mu.unmarshalInto, c.rOpts); err == nil && discardList.Len() > 0 {
-					discardList.Remove(discardList.Front())
-				}
-			}
-
-			// simplify things for the caller by translating network timeouts
-			// into the context error, since that's actually what happened.
-			var canceled bool
-			if canceled = errors.Is(err, os.ErrDeadlineExceeded); canceled {
-				if err = mu.ctx.Err(); err == nil {
-					// there might be some crazy edge case where this can
-					// happen, I'm not sure... go contexts are not pleasant to
-					// work with.
-					err = context.Canceled
-				}
-			}
-
-			if err != nil {
-				err = fmt.Errorf("unmarshaling message off Conn: %w", err)
-			}
-
-			if canceled {
-				if buffered == c.br.Buffered() && c.conn.totalBytesRead == 0 {
-					err = resp.ErrConnUsable{Err: err}
-
-					if mu.marshal != nil {
-						discardList.PushBack(mu)
-					}
-
-				} else {
-					// if Unmarshal returned a context error but data was also
-					// read it means that a message was only partially read off
-					// the wire. The Conn is unusable at this point, close it
-					// and bail.
-					go c.Close()
-					mu.errCh <- fmt.Errorf("after partial read off Conn: %w", err)
-					return
-				}
-
-			} else if err != nil && !errors.As(err, new(resp.ErrConnUsable)) {
+			} else if !errors.As(err, new(resp.ErrConnUsable)) {
 				go c.Close()
-				mu.errCh <- fmt.Errorf("unexpected error on Conn: %w", err)
 				return
 
-			}
+				// if the EncodeDecode did not involve a value being marshaled
+				// onto the wire, then we assume that we are not in a
+				// command/response mode, but rather are waiting for
+				// asynchronous writes (ie pubsub mode). In this case we don't
+				// discard the next command coming down the wire.
+			} else if mu.marshal != nil {
 
-			mu.errCh <- err
+				if err := c.doDiscard(mu.unmarshalInto); err != nil {
+					go c.Close()
+					return
+				}
+			}
 		}
 	}
 }
@@ -255,7 +255,8 @@ func (c *conn) putErrCh(errCh chan error) {
 	}
 }
 
-func (c *conn) EncodeDecode(ctx context.Context, m, u interface{}) error {
+func (c *conn) EncodeDecode(ctx context.Context, m, u interface{}) (err error) {
+
 	mu := connMarshalerUnmarshaler{
 		ctx:           ctx,
 		marshal:       m,
@@ -296,7 +297,7 @@ func (c *conn) EncodeDecode(ctx context.Context, m, u interface{}) error {
 		case err := <-mu.errCh:
 			c.putErrCh(mu.errCh)
 			if err != nil {
-				err = fmt.Errorf("waiting for response from Conn: %w", ctx.Err())
+				err = fmt.Errorf("waiting for response from Conn: %w", err)
 			}
 			return err
 		case <-closedCh:

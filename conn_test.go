@@ -194,7 +194,7 @@ func TestConnDeadlineExceeded(t *T) {
 	}
 
 	t.Run("echo", func(t *T) {
-		const p, n = 10, 100
+		const p, n = 5, 10000
 		const initTimeout = time.Second
 		conn := dial()
 		defer conn.Close()
@@ -209,10 +209,14 @@ func TestConnDeadlineExceeded(t *T) {
 			go func(workerID int) {
 				timeout := initTimeout
 				defer wg.Done()
-				for i := 0; i < n; {
+				for i := 0; i < n; i++ {
 					if err := ctx.Err(); err != nil {
 						panic(err)
 					}
+
+					// useful for debugging
+					id := fmt.Sprintf("%d-%d", workerID, i)
+					ctx := context.WithValue(ctx, "id", id)
 
 					str := fmt.Sprintf("%d-%da-%s", workerID, i, randStr())
 					str2 := fmt.Sprintf("%d-%db-%s", workerID, i, randStr())
@@ -224,41 +228,27 @@ func TestConnDeadlineExceeded(t *T) {
 					pipeline.Append(Cmd(&into2, "ECHO", str2))
 
 					innerCtx, cancel := context.WithTimeout(ctx, mkTimeout(timeout))
-					//err := conn.Do(innerCtx, Cmd(&into, "ECHO", str))
 					err := conn.Do(innerCtx, pipeline)
 					cancel()
 
-					// We want to see at least one successful operation and one
-					// timeout. But once we hit a timeout the connection may be
-					// unusable (closed). By halving the timeout after every
-					// successful operation we can ensure we find this sweet
-					// spot in disparate test environments.
-					timeout /= 2
+					if errors.Is(err, context.DeadlineExceeded) {
+						timeout = timeout * 4 / 3
+						atomic.AddUint64(&numTimeouts, 1)
+						continue
 
-					if err != nil {
-						//log.Printf("%q %q err:%v", str, str2, err)
-						isTimeout := errors.Is(err, context.DeadlineExceeded)
-						isClosed := errors.Is(err, proc.ErrClosed) ||
-							errors.Is(err, net.ErrClosed)
-						if !assert.True(t, isTimeout || isClosed, "err:%v", err) {
-							return
-						}
-						if isTimeout {
-							atomic.AddUint64(&numTimeouts, 1)
-						}
-						if isClosed {
-							atomic.AddUint64(&numClosed, 1)
-						}
+					} else if errors.Is(err, proc.ErrClosed) ||
+						errors.Is(err, net.ErrClosed) {
+						atomic.AddUint64(&numClosed, 1)
 						return
 
-					} else if !assert.Equal(t, str, into) {
-						return
-					} else if !assert.Equal(t, str2, into2) {
+					} else if !assert.NoError(t, err) ||
+						!assert.Equal(t, str, into) ||
+						!assert.Equal(t, str2, into2) {
 						return
 					}
 
 					atomic.AddUint64(&numSuccesses, 1)
-					i++
+					timeout = timeout * 3 / 4
 				}
 			}(i)
 		}
@@ -269,7 +259,7 @@ func TestConnDeadlineExceeded(t *T) {
 	})
 
 	t.Run("error", func(t *T) {
-		const pe, ps, n = 5, 5, 100
+		const pe, ps, n = 5, 5, 1000
 		const initTimeout = time.Second
 		conn := dial()
 		defer conn.Close()
@@ -281,7 +271,7 @@ func TestConnDeadlineExceeded(t *T) {
 		var numTimeouts, numClosed uint64
 
 		for i := 0; i < pe; i++ {
-			go func() {
+			go func(workerID int) {
 				timeout := initTimeout
 				defer wg.Done()
 				for i := 0; i < n; i++ {
@@ -289,45 +279,53 @@ func TestConnDeadlineExceeded(t *T) {
 						panic(err)
 					}
 
-					innerCtx, cancel := context.WithTimeout(ctx, mkTimeout(timeout))
+					// useful for debugging
+					id := fmt.Sprintf("%de-%d", workerID, i)
+					ctx := context.WithValue(ctx, "id", id)
+
 					into := ""
+
+					innerCtx, cancel := context.WithTimeout(ctx, mkTimeout(timeout))
 					err := conn.Do(innerCtx, Cmd(&into, "EVAL", "return redis.error_reply('NOTOK')", "0"))
 					cancel()
 
 					// We want to see a timeout that happens while the
 					// the next goroutine in the other loop is already running.
-					timeout /= 2
 
-					if !assert.NotNil(t, err) {
+					if !assert.NotNil(t, err, "id:%s", id) {
+						return
+
+					} else if errors.As(err, &resp3.SimpleError{}) {
+						timeout = timeout * 3 / 4
+						continue
+
+					} else if errors.Is(err, context.DeadlineExceeded) {
+						timeout = timeout * 4 / 3
+						atomic.AddUint64(&numTimeouts, 1)
+						continue
+
+					} else if errors.Is(err, proc.ErrClosed) ||
+						errors.Is(err, net.ErrClosed) {
+						atomic.AddUint64(&numClosed, 1)
 						return
 					}
 
-					if !errors.As(err, &resp3.SimpleError{}) {
-						isTimeout := errors.Is(err, context.DeadlineExceeded)
-						isClosed := errors.Is(err, proc.ErrClosed) ||
-							errors.Is(err, net.ErrClosed)
-						if !assert.True(t, isTimeout || isClosed, "err:%v", err) {
-							return
-						}
-						if isTimeout {
-							atomic.AddUint64(&numTimeouts, 1)
-						}
-						if isClosed {
-							atomic.AddUint64(&numClosed, 1)
-						}
-						return
-					}
+					t.Fatal(err)
 				}
-			}()
+			}(i)
 		}
 
 		for i := 0; i < ps; i++ {
-			go func() {
+			go func(workerID int) {
 				defer wg.Done()
 				for i := 0; i < n; i++ {
 					if err := ctx.Err(); err != nil {
 						panic(err)
 					}
+
+					// useful for debugging
+					id := fmt.Sprintf("%ds-%d", workerID, i)
+					ctx := context.WithValue(ctx, "id", id)
 
 					into := ""
 					err := conn.Do(ctx, Cmd(&into, "EVAL", "return redis.status_reply('OK')", "0"))
@@ -336,7 +334,7 @@ func TestConnDeadlineExceeded(t *T) {
 						// If we see a RESP error value then the results from
 						// this command and the previous one have been mixed
 						// up.
-						if !assert.False(t, errors.As(err, &resp3.SimpleError{})) {
+						if !assert.False(t, errors.As(err, &resp3.SimpleError{}), "id:%s", id) {
 							return
 						}
 
@@ -350,7 +348,7 @@ func TestConnDeadlineExceeded(t *T) {
 						return
 					}
 				}
-			}()
+			}(i)
 		}
 
 		wg.Wait()
@@ -359,7 +357,7 @@ func TestConnDeadlineExceeded(t *T) {
 	})
 
 	t.Run("pubsub", func(t *T) {
-		const n = 100
+		const n = 1000
 
 		subConn, pubConn := dial(), dial()
 		defer subConn.Close()
@@ -369,8 +367,10 @@ func TestConnDeadlineExceeded(t *T) {
 		ch := randStr()
 		timeout := time.Second
 
-		err := subConn.Do(ctx, Cmd(nil, "SUBSCRIBE", ch))
+		err := subConn.EncodeDecode(ctx, Cmd(nil, "SUBSCRIBE", ch), nil)
 		assert.NoError(t, err)
+		err = subConn.EncodeDecode(ctx, nil, new(PubSubMessage))
+		assert.True(t, errors.Is(err, errNotPubSubMessage), "err:%v", err)
 
 		for i := 0; i < n; i++ {
 			err := pubConn.Do(ctx, FlatCmd(nil, "PUBLISH", ch, i))
@@ -389,13 +389,6 @@ func TestConnDeadlineExceeded(t *T) {
 			err := subConn.EncodeDecode(innerCtx, nil, &msg)
 			cancel()
 
-			// We want to see at least one successful operation and one timeout.
-			// But once we hit a timeout the connection may be unusable
-			// (closed). By halving the timeout after every successful operation
-			// we can ensure we find this sweet spot in disparate test
-			// environments.
-			timeout /= 2
-
 			if err != nil {
 				isTimeout := errors.Is(err, context.DeadlineExceeded)
 				isClosed := errors.Is(err, proc.ErrClosed) ||
@@ -405,13 +398,16 @@ func TestConnDeadlineExceeded(t *T) {
 				}
 				if isTimeout {
 					numTimeouts++
+					timeout = timeout * 4 / 3
 				}
-				break
 			} else {
+
 				if !assert.Equal(t, fmt.Sprint(i), string(msg.Message)) {
 					return
 				}
+
 				numSuccesses++
+				timeout = timeout * 3 / 4
 				i++
 			}
 		}
