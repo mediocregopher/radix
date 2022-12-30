@@ -213,9 +213,12 @@ func (sc *Sentinel) client(ctx context.Context, addr string) (Client, error) {
 					break
 				}
 			}
-		}
-		if client == nil {
-			client = sc.clients[sc.primAddr]
+
+			if client == nil {
+				client = sc.clients[sc.primAddr]
+			}
+		} else {
+			client = sc.clients[addr]
 		}
 		return nil
 	})
@@ -423,11 +426,11 @@ func (sc *Sentinel) spin(ctx context.Context) {
 // the sentinel until that connection goes bad.
 //
 // Things this handles:
-// * Listening for switch-master events (from pconn, which has reconnect logic
-//   external to this package)
-// * Periodically re-ensuring that the list of sentinel addresses is up-to-date
-// * Periodically re-checking the current primary, in case the switch-master was
-//   missed somehow
+//   - Listening for switch-master events (from pconn, which has reconnect logic
+//     external to this package)
+//   - Periodically re-ensuring that the list of sentinel addresses is up-to-date
+//   - Periodically re-checking the current primary, in case the switch-master was
+//     missed somehow
 func (sc *Sentinel) innerSpin(ctx context.Context) error {
 	conn, err := sc.dialSentinel(ctx)
 	if err != nil {
