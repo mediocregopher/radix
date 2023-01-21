@@ -1,5 +1,17 @@
 Changelog from v4.0.0 and up. v3 changelog can be found in its branch.
 
+# v4.1.2
+
+* Fixed `Sentinel` not creating connections to new secondaries properly. (#336)
+
+* Complete refactor of `Conn`, code is simpler and a few cases where `Conn` was
+  getting out of sync with its writes/reads are now handled properly.
+
+* Fixed calls to `Unsubscribe` and `PSubscribe` not correctly clearing all
+  subscriptions. (#318)
+
+* Fixed the subscriptions made with `PSubscribe` not working correctly. (#333)
+
 # v4.1.1
 
 * Fixed `NewCluster` not returning an error if it can't connect to any of the
