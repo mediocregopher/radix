@@ -5,11 +5,13 @@ import (
 	"crypto/tls"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mediocregopher/radix/v3/resp"
+	"golang.org/x/net/proxy"
 )
 
 // Conn is a Client wrapping a single network connection which synchronously
@@ -265,7 +267,9 @@ func parseRedisURL(urlStr string) (string, []DialOpt) {
 // in a number of options which can overwrite its default behavior as well.
 //
 // In place of a host:port address, Dial also accepts a URI, as per:
-// 	https://www.iana.org/assignments/uri-schemes/prov/redis
+//
+//	https://www.iana.org/assignments/uri-schemes/prov/redis
+//
 // If the URI has an AUTH password or db specified Dial will attempt to perform
 // the AUTH and/or SELECT as well.
 //
@@ -275,7 +279,6 @@ func parseRedisURL(urlStr string) (string, []DialOpt) {
 // The default options Dial uses are:
 //
 //	DialTimeout(10 * time.Second)
-//
 func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 	var do dialOpts
 	for _, opt := range defaultDialOpts {
@@ -292,12 +295,39 @@ func Dial(network, addr string, opts ...DialOpt) (Conn, error) {
 	var netConn net.Conn
 	var err error
 	dialer := net.Dialer{}
+
 	if do.connectTimeout > 0 {
 		dialer.Timeout = do.connectTimeout
 	}
-	if do.useTLSConfig {
+
+	proxyURL := os.Getenv("ALL_PROXY")
+
+	switch {
+	case proxyURL != "":
+		u, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, err
+		}
+		var auth *proxy.Auth
+		if u.User != nil {
+			password, _ := u.User.Password()
+			auth = &proxy.Auth{
+				User:     u.User.Username(),
+				Password: password,
+			}
+		}
+		dialer, err := proxy.SOCKS5("tcp", u.Host, auth, proxy.Direct)
+		if err != nil {
+			return nil, err
+		}
+		if netConn, err = dialer.Dial(network, addr); err != nil {
+			return nil, err
+		}
+
+	case do.useTLSConfig:
 		netConn, err = tls.DialWithDialer(&dialer, network, addr, do.tlsConfig)
-	} else {
+
+	default:
 		netConn, err = dialer.Dial(network, addr)
 	}
 
