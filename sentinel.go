@@ -295,6 +295,10 @@ func (sc *Sentinel) ensureClients(ctx context.Context, conn Conn) error {
 
 	newClients := map[string]Client{newPrimAddr: nil}
 	for _, secM := range secMM {
+		// means it's down with flag "s_down,slave"
+		if secM["flags"] != "slave" {
+			continue
+		}
 		newSecAddr, err := sentinelMtoAddr(secM, "SENTINEL SLAVES")
 		if err != nil {
 			return err
