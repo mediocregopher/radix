@@ -1,5 +1,10 @@
 Changelog from v4.0.0 and up. v3 changelog can be found in its branch.
 
+# v4.1.3
+
+* Fixed bug in `Sentinel` where secondaries in the `s_down` state would still
+  be included in the active set. (#343)
+
 # v4.1.2
 
 * Fixed `Sentinel` not creating connections to new secondaries properly. (#336)
