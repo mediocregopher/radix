@@ -37,9 +37,12 @@ func newSentinelStub(primAddr string, secAddrs, sentAddrs []string) sentinelStub
 	}
 }
 
-func addrToM(addr string) map[string]string {
+func addrToM(addr string, flags string) map[string]string {
 	thisM := map[string]string{}
 	thisM["ip"], thisM["port"], _ = net.SplitHostPort(addr)
+	if flags != "" {
+		thisM["flags"] = flags
+	}
 	return thisM
 }
 
@@ -82,12 +85,12 @@ func (s *sentinelStub) newConn(ctx context.Context, network, addr string) (Conn,
 
 		switch args[1] {
 		case "MASTER":
-			return addrToM(s.primAddr)
+			return addrToM(s.primAddr, "")
 
 		case "SLAVES":
 			mm := make([]map[string]string, len(s.secAddrs))
 			for i := range s.secAddrs {
-				mm[i] = addrToM(s.secAddrs[i])
+				mm[i] = addrToM(s.secAddrs[i], "slave")
 			}
 			return mm
 
@@ -97,7 +100,7 @@ func (s *sentinelStub) newConn(ctx context.Context, network, addr string) (Conn,
 				if otherAddr == addr {
 					continue
 				}
-				ret = append(ret, addrToM(otherAddr))
+				ret = append(ret, addrToM(otherAddr, ""))
 			}
 			return ret
 		default:
@@ -254,7 +257,7 @@ func TestSentinelSecondaryRead(t *T) {
 		for i := 0; i < n; i++ {
 			var addr string
 			require.NoError(t, scc.DoSecondary(ctx, Cmd(&addr, "GIMME", "YOUR", "ADDRESS")))
-			assert.NotEqualf(t, primAddr, addr, "command was sent to master at %s", primAddr)
+			assert.NotEqual(t, primAddr, addr, "command was sent to master at %s", primAddr)
 			var secAddrs []string
 			for _, secondary := range clients[primAddr].Secondaries {
 				secAddrs = append(secAddrs, secondary.Addr().String())
