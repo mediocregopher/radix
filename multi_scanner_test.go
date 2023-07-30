@@ -1,16 +1,17 @@
 package radix
 
 import (
+	"context"
+	"testing"
 	. "testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestClusterScanner(t *T) {
-	ctx := testCtx(t)
-	c, _ := newTestCluster(ctx, ClusterConfig{})
-	defer c.Close()
+func testClusterScanner(t *T, ctx context.Context, c *Cluster) {
+	t.Helper()
+
 	exp := map[string]bool{}
 	for _, k := range clusterSlotKeys {
 		exp[k] = true
@@ -25,4 +26,20 @@ func TestClusterScanner(t *T) {
 	}
 
 	assert.Equal(t, exp, got)
+}
+
+func TestClusterScanner(t *T) {
+	t.Run("full topo", func(t *testing.T) {
+		ctx := testCtx(t)
+		c, _ := newTestCluster(ctx, ClusterConfig{})
+		defer c.Close()
+		testClusterScanner(t, ctx, c)
+	})
+
+	t.Run("only primaries topo", func(t *testing.T) {
+		ctx := testCtx(t)
+		c, _ := newTestClusterPrimariesOnly(ctx, ClusterConfig{})
+		defer c.Close()
+		testClusterScanner(t, ctx, c)
+	})
 }

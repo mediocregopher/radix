@@ -279,13 +279,18 @@ func (c *Cluster) Topo() ClusterTopo {
 func (c *Cluster) Clients() (map[string]ReplicaSet, error) {
 	m := map[string]ReplicaSet{}
 	err := c.proc.WithRLock(func() error {
-		for primAddr, secondaries := range c.secondaries {
+		for _, primNode := range c.primTopo {
+			primAddr := primNode.Addr
 			primClient, ok := c.pools[primAddr]
 			if !ok {
 				return fmt.Errorf("no available Client for primary %q", primAddr)
 			}
 			rs := ReplicaSet{Primary: primClient}
+			m[primAddr] = rs
+		}
 
+		for primAddr, secondaries := range c.secondaries {
+			rs := m[primAddr]
 			for secAddr := range secondaries {
 				secClient, ok := c.pools[secAddr]
 				if !ok {

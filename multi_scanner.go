@@ -30,6 +30,7 @@ func (cfg ScannerConfig) NewMulti(mc MultiClient) Scanner {
 	if err != nil {
 		return &multiScanner{lastErr: err}
 	}
+
 	clients := make([]Client, 0, len(clientsM))
 	for _, replicaSet := range clientsM {
 		clients = append(clients, replicaSet.Primary)

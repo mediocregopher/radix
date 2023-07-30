@@ -40,6 +40,15 @@ func newTestCluster(ctx context.Context, cfg ClusterConfig) (*Cluster, *clusterS
 	return scl.newCluster(ctx, cfg), scl
 }
 
+func newTestClusterPrimariesOnly(
+	ctx context.Context, cfg ClusterConfig,
+) (
+	*Cluster, *clusterStub,
+) {
+	scl := newStubCluster(testTopo.Primaries())
+	return scl.newCluster(ctx, cfg), scl
+}
+
 func TestClusterSync(t *T) {
 	ctx := testCtx(t)
 	c, scl := newTestCluster(ctx, ClusterConfig{})
