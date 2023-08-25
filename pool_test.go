@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"testing"
 	. "testing"
 	"time"
 
@@ -527,4 +528,30 @@ func TestPoolClose(t *T) {
 	h := newPoolTestHarness(t, PoolConfig{})
 	assert.NoError(t, h.pool.Close())
 	assert.Error(t, proc.ErrClosed, h.pool.Do(h.ctx, Cmd(nil, "PING")))
+}
+
+func TestPoolIssue344(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	t.Log("creating pool")
+	rc, err := (poolConfig{PoolConfig: PoolConfig{
+		Size: 1,
+	}}).new(ctx, "tcp", "127.0.0.1:6379")
+	assert.NoError(t, err)
+
+	{
+		t.Log("forcing a timeout")
+		ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		err := rc.Do(ctx, Cmd(new([]string), "BLPOP", randStr(), "0"))
+		cancel()
+		assert.True(t, errors.Is(err, context.DeadlineExceeded))
+	}
+
+	{
+		t.Log("pinging")
+		var pong string
+		assert.NoError(t, rc.Do(ctx, Cmd(&pong, "PING")))
+		assert.Equal(t, "PONG", pong)
+	}
 }
