@@ -1,5 +1,13 @@
 Changelog from v4.0.0 and up. v3 changelog can be found in its branch.
 
+# v4.1.4
+
+* Fix bug in `Pool` involving blocking commands whose `Context` times out.
+  (#344)
+
+* Fix `Cluster.Clients` not returning correctly if there are no secondaries.
+  (#345)
+
 # v4.1.3
 
 * Fixed bug in `Sentinel` where secondaries in the `s_down` state would still
