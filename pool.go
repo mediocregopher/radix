@@ -379,6 +379,8 @@ func (p *pool) getConn(ctx context.Context) (*poolConn, error) {
 
 		select {
 		case <-p.notifyCh:
+		case <-p.proc.ClosedCh():
+			return nil, proc.ErrClosed
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
@@ -426,6 +428,8 @@ func (p *pool) useSharedConn(ctx context.Context, a Action) error {
 
 		select {
 		case <-p.notifyCh:
+		case <-p.proc.ClosedCh():
+			return proc.ErrClosed
 		case <-ctx.Done():
 			return ctx.Err()
 		}
