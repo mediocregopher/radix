@@ -198,6 +198,43 @@ func TestRawMessage(t *testing.T) {
 	}
 }
 
+func TestMapIntoSliceOfStructs(t *testing.T) {
+	buf := new(bytes.Buffer)
+	opts := resp.NewOpts()
+
+	_ = (MapHeader{NumPairs: 1}).MarshalRESP(buf, opts)
+	_ = (SimpleString{S: "key"}).MarshalRESP(buf, opts)
+	_ = (SimpleString{S: "value"}).MarshalRESP(buf, opts)
+
+	var rcv []mapPair
+	reader := bufio.NewReader(buf)
+	err := Unmarshal(reader, &rcv, opts)
+	require.NoError(t, err)
+	require.Len(t, rcv, 1)
+
+	expectedStruct := mapPair{Key: "key", Value: "value"}
+	assert.Equal(t, expectedStruct, rcv[0])
+}
+
+type mapPair struct {
+	Key   string
+	Value string
+}
+
+func (s *mapPair) UnmarshalRESP(b resp.BufferedReader, opts *resp.Opts) error {
+	var key SimpleString
+	if err := key.UnmarshalRESP(b, opts); err != nil {
+		return err
+	}
+	var val SimpleString
+	if err := val.UnmarshalRESP(b, opts); err != nil {
+		return err
+	}
+	s.Key = key.S
+	s.Value = val.S
+	return nil
+}
+
 func Example_streamedAggregatedType() {
 	buf := new(bytes.Buffer)
 	opts := resp.NewOpts()
