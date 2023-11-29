@@ -2005,10 +2005,6 @@ func keyableReceiver(prefix Prefix, kv reflect.Value) (reflect.Value, error) {
 }
 
 func unmarshalAgg(prefix Prefix, br resp.BufferedReader, l int64, rcv interface{}, o *resp.Opts) error {
-	if prefix == MapHeaderPrefix {
-		l *= 2
-	}
-
 	if !o.DisableErrorBubbling {
 		if o == nil {
 			o = resp.NewOpts()
@@ -2021,6 +2017,9 @@ func unmarshalAgg(prefix Prefix, br resp.BufferedReader, l int64, rcv interface{
 	}
 
 	size := int(l)
+	if prefix == MapHeaderPrefix {
+		size *= 2
+	}
 	stream := size < 0
 	if rcv == nil {
 		return discardMulti(br, size, o)
@@ -2041,6 +2040,9 @@ func unmarshalAgg(prefix Prefix, br resp.BufferedReader, l int64, rcv interface{
 	switch v.Kind() {
 	case reflect.Slice:
 		slice := v
+		if slice.Type().Elem().Kind() == reflect.Struct {
+			size = int(l)
+		}
 		if size > slice.Cap() || slice.IsNil() {
 			sliceSize := size
 			if stream {
