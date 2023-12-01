@@ -25,6 +25,25 @@ func cleanFloatStr(str string) string {
 	return str
 }
 
+// Source: https://cs.opensource.google/go/go/+/refs/tags/go1.19.2:src/encoding/json/encode.go;drc=d0b0b10b5cbb28d53403c2bd6af343581327e946;l=339
+func isEmptyValue(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return v.Len() == 0
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.Interface, reflect.Pointer:
+		return v.IsNil()
+	}
+	return false
+}
+
 // Flatten accepts any type accepted by Marshal, except a resp.Marshaler, and
 // converts it into a flattened array of strings. For example:
 //
@@ -33,7 +52,6 @@ func cleanFloatStr(str string) string {
 //	Flatten([]string{"a","b"}) -> {"a", "b"}
 //	Flatten(map[string]int{"a":5,"b":10}) -> {"a","5","b","10"}
 //	Flatten([]map[int]float64{{1:2, 3:4},{5:6},{}}) -> {"1","2","3","4","5","6"})
-//
 func Flatten(i interface{}, o *resp.Opts) ([]string, error) {
 	f := flattener{
 		opts: o,
@@ -165,7 +183,7 @@ func (f *flattener) flatten(i interface{}) error {
 		l := vv.NumField()
 		for i := 0; i < l; i++ {
 			ft, fv := tt.Field(i), vv.Field(i)
-			tag := ft.Tag.Get("redis")
+			tag, tagOpts := parseTag(ft.Tag.Get("redis"))
 			if ft.Anonymous {
 				if fv = reflect.Indirect(fv); !fv.IsValid() { // fv is nil
 					continue
@@ -177,11 +195,21 @@ func (f *flattener) flatten(i interface{}) error {
 				continue // unexported
 			}
 
+			isEmpty := isEmptyValue(fv)
+			if isEmpty && tagOpts.Contains("omitempty") {
+				continue
+			}
+
 			keyName := ft.Name
 			if tag != "" {
 				keyName = tag
 			}
 			_ = f.emit(keyName)
+
+			if isEmpty {
+				// Return "", setting empty value
+				return f.emit("")
+			}
 
 			if err := f.flatten(fv.Interface()); err != nil {
 				return err
