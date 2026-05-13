@@ -1,5 +1,11 @@
 Changelog from v4.0.0 and up. v3 changelog can be found in its branch.
 
+# v4.1.5
+
+* Fix bug in `Pool` which caused a deadlock on `Close` (#347)
+
+* Fix bug in `resp3` which caused unmarshaling of stream entries to block (#350)
+
 # v4.1.4
 
 * Fix bug in `Pool` involving blocking commands whose `Context` times out.
